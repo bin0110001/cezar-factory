@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PlanningResult",
+  "type": "object",
+  "properties": {
+    "objective": { "type": "string" },
+    "acceptanceCriteria": { "type": "string" },
+    "nonGoals": { "type": "string" },
+    "risks": { "type": "string" },
+    "dependencies": { "type": "string" },
+    "suggestedWorkBreakdown": { "type": "string" },
+    "requiredProjectSkills": { "type": "array", "items": { "type": "string" } },
+    "unresolvedQuestions": { "type": "string" },
+    "readyNotReadyStatus": { "type": "string", "enum": ["ready", "not-ready"] }
+  },
+  "required": [
+    "objective",
+    "acceptanceCriteria",
+    "nonGoals",
+    "risks",
+    "dependencies",
+    "suggestedWorkBreakdown",
+    "requiredProjectSkills",
+    "unresolvedQuestions",
+    "readyNotReadyStatus"
+  ]
+}

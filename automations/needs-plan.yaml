@@ -1,0 +1,6 @@
+name: needs-plan
+description: Launch plan workflow when issue gains factory:needs-plan
+trigger:
+  - issue.gains_label: factory:needs-plan
+action:
+  - launch_workflow: plan

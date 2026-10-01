@@ -1,0 +1,6 @@
+name: ready-to-review
+description: Launch review workflow when issue/PR enters factory:review
+trigger:
+  - issue.or_promoted_pull_request_enters_label: factory:review
+action:
+  - launch_workflow: review

@@ -1,0 +1,8 @@
+name: maintenance
+description: Factory maintenance automation (to be enabled after core flow is proven)
+trigger:
+  - schedule: '0 0 * * *'  # Daily at midnight
+action:
+  - launch_workflow: maintenance
+# Note: This automation should be enabled only after the core production flow is proven.
+# It runs on a scheduled cadence and keeps maintenance separate from feature delivery.

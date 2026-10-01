@@ -1,0 +1,34 @@
+# Primary workflow-state labels (mutually exclusive)
+factory-state:
+  - factory:new
+  - factory:needs-plan
+  - factory:needs-help
+  - factory:ready
+  - factory:working
+  - factory:review
+  - factory:changes-requested
+  - factory:human-review
+  - factory:blocked
+  - factory:done
+  - factory:investigate
+
+# Work-type labels
+type:
+  - type:bug
+  - type:feature
+  - type:refactor
+  - type:test
+  - type:docs
+  - type:maintenance
+
+# Risk labels
+risk:
+  - risk:low
+  - risk:medium
+  - risk:high
+
+# Optional routing labels
+agent:
+  - agent:codex
+  - agent:claude
+  - agent:either

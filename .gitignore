@@ -1,0 +1,18 @@
+# Cezar runtime and operational state
+.ai/cezar/
+.ai/cezer/
+.agents/
+
+# Test artifacts
+tests/fixtures/*/artifacts/
+.artifacts/
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Local script output
+scripts/artifacts/
+scripts/update.log

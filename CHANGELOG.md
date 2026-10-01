@@ -1,0 +1,33 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+### Added
+- Working sync layer: shared `scripts/lib.ps1`, manifest-based install/update/diff/verify with `-ProjectPath`/`-FactoryPath`, dry-run, ownership checks, obsolete-file removal
+- Fixture projects (godot, dotnet, generic), `tests/run-tests.ps1` self-test and GitHub Actions CI
+- Standard project validation interface (Phase 12): test-changed.ps1, test-full.ps1, verify.ps1
+- LLM-friendly JSON result format for all validation scripts
+- Artifact storage for verbose logs, test failures, and verification results
+- Structured output with status, stage, passed/failed counts, failure details, and artifact paths
+- Reliable exit codes for CI integration
+- -Verbose and -Quiet flags for all validation scripts
+
+## [0.1.0] - 2026-09-30
+### Added
+- Initial release of the Cezar factory
+- Core skills: factory-plan, factory-implement, factory-review, factory-fix, factory-investigate, factory-learn
+- Core workflows: plan, implement, review, fix-review, investigate, maintenance
+- Core automations: needs-plan, ready-to-implement, ready-to-review, changes-requested
+- Core policies: labels, risk, retry, definition-of-ready, definition-of-done, escalation
+- Core schemas: plan, implementation-result, review-result, investigation-result
+- Core templates: factory.config.yaml, agentic.config.json, gitignore.fragment
+- Core scripts: install.ps1, update.ps1, verify.ps1, diff.ps1
+- Documentation: cezar-integration.md, lifecycle.md, synchronization.md, project-integration.md
+- VERSION file set to 0.1.0
+- README.md
+
+

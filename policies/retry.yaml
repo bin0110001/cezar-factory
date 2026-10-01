@@ -1,0 +1,12 @@
+# Retry policy
+
+max_implementation_retries: 2
+max_review_fix_rounds: 2
+
+environment_failure_handling: "retry_with_backoff"
+flaky_test_handling: "retry_once_then_investigate"
+
+stop_automatic_modifications_on:
+  - repeated_failures
+  - safety_violation
+  - security_issue

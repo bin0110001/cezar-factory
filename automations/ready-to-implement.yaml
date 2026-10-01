@@ -1,0 +1,10 @@
+name: ready-to-implement
+description: Launch implement workflow when issue gains factory:ready
+trigger:
+  - issue.gains_label: factory:ready
+action:
+  - launch_workflow: implement
+safeguards:
+  - do_not_start_if: factory:working
+  - do_not_start_if: blocked
+  - respect_concurrency_limit: true

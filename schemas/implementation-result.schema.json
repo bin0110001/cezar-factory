@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ImplementationResult",
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["success", "failure"] },
+    "summary": { "type": "string" },
+    "filesChanged": { "type": "array", "items": { "type": "string" } },
+    "testsRun": { "type": "array", "items": { "type": "string" } },
+    "testResult": { "type": "string" },
+    "acceptanceCriteriaStatus": { "type": "string" },
+    "knownConcerns": { "type": "string" },
+    "followUpSuggestions": { "type": "string" },
+    "durableKnowledgeCandidates": { "type": "string" }
+  },
+  "required": [
+    "status",
+    "summary",
+    "filesChanged",
+    "testsRun",
+    "testResult",
+    "acceptanceCriteriaStatus",
+    "knownConcerns",
+    "followUpSuggestions",
+    "durableKnowledgeCandidates"
+  ]
+}
