@@ -42,3 +42,4 @@ if ($r.Blocked) {
     exit 1
 }
 Write-Host 'Installation complete.' -ForegroundColor Green
+exit 0

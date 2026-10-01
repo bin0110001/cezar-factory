@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-01
+### Fixed
+- `verify.ps1`, `diff.ps1`, `install.ps1` and `update.ps1` now always set an exit code; `verify.ps1` crashed on `$LASTEXITCODE` when run as a standalone process
+- Self-tests run the sync scripts as child processes, as users and CI do
+
 ## [0.2.0] - 2026-10-01
 ### Added
 - `create-labels.ps1`: idempotently creates every label in `policies/labels.yaml` on the GitHub repo (installed to `.ai/factory/scripts/`)

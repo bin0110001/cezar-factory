@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.2.0
+factory-version: 0.2.1
 source: skills/factory-plan/SKILL.md
 -->
 # Factory Plan Skill

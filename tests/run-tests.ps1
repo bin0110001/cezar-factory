@@ -11,10 +11,11 @@ function Assert([string]$Name, [bool]$Cond) {
 }
 function With($Base, $Over) { $h = $Base.Clone(); foreach ($k in $Over.Keys) { $h[$k] = $Over[$k] }; $h }
 function Run([string]$Script, [hashtable]$Args2) {
-    $global:LASTEXITCODE = 0
-    try { $out = & (Join-Path $scripts $Script) @Args2 *>&1 | Out-String }
-    catch { $out = $_.Exception.Message; $global:LASTEXITCODE = 1 }
-    [pscustomobject]@{ Code = $global:LASTEXITCODE; Out = $out }
+    # Real child process, as CI and users run it (catches missing exit codes and strict-mode leaks).
+    $argv = @('-NoProfile', '-File', (Join-Path $scripts $Script))
+    foreach ($k in $Args2.Keys) { if ($Args2[$k] -is [bool] -or $Args2[$k] -is [System.Management.Automation.SwitchParameter]) { if ($Args2[$k]) { $argv += "-$k" } } else { $argv += "-$k", [string]$Args2[$k] } }
+    $out = & pwsh @argv *>&1 | Out-String
+    [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
 }
 
 function Copy-Factory([string]$From, [string]$To) {

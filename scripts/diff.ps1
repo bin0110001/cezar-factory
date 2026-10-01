@@ -55,3 +55,4 @@ foreach ($k in $drift.Keys) {
 }
 if ($total) { Write-Host "DRIFT: $total file(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'PASS: installed factory matches pinned source' -ForegroundColor Green
+exit 0

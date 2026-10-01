@@ -71,3 +71,4 @@ if (Test-Path (Join-Path $project '.git')) {
 }
 if ($failures.Count) { Write-Host "Validation: FAIL ($($failures.Count))" -ForegroundColor Red; exit 1 }
 Write-Host 'Validation: PASS' -ForegroundColor Green
+exit 0

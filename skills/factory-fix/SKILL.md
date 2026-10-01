@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.2.0
+factory-version: 0.2.1
 source: skills/factory-fix/SKILL.md
 -->
 # Factory Fix Skill

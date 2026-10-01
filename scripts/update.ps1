@@ -34,3 +34,4 @@ if (-not $DryRun) {
     & (Join-Path $PSScriptRoot 'verify.ps1') -ProjectPath $project -FactoryPath $factory
     exit $LASTEXITCODE
 }
+exit 0
