@@ -102,7 +102,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'sync-automations.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'sync-automations.ps1', 'create-labels.ps1')
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.

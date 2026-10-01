@@ -24,6 +24,7 @@ function Copy-Factory([string]$From, [string]$To) {
 
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
+$curVer = Get-FactoryVersion $factory
 $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md'
@@ -118,10 +119,10 @@ try {
         Assert 'verify rejects override of unknown component' ((Run 'verify.ps1' $a).Code -ne 0)
         Remove-Item (Join-Path $fdir 'overrides') -Recurse
 
-        # Upgrade to a synthetic 0.2.0: change a policy, add a policy, drop another (obsolete).
-        $f2 = Join-Path $tmp "factory-0.2.0-$($fx.Name)"
+        # Upgrade to a synthetic 9.9.9: change a policy, add a policy, drop another (obsolete).
+        $f2 = Join-Path $tmp "factory-9.9.9-$($fx.Name)"
         Copy-Factory $factory $f2
-        Set-Content (Join-Path $f2 'VERSION') '0.2.0'
+        Set-Content (Join-Path $f2 'VERSION') '9.9.9'
         Add-Content (Join-Path $f2 'skills/factory-review/SKILL.md') "`nUpgrade note."
         Write-Utf8 (Join-Path $f2 'policies/new-policy.md') "# New policy`n"
         Remove-Item (Join-Path $f2 'policies/risk.yaml')
@@ -129,26 +130,26 @@ try {
         $cfgText = Get-Content -Raw $cfgPath
         $a2 = @{ ProjectPath = $proj; FactoryPath = $f2 }
         Assert 'update refuses without pin change' ((Run 'update.ps1' $a2).Code -ne 0)
-        Set-Content $cfgPath ($cfgText -replace '(?m)^(\s*version:\s*)"0\.1\.0"', '${1}"0.2.0"') -NoNewline
+        Set-Content $cfgPath ($cfgText -replace '(?m)^(\s*version:\s*)"[0-9.]+"', '${1}"9.9.9"') -NoNewline
         $r = Run 'update.ps1' (With $a2 @{ DryRun = $true })
         Assert 'update dry-run succeeds' ($r.Code -eq 0)
         Assert 'update dry-run changes nothing' (Test-Path (Join-Path $fdir 'policies/risk.yaml'))
         $r = Run 'update.ps1' $a2
-        Assert 'update to 0.2.0 succeeds' ($r.Code -eq 0)
-        Assert 'summary shows version transition' ($r.Out -match '0\.1\.0 -> 0\.2\.0')
+        Assert 'update to 9.9.9 succeeds' ($r.Code -eq 0)
+        Assert 'summary shows version transition' ($r.Out -match "$([regex]::Escape($curVer)) -> 9\.9\.9")
         Assert 'new managed file added' (Test-Path (Join-Path $fdir 'policies/new-policy.md'))
         Assert 'obsolete managed file removed' (-not (Test-Path (Join-Path $fdir 'policies/risk.yaml')))
         Assert 'changed skill updated' ((Get-Content -Raw (Join-Path $proj '.ai/skills/factory-review/SKILL.md')) -match 'Upgrade note')
         Assert 'project skill preserved' (Test-Path (Join-Path $proj '.ai/skills/project-testing/SKILL.md'))
         Assert 'project config preserved' ((Get-Content -Raw $cfgPath) -match 'type: ')
-        Assert 'verify passes at 0.2.0' ((Run 'verify.ps1' $a2).Code -eq 0)
+        Assert 'verify passes at 9.9.9' ((Run 'verify.ps1' $a2).Code -eq 0)
 
         # Rollback: restore pin, run against the old factory.
         Set-Content $cfgPath $cfgText -NoNewline
         $r = Run 'update.ps1' $a
-        Assert 'rollback to 0.1.0 succeeds' ($r.Code -eq 0)
+        Assert 'rollback to pinned version succeeds' ($r.Code -eq 0)
         Assert 'rollback restores removed file' (Test-Path (Join-Path $fdir 'policies/risk.yaml'))
-        Assert 'rollback removes 0.2.0-only file' (-not (Test-Path (Join-Path $fdir 'policies/new-policy.md')))
+        Assert 'rollback removes upgrade-only file' (-not (Test-Path (Join-Path $fdir 'policies/new-policy.md')))
         Assert 'diff clean after rollback' ((Run 'diff.ps1' $a).Code -eq 0)
 
         # Ambiguity: unmanaged file already sits at a managed path.
@@ -171,7 +172,7 @@ try {
         $global:LASTEXITCODE = 0; & $val -Kind $Kind -Path $f *>&1 | Out-Null; $global:LASTEXITCODE
     }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments) } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
-    function Get-Gh { Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json }
+    function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
     function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0) {
         $f = Join-Path $tmp 'route-result.json'; if ($Obj) { ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f }
         $global:LASTEXITCODE = 0
@@ -231,6 +232,14 @@ try {
     Set-Gh @('factory:ready', 'factory:working', 'type:bug')
     Assert 'route: conflicting state labels collapse to one' ((Invoke-Route 'implement-result' $impl) -eq 0 -and @((Get-Gh).labels | Where-Object { $_ -like 'factory:*' }).Count -eq 1)
 
+    $labelScript = Join-Path $rp '.ai/factory/scripts/create-labels.ps1'
+    Set-Gh @()
+    & $labelScript -GhCommand $gh *>&1 | Out-Null
+    $created = @((Get-Gh).created)
+    Assert 'labels: all factory-state labels created' (@(@('factory:new', 'factory:ready', 'factory:investigate', 'factory:done') | Where-Object { $created -notcontains $_ }).Count -eq 0)
+    Assert 'labels: type, risk and agent labels created' ($created -contains 'type:bug' -and $created -contains 'risk:high' -and $created -contains 'agent:either')
+    Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
+
     # Project override fully replaces a factory file, and survives re-sync.
     $ovDir = Join-Path $rp '.ai/factory/overrides/policies'
     New-Item -ItemType Directory $ovDir -Force | Out-Null
@@ -275,7 +284,7 @@ try {
         Assert 'second sync is a no-op' (-not (Select-String -Path $log -Pattern '^(POST|PUT|DELETE)' -Quiet))
         & $sync @sa -Prune *>&1 | Out-Null
         Assert 'prune deletes obsolete factory automation' (-not (@((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations").automations | ForEach-Object { $_.id }) -contains 'f-old'))
-        Assert 'sync records factory version in description' ((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations/a100").automation.description -match 'cezar-factory 0\.1\.0')
+        Assert 'sync records factory version in description' ((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations/a100").automation.description -match "cezar-factory $([regex]::Escape($curVer))")
     }
     finally { if ($srv -and -not $srv.HasExited) { $srv.Kill() } }
 }

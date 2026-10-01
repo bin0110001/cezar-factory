@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-01
+### Added
+- `create-labels.ps1`: idempotently creates every label in `policies/labels.yaml` on the GitHub repo (installed to `.ai/factory/scripts/`)
+
+### Changed
+- Self-tests no longer hard-code the factory version
+
 ## [0.1.0] - 2026-10-01
 ### Added
 - Initial release of the Cezar factory

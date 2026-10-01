@@ -15,6 +15,7 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $f = $a[$a.IndexOf('--body-file') + 1]
     $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
 }
+elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
 else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
 $state | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
 exit 0

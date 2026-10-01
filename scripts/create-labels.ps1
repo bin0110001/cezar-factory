@@ -1,0 +1,55 @@
+#!/usr/bin/env pwsh
+<#
+.SYNOPSIS
+Create (or update in place) the factory's GitHub labels from policies/labels.yaml. Idempotent.
+.EXAMPLE
+./.ai/factory/scripts/create-labels.ps1 -DryRun
+#>
+[CmdletBinding()]
+param(
+    [string]$GhCommand = 'gh',
+    [string]$PoliciesDir = (Join-Path $PSScriptRoot '../policies'),
+    [string]$Repo,
+    [switch]$DryRun
+)
+Set-StrictMode -Off
+$ErrorActionPreference = 'Stop'
+
+$colors = @{ 'factory-state' = '1d76db'; type = '0e8a16'; risk = 'fbca04'; agent = '5319e7' }
+$riskColors = @{ 'risk:low' = '0e8a16'; 'risk:medium' = 'fbca04'; 'risk:high' = 'b60205' }
+$descriptions = @{
+    'factory:new'               = 'Factory: newly filed, not yet triaged'
+    'factory:needs-plan'        = 'Factory: ready for the planning agent'
+    'factory:needs-help'        = 'Factory: a human decision or input is needed'
+    'factory:ready'             = 'Factory: planned and ready for implementation'
+    'factory:working'           = 'Factory: implementation in progress'
+    'factory:review'            = 'Factory: PR awaiting independent review'
+    'factory:changes-requested' = 'Factory: review requested changes'
+    'factory:human-review'      = 'Factory: awaiting human review / merge'
+    'factory:blocked'           = 'Factory: blocked by an external dependency'
+    'factory:done'              = 'Factory: complete'
+    'factory:investigate'       = 'Factory: repeated failure awaiting investigation'
+}
+
+$group = $null
+$labels = [System.Collections.Generic.List[object]]::new()
+foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
+    if ($l -match '^([\w-]+):\s*$') { $group = $Matches[1]; continue }
+    if ($group -and $l -match '^\s+-\s+(\S+)') {
+        $name = $Matches[1]
+        $color = if ($riskColors.ContainsKey($name)) { $riskColors[$name] } else { $colors[$group] }
+        $desc = if ($descriptions.ContainsKey($name)) { $descriptions[$name] } else { "Factory $group label" }
+        $labels.Add([pscustomobject]@{ Name = $name; Color = $color; Description = $desc })
+    }
+}
+if (-not $labels.Count) { throw 'no labels found in policies/labels.yaml' }
+
+foreach ($lb in $labels) {
+    $args2 = @('label', 'create', $lb.Name, '--color', $lb.Color, '--description', $lb.Description, '--force')
+    if ($Repo) { $args2 += '--repo', $Repo }
+    if ($DryRun) { Write-Host "[DRY-RUN] gh $($args2 -join ' ')"; continue }
+    & $GhCommand @args2 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "failed to create label $($lb.Name)" }
+    Write-Host "label $($lb.Name)"
+}
+Write-Host "$($labels.Count) labels $(if ($DryRun) { 'would be ' })ensured"

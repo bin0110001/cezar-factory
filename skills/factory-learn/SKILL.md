@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.1.0
+factory-version: 0.2.0
 source: skills/factory-learn/SKILL.md
 -->
 # Factory Learn Skill

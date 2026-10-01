@@ -11,7 +11,7 @@ Cezar only loads workflows and skills from fixed locations, so the installer wri
 | `workflows/X.yaml` | `.ai/cezar/workflows/factory-X.yaml` (workflow name `factory-X`) | Cezar's workflow directory; the prefix avoids clashing with built-in or project workflows |
 | `skills/S/SKILL.md` | `.ai/skills/S/SKILL.md` | Shared skill location, also read by other agent tooling |
 | `policies/*`, `schemas/*` | `.ai/factory/policies`, `.ai/factory/schemas` | Read by the factory scripts |
-| `scripts/{validate-result,route-state,sync-automations}.ps1` | `.ai/factory/scripts/` | Called by workflows |
+| `scripts/{validate-result,route-state,sync-automations,create-labels}.ps1` | `.ai/factory/scripts/` | Called by workflows |
 | `automations/*.json` | `.ai/factory/automations/` | Declarative definitions; applied to Cezar by `sync-automations.ps1` |
 
 Written alongside: `.ai/factory/VERSION`, `.ai/factory/manifest.json` (path and SHA-256 of every managed file), `.ai/factory/gitignore.fragment`. The project-owned `.ai/factory/factory.config.yaml` is created once from the template and never overwritten.

@@ -39,7 +39,7 @@ Each project must maintain a factory configuration in .ai/factory/factory.config
 `yaml
 factory:
   source: cezar-factory     # Factory repository source
-  version: 0.1.0            # Pinned factory version
+  version: 0.2.0            # Pinned factory version
 
 workflows:
   - plan
@@ -198,7 +198,7 @@ Cezar uses for runtime state. Projects can include it from their root
 ```gitignore
 # Exclude Cezar runtime artifacts
 # managed-by: cezar-factory
-# factory-version: 0.1.0
+# factory-version: 0.2.0
 # source: templates/gitignore.fragment
 # DO NOT EDIT DIRECTLY
 /.ai/factory/.gitignore-fragment
