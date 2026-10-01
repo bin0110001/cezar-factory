@@ -2,28 +2,23 @@
 # factory-version: 0.1.0
 # source: workflows/plan.yaml
 # DO NOT EDIT DIRECTLY
-name: plan
-description: Factory planning workflow - reads issue, creates plan, routes to ready or needs-help
+name: factory-plan
+description: Plan an issue - validated plan result, then routed to factory:ready or factory:needs-help
 steps:
-  - id: factory-plan
+  - id: plan
     name: Run factory-plan skill
     skill: factory-plan
-    prompt: "Plan the following issue: {{task}}"
-  - id: validate-plan
-    name: Validate plan result schema
-    # Validates the plan output against plan.schema.json
+    prompt: |
+      Plan this GitHub issue: {{task}}
+
+      Write the structured plan result as JSON to .factory/plan-result.json (create the directory).
+      Include the issue number in the "issue" field. Do not edit factory:* labels; the workflow routes state.
+  - id: validate
+    name: Validate plan result and Definition of Ready
+    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
     onFail:
-      retry: factory-plan
+      retry: plan
       max: 1
-  - id: verify-dor
-    name: Verify Definition of Ready
-    # Check that the plan meets policies/definition-of-ready.md
-    onFail:
-      retry: factory-plan
-      max: 1
-  - id: update-issue
-    name: Update issue with plan
-    # Post the plan as a comment on the GitHub issue
-  - id: set-state
-    name: Set factory state
-    # Set either factory:ready or factory:needs-help based on the plan result
+  - id: route
+    name: Post plan to the issue and set factory state
+    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event plan-result -Path .factory/plan-result.json

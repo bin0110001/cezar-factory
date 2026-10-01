@@ -1,24 +1,5 @@
-# Cezar Factory Generated Files - DO NOT EDIT
-# These files are managed by the cezar-factory synchronization system
+# Cezar factory run output (agent result files, sync logs)
+.factory/
 
-# Runtime and generated state
-.ai/cezar/
-.ai/cezar/runs.json
-.ai/cezar/runs/
-.ai/cezar/automation-state.json
-.ai/cezar/automation-receipts.ndjson
-.ai/cezar/automation-log.ndjson
-.ai/cezar/worktrees/
-.ai/cezar/dispatch/
-.ai/cezar/attachments/
-.ai/cezar/tmp/
-.ai/cezar/drafts/
-.ai/cezar/todos.json
-.ai/cezar/tracker.json
-.ai/cezar/launch-key
-
-# Lock files
-.ai/cezar/automation-poll.lock
-.ai/cezar/automation-poll.lock.guard/
-.ai/cezar/automation-mutation.lock.guard/
-.ai/cezar/automation-mutation.lock
+# Cezar runtime state is ignored by Cezar itself via .ai/cezar/.gitignore;
+# workflows/ and skills/ under .ai/cezar are committable and must stay tracked.

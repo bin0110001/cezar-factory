@@ -3,17 +3,53 @@
   "title": "ImplementationResult",
   "type": "object",
   "properties": {
-    "status": { "type": "string", "enum": ["success", "failure"] },
-    "summary": { "type": "string" },
-    "filesChanged": { "type": "array", "items": { "type": "string" } },
-    "testsRun": { "type": "array", "items": { "type": "string" } },
-    "testResult": { "type": "string" },
-    "acceptanceCriteriaStatus": { "type": "string" },
-    "knownConcerns": { "type": "string" },
-    "followUpSuggestions": { "type": "string" },
-    "durableKnowledgeCandidates": { "type": "string" }
+    "issue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failure"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "filesChanged": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "testsRun": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "testResult": {
+      "type": "string"
+    },
+    "acceptanceCriteriaStatus": {
+      "type": "string"
+    },
+    "knownConcerns": {
+      "type": "string"
+    },
+    "followUpSuggestions": {
+      "type": "string"
+    },
+    "durableKnowledgeCandidates": {
+      "type": "string"
+    },
+    "pr": {
+      "type": "string"
+    }
   },
   "required": [
+    "issue",
     "status",
     "summary",
     "filesChanged",

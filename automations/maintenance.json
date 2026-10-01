@@ -1,0 +1,16 @@
+{
+  "name": "[factory] maintenance",
+  "description": "Nightly housekeeping sweep, opt-in via features.maintenance (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {
+    "type": "daily",
+    "hour": 0,
+    "minute": 0
+  },
+  "task": {
+    "prompt": "Nightly maintenance sweep for {{project}} on {{date}}.",
+    "workflow": "factory-maintenance",
+    "worktree": true,
+    "autonomous": true
+  }
+}

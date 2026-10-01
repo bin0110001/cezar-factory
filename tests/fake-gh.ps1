@@ -1,0 +1,20 @@
+# Fake `gh` for route-state tests. State lives in the JSON file named by $env:FAKE_GH_STATE: { labels: [...], comments: [...] }.
+$state = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
+$a = @($args)
+if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
+    @{ labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
+}
+elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
+    for ($i = 3; $i -lt $a.Count; $i += 2) {
+        $vals = "$($a[$i + 1])" -split ','
+        if ($a[$i] -eq '--add-label') { $state.labels = @($state.labels) + $vals }
+        if ($a[$i] -eq '--remove-label') { $state.labels = @($state.labels | Where-Object { $vals -notcontains $_ }) }
+    }
+}
+elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
+    $f = $a[$a.IndexOf('--body-file') + 1]
+    $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
+}
+else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
+$state | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
+exit 0

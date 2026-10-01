@@ -90,8 +90,23 @@ function Get-FeatureOn($Config, [string]$Name) {
     $Config.Contains('features') -and $Config['features'] -and $Config['features'].Contains($Name) -and $Config['features'][$Name] -eq 'true'
 }
 
-# Desired managed files for a config. Each: Target (rel to .ai/factory, '/' separators), Content, Hash.
-function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version) {
+# Where a factory source file lives inside a project (Cezar's own discovery locations).
+#   workflows/X.yaml        -> .ai/cezar/workflows/factory-X.yaml  (workflow name inside is factory-X)
+#   skills/S/SKILL.md       -> .ai/skills/S/SKILL.md
+#   policies|schemas|scripts-> .ai/factory/<same path>
+#   automations/*.json      -> .ai/factory/automations/*.json (applied to Cezar by sync-automations.ps1)
+function Get-TargetPath([string]$Rel) {
+    if ($Rel -match '^workflows/(.+)$') { return ".ai/cezar/workflows/factory-$($Matches[1])" }
+    if ($Rel -match '^skills/(.+)$') { return ".ai/skills/$($Matches[1])" }
+    ".ai/factory/$Rel"
+}
+
+# Factory scripts that run inside projects (called by workflows/skills).
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'sync-automations.ps1')
+
+# Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
+# A project override at .ai/factory/overrides/<source path> fully replaces the factory file.
+function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [string]$ProjectPath) {
     $skills = @($Config['skills']); $workflows = @($Config['workflows'])
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $skills) {
@@ -106,24 +121,32 @@ function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version) {
     }
     foreach ($dir in 'policies', 'schemas') {
         foreach ($f in Get-ChildItem (Join-Path $FactoryRoot $dir) -File -Recurse) {
-            $selected.Add(($f.FullName.Substring($FactoryRoot.Length).TrimStart('\', '/') -replace '\\', '/'))
+            $selected.Add(($f.FullName.Substring($FactoryRoot.Length).TrimStart([char[]]'\/') -replace '\\', '/'))
         }
     }
+    foreach ($sc in $script:RuntimeScripts) { $selected.Add("scripts/$sc") }
     $maint = Get-FeatureOn $Config 'maintenance'
     if ($maint -and $workflows -notcontains 'maintenance') { $selected.Add('workflows/maintenance.yaml') }
     if ((Get-FeatureOn $Config 'knowledge_extraction') -and $skills -notcontains 'factory-learn') { $selected.Add('skills/factory-learn/SKILL.md') }
     # Automations: only those whose workflow is installed (maintenance only with the feature on).
     $allWorkflows = @($workflows) + $(if ($maint) { 'maintenance' })
-    foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.yaml) {
-        $wf = $null
-        foreach ($l in Get-Content $f.FullName) { if ($l -match 'launch_workflow:\s*(\S+)') { $wf = $Matches[1] } }
+    foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.json) {
+        $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
         if ($f.BaseName -eq 'maintenance' -and -not $maint) { continue }
+        $wf = $def.task.workflow -replace '^factory-', ''
         if ($wf -and $allWorkflows -notcontains $wf) { continue }
         $selected.Add("automations/$($f.Name)")
     }
     foreach ($rel in ($selected | Sort-Object -Unique)) {
-        $content = New-ManagedContent (Join-Path $FactoryRoot $rel) $rel $Version
-        [pscustomobject]@{ Target = $rel; Content = $content; Hash = (Get-TextHash $content) }
+        $src = Join-Path $FactoryRoot $rel
+        $label = $rel
+        if ($ProjectPath) {
+            $ov = Join-Path (Get-FactoryDir $ProjectPath) "overrides/$rel"
+            if (Test-Path $ov) { $src = $ov; $label = "overrides/$rel" }
+        }
+        $content = New-ManagedContent $src $label $Version
+        $target = Get-TargetPath $rel
+        [pscustomobject]@{ Target = $target; Content = $content; Hash = (Get-TextHash $content) }
     }
 }
 
@@ -165,7 +188,7 @@ function Invoke-FactorySync {
     $srcVersion = Get-FactoryVersion $FactoryRoot
     if ($pin -ne $srcVersion) { throw "Config pins factory $pin but factory source is $srcVersion. Update the pin or use a matching factory checkout." }
 
-    $desired = @(Get-DesiredFiles $FactoryRoot $cfg $srcVersion)
+    $desired = @(Get-DesiredFiles $FactoryRoot $cfg $srcVersion $ProjectPath)
     $manifest = Read-Manifest $fdir
     $owned = @{}
     if ($manifest) { foreach ($f in $manifest.files) { $owned[$f.path] = $f.sha256 } }
@@ -173,7 +196,7 @@ function Invoke-FactorySync {
 
     $r = [ordered]@{ Added = @(); Updated = @(); Unchanged = @(); Removed = @(); Ambiguous = @(); Modified = @(); Blocked = $false; FromVersion = $(if ($manifest) { $manifest.factory_version } else { $null }); ToVersion = $srcVersion }
     foreach ($d in $desired) {
-        $dest = Join-Path $fdir $d.Target
+        $dest = Join-Path $ProjectPath $d.Target
         if (-not (Test-Path $dest)) { $r.Added += $d.Target; continue }
         $cur = Get-FileTextHash $dest
         if ($cur -eq $d.Hash) { $r.Unchanged += $d.Target; continue }
@@ -183,7 +206,7 @@ function Invoke-FactorySync {
     }
     foreach ($p in $owned.Keys) {
         if ($desiredMap.ContainsKey($p)) { continue }
-        $dest = Join-Path $fdir $p
+        $dest = Join-Path $ProjectPath $p
         if (-not (Test-Path $dest)) { continue }
         if ((Get-FileTextHash $dest) -ne $owned[$p]) { $r.Modified += $p } else { $r.Removed += $p }
     }
@@ -191,12 +214,12 @@ function Invoke-FactorySync {
     if ($r.Blocked) { return [pscustomobject]$r }
 
     if (-not $DryRun) {
-        foreach ($d in $desired) { Write-Utf8 (Join-Path $fdir $d.Target) $d.Content }
+        foreach ($d in $desired) { Write-Utf8 (Join-Path $ProjectPath $d.Target) $d.Content }
         foreach ($p in $r.Removed) {
-            $dest = Join-Path $fdir $p
+            $dest = Join-Path $ProjectPath $p
             Remove-Item $dest -Force
             $parent = Split-Path $dest -Parent
-            while ($parent -ne $fdir -and (Test-Path $parent) -and -not (Get-ChildItem $parent -Force)) { Remove-Item $parent -Force; $parent = Split-Path $parent -Parent }
+            while ($parent.Length -gt $ProjectPath.Length + 5 -and (Test-Path $parent) -and -not (Get-ChildItem $parent -Force)) { Remove-Item $parent -Force; $parent = Split-Path $parent -Parent }
         }
         Write-Utf8 (Join-Path $fdir 'VERSION') "$srcVersion`n"
         Write-Manifest $fdir $srcVersion $desired

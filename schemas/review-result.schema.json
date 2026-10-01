@@ -3,14 +3,35 @@
   "title": "ReviewResult",
   "type": "object",
   "properties": {
-    "approvalChangeRequestStatus": { "type": "string", "enum": ["approval", "change-request"] },
-    "blockingFindings": { "type": "string" },
-    "nonBlockingFindings": { "type": "string" },
-    "acceptanceCriteriaVerification": { "type": "string" },
-    "testAdequacy": { "type": "string" },
-    "riskObservations": { "type": "string" }
+    "issue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "approvalChangeRequestStatus": {
+      "type": "string",
+      "enum": [
+        "approval",
+        "change-request"
+      ]
+    },
+    "blockingFindings": {
+      "type": "string"
+    },
+    "nonBlockingFindings": {
+      "type": "string"
+    },
+    "acceptanceCriteriaVerification": {
+      "type": "string"
+    },
+    "testAdequacy": {
+      "type": "string"
+    },
+    "riskObservations": {
+      "type": "string"
+    }
   },
   "required": [
+    "issue",
     "approvalChangeRequestStatus",
     "blockingFindings",
     "nonBlockingFindings",

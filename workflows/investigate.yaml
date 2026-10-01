@@ -2,19 +2,24 @@
 # factory-version: 0.1.0
 # source: workflows/investigate.yaml
 # DO NOT EDIT DIRECTLY
-name: investigate
-description: Factory investigate workflow - classifies repeated failures and routes to retry or needs-help
+name: factory-investigate
+description: Classify repeated failures, then retry (factory:ready) or escalate (factory:needs-help)
 steps:
-  - id: gather-evidence
-    name: Gather compact failure evidence
-    # Collect evidence without dumping full logs
-  - id: factory-investigate
+  - id: investigate
     name: Run factory-investigate skill
     skill: factory-investigate
-    prompt: "Investigate the following repeated failures: {{task}}"
-  - id: classify-failure
-    name: Classify failure
-    # Classify the failure as per the skill's output
+    prompt: |
+      Investigate repeated failures on this GitHub issue: {{task}}
+
+      Read compact evidence only (issue comments, PR checks, artifact summaries under scripts/artifacts or
+      .factory/); do not paste full logs. Do not modify code. Write the structured result as JSON to
+      .factory/investigate-result.json (create the directory) with the issue number in "issue".
+  - id: validate
+    name: Validate investigation result
+    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json
+    onFail:
+      retry: investigate
+      max: 1
   - id: route
-    name: Route appropriately
-    # Based on classification, route to retry (factory:working) or needs-help (factory:needs-help)
+    name: Route to retry or needs-help
+    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event investigate-result -Path .factory/investigate-result.json

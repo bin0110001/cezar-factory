@@ -79,11 +79,9 @@ Prefer a different agent/context from implementation.
 
 ### 9. Route the Issue
 
-- If all blocking findings are resolved and acceptance criteria are met:
-  - Set `factory:human-review` (for high-risk changes) or proceed to `factory:done` (for low-risk, if auto-merge is enabled).
-- If there are blocking findings:
-  - Set `factory:changes-requested`.
-  - Post the findings as a comment on the PR.
+- Set `approvalChangeRequestStatus` to `approval` only when no blocking findings remain; `change-request` requires `blockingFindings`.
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/review-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
+- The workflow posts your findings to the issue and routes to `factory:human-review` or `factory:changes-requested`. Never route to `factory:done`; merging is human-owned.
 
 ## Risk-Based Routing
 

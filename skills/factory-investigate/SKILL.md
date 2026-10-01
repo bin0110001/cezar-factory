@@ -59,11 +59,11 @@ Use the following classification framework:
 
 ### 5. Route Appropriately
 
-- If a retry is justified:
-  - Set `factory:working` to return to implementation.
-- If escalation is needed:
-  - Set `factory:needs-help`.
-  - Post a summary including:
+- Set `automaticRetryAppropriate` and `confidence` honestly: the workflow retries (`factory:ready`) only when it is true, confidence is not `low`, and no earlier investigation retry was made; otherwise it escalates with `factory:needs-help`.
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/investigate-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
+- Use these exact `failureClassification` values: implementation, test, flaky-test, environment, dependency, merge-conflict, requirements, architecture, unknown.
+- The escalation summary posted by the workflow is built from your result. Make these fields complete:
+  - Fields feeding the summary:
     - Observed problem.
     - Attempts made.
     - Relevant logs/artifacts.

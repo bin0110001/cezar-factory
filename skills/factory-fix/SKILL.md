@@ -49,8 +49,8 @@ source: skills/factory-fix/SKILL.md
 ### 6. Return to Review
 
 - Update the PR with the fixes.
-- Remove `factory:changes-requested`.
-- Add `factory:review` to return the issue to the review stage.
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
+- Fixes are reported with the implementation result schema; the workflow returns the issue to `factory:review`.
 
 ## Retry Limits
 

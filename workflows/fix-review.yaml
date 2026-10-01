@@ -2,28 +2,31 @@
 # factory-version: 0.1.0
 # source: workflows/fix-review.yaml
 # DO NOT EDIT DIRECTLY
-name: fix-review
-description: Factory fix-review workflow - addresses review findings and returns to review
+name: factory-fix-review
+description: Address actionable review findings, re-validate, and return the issue to factory:review
 steps:
-  - id: actionable-findings
-    name: Feed only actionable review findings
-    # Extract actionable findings from the review
-  - id: factory-fix
+  - id: fix
     name: Run factory-fix skill
     skill: factory-fix
-    prompt: "Fix the following review findings: {{task}}"
-    onFail:
-      retry: factory-fix
-      max: 2
-  - id: targeted-validation
+    prompt: |
+      Address the review findings on this GitHub issue's PR: {{task}}
+
+      First action: run `pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event start -Issue <issue number>`
+      to move the issue to factory:working. Read only the latest review comment's blocking findings.
+      Push fixes to the existing PR, then write the structured result as JSON to .factory/implement-result.json
+      (create the directory) with the issue number in "issue" and the PR URL in "pr".
+  - id: targeted-tests
     name: Run targeted validation
-    # Run scripts/factory/test-changed.ps1
+    command: pwsh -NoProfile -File ./scripts/factory/test-changed.ps1
     onFail:
-      retry: factory-fix
+      retry: fix
       max: 1
-  - id: update-pr
-    name: Update PR
-    # Update the pull request with the fixes
-  - id: return-to-review
-    name: Return issue to review
-    # Set the issue state back to factory:review
+  - id: validate
+    name: Validate fix result
+    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    onFail:
+      retry: fix
+      max: 1
+  - id: route
+    name: Return issue to factory:review
+    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json

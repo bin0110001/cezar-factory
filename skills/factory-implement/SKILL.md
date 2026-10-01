@@ -90,3 +90,10 @@ Produce an implementation result conforming to `implementation-result.schema.jso
   "durableKnowledgeCandidates": "Reusable knowledge discovered during implementation"
 }
 ```
+
+## Workflow Contract
+
+- Your first action is `pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event start -Issue <number>`, which moves the issue to `factory:working` (it refuses if the issue is not ready).
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
+- Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
+- Result files live under `.factory/`, which projects gitignore; never commit them.

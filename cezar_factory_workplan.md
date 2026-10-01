@@ -1195,20 +1195,20 @@ Recommended pilot characteristics:
 
 ## Pilot steps
 
-- [x] Install factory `0.1.0`.
-- [x] Configure labels.
-- [x] Add project validation scripts.
-- [x] Add project architecture/testing skills.
-- [x] Enable planning automation only.
-- [x] Process several real issues.
-- [x] Tune planning skill.
-- [x] Enable implementation automation.
-- [x] Process several low-risk issues.
-- [x] Enable review automation.
-- [x] Exercise rework loop.
-- [x] Exercise investigation/escalation.
-- [x] Test factory upgrade process.
-- [x] Test rollback to previous factory version.
+- [ ] Install factory `0.1.0`.
+- [ ] Configure labels.
+- [ ] Add project validation scripts.
+- [ ] Add project architecture/testing skills.
+- [ ] Enable planning automation only.
+- [ ] Process several real issues.
+- [ ] Tune planning skill.
+- [ ] Enable implementation automation.
+- [ ] Process several low-risk issues.
+- [ ] Enable review automation.
+- [ ] Exercise rework loop.
+- [ ] Exercise investigation/escalation.
+- [ ] Test factory upgrade process.
+- [ ] Test rollback to previous factory version.
 
 ---
 
@@ -1279,10 +1279,10 @@ Examples:
 
 - [x] Update `VERSION`.
 - [x] Update changelog.
-- [x] Run factory CI.
+- [ ] Run factory CI.
 - [x] Test synchronization against fixture projects.
-- [x] Tag release.
-- [x] Publish release notes.
+- [ ] Tag release.
+- [ ] Publish release notes.
 - [x] Document any project migration steps.
 
 ---
@@ -1434,7 +1434,7 @@ PLAN WORKFLOW
 
 The factory is ready for broader rollout when:
 
-- [x] A new issue can move from `needs-plan` to a reviewed PR without manual orchestration.
+- [ ] A new issue can move from `needs-plan` to a reviewed PR without manual orchestration.
 - [x] Agents do not implement unresolved/ambiguous issues.
 - [x] Failed implementation attempts stop after a defined limit.
 - [x] Repeated failures are investigated instead of endlessly retried.

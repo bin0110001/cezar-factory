@@ -1,6 +1,0 @@
-name: changes-requested
-description: Launch fix-review workflow when issue gains factory:changes-requested
-trigger:
-  - issue.gains_label: factory:changes-requested
-action:
-  - launch_workflow: fix-review

@@ -3,17 +3,49 @@
   "title": "PlanningResult",
   "type": "object",
   "properties": {
-    "objective": { "type": "string" },
-    "acceptanceCriteria": { "type": "string" },
-    "nonGoals": { "type": "string" },
-    "risks": { "type": "string" },
-    "dependencies": { "type": "string" },
-    "suggestedWorkBreakdown": { "type": "string" },
-    "requiredProjectSkills": { "type": "array", "items": { "type": "string" } },
-    "unresolvedQuestions": { "type": "string" },
-    "readyNotReadyStatus": { "type": "string", "enum": ["ready", "not-ready"] }
+    "issue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptanceCriteria": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonGoals": {
+      "type": "string"
+    },
+    "risks": {
+      "type": "string"
+    },
+    "dependencies": {
+      "type": "string"
+    },
+    "suggestedWorkBreakdown": {
+      "type": "string"
+    },
+    "requiredProjectSkills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unresolvedQuestions": {
+      "type": "string"
+    },
+    "readyNotReadyStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "not-ready"
+      ]
+    }
   },
   "required": [
+    "issue",
     "objective",
     "acceptanceCriteria",
     "nonGoals",

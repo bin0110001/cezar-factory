@@ -10,12 +10,15 @@ project/
 ├── .ai/
 │   ├── factory/
 │   │   ├── factory.config.yaml   # Factory version and feature flags
-│   │   ├── VERSION               # Pinned factory version
+│   │   ├── VERSION               # Installed factory version (managed)
+│   │   ├── manifest.json         # Managed-file ownership + hashes (managed)
+│   │   ├── policies/ schemas/ scripts/ automations/   # Managed
 │   │   └── overrides/            # Project-specific overrides
 │   │       ├── workflows/        # Complete workflow replacements
 │   │       └── skills/           # Skill extensions
 │   │
-│   ├── skills/                   # Project-specific skills
+│   ├── skills/                   # factory-* (managed) + project-specific skills
+│   ├── cezar/workflows/          # factory-*.yaml (managed) + project workflows
 │   │   ├── project-architecture/ # Architecture guidance
 │   │   └── project-testing/      # Testing guidelines
 │   │
@@ -80,112 +83,38 @@ Projects can customize factory behavior without modifying synchronized files:
 
 ### Skill Extensions
 
-Rather than modifying factory skills, projects create complementary skills that extend or specialize the factory skills.
+Compose rather than modify: add project skills next to the factory ones and let the workflow prompts or your own skills pull them in.
 
-**How project skills extend generic factory behavior:**
-- Project skills are discovered after factory skills in the skill resolution order (see Skill Precedence below).
-- A project skill can define the same skill ID as a factory skill to override it entirely, or a different ID to extend functionality.
-- When a workflow references a skill ID, the system uses the first matching skill found in the skill search path.
-- Project skills can introduce new skill IDs that are not present in the factory, providing new capabilities.
+- Factory skills install as `.ai/skills/factory-*/` and are managed. Project skills (for example `.ai/skills/project-testing/`, `.ai/skills/tableflux-review/`) use any other name and are never touched by install/update/diff.
+- Cezar resolves skills local-first: `.ai/cezar/skills` -> `.ai/skills` -> `.agents/skills` -> global -> team repo. A same-named skill in `.ai/cezar/skills/` therefore shadows the factory one for Cezar, but prefer a different name: `factory-implement` already tells the agent to discover and apply project skills, and `factory-review` checks project conventions.
+- To replace a factory skill outright, use an override (below), which keeps it reproducible and drift-checked.
 
-**Skill Precedence:**
-The skill discovery precedence is (from highest to lowest priority):
-1. `.ai/cezar/skills/` - workflow-specific local skills (in the Cezar runtime)
-2. `.ai/skills/` - project-level skills (in the project)
-3. `.ai/factory/overrides/skills/` - project-specific skill overrides (in the factory override directory)
-4. `skills/` directory in the factory repository (synchronized factory skills)
-5. Global skills (built-in or system-wide)
-6. Team repository skills (background cached)
+### Workflow and File Overrides (full replacement)
 
-**Ensuring factory upgrades do not overwrite project skills:**
-- Project skills stored in `.ai/skills/` and `.ai/factory/overrides/skills/` are not synchronized by the factory.
-- The factory synchronization process only updates files in the synchronized directories (skills/, workflows/, automations/, policies/, schemas/, templates/).
-- Project-specific skills in `.ai/skills/` are untouched by factory updates.
-- Skill overrides in `.ai/factory/overrides/skills/` are also preserved because they are outside the synchronized skill directory.
+Any factory file can be fully replaced by placing a project copy at `.ai/factory/overrides/<factory source path>`:
 
-### Workflow Overrides
+```text
+.ai/factory/overrides/workflows/implement.yaml    -> installed as .ai/cezar/workflows/factory-implement.yaml
+.ai/factory/overrides/skills/factory-review/SKILL.md
+.ai/factory/overrides/policies/retry.yaml
+```
 
-Workflow overrides are supported when composition (via skill extensions) is insufficient to achieve the desired customization.
-
-**Potential approach for workflow overrides:**
-- Complete workflow replacements are placed in `.ai/factory/overrides/workflows/`.
-- The factory synchronization process will not overwrite files in this override directory.
-
-**Deciding on the override type:**
-Projects should choose one of the following strategies for workflow overrides:
-- **Full replacement:** The entire workflow YAML file is replaced with a project-specific version. This is the simplest and most explicit approach.
-- **Patch/merge:** Only specific sections of the workflow are modified, aiming to preserve the base structure. This approach is more complex and error-prone.
-- **Project-specific workflow selected instead:** The project defines a completely new workflow with a different ID, and the factory configuration is updated to reference this new workflow ID instead of the factory one.
-
-**Recommendation for v1:**
-For the initial version (v1) of the factory, we recommend using **full replacement** for workflow overrides. This avoids the complications of YAML patching and merge conflicts during factory upgrades. Projects should:
-1. Copy the base workflow from the factory (e.g., `workflows/plan.yaml`) to `.ai/factory/overrides/workflows/plan.yaml`.
-2. Modify the copied file as needed.
-3. Ensure the workflow ID (the `name` field) remains the same so that automations and other references continue to work.
+Copy the factory file, edit it, and keep the `name:` (for workflows, `factory-<name>`) so automations still resolve it. v0.1 deliberately has no patch/merge mode. `update.ps1` re-renders overrides on every upgrade (header `source: overrides/...`), so after a factory upgrade review whether your replacement should pick up upstream changes. `verify.ps1` fails if an override points at a path that does not exist in the factory.
 
 ### Policy Overrides
 
-Projects can adjust certain policies through configuration in their factory configuration file (`.ai/factory/factory.config.yaml`).
+Policies are plain factory files, so a policy override is a file override:
 
-**Allowable policy overrides:**
-Projects can change the following aspects of factory policies:
+| To change | Override file |
+| --- | --- |
+| Retry limits (implementation retries, review/fix rounds) | `overrides/policies/retry.yaml` (`max_review_fix_rounds` is read by `route-state.ps1`) |
+| Risk classification and human gates | `overrides/policies/risk.yaml` |
+| Definition of Ready / Done, escalation format | `overrides/policies/*.md` |
+| Label set | `overrides/policies/labels.yaml` (`route-state.ps1` reads the factory-state list) |
+| Enabled features | `features:` in `factory.config.yaml` (project-owned; `maintenance`, `knowledge_extraction`) |
+| Validation commands | `validation:` in `factory.config.yaml` |
 
-- **Risk classification:** Define custom risk levels or modify the existing ones (low, medium, high) and their associated requirements.
-- **Validation requirements:** Specify which validation scripts to run and under what conditions.
-- **Retry limits:** Adjust the maximum number of implementation retries, review/fix rounds, etc.
-- **Required human gates:** Determine which stages require human intervention (e.g., human plan approval, human merge).
-- **Enabled factory features:** Toggle optional factory features such as knowledge extraction and maintenance automation.
-
-**Example policy override in `.ai/factory/factory.config.yaml`:**
-```yaml
-factory:
-  source: cezar-factory
-  version: 0.1.0
-
-workflows:
-  - plan
-  - implement
-  - review
-  - fix-review
-  - investigate
-
-skills:
-  - factory-plan
-  - factory-implement
-  - factory-review
-  - factory-fix
-  - factory-investigate
-
-features:
-  knowledge_extraction: true   # Enable knowledge extraction
-  maintenance: true            # Enable maintenance automation
-
-project:
-  type: godot
-
-validation:
-  changed: ./scripts/factory/test-changed.ps1
-  full: ./scripts/factory/test-full.ps1
-  verify: ./scripts/factory/verify.ps1
-
-# Policy overrides
-risk:
-  levels:
-    risk:high:
-      requires-human-plan-approval: true
-      requires-human-merge: true
-      required-factory-version: "0.2.0"   # Example: require higher factory version for high risk
-  # Custom risk levels can be added
-  # risk:custom: ...
-retry:
-  max-implementation-attempts: 3
-  max-review-fix-rounds: 2
-validation:
-  # Override validation script paths or add conditions
-  changed: ./scripts/factory/test-changed.ps1
-  full: ./scripts/factory/test-full.ps1
-  verify: ./scripts/factory/verify.ps1
-```
+Workflow `onFail.max` retry counts live in the workflow files; change them with a workflow override.
 
 ## Validation Interface
 

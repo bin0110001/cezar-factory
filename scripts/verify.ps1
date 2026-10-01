@@ -36,13 +36,16 @@ if (Test-Path $cfgPath) {
             & (Join-Path $PSScriptRoot 'diff.ps1') -ProjectPath $project -FactoryPath $factory | Out-Null
             Check 'installed files match source (no drift)' ($LASTEXITCODE -eq 0) '(run diff.ps1)'
         }
-        foreach ($s in $cfg['skills']) { Check "skill $s installed" (Test-Path (Join-Path $fdir "skills/$s/SKILL.md")) }
-        foreach ($w in $cfg['workflows']) { Check "workflow $w installed" (Test-Path (Join-Path $fdir "workflows/$w.yaml")) }
-        foreach ($a in (Get-ChildItem (Join-Path $fdir 'automations') -Filter *.yaml -ErrorAction SilentlyContinue)) {
-            $t = Get-Content -Raw $a.FullName
-            $ok = ($t -match '(?m)^name:\s*\S') -and ($t -match '(?m)^trigger:') -and ($t -match '(?m)^action:')
-            Check "automation $($a.Name) valid" $ok
-            if ($t -match 'launch_workflow:\s*(\S+)') { Check "automation $($a.Name) workflow '$($Matches[1])' installed" (Test-Path (Join-Path $fdir "workflows/$($Matches[1]).yaml")) }
+        foreach ($s in $cfg['skills']) { Check "skill $s installed" (Test-Path (Join-Path $project ".ai/skills/$s/SKILL.md")) }
+        foreach ($w in $cfg['workflows']) { Check "workflow $w installed" (Test-Path (Join-Path $project ".ai/cezar/workflows/factory-$w.yaml")) }
+        foreach ($a in (Get-ChildItem (Join-Path $fdir 'automations') -Filter *.json -ErrorAction SilentlyContinue)) {
+            $def = $null; try { $def = Get-Content -Raw $a.FullName | ConvertFrom-Json } catch { }
+            Check "automation $($a.Name) valid JSON definition" ([bool]($def -and $def.name -and $def.task -and $def.task.prompt))
+            if ($def -and $def.task.workflow) { Check "automation $($a.Name) workflow '$($def.task.workflow)' installed" (Test-Path (Join-Path $project ".ai/cezar/workflows/$($def.task.workflow).yaml")) }
+        }
+        foreach ($wf in Get-ChildItem (Join-Path $project '.ai/cezar/workflows') -Filter factory-*.yaml -ErrorAction SilentlyContinue) {
+            $t = Get-Content -Raw $wf.FullName
+            Check "workflow $($wf.Name) has steps" ($t -match '(?m)^steps:\s*$' -or $t -match '(?m)^skills:')
         }
         foreach ($k in 'changed', 'full', 'verify') {
             $v = if ($cfg['validation'] -and $cfg['validation'].Contains($k)) { $cfg['validation'][$k] } else { $null }
@@ -58,9 +61,12 @@ if (Test-Path $cfgPath) {
         }
     }
 }
+# Run output must be ignored; Cezar runtime state must not be tracked.
+$gi = Join-Path $project '.gitignore'
+Check '.factory/ is gitignored' ((Test-Path $gi) -and ((Get-Content -Raw $gi) -match '(?m)^\.factory/?\s*$'))
 # Runtime state must not be tracked.
 if (Test-Path (Join-Path $project '.git')) {
-    $tracked = @(git -C $project ls-files '.ai/cezar' 2>$null)
+    $tracked = @(git -C $project ls-files '.ai/cezar' 2>$null | Where-Object { $_ -notmatch '^\.ai/cezar/(workflows/|skills/|config\.json$|\.gitignore$)' })
     Check 'no runtime files tracked' ($tracked.Count -eq 0) ($tracked -join ', ')
 }
 if ($failures.Count) { Write-Host "Validation: FAIL ($($failures.Count))" -ForegroundColor Red; exit 1 }

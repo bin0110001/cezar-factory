@@ -3,15 +3,34 @@
   "title": "InvestigationResult",
   "type": "object",
   "properties": {
-    "failureClassification": { "type": "string" },
-    "evidence": { "type": "string" },
-    "attemptsReviewed": { "type": "string" },
-    "rootCauseHypothesis": { "type": "string" },
-    "confidence": { "type": "string" },
-    "recommendedAction": { "type": "string" },
-    "automaticRetryAppropriate": { "type": "boolean" }
+    "issue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "failureClassification": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "attemptsReviewed": {
+      "type": "string"
+    },
+    "rootCauseHypothesis": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string"
+    },
+    "recommendedAction": {
+      "type": "string"
+    },
+    "automaticRetryAppropriate": {
+      "type": "boolean"
+    }
   },
   "required": [
+    "issue",
     "failureClassification",
     "evidence",
     "attemptsReviewed",

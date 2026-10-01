@@ -194,6 +194,16 @@ Based on my analysis of the Cezar codebase and documentation, here are key limit
     - Skill prompts should ideally use `{{task}}` placeholder for the portable shorthand to work
     - Custom prompts break the `skills:` shorthand optimization
 
+## Design consequences (verified against the Cezar source)
+
+- **Workflow schema.** A step is either an agent step (`skill`/`prompt`) or a check step (`command`), never neither; `onFail.retry` may only point to an earlier step. Factory workflows follow this, and the factory tests enforce it. A check step failing past `onFail.max` fails the whole run.
+- **No templating in check commands.** `{{task}}` is substituted only in agent prompts, so check steps cannot know the issue number. The agent writes a result file containing `issue`; `validate-result.ps1` and `route-state.ps1` read it from there. Agents never set `factory:*` labels themselves, except the first action of implement/fix, which calls `route-state.ps1 -Event start`.
+- **Install locations.** Workflows go to `.ai/cezar/workflows/factory-*.yaml` and skills to `.ai/skills/factory-*/`. Both are committable (Cezar's own `.ai/cezar/.gitignore` only ignores runtime state).
+- **Automations are not files.** Cezar stores them in gitignored `.ai/cezar/automations.json` behind an HTTP API (`CEZ_AUTOMATIONS=1`), so the factory ships JSON definitions in Cezar's own schema and reconciles them with `sync-automations.ps1`. They are GitHub polls on `issue.labeled` with `changedLabels`, every five minutes, `maxRecords: 1` (also the only available throttle; Cezar has no per-automation concurrency setting).
+- **Retry exhaustion cannot trigger an automation.** Cezar has no "workflow failed" event. When an implementation check exhausts `onFail.max` the run fails and the issue stays `factory:working`. The factory covers this two ways: an implementation the agent itself reports as failed is routed to `factory:investigate`, and the opt-in maintenance workflow labels issues stuck in `factory:working` for 24h as `factory:investigate`. Until maintenance is enabled, a failed run is visible in the Cezar cockpit only.
+- **Independent review.** Every Cezar run starts a fresh agent session in its own worktree, so the review workflow does not share context with implementation. Use `agent:*` labels or a workflow override to pin a different runner.
+- **Polling latency.** Automations poll, so a label change is picked up within the interval (five minutes by default).
+
 ## 0.2 Deliverable
 
 This document serves as the deliverable for Phase 0.1: `docs/cezar-integration.md`

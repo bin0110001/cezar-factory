@@ -6,17 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
-- Working sync layer: shared `scripts/lib.ps1`, manifest-based install/update/diff/verify with `-ProjectPath`/`-FactoryPath`, dry-run, ownership checks, obsolete-file removal
-- Fixture projects (godot, dotnet, generic), `tests/run-tests.ps1` self-test and GitHub Actions CI
-- Standard project validation interface (Phase 12): test-changed.ps1, test-full.ps1, verify.ps1
-- LLM-friendly JSON result format for all validation scripts
-- Artifact storage for verbose logs, test failures, and verification results
-- Structured output with status, stage, passed/failed counts, failure details, and artifact paths
-- Reliable exit codes for CI integration
-- -Verbose and -Quiet flags for all validation scripts
 
-## [0.1.0] - 2026-09-30
+## [0.1.0] - 2026-10-01
 ### Added
 - Initial release of the Cezar factory
 - Core skills: factory-plan, factory-implement, factory-review, factory-fix, factory-investigate, factory-learn
@@ -30,4 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VERSION file set to 0.1.0
 - README.md
 
+### Changed
+- Workflows are now valid Cezar workflows (each step is an agent step or a check step) and install where Cezar loads them: `.ai/cezar/workflows/factory-*.yaml`, `.ai/skills/factory-*`
+- Automations are Cezar JSON definitions reconciled through the cockpit API instead of unusable YAML
 
+### Also added
+- `validate-result.ps1`, `route-state.ps1` (deterministic label routing, review-round and investigation caps, escalation comments), `sync-automations.ps1`
+- Result schemas carry the `issue` number; skills no longer set labels
+- Full-replacement overrides for any factory file; `factory:investigate` lifecycle state
+- Working sync layer: shared `scripts/lib.ps1`, manifest-based install/update/diff/verify with `-ProjectPath`/`-FactoryPath`, dry-run, ownership checks, obsolete-file removal
+- Fixture projects (godot, dotnet, generic), `tests/run-tests.ps1` self-test and GitHub Actions CI
+- Standard project validation interface (Phase 12): test-changed.ps1, test-full.ps1, verify.ps1
+- LLM-friendly JSON result format for all validation scripts
+- Artifact storage for verbose logs, test failures, and verification results
+- Structured output with status, stage, passed/failed counts, failure details, and artifact paths
+- Reliable exit codes for CI integration
+- -Verbose and -Quiet flags for all validation scripts

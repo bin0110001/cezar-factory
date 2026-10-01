@@ -2,34 +2,37 @@
 # factory-version: 0.1.0
 # source: workflows/implement.yaml
 # DO NOT EDIT DIRECTLY
-name: implement
-description: Factory implementation workflow - implements approved plan, runs tests, creates PR
+name: factory-implement
+description: Implement a ready issue - targeted tests, full verification, PR, then factory:review
 steps:
-  - id: mark-working
-    name: Mark issue as factory:working
-    # Update the issue to add the factory:working label and remove factory:ready
-  - id: factory-implement
+  - id: implement
     name: Run factory-implement skill
     skill: factory-implement
-    prompt: "Implement the following issue: {{task}}"
-    onFail:
-      retry: factory-implement
-      max: 2
+    prompt: |
+      Implement this GitHub issue: {{task}}
+
+      First action: run `pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event start -Issue <issue number>`
+      to move the issue to factory:working. When done, open or update the PR, then write the structured
+      result as JSON to .factory/implement-result.json (create the directory) with the issue number in
+      "issue" and the PR URL in "pr". Do not set any other factory:* label; the workflow routes state.
   - id: targeted-tests
     name: Run targeted tests
-    # Run scripts/factory/test-changed.ps1
+    command: pwsh -NoProfile -File ./scripts/factory/test-changed.ps1
     onFail:
-      retry: factory-implement
-      max: 1
-  - id: retry-check
-    name: Retry if appropriate
-    # Check if we should retry based on policies/retry.yaml
+      retry: implement
+      max: 2
   - id: full-verification
     name: Run required verification
-    # Run scripts/factory/verify.ps1
-  - id: create-pr
-    name: Create or update PR
-    # Create a pull request with the changes
-  - id: set-review
-    name: Mark issue as factory:review
-    # Update the issue to add the factory:review label and remove factory:working
+    command: pwsh -NoProfile -File ./scripts/factory/verify.ps1
+    onFail:
+      retry: implement
+      max: 1
+  - id: validate
+    name: Validate implementation result
+    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    onFail:
+      retry: implement
+      max: 1
+  - id: route
+    name: Set factory:review
+    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json

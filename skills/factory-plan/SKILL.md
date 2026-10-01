@@ -96,13 +96,9 @@ source: skills/factory-plan/SKILL.md
 
 ### 11. Route the Issue
 
-- If the plan is complete and meets the Definition of Ready:
-  - Remove `factory:needs-plan`.
-  - Add `factory:ready`.
-- If the plan has unresolved blocking questions:
-  - Remove `factory:needs-plan`.
-  - Add `factory:needs-help`.
-  - Include a clear summary of what human input is needed.
+- Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise `not-ready` with the questions in `unresolvedQuestions`.
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
+- The workflow posts the plan to the issue and routes to `factory:ready` or `factory:needs-help` (and holds `risk:high` issues for human plan approval).
 
 ## Output Format
 

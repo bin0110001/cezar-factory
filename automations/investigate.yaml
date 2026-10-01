@@ -1,7 +1,0 @@
-name: investigate
-description: Launch investigate workflow when workflow reaches retry limit or issue receives investigation-specific label
-trigger:
-  - workflow.retry_limit_exceeded: true
-  - issue.gains_label: factory:investigate   # Placeholder for investigation-specific label
-action:
-  - launch_workflow: investigate
