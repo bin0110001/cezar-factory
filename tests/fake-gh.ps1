@@ -1,6 +1,8 @@
 # Fake `gh` for route-state tests. State lives in the JSON file named by $env:FAKE_GH_STATE: { labels: [...], comments: [...] }.
 $state = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
 $a = @($args)
+# Real gh receives plain strings; PowerShell turns unquoted `a,b` into an array, which gh would reject.
+foreach ($x in $a) { if ($x -isnot [string] -and $x -isnot [int]) { Write-Error "fake gh: non-string argument ($($x.GetType().Name)) in: $($a -join ' ')"; exit 2 } }
 if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
     @{ labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
 }

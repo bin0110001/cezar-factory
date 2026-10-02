@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.3.1
+factory-version: 0.3.2
 source: skills/factory-investigate/SKILL.md
 -->
 # Factory Investigate Skill

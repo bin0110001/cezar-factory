@@ -187,7 +187,8 @@ try {
         $global:LASTEXITCODE = 0
         $a = @{ Event = $Event; GhCommand = $gh }
         if ($Obj) { $a.Path = $f } else { $a.Issue = $Issue }
-        & $route @a *>&1 | Out-Null; $global:LASTEXITCODE
+        try { & $route @a *>&1 | Out-Null } catch { $global:LASTEXITCODE = 1 }
+        $global:LASTEXITCODE
     }
     $plan = @{ issue = 7; objective = 'o'; acceptanceCriteria = 'a'; nonGoals = 'n'; risks = 'r'; dependencies = 'd'; suggestedWorkBreakdown = '1. do'; requiredProjectSkills = @('s'); unresolvedQuestions = ''; readyNotReadyStatus = 'ready' }
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-02
+### Fixed
+- `route-state.ps1` passed `--json labels,comments` unquoted, which PowerShell turns into an array, so the real `gh` rejected it. Quoted. The fake `gh` used in self-tests now rejects non-string arguments, and a harness exception is reported as a failed assertion rather than aborting the run. Found by the first real pilot run, right after 0.3.1.
+
 ## [0.3.1] - 2026-10-02
 ### Fixed
 - `route-state.ps1` recursed forever when run with the real `gh`: its helper function was named `Gh`, which PowerShell resolves before the executable. Renamed to `Invoke-Gh`; a self-test now fails any script that defines a function shadowing `gh`, `git`, `uv`, `npm`, `pwsh` or `node`. Found by the first real pilot run.

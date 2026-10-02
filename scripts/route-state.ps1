@@ -45,7 +45,7 @@ if ($Event -ne 'start') {
 if ($Issue -lt 1) { Fail 'issue number required' }
 
 # --- GitHub helpers ---------------------------------------------------------
-$view = Invoke-Gh issue view $Issue --json labels,comments | ConvertFrom-Json
+$view = Invoke-Gh issue view $Issue --json 'labels,comments' | ConvertFrom-Json
 $labels = @($view.labels | ForEach-Object { $_.name })
 $comments = @($view.comments | ForEach-Object { $_.body })
 $current = @($labels | Where-Object { $stateLabels -contains $_ })
@@ -89,7 +89,7 @@ switch ($Event) {
             # previous attempt already created (matched by the parent marker in the body and the title).
             $marker = "<!-- factory-parent:$Issue -->"
             $existing = @{}
-            foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json number,title,body --limit 200 | ConvertFrom-Json)) {
+            foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body' --limit 200 | ConvertFrom-Json)) {
                 if ($e.body -like "*$marker*") { $existing[$e.title] = [int]$e.number }
             }
             $subs = @($result.subIssues)
