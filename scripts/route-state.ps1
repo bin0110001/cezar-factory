@@ -20,7 +20,7 @@ Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$Msg) { Write-Output (@{ status = 'refused'; event = $Event; reason = $Msg } | ConvertTo-Json -Compress); exit 1 }
-function Gh { & $GhCommand @args; if ($LASTEXITCODE -ne 0) { throw "gh $($args -join ' ') failed ($LASTEXITCODE)" } }
+function Invoke-Gh { & $GhCommand @args; if ($LASTEXITCODE -ne 0) { throw "gh $($args -join ' ') failed ($LASTEXITCODE)" } }
 
 # --- policy ---------------------------------------------------------------
 $stateLabels = @()
@@ -45,7 +45,7 @@ if ($Event -ne 'start') {
 if ($Issue -lt 1) { Fail 'issue number required' }
 
 # --- GitHub helpers ---------------------------------------------------------
-$view = Gh issue view $Issue --json labels,comments | ConvertFrom-Json
+$view = Invoke-Gh issue view $Issue --json labels,comments | ConvertFrom-Json
 $labels = @($view.labels | ForEach-Object { $_.name })
 $comments = @($view.comments | ForEach-Object { $_.body })
 $current = @($labels | Where-Object { $stateLabels -contains $_ })
@@ -60,11 +60,11 @@ function Set-State([string]$Target) {
     $ghArgs = @('issue', 'edit', $Issue)
     if ($current -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
-    if ($ghArgs.Count -gt 3) { Gh @ghArgs | Out-Null }
+    if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
 }
 function Add-Comment([string]$Body) {
     $f = [IO.Path]::GetTempFileName()
-    try { [IO.File]::WriteAllText($f, $Body); Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
+    try { [IO.File]::WriteAllText($f, $Body); Invoke-Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
 function Text($v) { if ($v -is [array]) { ($v | ForEach-Object { "- $_" }) -join "`n" } else { "$v" } }
 function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence, [string]$Hypothesis, [string]$Decision) {
@@ -89,7 +89,7 @@ switch ($Event) {
             # previous attempt already created (matched by the parent marker in the body and the title).
             $marker = "<!-- factory-parent:$Issue -->"
             $existing = @{}
-            foreach ($e in @(Gh issue list --state all --search "factory-parent:$Issue in:body" --json number,title,body --limit 200 | ConvertFrom-Json)) {
+            foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json number,title,body --limit 200 | ConvertFrom-Json)) {
                 if ($e.body -like "*$marker*") { $existing[$e.title] = [int]$e.number }
             }
             $subs = @($result.subIssues)
@@ -100,7 +100,7 @@ switch ($Event) {
                 $f = [IO.Path]::GetTempFileName()
                 try {
                     [IO.File]::WriteAllText($f, $body)
-                    $url = (Gh issue create --title $sub.title --body-file $f --label "factory:new,$($sub.type),$($sub.risk)" | Out-String).Trim()
+                    $url = (Invoke-Gh issue create --title $sub.title --body-file $f --label "factory:new,$($sub.type),$($sub.risk)" | Out-String).Trim()
                 } finally { Remove-Item $f -ErrorAction SilentlyContinue }
                 if ($url -notmatch '/issues/(\d+)') { throw "could not read created issue number from: $url" }
                 $numbers += [int]$Matches[1]

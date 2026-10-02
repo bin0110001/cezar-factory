@@ -75,6 +75,14 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     Assert "workflow $($f.Name) retry targets earlier step" $okRetry
 }
 
+# No script may define a function named like the external command it shells out to (`gh`): PowerShell
+# resolves functions before executables, so `& 'gh'` would call the function and recurse forever.
+foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$null)
+    $bad = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in 'gh', 'git', 'uv', 'npm', 'pwsh', 'node' }, $true))
+    Assert "no command-shadowing functions in $($f.Name)" ($bad.Count -eq 0)
+}
+
 # ---- Scenarios -----------------------------------------------------------
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null

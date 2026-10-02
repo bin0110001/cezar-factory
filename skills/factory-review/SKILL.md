@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.3.0
+factory-version: 0.3.1
 source: skills/factory-review/SKILL.md
 -->
 # Factory Review Skill

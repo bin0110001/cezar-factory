@@ -37,7 +37,7 @@ See the documentation in the docs/ directory for detailed information on:
 
 ## Version
 
-Current factory version: 0.3.0 (see VERSION file)
+Current factory version: 0.3.1 (see VERSION file)
 
 ## License
 
