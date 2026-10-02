@@ -84,6 +84,35 @@ switch ($Event) {
     'plan-result' {
         Assert-Source 'factory:needs-plan', 'factory:new'
         $plan = "## Factory plan`n`n**Objective**`n$(Text $result.objective)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteria)`n`n**Non-goals**`n$(Text $result.nonGoals)`n`n**Risks**`n$(Text $result.risks)`n`n**Dependencies**`n$(Text $result.dependencies)`n`n**Work breakdown**`n$(Text $result.suggestedWorkBreakdown)`n`n**Project skills**`n$(Text $result.requiredProjectSkills)"
+        if ($result.readyNotReadyStatus -eq 'decomposed') {
+            # Create each sub-issue as factory:new (humans choose which to plan next), skipping any that a
+            # previous attempt already created (matched by the parent marker in the body and the title).
+            $marker = "<!-- factory-parent:$Issue -->"
+            $existing = @{}
+            foreach ($e in @(Gh issue list --state all --search "factory-parent:$Issue in:body" --json number,title,body --limit 200 | ConvertFrom-Json)) {
+                if ($e.body -like "*$marker*") { $existing[$e.title] = [int]$e.number }
+            }
+            $subs = @($result.subIssues)
+            $numbers = @()
+            foreach ($sub in $subs) {
+                if ($existing.ContainsKey($sub.title)) { $numbers += $existing[$sub.title]; continue }
+                $body = "$($sub.body)`n`n---`nParent: #$Issue (decomposed by the factory planner)`n$marker"
+                $f = [IO.Path]::GetTempFileName()
+                try {
+                    [IO.File]::WriteAllText($f, $body)
+                    $url = (Gh issue create --title $sub.title --body-file $f --label "factory:new,$($sub.type),$($sub.risk)" | Out-String).Trim()
+                } finally { Remove-Item $f -ErrorAction SilentlyContinue }
+                if ($url -notmatch '/issues/(\d+)') { throw "could not read created issue number from: $url" }
+                $numbers += [int]$Matches[1]
+            }
+            $rows = for ($i = 0; $i -lt $subs.Count; $i++) {
+                $deps = if ($subs[$i].PSObject.Properties['dependsOn'] -and @($subs[$i].dependsOn).Count) { (@($subs[$i].dependsOn) | ForEach-Object { "#$($numbers[$_])" }) -join ', ' } else { '-' }
+                "| #$($numbers[$i]) | $($subs[$i].title) | $($subs[$i].type) | $($subs[$i].risk) | $deps |"
+            }
+            $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues, all labelled ``factory:new``. Review them, then add ``factory:needs-plan`` to the ones you want planned (planning runs one issue per poll).`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
+            Add-Comment ($plan + "`n`n" + $table)
+            Set-State 'factory:human-review'; Done 'factory:human-review' "decomposed into $($subs.Count) sub-issues"
+        }
         if ($result.readyNotReadyStatus -ne 'ready') {
             Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'

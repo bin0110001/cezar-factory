@@ -51,6 +51,27 @@ function Blank($v) { $null -eq $v -or ($v -is [string] -and ($v.Trim() -eq '' -o
 if (-not $errors.Count) {
     switch ($Kind) {
         'plan' {
+            if ($result.readyNotReadyStatus -eq 'decomposed') {
+                $policies = Join-Path $SchemaDir '../policies'
+                $labelText = Get-Content -Raw (Join-Path $policies 'labels.yaml')
+                $maxSub = if ((Get-Content -Raw (Join-Path $policies 'retry.yaml')) -match 'max_sub_issues:\s*(\d+)') { [int]$Matches[1] } else { 40 }
+                $subs = @($result.subIssues)
+                if (-not $result.ContainsKey('subIssues') -or $subs.Count -eq 0) { $errors.Add('status is decomposed but subIssues is empty') }
+                elseif ($subs.Count -gt $maxSub) { $errors.Add("subIssues has $($subs.Count) entries; the limit is $maxSub (group related work or split across passes)") }
+                else {
+                    if (-not (Blank $result.unresolvedQuestions)) { $errors.Add('status is decomposed but unresolvedQuestions is not empty') }
+                    $titles = @()
+                    for ($i = 0; $i -lt $subs.Count; $i++) {
+                        $sub = $subs[$i]
+                        if ($sub -isnot [hashtable]) { $errors.Add("subIssues[$i] must be an object"); continue }
+                        foreach ($k in 'title', 'body', 'type', 'risk') { if (-not $sub.ContainsKey($k) -or (Blank $sub[$k])) { $errors.Add("subIssues[$i].$k is required") } }
+                        if ($sub.type -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.type))\s*$") { $errors.Add("subIssues[$i].type '$($sub.type)' is not a known label (e.g. type:feature)") }
+                        if ($sub.risk -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.risk))\s*$") { $errors.Add("subIssues[$i].risk '$($sub.risk)' is not a known label (e.g. risk:medium)") }
+                        if ($sub.title) { if ($titles -contains $sub.title) { $errors.Add("subIssues[$i].title duplicates an earlier title") }; $titles += $sub.title }
+                        if ($sub.ContainsKey('dependsOn')) { foreach ($d in @($sub.dependsOn)) { if ($d -isnot [int] -and $d -isnot [long] -or $d -lt 0 -or $d -ge $subs.Count -or $d -eq $i) { $errors.Add("subIssues[$i].dependsOn has invalid index '$d'") } } }
+                    }
+                }
+            }
             if ($result.readyNotReadyStatus -eq 'ready') {
                 # Definition of Ready: no unresolved blocking questions, criteria and breakdown present.
                 if (-not (Blank $result.unresolvedQuestions)) { $errors.Add('status is ready but unresolvedQuestions is not empty') }

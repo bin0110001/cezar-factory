@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.2.1
+factory-version: 0.3.0
 source: skills/factory-implement/SKILL.md
 -->
 # Factory Implement Skill

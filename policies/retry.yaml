@@ -3,6 +3,9 @@
 max_implementation_retries: 2
 max_review_fix_rounds: 2
 
+# Largest number of sub-issues one planning pass may create (decomposition).
+max_sub_issues: 40
+
 environment_failure_handling: "retry_with_backoff"
 flaky_test_handling: "retry_once_then_investigate"
 

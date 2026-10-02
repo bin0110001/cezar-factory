@@ -64,7 +64,7 @@ stateDiagram-v2
 | Event | Required source | Result |
 | --- | --- | --- |
 | start | ready, changes-requested, blocked (no-op if working) | working |
-| plan-result | needs-plan, new | ready; needs-help if not ready or `risk:high` (human plan approval) |
+| plan-result | needs-plan, new | ready; needs-help if not ready or `risk:high` (human plan approval); human-review if decomposed (sub-issues created as `factory:new`, humans pick which to plan) |
 | implement-result | working | review; investigate if the agent reports failure |
 | review-result | review | human-review on approval; changes-requested otherwise; needs-help once `max_review_fix_rounds` is reached |
 | investigate-result | investigate, working | ready once if the retry is appropriate and confidence is not low; otherwise needs-help |

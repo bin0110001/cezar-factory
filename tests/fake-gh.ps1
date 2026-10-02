@@ -15,6 +15,15 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $f = $a[$a.IndexOf('--body-file') + 1]
     $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
 }
+elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
+    @($state.issues | Where-Object { $_ }) | ConvertTo-Json -Depth 5 -Compress -AsArray
+}
+elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
+    $n = 100 + @($state.issues | Where-Object { $_ }).Count
+    $body = [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1])
+    $state.issues = @($state.issues | Where-Object { $_ }) + @{ number = $n; title = $a[$a.IndexOf('--title') + 1]; body = $body; labels = $a[$a.IndexOf('--label') + 1] }
+    "https://github.com/x/y/issues/$n"
+}
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
 else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
 $state | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE

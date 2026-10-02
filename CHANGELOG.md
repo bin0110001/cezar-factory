@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-02
+### Added
+- Decomposition: a plan may end `readyNotReadyStatus: decomposed` with a `subIssues` list (title, body, type, risk, dependsOn). `route-state.ps1` creates the sub-issues as `factory:new` linked to the parent (idempotent on re-run), comments a summary table, and routes the parent to `factory:human-review`. `validate-result.ps1` checks counts, labels, duplicate titles and dependency indexes; limit `max_sub_issues` (default 40) in `policies/retry.yaml`.
+- `factory-plan` skill guidance for when and how to decompose.
+
 ## [0.2.1] - 2026-10-01
 ### Fixed
 - `verify.ps1`, `diff.ps1`, `install.ps1` and `update.ps1` now always set an exit code; `verify.ps1` crashed on `$LASTEXITCODE` when run as a standalone process

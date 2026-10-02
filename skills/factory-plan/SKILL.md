@@ -1,6 +1,6 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.2.1
+factory-version: 0.3.0
 source: skills/factory-plan/SKILL.md
 -->
 # Factory Plan Skill
@@ -84,9 +84,16 @@ source: skills/factory-plan/SKILL.md
 
 ### 9. Decide Whether Decomposition Is Needed
 
-- If the issue is large or complex, consider decomposing into sub-issues.
-- Each sub-issue should be independently planable and implementable.
-- Define the integration order and dependencies between sub-issues.
+- Decompose when the issue is too large to implement and review as one PR, or when the issue itself asks you to break a document, spec or epic into issues.
+- Set `readyNotReadyStatus` to `decomposed` and list the sub-issues in `subIssues`. Do **not** create issues yourself; the workflow creates them from your list (as `factory:new`, so a human decides which to plan next).
+- Each sub-issue is `{ "title", "body", "type", "risk", "dependsOn" }`:
+  - `title`: short and unique, in the form a maintainer would file ("Phase 3: deterministic evaluation engine").
+  - `body`: self-contained. State the objective, the concrete tasks, acceptance criteria, and a pointer to the source (document path and section). A planner reading only this issue must be able to plan it without the parent.
+  - `type`: one of `type:bug|feature|refactor|test|docs|maintenance`. `risk`: `risk:low|medium|high` per the project's risk guidance.
+  - `dependsOn`: zero-based indexes of earlier entries in `subIssues` that must land first. Never self-reference.
+- Size each sub-issue to roughly one reviewable PR; group tiny related tasks together, split anything spanning several layers. Prefer fewer, meaningful issues over one per checkbox; the cap is `max_sub_issues` in `policies/retry.yaml` (default 40).
+- Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
+- In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
 
 ### 10. Update the Issue with the Plan
 
@@ -98,7 +105,7 @@ source: skills/factory-plan/SKILL.md
 
 - Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise `not-ready` with the questions in `unresolvedQuestions`.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
-- The workflow posts the plan to the issue and routes to `factory:ready` or `factory:needs-help` (and holds `risk:high` issues for human plan approval).
+- The workflow posts the plan to the issue and routes to `factory:ready` or `factory:needs-help` (and holds `risk:high` issues for human plan approval). For `decomposed` it creates the sub-issues, comments the list, and routes the parent to `factory:human-review`.
 
 ## Output Format
 
@@ -114,6 +121,9 @@ Produce a structured plan result conforming to `plan.schema.json`:
   "suggestedWorkBreakdown": "Ordered list of implementation steps",
   "requiredProjectSkills": ["skill-ids needed for this task"],
   "unresolvedQuestions": "Questions requiring human input (empty if none)",
-  "readyNotReadyStatus": "ready or not-ready"
+  "readyNotReadyStatus": "ready, not-ready or decomposed",
+  "subIssues": [{ "title": "...", "body": "...", "type": "type:feature", "risk": "risk:medium", "dependsOn": [0] }]
 }
 ```
+
+`subIssues` is required only when `readyNotReadyStatus` is `decomposed`.

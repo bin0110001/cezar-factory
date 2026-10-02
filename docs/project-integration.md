@@ -198,7 +198,7 @@ Cezar uses for runtime state. Projects can include it from their root
 ```gitignore
 # Exclude Cezar runtime artifacts
 # managed-by: cezar-factory
-# factory-version: 0.2.1
+# factory-version: 0.3.0
 # source: templates/gitignore.fragment
 # DO NOT EDIT DIRECTLY
 /.ai/factory/.gitignore-fragment

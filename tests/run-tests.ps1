@@ -233,6 +233,26 @@ try {
     Set-Gh @('factory:ready', 'factory:working', 'type:bug')
     Assert 'route: conflicting state labels collapse to one' ((Invoke-Route 'implement-result' $impl) -eq 0 -and @((Get-Gh).labels | Where-Object { $_ -like 'factory:*' }).Count -eq 1)
 
+    # ---- Decomposition ------------------------------------------------------
+    $subs = @(
+        @{ title = 'Phase A'; body = 'Do A'; type = 'type:feature'; risk = 'risk:medium' },
+        @{ title = 'Phase B'; body = 'Do B'; type = 'type:test'; risk = 'risk:low'; dependsOn = @(0) }
+    )
+    $dec = With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = $subs }
+    Assert 'validate: good decomposition passes' ((Test-Validate 'plan' $dec) -eq 0)
+    Assert 'validate: decomposed without subIssues fails' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed' })) -ne 0)
+    Assert 'validate: unknown sub-issue label fails' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @(@{ title = 't'; body = 'b'; type = 'type:nope'; risk = 'risk:low' }) })) -ne 0)
+    Assert 'validate: bad dependsOn index fails' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @(@{ title = 't'; body = 'b'; type = 'type:bug'; risk = 'risk:low'; dependsOn = @(5) }) })) -ne 0)
+    Assert 'validate: duplicate sub-issue titles fail' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @($subs[0], $subs[0]) })) -ne 0)
+    Set-Gh @('factory:needs-plan')
+    Assert 'route: decomposed -> human-review' ((Invoke-Route 'plan-result' $dec) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
+    $iss = @((Get-Gh).issues)
+    Assert 'route: sub-issues created' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:new,type:feature,risk:medium')
+    Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
+    Assert 'route: parent comment lists children and dependencies' ((@((Get-Gh).comments)[-1]) -match '#100' -and (@((Get-Gh).comments)[-1]) -match '\| #101 \| Phase B .* \| #100 \|')
+    $st = Get-Gh; $st.labels = @('factory:needs-plan'); $st | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: re-running does not duplicate sub-issues' ((Invoke-Route 'plan-result' $dec) -eq 0 -and @((Get-Gh).issues).Count -eq 2)
+
     $labelScript = Join-Path $rp '.ai/factory/scripts/create-labels.ps1'
     Set-Gh @()
     & $labelScript -GhCommand $gh *>&1 | Out-Null

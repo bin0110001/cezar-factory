@@ -40,8 +40,43 @@
       "type": "string",
       "enum": [
         "ready",
-        "not-ready"
+        "not-ready",
+        "decomposed"
       ]
+    },
+    "subIssues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "body",
+          "type",
+          "risk"
+        ]
+      }
     }
   },
   "required": [
