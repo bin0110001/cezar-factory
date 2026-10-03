@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "baseBranch": "main",
+  "tracker": "github",
+  "validation": {
+    "commands": [
+      "npm run typecheck",
+      "npm test",
+      "npm run test:unit",
+      "npm run build",
+      "npm run test:package"
+    ]
+  },
+  "labels": {
+    "enabled": true,
+    "pipeline": [
+      "factory:new",
+      "factory:needs-plan",
+      "factory:needs-help",
+      "factory:ready",
+      "factory:working",
+      "factory:review",
+      "factory:changes-requested",
+      "factory:human-review",
+      "factory:blocked",
+      "factory:done"
+    ],
+    "category": [
+      "type:bug",
+      "type:feature",
+      "type:refactor",
+      "type:test",
+      "type:docs",
+      "type:maintenance"
+    ],
+    "meta": [
+      "factory:needs-plan",
+      "factory:needs-help",
+      "factory:ready",
+      "factory:working",
+      "factory:review",
+      "factory:changes-requested",
+      "factory:human-review",
+      "factory:blocked",
+      "factory:done"
+    ],
+    "priority": [
+      "priority-low",
+      "priority-medium",
+      "priority-high",
+      "priority-extreme"
+    ],
+    "risk": [
+      "risk-low",
+      "risk-medium",
+      "risk-high"
+    ]
+  },
+  "qaGate": true
+}

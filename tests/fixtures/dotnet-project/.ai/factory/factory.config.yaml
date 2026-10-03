@@ -1,0 +1,30 @@
+# Project-owned factory configuration.
+factory:
+  source: "cezar-factory"
+  version: "0.3.2"
+
+workflows:
+  - plan
+  - implement
+  - review
+  - fix-review
+  - investigate
+
+skills:
+  - factory-plan
+  - factory-implement
+  - factory-review
+  - factory-fix
+  - factory-investigate
+
+features:
+  knowledge_extraction: false
+  maintenance: false
+
+project:
+  type: dotnet
+
+validation:
+  changed: "./scripts/factory/test-changed.ps1"
+  full: "./scripts/factory/test-full.ps1"
+  verify: "./scripts/factory/verify.ps1"

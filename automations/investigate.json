@@ -1,0 +1,27 @@
+{
+  "name": "[factory] investigate",
+  "description": "Investigate issues that gain factory:investigate (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "github",
+  "events": [
+    "issue.labeled"
+  ],
+  "intervalSeconds": 300,
+  "filters": {
+    "changedLabels": [
+      "factory:investigate"
+    ],
+    "allLabels": [
+      "factory:investigate"
+    ],
+    "excludeLabels": [
+      "factory:blocked"
+    ],
+    "maxRecords": 1
+  },
+  "task": {
+    "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
+    "workflow": "factory-investigate",
+    "worktree": true,
+    "autonomous": true
+  }
+}

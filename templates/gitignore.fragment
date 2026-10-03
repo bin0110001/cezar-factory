@@ -1,0 +1,5 @@
+# Cezar factory run output (agent result files, sync logs)
+.factory/
+
+# Cezar runtime state is ignored by Cezar itself via .ai/cezar/.gitignore;
+# workflows/ and skills/ under .ai/cezar are committable and must stay tracked.

@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryConfig",
+  "type": "object",
+  "properties": {
+    "factory": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "required": ["source", "version"],
+      "additionalProperties": false
+    },
+    "workflows": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "knowledge_extraction": { "type": "boolean" },
+        "maintenance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "changed": { "type": "string" },
+        "full": { "type": "string" },
+        "verify": { "type": "string" }
+      },
+      "required": ["changed", "full", "verify"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["factory", "workflows", "skills", "features", "project", "validation"],
+  "additionalProperties": false
+}

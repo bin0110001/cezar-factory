@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InvestigationResult",
+  "type": "object",
+  "properties": {
+    "issue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "failureClassification": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "attemptsReviewed": {
+      "type": "string"
+    },
+    "rootCauseHypothesis": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string"
+    },
+    "recommendedAction": {
+      "type": "string"
+    },
+    "automaticRetryAppropriate": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "issue",
+    "failureClassification",
+    "evidence",
+    "attemptsReviewed",
+    "rootCauseHypothesis",
+    "confidence",
+    "recommendedAction",
+    "automaticRetryAppropriate"
+  ]
+}

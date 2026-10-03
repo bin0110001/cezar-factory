@@ -1,0 +1,60 @@
+# Risk Policy
+
+# Risk levels and their descriptions
+risk-levels:
+  risk:low:
+    description: Low risk changes (documentation, tests, minor UI, small isolated bug fixes)
+    requires-human-review: false
+    allows-auto-merge: true
+    requires-human-plan-approval: false
+    requires-human-merge: false
+    requires-full-validation: false
+    flow: implement -> test -> review -> human-review (optional after system proves reliable)
+  risk:medium:
+    description: Medium risk changes (feature work, refactoring, networking, persistence)
+    requires-human-review: true
+    allows-auto-merge: false
+    requires-human-plan-approval: false
+    requires-human-merge: true
+    requires-full-validation: true
+    flow: implement -> test -> review -> human PR review
+  risk:high:
+    description: High risk changes (authentication, security, data migration, billing, large architectural changes, deployment infrastructure)
+    requires-human-review: true
+    allows-auto-merge: false
+    requires-human-plan-approval: true
+    requires-human-merge: true
+    requires-full-validation: true
+    flow: human plan approval -> implement -> full validation -> independent review -> human merge
+
+# Risk assessment guidelines
+assessment:
+  blast-radius-factors:
+    - Number of files changed
+    - Public API changes
+    - Database schema changes
+    - Security/authentication changes
+    - Performance impact
+  change-type-factors:
+    - Documentation: low
+    - Tests: low
+    - Refactoring: medium
+    - New features: medium
+    - Bug fixes: low-medium
+    - Architectural changes: high
+    - Security changes: high
+
+# Human gate triggers
+human-gates:
+  plan-approval:
+    trigger: risk:high issues entering factory:ready
+    action: require human plan approval before implementation
+  review:
+    trigger: risk:medium or risk:high issues entering factory:review
+    action: require independent review
+  merge:
+    trigger: risk:medium or risk:high PRs
+    action: require human merge approval
+  escalation:
+    trigger: repeated failures or investigation needed
+    action: escalate with summary and context

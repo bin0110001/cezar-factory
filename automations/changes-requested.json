@@ -1,0 +1,27 @@
+{
+  "name": "[factory] changes-requested",
+  "description": "Fix issues that gain factory:changes-requested (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "github",
+  "events": [
+    "issue.labeled"
+  ],
+  "intervalSeconds": 300,
+  "filters": {
+    "changedLabels": [
+      "factory:changes-requested"
+    ],
+    "allLabels": [
+      "factory:changes-requested"
+    ],
+    "excludeLabels": [
+      "factory:blocked"
+    ],
+    "maxRecords": 1
+  },
+  "task": {
+    "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
+    "workflow": "factory-fix-review",
+    "worktree": true,
+    "autonomous": true
+  }
+}
