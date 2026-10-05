@@ -15,15 +15,17 @@ This factory provides:
 ## Quick start
 
 ```powershell
-# 1. Install into a project (creates .ai/factory/factory.config.yaml on first run)
+# 1. Configure remote Cezar targets in config/factory-projects.json
+# 2. Validate and synchronize Factory automations without a project checkout
+./scripts/push-factory-updates.ps1 -SyncAutomations
+```
+
+For a first-time project integration, or when Cezar needs project-local
+workflows, skills, policies, or scripts, use the local fallback:
+
+```powershell
 ./scripts/install.ps1 -ProjectPath ../my-project -ProjectType godot
-# 2. Provide scripts/factory/{test-changed,test-full,verify}.ps1 in the project, add .factory/ to its .gitignore
-# 3. Check it
 ./scripts/verify.ps1 -ProjectPath ../my-project
-# 4. Create the GitHub labels
-pwsh ../my-project/.ai/factory/scripts/create-labels.ps1
-# 5. With Cezar running (CEZ_AUTOMATIONS=1, CEZ_API_URL/CEZ_PROJECT_ID set), create the automations (paused)
-pwsh ../my-project/.ai/factory/scripts/sync-automations.ps1
 ```
 
 Run the factory's own tests with `pwsh tests/run-tests.ps1`.

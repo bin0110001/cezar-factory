@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-10-05
+
+### Changed
+- Made remote-only Cezar automation synchronization the documented default
+  release pipeline; local project installation is now an explicit fallback.
+
+## [0.3.8] - 2026-10-05
+
+### Added
+- Remote-only Cezar automation synchronization from the Factory checkout,
+  without requiring a local application project checkout.
+
 ## [0.3.7] - 2026-10-05
 
 ### Added

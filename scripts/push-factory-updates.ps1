@@ -4,9 +4,10 @@
 Pushes the current Factory version into explicitly configured projects.
 
 .DESCRIPTION
-Updates each project's factory.version pin, applies the managed-file update,
-verifies it, and optionally reconciles live Cezar automations. Targets must be
-explicit: pass -ProjectPath or maintain a host-local targets JSON file.
+Updates each local project's factory.version pin and managed files, or, for a
+remote-only target, reconciles live Cezar automations directly from this
+Factory checkout. Targets must be explicit: pass -ProjectPath or maintain a
+host-local targets JSON file.
 #>
 [CmdletBinding()]
 param(
@@ -37,7 +38,17 @@ if (-not $targets.Count) { throw 'No Factory update targets configured.' }
 & (Join-Path $factory 'scripts/validate-automation-catalog.ps1')
 
 foreach ($target in $targets) {
-    if (-not $target.projectPath) { throw 'Each update target requires projectPath.' }
+    if (-not $target.projectPath -and -not $target.projectId) { throw 'Each update target requires projectPath or projectId.' }
+    if (-not $target.projectPath) {
+        if (-not $SyncAutomations) { throw "Remote Cezar target '$($target.projectId)' requires -SyncAutomations." }
+        if (-not $target.apiUrl) { throw "Remote Cezar target '$($target.projectId)' requires apiUrl." }
+        $syncArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/sync-automations.ps1'), '-SourceOnly', '-FactoryPath', $factory, '-ApiUrl', $target.apiUrl, '-ProjectId', $target.projectId)
+        if ($DryRun) { $syncArgs += '-DryRun' }
+        & pwsh @syncArgs
+        if ($LASTEXITCODE -ne 0) { throw "Remote Cezar target $($target.projectId): automation synchronization failed." }
+        Write-Host "Synchronized Factory $version automations to Cezar project $($target.projectId)" -ForegroundColor Green
+        continue
+    }
     $project = (Resolve-Path $target.projectPath).Path
     $configPath = Join-Path $project '.ai/factory/factory.config.yaml'
     if (-not (Test-Path $configPath)) { throw "${project}: Factory is not installed (.ai/factory/factory.config.yaml is missing)." }

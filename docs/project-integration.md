@@ -1,10 +1,13 @@
 # Project Integration Model
 
-This document describes how individual projects integrate with the cezar factory.
+This document describes the optional local project integration layer. The
+default Factory release path synchronizes automations directly to Cezar and
+does not require this checkout layout.
 
 ## Project Structure
 
-Each project integrating with the cezar factory follows this structure:
+Projects that need Factory workflows, skills, policies, scripts, or pinned
+local files follow this structure:
 
 project/
 ├── .ai/
@@ -34,7 +37,8 @@ project/
 
 ## Factory Configuration
 
-Each project must maintain a factory configuration in .ai/factory/factory.config.yaml:
+Projects using the local fallback must maintain a factory configuration in
+`.ai/factory/factory.config.yaml`:
 
 `yaml
 factory:

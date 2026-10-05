@@ -13,9 +13,11 @@ Needs CEZ_API_URL and CEZ_PROJECT_ID (or -ApiUrl/-ProjectId); Cezar must run wit
 #>
 [CmdletBinding()]
 param(
-    [string]$ProjectPath = (Get-Location).Path,
+    [string]$ProjectPath = '',
+    [string]$FactoryPath = (Join-Path $PSScriptRoot '..'),
     [string]$ApiUrl = $env:CEZ_API_URL,
     [string]$ProjectId = $env:CEZ_PROJECT_ID,
+    [switch]$SourceOnly,
     [switch]$Enable,
     [switch]$Prune,
     [switch]$DryRun
@@ -26,13 +28,22 @@ $prefix = '[factory] '
 
 if (-not $ApiUrl) { throw 'CEZ_API_URL (or -ApiUrl) is required' }
 $scope = if ($ProjectId) { "$($ApiUrl.TrimEnd('/'))/api/v1/p/$([uri]::EscapeDataString($ProjectId))" } else { "$($ApiUrl.TrimEnd('/'))/api/v1" }
-$fdir = Join-Path $ProjectPath '.ai/factory'
-$version = if (Test-Path (Join-Path $fdir 'VERSION')) { (Get-Content -Raw (Join-Path $fdir 'VERSION')).Trim() } else { 'unknown' }
-$logFile = Join-Path $ProjectPath '.factory/automation-sync.log'
+if ($SourceOnly) {
+    $sourceRoot = (Resolve-Path $FactoryPath).Path
+    $automationDir = Join-Path $sourceRoot 'automations'
+    $version = (Get-Content -Raw (Join-Path $sourceRoot 'VERSION')).Trim()
+    $logFile = $null
+} else {
+    if (-not $ProjectPath) { throw 'ProjectPath is required unless -SourceOnly is used.' }
+    $fdir = Join-Path $ProjectPath '.ai/factory'
+    $automationDir = Join-Path $fdir 'automations'
+    $version = if (Test-Path (Join-Path $fdir 'VERSION')) { (Get-Content -Raw (Join-Path $fdir 'VERSION')).Trim() } else { 'unknown' }
+    $logFile = Join-Path $ProjectPath '.factory/automation-sync.log'
+}
 
 function Log([string]$Msg) {
     Write-Host $Msg
-    if (-not $DryRun) {
+    if (-not $DryRun -and $logFile) {
         New-Item -ItemType Directory -Force (Split-Path $logFile) | Out-Null
         Add-Content $logFile "$(Get-Date -Format s) $Msg"
     }
@@ -60,7 +71,7 @@ function Test-Subset($Want, $Have) {
 }
 
 $wanted = @{}
-foreach ($f in Get-ChildItem (Join-Path $fdir 'automations') -Filter *.json -ErrorAction SilentlyContinue) {
+foreach ($f in Get-ChildItem $automationDir -Filter *.json -ErrorAction SilentlyContinue) {
     $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
     if (-not $def.name.StartsWith($prefix)) { throw "$($f.Name): factory automation names must start with '$prefix'" }
     $def.description = "$($def.description) [cezar-factory $version]"

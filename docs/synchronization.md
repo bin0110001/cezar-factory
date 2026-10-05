@@ -1,6 +1,24 @@
 # Factory Synchronization
 
-How the factory is installed into, upgraded in, and verified against a project. All scripts are PowerShell 7 and live in `scripts/`.
+How the factory is synchronized to Cezar by default, with local project
+installation as a fallback. All scripts are PowerShell 7 and live in `scripts/`.
+
+## Default release pipeline
+
+Use remote-only synchronization whenever the target project already exists in
+Cezar. Configure `apiUrl` and `projectId` in the host-local
+`config/factory-projects.json`, omit `projectPath`, and run:
+
+```powershell
+./scripts/push-factory-updates.ps1 -SyncAutomations
+```
+
+This reads automation definitions and the Factory version from the current
+checkout and updates only the target Cezar project's `[factory]` automations.
+No application checkout is required.
+
+Use the local installation/update flow below only when the target also needs
+the full `.ai/factory` project layer.
 
 ## Cezar runtime registration
 
@@ -49,6 +67,17 @@ Written alongside: `.ai/factory/VERSION`, `.ai/factory/manifest.json` (path and 
 ./scripts/diff.ps1    -ProjectPath ../proj   # exit 1 on drift
 ./scripts/verify.ps1  -ProjectPath ../proj   # exit 1 on any failed check
 ```
+
+The remote-only command can also be run directly for one Cezar project:
+
+```powershell
+./scripts/sync-automations.ps1 -SourceOnly -FactoryPath . -ApiUrl http://cezar:PORT -ProjectId <id> -DryRun
+./scripts/sync-automations.ps1 -SourceOnly -FactoryPath . -ApiUrl http://cezar:PORT -ProjectId <id>
+```
+
+This remote-only mode updates only Cezar's `[factory]` automations. It does not
+install project workflows, skills, policies, or scripts; those still require a
+local or mounted project checkout.
 
 `-FactoryPath` is a checkout of the factory at the version the project pins (default: the checkout the script runs from). The scripts refuse to run when that checkout's `VERSION` differs from the pin, so a project never follows `main` by accident.
 
