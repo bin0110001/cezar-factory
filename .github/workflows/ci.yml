@@ -16,3 +16,9 @@ jobs:
       - name: Factory self-test (static checks, install/update/diff/verify on fixtures)
         shell: pwsh
         run: ./tests/run-tests.ps1
+      - name: Validate deterministic automation catalog
+        shell: pwsh
+        run: ./scripts/validate-automation-catalog.ps1
+      - name: Release metadata validation
+        shell: pwsh
+        run: ./scripts/release/validate-release.ps1 -SkipTests

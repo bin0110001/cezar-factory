@@ -1,0 +1,19 @@
+groups:
+  - name: factory-availability
+    rules:
+      - alert: FactoryServiceDown
+        expr: up{job=~"cezar|openhands|hindsight|litellm|model-host-vllm"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Factory service unavailable"
+          description: "{{ $labels.job }} at {{ $labels.instance }} has been down for more than five minutes."
+      - alert: ModelHostVllMDown
+        expr: up{job="model-host-vllm"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model-host vLLM unavailable"
+          description: "LiteLLM cannot reach the configured model endpoint."

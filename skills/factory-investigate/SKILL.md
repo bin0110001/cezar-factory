@@ -8,6 +8,7 @@ source: skills/factory-investigate/SKILL.md
 ## Responsibilities
 
 - Stop blindly modifying code.
+- Query bounded Hindsight recall for similar failures when the integration is available.
 - Analyze repeated failures.
 - Classify failure as:
   - Implementation.
@@ -35,6 +36,8 @@ source: skills/factory-investigate/SKILL.md
 - Review all previous implementation attempts and their outcomes.
 - Identify patterns in the failures.
 - Look for common factors across attempts.
+- Record which project or Factory memory bank was queried and use only relevant
+  prior fixes; keep the full memory bank out of the prompt.
 
 ### 3. Classify the Failure
 
@@ -56,6 +59,9 @@ Use the following classification framework:
   - Retry implementation (only for implementation failures with clear fixes).
   - Investigate further (for environment, dependency, or unknown causes).
   - Escalate to human (for requirements, architecture, or unknown causes).
+
+After a confirmed resolution, include a concise durable-knowledge candidate so
+the workflow can retain the lesson through Hindsight after normal review.
 
 ### 5. Route Appropriately
 

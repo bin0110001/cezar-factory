@@ -1,0 +1,27 @@
+name: cezar-factory
+
+services:
+  openhands:
+    image: ${OPENHANDS_IMAGE}
+    container_name: cezar-factory-openhands
+    env_file: .env
+    environment:
+      AGENT_SERVER_URL: http://openhands:8000
+      LOCAL_BACKEND_API_KEY: ${OPENHANDS_SESSION_API_KEY}
+      FILE_STORE: local
+      LOCAL_STORAGE_PATH: /home/openhands/.openhands/storage
+      AUTOMATION_AGENT_SERVER_URL: http://127.0.0.1:18000
+    restart: unless-stopped
+    ports:
+      - "${OPENHANDS_BIND_ADDRESS:-127.0.0.1}:3001:8000"
+    volumes:
+      - openhands-data:/home/openhands/.openhands
+      - openhands-projects:/projects
+
+volumes:
+  openhands-data:
+    external: true
+    name: cezar-factory-openhands-data
+  openhands-projects:
+    external: true
+    name: cezar-factory-openhands-projects

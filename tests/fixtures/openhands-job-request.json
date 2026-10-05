@@ -1,0 +1,10 @@
+{
+  "provider": "openhands",
+  "agent": "local",
+  "project": "cezar-factory",
+  "issue": 9001,
+  "task": "Use the terminal to confirm README.md exists and report the repository root. Do not modify files.",
+  "branch": "factory/live-provider-smoke",
+  "validation": ["test -f README.md"],
+  "risk": "risk:low"
+}

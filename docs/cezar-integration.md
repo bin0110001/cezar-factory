@@ -182,9 +182,10 @@ Based on my analysis of the Cezar codebase and documentation, here are key limit
    - Cezar uses a specific label pipeline (review, changes-requested, qa, qa-failed, merge-queue, blocked, do-not-merge)
    - Factories must align with or override this taxonomy
 
-8. **No built-in cron scheduler for non-GitHub triggers**: 
-   - The automation system is specifically for GitHub events
-   - For time-based or other triggers, factories would need to implement their own scheduling
+8. **Schedules are bounded to fixed Cezar intervals**:
+   - Cezar supports `daily`, `weekdays`, `weekly`, and `hours` schedules; hourly uses
+     `{ "type": "hours", "every": 1 }` and runs in the cockpit time zone.
+   - A scheduled backlog audit must stay capped and opt-in because it can spend model budget and alter labels.
 
 9. **Deterministic workflow IDs required**: 
    - Workflow step IDs must be unique and `onFail.retry` must reference earlier steps
@@ -198,9 +199,12 @@ Based on my analysis of the Cezar codebase and documentation, here are key limit
 
 - **Workflow schema.** A step is either an agent step (`skill`/`prompt`) or a check step (`command`), never neither; `onFail.retry` may only point to an earlier step. Factory workflows follow this, and the factory tests enforce it. A check step failing past `onFail.max` fails the whole run.
 - **No templating in check commands.** `{{task}}` is substituted only in agent prompts, so check steps cannot know the issue number. The agent writes a result file containing `issue`; `validate-result.ps1` and `route-state.ps1` read it from there. Agents never set `factory:*` labels themselves, except the first action of implement/fix, which calls `route-state.ps1 -Event start`.
-- **Install locations.** Workflows go to `.ai/cezar/workflows/factory-*.yaml` and skills to `.ai/skills/factory-*/`. Both are committable (Cezar's own `.ai/cezar/.gitignore` only ignores runtime state).
+- **Install locations.** Workflows go to `.ai/cezar/workflows/factory-*.yaml` and skills to `.ai/skills/factory-*/`. Both are committable (Cezar's own `.ai/cezar/.gitignore` only ignores runtime state). Check-step scripts are not assumed to be present in an isolated worktree: they run from the version-pinned `FACTORY_RUNTIME_ROOT` registered in the Cezar service.
+- **Never bypass isolation for Factory assets.** `worktree: false` is an emergency/manual mode, not a Factory deployment mechanism. If a workflow cannot find a script, schema, or policy in a worktree, register or mount the Factory runtime and repair the workflow command; do not disable the worktree.
 - **Automations are not files.** Cezar stores them in gitignored `.ai/cezar/automations.json` behind an HTTP API (`CEZ_AUTOMATIONS=1`), so the factory ships JSON definitions in Cezar's own schema and reconciles them with `sync-automations.ps1`. They are GitHub polls on `issue.labeled` with `changedLabels`, every five minutes, `maxRecords: 1` (also the only available throttle; Cezar has no per-automation concurrency setting).
+- **Model-pinned automations.** Every Factory automation declares a Cezar `runner` and `model`, and `routing/automation-catalog.json` is the authority for that mapping. Planning and review use Claude `sonnet`; implementation and fix/review use Codex `gpt-5.6-terra`; maintenance, bounded investigation, and the hourly backlog-label audit use OpenCode `litellm/factory-small`. The audit is feature-gated, processes at most three issues, adds only `factory:new` plus type/risk labels, and preserves project labels. The catalog validator rejects drift. Synchronization creates automations paused, so a model mapping never begins polling or spending until an operator explicitly enables it.
 - **Retry exhaustion cannot trigger an automation.** Cezar has no "workflow failed" event. When an implementation check exhausts `onFail.max` the run fails and the issue stays `factory:working`. The factory covers this two ways: an implementation the agent itself reports as failed is routed to `factory:investigate`, and the opt-in maintenance workflow labels issues stuck in `factory:working` for 24h as `factory:investigate`. Until maintenance is enabled, a failed run is visible in the Cezar cockpit only.
+- **Run liveness watchdog.** Scheduled Factory deployments should invoke `scripts/watchdog-automations.ps1` at least every 10 minutes with a 15-minute wall-clock budget. It cancels only runs still marked `running` beyond that budget and records the terminal reason; it never retries or changes GitHub labels.
 - **Independent review.** Every Cezar run starts a fresh agent session in its own worktree, so the review workflow does not share context with implementation. Use `agent:*` labels or a workflow override to pin a different runner.
 - **Polling latency.** Automations poll, so a label change is picked up within the interval (five minutes by default).
 

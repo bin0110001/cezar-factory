@@ -1,0 +1,16 @@
+{
+  "execution": {
+    "provider": "openhands",
+    "agent": "codex",
+    "status": "selected",
+    "issue": 7,
+    "metadata": {
+      "project": "cezar-factory",
+      "workflow": "factory-start",
+      "github_issue": 7,
+      "worker": "codex",
+      "provider": "openhands",
+      "model": "codex"
+    }
+  }
+}

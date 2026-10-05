@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Bazzite Podman deployment templates and health-validation scripts for the
+  Factory control plane, observability stack, and Mac mini vLLM endpoint.
+- Hindsight memory-bank/MCP configuration, LiteLLM-to-Langfuse instrumentation,
+  routing policy, Grafana dashboard, and Prometheus alerts.
+- Execution-provider records that keep Cezar lifecycle state separate from
+  agent session state.
+
 ## [0.3.2] - 2026-10-02
 ### Fixed
 - `route-state.ps1` passed `--json labels,comments` unquoted, which PowerShell turns into an array, so the real `gh` rejected it. Quoted. The fake `gh` used in self-tests now rejects non-string arguments, and a harness exception is reported as a failed assertion rather than aborting the run. Found by the first real pilot run, right after 0.3.1.

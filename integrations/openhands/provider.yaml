@@ -1,0 +1,37 @@
+# Execution-provider contract consumed by the Cezar integration layer.
+version: 1
+provider: openhands
+control_plane: cezar
+session_plane: openhands
+
+capabilities:
+  isolated_worktree: true
+  concurrent_sessions: true
+  branch_and_pr_lifecycle: true
+  recovery: provider
+
+execution_record:
+  provider: openhands
+  required_fields:
+    - agent
+    - status
+    - branch
+    - result
+  optional_fields:
+    - pr
+    - attempts
+    - duration
+    - model
+    - usage
+
+state_boundary:
+  cezar_owns:
+    - workflow_state
+    - github_labels
+    - retry_policy
+    - escalation
+  openhands_owns:
+    - agent_session
+    - worktree
+    - tool_trace
+    - provider_recovery

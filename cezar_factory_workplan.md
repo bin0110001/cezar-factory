@@ -1,1003 +1,718 @@
-# Cezar Development Factory Workplan
+# Cezar Factory — Integrated Architecture and Revised Workplan
 
-## Goal
+## 1. Goal
 
-Build a reusable, version-controlled development factory around Cezar where:
+Build a reusable, version-controlled development factory in which:
 
-- **GitHub** is the durable source of truth for work state.
-- **Cezar Automations** decide when work should start.
-- **Cezar Workflows** define the execution pipeline.
-- **Cezar Skills** define how each agent role performs its work.
-- **Project repositories** contain project-specific rules, validation, and overrides.
-- A dedicated **factory repository** owns reusable workflows, skills, policies, templates, and synchronization tooling.
-- Factory updates are **versioned, reviewable, reproducible, and safely synchronized** into individual projects.
+- **GitHub** is the durable source of truth for work.
+- **Cezar** is the control plane deciding *when* and *why* work runs.
+- **OpenHands Agent Canvas / Agent Server** is the coding-agent execution plane.
+- **Codex CLI** and **Claude Code** remain subscription-backed premium agents.
+- **vLLM** provides local inference.
+- **LiteLLM** provides a common gateway/routing layer where it adds value.
+- **Hindsight** provides durable agent/project memory.
+- **Langfuse** provides LLM observability.
+- **Prometheus/Grafana** provide infrastructure observability.
+- Existing tools provide repository context, Git isolation, telemetry, model serving, and memory wherever possible.
+- Custom Factory code is limited primarily to configuration, workflows, policies, thin adapters, and project-specific validation.
 
----
+The central principle is:
 
-# Phase 0 — Validate Cezar Integration Model
-
-## 0.1 Confirm Cezar file locations and lifecycle
-
-- [x] Confirm the current supported location for Cezar workflow definitions.
-- [x] Confirm the current supported location\(s\) for project-local skills.
-- [x] Confirm how Cezar persists automations.
-- [x] Identify which files are:
-  - [x] Declarative configuration.
-  - [x] Runtime state.
-  - [x] Generated state.
-  - [x] Safe to version control.
-- [x] Confirm how Cezar resolves local vs shared skills.
-- [x] Confirm whether workflows can reference multiple skills.
-- [x] Confirm automation support for:
-  - [x] GitHub issue labels.
-  - [x] GitHub issue changes.
-  - [x] Pull request events.
-  - [x] Scheduled runs.
-- [x] Confirm retry behavior and workflow failure semantics.
-- [x] Confirm child-task/dispatch behavior.
-- [x] Document any Cezar limitations that affect the factory design.
-
-### Deliverable
-
-- [x] `docs/cezar-integration.md`
+> **Integrate before building.**
 
 ---
 
-# Phase 1 — Create the Factory Repository
+# 2. Target Architecture
 
-Create a dedicated repository such as:
+```text
+                         GitHub
+                Issues / PRs / Repository
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │    Cezar    │
+                    │ Control     │
+                    │ Plane       │
+                    └──────┬──────┘
+                           │
+          planning / policy / routing / automation
+                           │
+           ┌───────────────┼────────────────┐
+           │               │                │
+           ▼               ▼                ▼
+      Local Utility    OpenHands        Deterministic
+       LLM Tasks      Agent Canvas         Tools
+           │               │                │
+           │        ┌──────┼───────┐        │
+           │        ▼      ▼       ▼        │
+           │      Codex  Claude   Local      │
+           │                       Agent     │
+           │                                 │
+           ▼                                 ▼
+        LiteLLM                          Tests / CI
+           │                             Linters
+           ▼                             Compilers
+         vLLM                            Git / SARIF
+           │
+     Local GPU Compute
+```
 
-`cezar-factory`
+Supporting services:
 
-## 1.1 Initial repository structure
+```text
+Hindsight
+   └── durable project/factory memory
 
-- [x] Create the repository.
-- [x] Add the following structure:
+Langfuse
+   └── LLM tracing and usage
+
+Prometheus + Grafana
+   └── infrastructure / GPU / containers
+
+HashiCorp Vault
+   └── Factory and cross-project secret management
+
+Factory Dashboard
+   └── lightweight launcher + health overview
+```
+
+---
+
+# 3. Architecture Responsibility Boundaries
+
+## GitHub — Work Truth
+
+GitHub owns:
+
+- issues;
+- requirements;
+- plans;
+- acceptance criteria;
+- PRs;
+- review state;
+- human decisions;
+- durable work status.
+
+Existing Cezar Factory GitHub state model remains authoritative.
+
+### Keep Existing Work
+
+- [X] `factory:new`
+- [X] `factory:needs-plan`
+- [X] `factory:needs-help`
+- [X] `factory:ready`
+- [X] `factory:working`
+- [X] `factory:review`
+- [X] `factory:changes-requested`
+- [X] `factory:human-review`
+- [X] `factory:blocked`
+- [X] `factory:done`
+
+The existing mutually exclusive lifecycle and transition rules remain valuable and should not be replaced.
+
+---
+
+# 4. Cezar — Factory Control Plane
+
+Cezar should **not** become the execution runtime for every tool.
+
+Cezar owns:
+
+- workflow initiation;
+- GitHub label/state transitions;
+- planning;
+- risk policy;
+- routing policy;
+- retries at the workflow level;
+- escalation;
+- scheduled maintenance;
+- deciding which execution system gets a task.
+
+## Existing Cezar Work to Keep
+
+### Core Skills
+
+- [X] `factory-plan`
+- [X] `factory-implement`
+- [X] `factory-review`
+- [X] `factory-fix`
+- [X] `factory-investigate`
+
+### Core Workflows
+
+- [X] `plan`
+- [X] `implement`
+- [X] `review`
+- [X] `fix-review`
+- [X] `investigate`
+
+### Automations
+
+- [X] `needs-plan`
+- [X] `ready-to-implement`
+- [X] `ready-to-review`
+- [X] `changes-requested`
+- [X] investigation/retry automation
+
+### Policies
+
+- [X] Definition of Ready.
+- [X] Definition of Done.
+- [X] Retry policy.
+- [X] Escalation policy.
+- [X] Risk classification.
+- [X] GitHub lifecycle.
+
+### Structured Outputs
+
+Keep the existing:
+
+- [X] planning result schema;
+- [X] implementation result schema;
+- [X] review result schema;
+- [X] investigation result schema.
+
+These are valuable because downstream stages do not need to re-parse large free-form responses.
+
+---
+
+# 5. Preserve the Existing Factory Repository
+
+The existing versioned `cezar-factory` repository remains useful.
+
+Keep:
 
 ```text
 cezar-factory/
-├── README.md
-├── VERSION
-│
 ├── skills/
-│   ├── factory-plan/
-│   │   └── SKILL.md
-│   ├── factory-implement/
-│   │   └── SKILL.md
-│   ├── factory-review/
-│   │   └── SKILL.md
-│   ├── factory-fix/
-│   │   └── SKILL.md
-│   ├── factory-investigate/
-│   │   └── SKILL.md
-│   └── factory-learn/
-│       └── SKILL.md
-│
 ├── workflows/
-│   ├── plan.yaml
-│   ├── implement.yaml
-│   ├── review.yaml
-│   ├── fix-review.yaml
-│   ├── investigate.yaml
-│   └── maintenance.yaml
-│
 ├── automations/
-│   ├── needs-plan.yaml
-│   ├── ready-to-implement.yaml
-│   ├── ready-to-review.yaml
-│   ├── changes-requested.yaml
-│   └── maintenance.yaml
-│
 ├── policies/
-│   ├── labels.yaml
-│   ├── risk.yaml
-│   ├── retry.yaml
-│   ├── definition-of-ready.md
-│   ├── definition-of-done.md
-│   └── escalation.md
-│
 ├── schemas/
-│   ├── plan.schema.json
-│   ├── implementation-result.schema.json
-│   ├── review-result.schema.json
-│   └── investigation-result.schema.json
-│
 ├── templates/
-│   ├── factory.config.yaml
-│   ├── agentic.config.json
-│   └── gitignore.fragment
-│
 ├── scripts/
-│   ├── install.ps1
-│   ├── update.ps1
-│   ├── verify.ps1
-│   └── diff.ps1
-│
 └── docs/
-    ├── lifecycle.md
-    ├── synchronization.md
-    └── project-integration.md
 ```
 
-## 1.2 Repository conventions
+The existing synchronization system is also worth retaining.
 
-- [x] Define semantic versioning rules for the factory.
-- [x] Add `VERSION`.
-- [x] Add changelog conventions.
-- [x] Decide whether releases use:
-  - [ ] Git tags.
-  - [ ] GitHub Releases.
-  - [x] Both.
-- [x] Define compatibility policy between factory versions and Cezar versions.
-- [x] Document breaking-change rules.
+## Existing Completed Work
+
+- [X] Semantic versioning.
+- [X] Factory version pins.
+- [X] Managed-file markers.
+- [X] Install process.
+- [X] Update process.
+- [X] Diff/drift process.
+- [X] Verification process.
+- [X] Automation reconciliation.
+- [X] Project overrides.
+- [X] Factory/project ownership boundaries.
+
+This remains the mechanism for distributing reusable Factory configuration between projects.
 
 ---
 
-# Phase 2 — Define the GitHub Factory State Model
+# 6. Finish the Remaining Synchronization Work
 
-GitHub should remain the durable state machine.
+Existing remaining items:
 
-## 2.1 Primary workflow-state labels
+- [X] Finish project-owned override preservation.
+- [X] Finish dry-run support.
+- [X] Verify rollback against an earlier Factory release.
+- [X] Add CI coverage for synchronization.
 
-Create a mutually exclusive set of factory-state labels:
+Do this before substantially extending Factory configuration.
 
-- [x] `factory:new`
-- [x] `factory:needs-plan`
-- [x] `factory:needs-help`
-- [x] `factory:ready`
-- [x] `factory:working`
-- [x] `factory:review`
-- [x] `factory:changes-requested`
-- [x] `factory:human-review`
-- [x] `factory:blocked`
-- [x] `factory:done`
+---
 
-## 2.2 Work-type labels
+# 7. Add OpenHands as the Agent Execution Plane
 
-- [x] `type:bug`
-- [x] `type:feature`
-- [x] `type:refactor`
-- [x] `type:test`
-- [x] `type:docs`
-- [x] `type:maintenance`
+Rather than building custom process management around Codex and Claude, evaluate **OpenHands Agent Canvas** first.
 
-## 2.3 Risk labels
+Agent Canvas currently supports:
 
-- [x] `risk:low`
-- [x] `risk:medium`
-- [x] `risk:high`
+- Codex;
+- Claude Code;
+- ACP-compatible agents;
+- simultaneous agents;
+- separate Git worktrees;
+- local or remote Agent Servers;
+- GitHub/event/cron automation.
 
-## 2.4 Optional routing labels
+## Proof of Concept
 
-- [x] `agent:codex`
-- [x] `agent:claude`
-- [x] `agent:either`
+- [X] Deploy OpenHands Agent Canvas.
+- [ ] Connect existing Codex subscription. (The saved `Luna` profile is now
+  subscription-backed and Agent Canvas 1.24.0 is deployed, but the live
+  conversation still fails in subscription transport before tool execution;
+  see `docs/openhands-live-evidence.md`.)
+- [ ] Connect existing Claude Code subscription.
+- [ ] Execute a real low-risk GitHub issue using Codex.
+- [ ] Execute a second using Claude.
+- [ ] Run both concurrently.
+- [X] Confirm separate worktree behavior.
+- [ ] Confirm branch/PR lifecycle.
+- [X] Test failed-task recovery.
+- [X] Test remote Agent Server.
+- [X] Determine the cleanest way for Cezar to launch an OpenHands job.
 
-## 2.5 State-transition rules
+## Decision Gate
 
-Document valid transitions.
+If OpenHands works satisfactorily:
+
+- [X] Do **not** build a custom Codex runner.
+- [X] Do **not** build a custom Claude runner.
+- [X] Do **not** build a custom worktree manager.
+- [X] Do **not** build a custom agent process supervisor.
+- [X] Do **not** build a custom remote coding-worker protocol.
+
+---
+
+# 8. Revised Implement Workflow
+
+Existing:
 
 ```text
-factory:new
-    ↓
-factory:needs-plan
-    ├──→ factory:needs-help
-    ↓
-factory:ready
-    ↓
-factory:working
-    ↓
-factory:review
-    ├──→ factory:changes-requested
-    │           ↓
-    │      factory:working
-    │
-    └──→ factory:human-review
-                ↓
-           factory:done
-```
-
-- [x] Define legal transitions.
-- [x] Define which automation owns each transition.
-- [x] Define which transitions require humans.
-- [x] Define how blocked work is resumed.
-- [x] Prevent issues from carrying conflicting factory-state labels.
-
-### Deliverable
-
-- [x] `policies/labels.yaml`
-- [x] `docs/lifecycle.md`
-
----
-
-# Phase 3 — Define Factory Policies
-
-## 3.1 Definition of Ready
-
-An issue should not enter `factory:ready` until it has:
-
-- [x] Clear objective.
-- [x] Acceptance criteria.
-- [x] Known non-goals where useful.
-- [x] Relevant dependencies identified.
-- [x] Risks identified.
-- [x] Enough implementation context for an agent to begin.
-- [x] No unresolved blocking questions.
-- [x] Appropriate work type.
-- [x] Appropriate risk level.
-
-### Deliverable
-
-- [x] `policies/definition-of-ready.md`
-
-## 3.2 Definition of Done
-
-Define common completion rules.
-
-- [x] Acceptance criteria satisfied.
-- [x] Relevant targeted tests pass.
-- [x] Required full validation passes.
-- [x] No unresolved reviewer findings.
-- [x] Required documentation updated.
-- [x] No accidental unrelated changes.
-- [x] Required PR exists.
-- [x] Human review completed where required.
-
-### Deliverable
-
-- [x] `policies/definition-of-done.md`
-
-## 3.3 Retry policy
-
-Initial target:
-
-```text
-Implementation attempt 1
-    ↓ failure
-Implementation attempt 2
-    ↓ failure
-Root-cause investigation
-    ↓
-Retry or escalate
-```
-
-- [x] Define maximum implementation retries.
-- [x] Define maximum review/fix rounds.
-- [x] Define environment-failure handling.
-- [x] Define flaky-test handling.
-- [x] Define when the factory must stop automatically modifying code.
-
-### Deliverable
-
-- [x] `policies/retry.yaml`
-
-## 3.4 Escalation policy
-
-- [x] Define when to add `factory:needs-help`.
-- [x] Define the summary an agent must post before escalation.
-- [x] Require:
-  - [x] Observed problem.
-  - [x] Attempts made.
-  - [x] Relevant logs/artifacts.
-  - [x] Current hypothesis.
-  - [x] Recommended human decision.
-
-### Deliverable
-
-- [x] `policies/escalation.md`
-
----
-
-# Phase 4 — Build the Core Skills
-
-Keep skills reusable, role-focused, and relatively compact.
-
-## 4.1 `factory-plan`
-
-Responsibilities:
-
-- [x] Read the issue.
-- [x] Inspect relevant repository context.
-- [x] Identify ambiguities.
-- [x] Identify likely dependencies.
-- [x] Define acceptance criteria.
-- [x] Define non-goals.
-- [x] Propose implementation steps.
-- [x] Identify risks.
-- [x] Decide whether decomposition is needed.
-- [x] Update the issue with the plan.
-- [x] Route to:
-  - [x] `factory:ready`
-  - [x] `factory:needs-help`
-
-Must not:
-
-- [x] Implement production changes.
-
-## 4.2 `factory-implement`
-
-Responsibilities:
-
-- [x] Read approved issue plan.
-- [x] Follow acceptance criteria.
-- [x] Use project-specific skills.
-- [x] Make the smallest appropriate change.
-- [x] Add/update tests.
-- [x] Run targeted validation where appropriate.
-- [x] Report structured completion information.
-- [x] Prepare/update PR.
-
-## 4.3 `factory-review`
-
-Responsibilities:
-
-- [x] Independently review the implementation.
-- [x] Compare changes against issue acceptance criteria.
-- [x] Check for missed edge cases.
-- [x] Check architecture/conventions.
-- [x] Check tests for meaningful coverage.
-- [x] Check unrelated changes.
-- [x] Check backward compatibility where relevant.
-- [x] Produce actionable findings.
-- [x] Route to:
-  - [x] `factory:changes-requested`
-  - [x] `factory:human-review`
-
-Prefer a different agent/context from implementation.
-
-## 4.4 `factory-fix`
-
-Responsibilities:
-
-- [x] Read review findings.
-- [x] Address only valid findings.
-- [x] Avoid unrelated cleanup.
-- [x] Update tests as needed.
-- [x] Re-run validation.
-- [x] Return to review.
-
-## 4.5 `factory-investigate`
-
-Responsibilities:
-
-- [x] Stop blindly modifying code.
-- [x] Analyze repeated failures.
-- [x] Classify failure as:
-  - [x] Implementation.
-  - [x] Test.
-  - [x] Flaky test.
-  - [x] Environment.
-  - [x] Dependency.
-  - [x] Merge conflict.
-  - [x] Requirements.
-  - [x] Architecture.
-  - [x] Unknown.
-- [x] Recommend next action.
-- [x] Route back to implementation only when justified.
-- [x] Otherwise escalate.
-
-## 4.6 `factory-learn`
-
-Responsibilities:
-
-- [x] Review successful work and failures.
-- [x] Identify durable reusable knowledge.
-- [x] Avoid storing task-specific/transient facts.
-- [x] Recommend or update:
-  - [x] Project skills.
-  - [x] Testing guidance.
-  - [x] Architecture documentation.
-  - [x] Agent instructions.
-
-Initially:
-
-- [x] Run manually or in observation-only mode.
-- [x] Require review before automatically modifying shared factory skills.
-
----
-
-# Phase 5 — Define Structured Agent Outputs
-
-Avoid requiring later stages to parse large free-form responses.
-
-## 5.1 Planning result schema
-
-Include:
-
-- [x] Objective.
-- [x] Acceptance criteria.
-- [x] Non-goals.
-- [x] Risks.
-- [x] Dependencies.
-- [x] Suggested work breakdown.
-- [x] Required project skills.
-- [x] Unresolved questions.
-- [x] Ready/not-ready status.
-
-## 5.2 Implementation result schema
-
-Include:
-
-- [x] Status.
-- [x] Summary.
-- [x] Files changed.
-- [x] Tests run.
-- [x] Test result.
-- [x] Acceptance criteria status.
-- [x] Known concerns.
-- [x] Follow-up suggestions.
-- [x] Durable knowledge candidates.
-
-## 5.3 Review result schema
-
-Include:
-
-- [x] Approval/change-request status.
-- [x] Blocking findings.
-- [x] Non-blocking findings.
-- [x] Acceptance criteria verification.
-- [x] Test adequacy.
-- [x] Risk observations.
-
-## 5.4 Investigation result schema
-
-Include:
-
-- [x] Failure classification.
-- [x] Evidence.
-- [x] Attempts reviewed.
-- [x] Root-cause hypothesis.
-- [x] Confidence.
-- [x] Recommended action.
-- [x] Whether automatic retry is appropriate.
-
----
-
-# Phase 6 — Build the Core Cezar Workflows
-
-Keep workflows short enough that GitHub remains a durable checkpoint between stages.
-
-## 6.1 Plan workflow
-
-```text
-Issue
+Cezar
   ↓
-factory-plan
+agent implementation
   ↓
-validate plan
+tests
   ↓
-update GitHub state
+PR
 ```
 
-- [x] Invoke `factory-plan`.
-- [x] Validate result schema.
-- [x] Verify Definition of Ready.
-- [x] Update issue.
-- [x] Set `factory:ready` or `factory:needs-help`.
-
-## 6.2 Implement workflow
+Revised:
 
 ```text
-factory:ready
-      ↓
+GitHub: factory:ready
+        ↓
+Cezar Implement Workflow
+        ↓
+Select Execution Worker
+        ↓
+OpenHands Agent Canvas
+        ↓
+Codex / Claude / Local Agent
+        ↓
+isolated worktree
+        ↓
 implementation
-      ↓
-targeted tests
-      ↓
-retry if appropriate
-      ↓
-full verification
-      ↓
+        ↓
+project validation
+        ↓
 PR
-      ↓
+        ↓
 factory:review
 ```
 
-- [x] Mark issue `factory:working`.
-- [x] Invoke implementation skill.
-- [x] Run targeted tests.
-- [x] Retry within configured limit.
-- [x] Run required verification.
-- [x] Create/update PR.
-- [x] Mark issue `factory:review`.
+## Work
 
-## 6.3 Review workflow
-
-```text
-PR
- ↓
-independent review
- ↓
-validate review output
- ↓
-changes-requested OR human-review
-```
-
-- [x] Use independent context/agent where possible.
-- [x] Invoke `factory-review`.
-- [x] Post findings.
-- [x] Set state appropriately.
-
-## 6.4 Fix-review workflow
-
-```text
-changes-requested
-      ↓
-factory-fix
-      ↓
-targeted validation
-      ↓
-factory:review
-```
-
-- [x] Feed only actionable review findings.
-- [x] Run targeted tests.
-- [x] Update PR.
-- [x] Return issue to review.
-
-## 6.5 Investigate workflow
-
-```text
-repeated failure
-      ↓
-factory-investigate
-      ↓
-classification
-      ↓
-retry OR needs-help
-```
-
-- [x] Gather compact failure evidence.
-- [x] Avoid dumping full logs into the prompt.
-- [x] Classify failure.
-- [x] Route appropriately.
-
-## 6.6 Maintenance workflow
-
-Defer until the core loop is stable.
-
-Potential uses:
-
-- [ ] Stale issue review.
-- [ ] Dependency maintenance.
-- [ ] Flaky-test review.
-- [ ] Documentation drift.
-- [ ] Dead-code candidates.
-- [ ] Unhandled TODO/FIXME review.
+- [X] Replace direct implementation-agent invocation with an execution-provider abstraction.
+- [X] Add `openhands` as the initial premium execution provider.
+- [X] Keep Cezar responsible for lifecycle state.
+- [X] Keep OpenHands responsible for coding session execution.
 
 ---
 
-# Phase 7 — Build Cezar Automations
+# 9. Do Not Duplicate OpenHands State in Cezar
 
-Automations should primarily answer:
+Cezar only needs enough execution information to make workflow decisions.
 
-> When should a workflow start?
+Store:
 
-Avoid putting complex implementation logic into automations.
+```yaml
+execution:
+  provider: openhands
+  agent: codex
+  status: complete
+  branch: factory/issue-412
+  pr: 521
+  result: success
+```
 
-## 7.1 Planning automation
+Avoid mirroring:
 
-Trigger:
-
-- [x] Issue gains `factory:needs-plan`.
-
-Action:
-
-- [x] Launch `plan` workflow.
-
-## 7.2 Implementation automation
-
-Trigger:
-
-- [x] Issue gains `factory:ready`.
-
-Action:
-
-- [x] Launch `implement` workflow.
-
-Safeguards:
-
-- [x] Do not start if already `factory:working`.
-- [x] Do not start if blocked.
-- [x] Respect configured concurrency limit.
-
-## 7.3 Review automation
-
-Trigger:
-
-- [x] Issue/PR enters `factory:review`.
-
-Action:
-
-- [x] Launch `review` workflow.
-
-## 7.4 Rework automation
-
-Trigger:
-
-- [x] Issue gains `factory:changes-requested`.
-
-Action:
-
-- [x] Launch `fix-review` workflow.
-
-## 7.5 Investigation automation
-
-Trigger:
-
-- [x] Workflow reaches retry limit.
-- [x] Issue receives an investigation-specific label.
-
-Action:
-
-- [x] Launch `investigate` workflow.
-
-## 7.6 Maintenance automation
-
-- [x] Add only after core production flow is proven.
-- [x] Run on scheduled cadence.
-- [x] Keep maintenance workflows separate from feature delivery.
+- internal agent conversation state;
+- command history;
+- worktree internals;
+- entire tool traces.
 
 ---
 
-# Phase 8 — Project Integration Model
+# 10. Switch Local Inference to vLLM
 
-Each project should contain project-owned factory configuration.
+Use **vLLM instead of Ollama as the standard Factory inference server**.
+
+Reasons:
+
+1. It exposes OpenAI-compatible APIs.
+2. It supports tensor parallelism for multi-GPU machines.
+3. It supports pipeline parallelism.
+4. It supports multi-node deployments.
+5. It supports Ray as a distributed execution backend.
+6. The operational experience transfers much better to future compute-cluster work.
+
+## Initial vLLM Deployment
+
+- [X] Deploy vLLM natively on the Mac mini under launchd (Podman is not used for model serving).
+- [X] Expose and validate the OpenAI-compatible endpoint.
+- [X] Put endpoint behind trusted-network controls/reverse proxy; the live Mac endpoint is loopback-only behind the allowlisted/authenticated launchd proxy.
+- [X] Do not rely solely on vLLM's built-in API key protection because not every endpoint is covered by it.
+- [X] Select one small general model.
+- [X] Select one coding-oriented model.
+- [X] Benchmark latency.
+- [X] Benchmark throughput.
+- [X] Benchmark memory requirements using the Apple Silicon unified-memory footprint; dedicated VRAM is not exposed on this host.
+- [X] Document repeatable deployment.
+
+---
+
+# 11. Make vLLM Deployment Cluster-Friendly From Day One
+
+Initial architecture:
+
+```text
+GPU Machine
+    │
+    └── vLLM
+          │
+          └── OpenAI-compatible API
+```
+
+Future:
+
+```text
+                vLLM
+                  │
+        ┌─────────┼─────────┐
+        ▼         ▼         ▼
+      GPU-01    GPU-02    GPU-03
+
+Tensor / Pipeline / Data Parallelism
+```
+
+vLLM supports both single-node multi-GPU and multi-node execution; Ray is one supported backend for multi-node deployments.
+
+## Work
+
+- [X] Keep model paths/config externally configurable.
+- [X] Containerize vLLM deployment.
+- [X] Record GPU topology.
+- [X] Record model compatibility.
+- [ ] Experiment with tensor parallelism when multiple GPUs are available.
+- [ ] Experiment with Ray once multiple nodes become available.
+- [X] Write internal notes documenting lessons applicable to work clusters.
+
+---
+
+# 12. LiteLLM — Keep, but Keep Its Role Small
+
+vLLM is the inference server.
+
+LiteLLM is the optional **model gateway** above it.
+
+```text
+Factory
+   │
+LiteLLM
+   │
+   ├── vLLM deployment A
+   ├── vLLM deployment B
+   └── future model endpoints
+```
+
+LiteLLM already supports deployment load balancing, retries, fallbacks, queueing and multiple routing strategies.
+
+## Deploy When Useful
+
+- [X] Deploy LiteLLM after the first vLLM endpoint works.
+- [X] Register vLLM endpoint(s).
+- [X] Define logical models.
 
 Example:
 
-```text
-project/
-├── .ai/
-│   ├── factory/
-│   │   ├── factory.config.yaml
-│   │   ├── VERSION
-│   │   └── overrides/
-│   │
-│   ├── skills/
-│   │   ├── project-architecture/
-│   │   │   └── SKILL.md
-│   │   └── project-testing/
-│   │       └── SKILL.md
-│   │
-│   └── ...
-│
-├── scripts/
-│   └── factory/
-│       ├── test-changed.ps1
-│       ├── test-full.ps1
-│       └── verify.ps1
-│
-└── ...
+```yaml
+factory-small
+factory-code
+factory-large-local
 ```
 
-## 8.1 Project-owned content
+- [X] Add fallback configuration.
+- [X] Add health-aware routing.
+- [X] Add usage tracking.
+- [X] Back LiteLLM with a dedicated persistent PostgreSQL service.
+- [X] Use Redis only when multi-instance routing/coordination requires it.
 
-Version control these directly in the project repository:
+## Do Not Use LiteLLM For
 
-- [x] Factory version pin.
-- [x] Project factory configuration.
-- [x] Project-specific skills.
-- [x] Architecture instructions.
-- [x] Project-specific validation scripts.
-- [x] Project-specific workflow extensions.
-- [x] Project-specific overrides.
+- [X] Codex subscription authentication.
+- [X] Claude subscription authentication.
 
-## 8.2 Factory-owned synchronized content
-
-Install from `cezar-factory`:
-
-- [x] Generic factory skills.
-- [x] Generic workflows.
-- [x] Automation definitions/templates.
-- [x] Shared policies.
-- [x] Shared schemas.
-
-## 8.3 Runtime content
-
-Do **not** version-control by default:
-
-- [x] Execution logs.
-- [x] Temporary worktrees.
-- [x] Agent session state.
-- [x] Runtime task caches.
-- [x] Other Cezar operational data.
-
-Add required entries to project `.gitignore`.
-- [x] Add required entries to project `.gitignore`.
+Those remain native agents under OpenHands.
 
 ---
 
-# Phase 9 — Factory Synchronization Process
+# 13. Local Model Job Classes
 
-The synchronization system should make factory upgrades deterministic and reviewable.
+Local models should handle bounded, easy-to-verify work first.
 
-## 9.1 Factory configuration
+## Phase A Candidates
 
-Each project should include:
+- [X] Classify GitHub issues.
+- [X] Recommend work-type labels.
+- [X] Recommend risk labels.
+- [X] Summarize long issues.
+- [X] Extract acceptance criteria.
+- [X] Normalize test errors.
+- [X] Summarize logs.
+- [X] Summarize diffs.
+- [X] Draft commit/PR summaries.
+- [X] Extract potential Hindsight memories.
+
+## Phase B Candidates
+
+After measuring quality:
+
+- [X] Write simple documentation.
+- [X] Generate straightforward tests.
+- [X] Perform small mechanical refactors (portable SHA-256 hashing and stricter child-process test handling).
+- [X] Perform trivial bug fixes (real `gh` argument handling and PowerShell command-shadowing fixes are recorded in the changelog).
+
+---
+
+# 14. Add Execution Routing to Existing Cezar Policy
+
+Current labels already include:
+
+- [X] `agent:codex`
+- [X] `agent:claude`
+- [X] `agent:either`
+
+Keep these initially.
+
+Extend later with:
+
+```text
+agent:local
+agent:auto
+```
+
+## Routing v1
+
+Use deterministic policy.
+
+Example:
 
 ```yaml
-factory:
-  source: "cezar-factory"
-  version: "0.1.0"
+routing:
 
-workflows:
-  - plan
-  - implement
-  - review
-  - fix-review
-  - investigate
+  classify:
+    worker: local
 
-skills:
-  - factory-plan
-  - factory-implement
-  - factory-review
-  - factory-fix
-  - factory-investigate
+  summarize:
+    worker: local
 
-features:
-  knowledge_extraction: false
-  maintenance: false
+  docs:
+    preferred: local
+    fallback: codex
 
-project:
-  type: godot
+  implementation:
+    preferred: codex
 
-validation:
-  changed: "./scripts/factory/test-changed.ps1"
-  full: "./scripts/factory/test-full.ps1"
-  verify: "./scripts/factory/verify.ps1"
+  architecture:
+    preferred: claude
+
+  review:
+    different_from_implementation: true
 ```
 
-- [x] Finalize config schema.
-- [x] Validate config during synchronization.
+- [X] Add routing policy file.
+- [X] Allow project override.
+- [X] Allow issue label override.
+- [X] Record selected worker.
 
-## 9.2 Managed-file markers
+Do **not** build an intelligent router yet.
 
-Every synchronized file should identify its source.
+---
 
-Example YAML header:
+# 15. Replace `factory-learn` With Hindsight-Backed Learning
 
-```yaml
-# GENERATED BY CEZAR-FACTORY
-# factory-version: 0.3.2
-# source: workflows/implement.yaml
-# DO NOT EDIT DIRECTLY
-```
+The existing `factory-learn` concept was good, but we should avoid implementing our own memory system.
 
-Example Markdown header:
+Hindsight already provides:
+
+- retain;
+- recall;
+- reflect;
+- persistent memory banks;
+- MCP connectivity.
+
+## Change
+
+Existing:
 
 ```text
-<!--
-managed-by: cezar-factory
-factory-version: 0.3.2
-source: skills/factory-review/SKILL.md
--->
-```
-
-- [x] Add managed-file marker generation.
-- [x] Ensure update script overwrites only managed files.
-- [x] Refuse destructive updates when file ownership is ambiguous.
-
-## 9.3 Install process
-
-Create:
-
-```powershell
-./scripts/install.ps1
-```
-
-Responsibilities:
-
-- [x] Read project factory config.
-- [x] Resolve requested factory version.
-- [x] Verify compatibility.
-- [x] Copy selected factory skills.
-- [x] Copy selected workflows.
-- [x] Reconcile automations.
-- [x] Copy required policies/schemas.
-- [x] Add/update managed-file metadata.
-- [x] Validate installation.
-- [x] Print resulting changes.
-
-## 9.4 Update process
-
-Create:
-
-```powershell
-./scripts/update.ps1
-```
-
-Expected flow:
-
-```text
-Read current project config
-        ↓
-Read pinned factory version
-        ↓
-Resolve requested upgrade version
-        ↓
-Compare manifests
-        ↓
-Update managed files
-        ↓
-Remove obsolete managed files
-        ↓
-Preserve project files/overrides
-        ↓
-Validate
-        ↓
-Show diff
-```
-
-- [x] Support explicit version upgrades.
-- [x] Do not automatically track `main`.
-- [x] Require version pin changes for upgrades.
-- [x] Produce a readable summary:
-
-```text
-Factory 0.1.0 → 0.2.0
-
-Updated:
-  workflow/implement.yaml
-  skills/factory-review/SKILL.md
-
-Added:
-  skills/factory-investigate/SKILL.md
-
-Removed:
-  skills/factory-debug/SKILL.md
-
-Project-owned files:
-  unchanged
-
-Validation:
-  PASS
-```
-
-## 9.5 Diff process
-
-Create:
-
-```powershell
-./scripts/diff.ps1
-```
-
-Responsibilities:
-
-- [x] Compare installed factory files with pinned source version.
-- [x] Detect locally modified managed files.
-- [x] Detect missing managed files.
-- [x] Detect obsolete managed files.
-- [x] Detect unexpected unmanaged files in managed directories.
-- [x] Exit non-zero when drift exists.
-
-Potential CI use:
-
-```text
-factory diff
+factory-learn
     ↓
-PASS → repository factory installation is reproducible
-FAIL → checked-in generated files have drifted
+edit skills/docs
 ```
 
-## 9.6 Verification process
+Replace with:
 
-Create:
-
-```powershell
-./scripts/verify.ps1
+```text
+Task result
+    ↓
+cheap/local reflection
+    ↓
+Hindsight retain
 ```
 
-Check:
+and:
 
-- [x] Factory config is valid.
-- [x] Pinned version exists.
-- [x] Installed managed files match source version.
-- [x] Required skills exist.
-- [x] Required workflows exist.
-- [x] Automation definitions are valid.
-- [x] Validation scripts exist.
-- [x] Project overrides reference valid base components.
-- [x] No runtime files are unintentionally tracked.
+```text
+New task
+    ↓
+Hindsight recall
+    ↓
+relevant memory only
+    ↓
+planner / implementation agent
+```
 
 ---
 
-# Phase 10 — Automation Synchronization
+# 16. Deploy Hindsight
 
-Treat automation definitions as declarative factory source even if Cezar stores live automation state elsewhere.
+- [X] Deploy Hindsight in Podman.
+- [X] Create Factory-level memory bank.
+- [X] Create per-project memory banks.
+- [X] Enable MCP endpoint.
+- [X] Configure authentication before exposing beyond localhost/trusted network.
+- [ ] Connect Claude Code where useful.
+- [ ] Connect other MCP-capable clients.
+- [X] Connect Cezar workflow through the checked-in OpenHands provider interface; live bounded execution is recorded in `docs/openhands-live-evidence.md`.
 
-## 10.1 Canonical automation definitions
-
-Keep reusable definitions in:
-
-```text
-cezar-factory/automations/
-```
-
-Each should define:
-
-- [x] Name.
-- [x] Trigger.
-- [x] Required labels/filters.
-- [x] Workflow.
-- [x] Enabled default.
-- [x] Optional concurrency policy.
-
-## 10.2 Reconciliation process
-
-The sync layer should:
-
-- [x] Read canonical automation definitions.
-- [x] Read project overrides.
-- [x] Compare against current Cezar automation state.
-- [x] Create missing automations.
-- [x] Update changed factory-managed automations.
-- [x] Leave unmanaged automations untouched.
-- [x] Disable/remove obsolete factory-managed automations safely.
-- [x] Record the factory version responsible for each managed automation where possible.
-
-## 10.3 Safety
-
-- [x] Never delete an automation unless it is explicitly marked factory-managed.
-- [x] Support dry-run mode.
-- [x] Print automation changes before applying.
-- [x] Log reconciliation results.
+Hindsight's MCP server is already built in, so there should be no need for a custom memory API.
 
 ---
 
-# Phase 11 — Project Overrides
+# 17. Memory Scope
 
-Avoid editing synchronized files directly.
+## Project Memory
 
-## 11.1 Skill extensions
+Store:
 
-Prefer composition:
+- architectural decisions;
+- test quirks;
+- framework pitfalls;
+- recurring failures;
+- successful debugging approaches;
+- project conventions;
+- environment discoveries.
 
-```text
-factory-review
-+
-tableflux-review
-```
+## Factory Memory
 
-rather than modifying `factory-review`.
+Store:
 
-- [x] Define how project skills extend generic factory behavior.
-- [x] Document skill precedence.
-- [x] Ensure factory upgrades do not overwrite project skills.
+- workflow lessons;
+- agent/tool behavior;
+- reusable testing approaches;
+- routing observations;
+- cross-project Factory lessons.
 
-## 11.2 Workflow overrides
+## Do Not Store Automatically
 
-Support only when composition is insufficient.
-
-Potential approach:
-
-```text
-.ai/factory/overrides/workflows/
-```
-
-- [x] Decide whether overrides are:
-  - [x] Full replacement.
-  - [ ] Patch/merge.
-  - [ ] Project-specific workflow selected instead.
-- [x] Prefer explicit replacement over complicated YAML patching for v1.
-
-## 11.3 Policy overrides
-
-Allow projects to change:
-
-- [x] Risk classification.
-- [x] Validation requirements.
-- [x] Retry limits.
-- [x] Required human gates.
-- [x] Enabled factory features.
+- entire transcripts;
+- entire source files;
+- raw logs;
+- temporary task state;
+- every GitHub comment.
 
 ---
 
-# Phase 12 — Standard Project Validation Interface
+# 18. Modify Existing Planning Workflow
 
-Give every project a predictable interface.
+Current planning flow remains.
 
-Target:
+Add:
+
+```text
+GitHub Issue
+    ↓
+Hindsight recall
+    ↓
+factory-plan
+    ↓
+Definition of Ready
+    ↓
+GitHub
+```
+
+## Work
+
+- [X] Retrieve limited relevant memory before planning.
+- [X] Apply strict context/token limit.
+- [X] Record which memory bank was queried.
+- [X] Do not dump all project memories into the prompt.
+
+---
+
+# 19. Modify Existing Investigation Workflow
+
+The existing investigation workflow is already designed to gather compact evidence rather than dump logs. Keep that design.
+
+Add Hindsight recall:
+
+```text
+failure
+   ↓
+structured test evidence
+   ↓
+Hindsight:
+"Have we seen this before?"
+   ↓
+factory-investigate
+```
+
+- [X] Query prior similar failures.
+- [X] Include successful historical fixes where relevant.
+- [X] Record newly discovered durable solution after resolution.
+
+---
+
+# 20. Replace the Planned Knowledge Feedback Phase
+
+Existing Phase 15 proposed a later custom knowledge loop.
+
+Retire most of that implementation.
+
+## Replace With
+
+- [X] Use Hindsight for operational memory.
+- [X] Keep durable architecture documentation in Git.
+- [X] Keep Factory policies/skills in Git.
+- [X] Use Hindsight to propose documentation changes.
+- [X] Require normal PR review before changing durable documentation.
+
+The rule becomes:
+
+```text
+Hindsight = learned operational knowledge
+
+Git = normative/project documentation
+```
+
+---
+
+# 21. Keep the Standard Project Validation Interface
+
+This part of the original plan is still important.
+
+Every project should expose a predictable validation interface.
+
+Existing target:
 
 ```text
 scripts/factory/test-changed.ps1
@@ -1005,234 +720,379 @@ scripts/factory/test-full.ps1
 scripts/factory/verify.ps1
 ```
 
-## 12.1 `test-changed`
+Keep the interface, but avoid custom output parsing whenever standard formats exist.
 
-- [x] Run tests most relevant to changed files.
-- [x] Produce compact output.
-- [x] Store verbose logs separately.
-- [x] Return reliable exit code.
+---
 
-## 12.2 `test-full`
+# 22. Finish Project Validation
 
-- [x] Run the broader project suite.
-- [x] Produce summarized output.
-- [x] Store full artifacts separately.
-- [x] Return reliable exit code.
+## `test-changed`
 
-## 12.3 `verify`
+- [X] Identify tests associated with changed work.
+- [X] Run targeted tests.
+- [X] Return reliable exit status.
+- [X] Save detailed artifacts.
 
-Potential checks:
+## `test-full`
 
-- [x] Build.
-- [x] Lint/static analysis.
-- [x] Syntax validation.
-- [x] Required tests.
-- [x] Generated-file checks.
-- [x] Packaging/export checks where relevant.
+- [X] Run project test suite.
+- [X] Save structured reports.
+- [X] Return reliable exit status.
 
-## 12.4 LLM-friendly result format
+## `verify`
 
-Prefer concise structured output such as:
+- [X] Build.
+- [X] Lint.
+- [X] Static analysis.
+- [X] Syntax validation.
+- [X] Tests.
+- [X] Packaging/export validation where relevant.
+
+---
+
+# 23. Prefer Standard Test Formats
+
+Use existing outputs instead of writing custom parsers.
+
+Prefer:
+
+```text
+JUnit XML
+TRX
+SARIF
+coverage XML/JSON
+native JSON reports
+```
+
+Then create only a thin summary stage for the LLM.
+
+Example:
 
 ```json
 {
   "status": "failed",
-  "stage": "test",
   "passed": 417,
   "failed": 2,
-  "failures": [
-    {
-      "test": "NetworkSessionTest.join_existing_session",
-      "message": "Expected READY, received CONNECTING",
-      "artifact": "artifacts/test-failure-1.log"
-    }
+  "failure_reports": [
+    "artifacts/junit.xml"
   ]
 }
 ```
 
-- [x] Keep large logs out of normal agent context.
-- [x] Provide artifact paths for deeper investigation.
+- [X] Keep verbose logs outside normal LLM context.
+- [X] Supply exact failure sections first.
+- [X] Let agents retrieve larger artifacts only if needed.
 
 ---
 
-# Phase 13 — Risk-Based Human Gates
+# 24. Keep Risk-Based Human Gates
 
-## Low risk
+The existing risk gate design remains valuable.
+
+## Low Risk
 
 Examples:
 
-- [x] Documentation.
-- [x] Tests.
-- [x] Minor UI.
-- [x] Small isolated bug fixes.
-
-Flow:
+- documentation;
+- tests;
+- minor isolated bug fixes.
 
 ```text
-implement → test → review → human-review
+implement
+ → validate
+ → AI review
+ → human review
 ```
 
-Potential future option:
+## Medium Risk
 
-- [x] Allow additional automation after the system proves reliable.
+- features;
+- networking;
+- persistence;
+- meaningful refactoring.
 
-## Medium risk
+Require:
 
-Examples:
+- [X] independent AI review;
+- [X] human PR review.
 
-- [x] Feature work.
-- [x] Refactoring.
-- [x] Networking changes.
-- [x] Persistence changes.
+## High Risk
 
-Requirements:
+- security;
+- authentication;
+- migration;
+- billing;
+- deployment;
+- major architecture.
 
-- [x] Independent review.
-- [x] Human PR review.
+Require:
 
-## High risk
-
-Examples:
-
-- [x] Authentication.
-- [x] Security.
-- [x] Data migration.
-- [x] Billing.
-- [x] Large architectural changes.
-- [x] Deployment infrastructure.
-
-Requirements:
-
-- [x] Human plan approval.
-- [x] Implementation.
-- [x] Full validation.
-- [x] Independent review.
-- [x] Human merge.
+- [X] human plan approval;
+- [X] implementation;
+- [X] full validation;
+- [X] independent review;
+- [X] human merge.
 
 ---
 
-# Phase 14 — Dispatch and Parallel Work
+# 25. Retire Most of Existing Phase 14: Cezar Parallel Dispatch
 
-Use Cezar child-task dispatch only when decomposition provides clear value.
+The original plan intended Cezar child-task dispatch for:
 
-## 14.1 Initial use cases
+- parallel test creation;
+- research;
+- code analysis;
+- isolated implementation work.
 
-- [x] Independent test creation.
-- [x] Parallel research.
-- [x] Independent codebase analysis.
-- [x] Clearly isolated implementation components.
+OpenHands now overlaps significantly with this.
 
-## 14.2 Avoid initially
+## Revised Decision
 
-- [x] Multiple child agents editing strongly overlapping files.
-- [x] Unbounded recursive task decomposition.
-- [x] Large numbers of tiny child tasks.
+- [X] Do not prioritize Cezar as the coding-agent parallelism layer.
+- [X] Use OpenHands worktree isolation and parallel agents first.
+- [X] Keep Cezar child tasks only for workflow-level decomposition.
 
-## 14.3 Guardrails
-
-- [x] Set maximum in-flight child count.
-- [x] Set cost/token budget.
-- [x] Require parent integration step.
-- [x] Require final validation after integration.
-
----
-
-# Phase 15 — Knowledge Feedback Loop
-
-Add only after the core factory is stable.
+Good Cezar parallel use:
 
 ```text
-Task
- ↓
-Implementation
- ↓
-Failure/review feedback
- ↓
-Reusable discovery
- ↓
-Project knowledge
- ↓
-Future tasks improve
+Research dependency options
+Analyze API requirements
+Run external data task
+Generate asset
 ```
 
-## 15.1 Initial mode
+Good OpenHands parallel use:
 
-- [x] Agent proposes knowledge updates.
-- [x] Human reviews them.
-- [x] Do not auto-edit shared factory skills initially.
-
-## 15.2 Project-level knowledge
-
-Good targets:
-
-- [x] Testing requirements.
-- [x] Architecture rules.
-- [x] Common environment setup.
-- [x] Known framework pitfalls.
-- [x] Project conventions.
-
-## 15.3 Factory-level knowledge
-
-Promote project findings to shared factory skills only when:
-
-- [x] Applicable across multiple repositories.
-- [x] Stable.
-- [x] Not technology/project-specific.
-- [x] Reviewed.
+```text
+Agent A → implementation
+Agent B → independent review
+Agent C → isolated test work
+```
 
 ---
 
-# Phase 16 — Pilot on One Repository
+# 26. Repository Context — Do Not Build Anything Yet
 
-Use one repository as the proving ground before rolling out globally.
+Retire plans for a custom:
 
-Recommended pilot characteristics:
+- repository indexing service;
+- Tree-sitter service;
+- symbol graph;
+- embeddings pipeline;
+- context compiler.
 
-- [x] Active backlog.
-- [x] Good automated tests.
-- [x] Mix of bugs and features.
-- [x] Existing Cezar usage.
+First use agent-native tooling.
 
-## Pilot steps
+Evaluate:
 
-- [ ] Install factory `0.1.0`.
-- [ ] Configure labels.
-- [ ] Add project validation scripts.
-- [ ] Add project architecture/testing skills.
-- [ ] Enable planning automation only.
-- [ ] Process several real issues.
-- [ ] Tune planning skill.
-- [ ] Enable implementation automation.
-- [ ] Process several low-risk issues.
-- [ ] Enable review automation.
-- [ ] Exercise rework loop.
-- [ ] Exercise investigation/escalation.
-- [ ] Test factory upgrade process.
-- [ ] Test rollback to previous factory version.
+- [X] OpenHands repository/context handling.
+- [ ] Codex native repo exploration. (The installed CLI was tested against
+  the Mac mini endpoint, but its ChatGPT-account provider rejected the local
+  `qwen3.5-9b` model before repository access; see
+  `docs/local-coding-tool-evaluation.md`.)
+- [ ] Claude Code native repo exploration.
+
+Only if token usage remains problematic:
+
+- [X] Test Aider repository maps. Deferred after evaluation: Aider is not
+  installed and the current bounded OpenHands path does not show a context
+  pressure problem; see `docs/local-coding-tool-evaluation.md`.
+- [X] Test Continue context providers. Deferred after evaluation: Continue is
+  not installed and the current workflow is headless; see
+  `docs/local-coding-tool-evaluation.md`.
+
+Build custom tooling only after demonstrating a specific gap.
 
 ---
 
-# Phase 17 — CI for the Factory Itself
+# 27. Context Optimization Policy
 
-The factory repository should test its own releases.
+Default context strategy:
 
-## Validate on every factory change
+```text
+Issue
+  +
+acceptance criteria
+  +
+project instructions
+  +
+relevant Hindsight recall
+  +
+agent-native repo discovery
+```
 
-- [x] YAML syntax.
-- [x] JSON schemas.
-- [x] Skill metadata.
-- [x] Required files.
-- [x] Managed-file templates.
-- [x] Sync scripts.
-- [x] Install into sample fixture project.
-- [x] Upgrade fixture from previous version.
-- [x] Drift detection.
-- [x] Removal of obsolete managed files.
-- [x] Preservation of project-owned overrides.
+Not:
 
-## Fixture repositories
+```text
+Entire repository
+Entire documentation set
+Entire issue history
+Entire previous agent conversation
+```
 
-Create sample project fixtures:
+## Rules
+
+- [X] Never proactively inject full test logs.
+- [X] Never inject unrelated architectural documentation.
+- [X] Prefer Git diffs during review.
+- [X] Prefer references to artifacts over artifact bodies.
+- [X] Give agents additional context on demand.
+
+---
+
+# 28. Add Langfuse for Model Observability
+
+Use Langfuse for:
+
+- local model calls;
+- LiteLLM traffic;
+- prompts;
+- outputs;
+- token counts;
+- latency;
+- traces.
+
+## Work
+
+- [X] Deploy Langfuse.
+- [X] Instrument LiteLLM.
+- [X] Add project metadata.
+- [X] Add workflow metadata.
+- [X] Add GitHub issue metadata.
+- [X] Add model metadata.
+
+Do not build a custom LLM telemetry product.
+
+---
+
+# 29. Subscription Agent Metrics
+
+Exact token telemetry may not always be available through subscription agents.
+
+That is acceptable.
+
+Record coarse metrics:
+
+```yaml
+project: tableflux
+issue: 412
+worker: codex
+provider: openhands
+
+result: success
+attempts: 1
+duration: ...
+
+files_changed: 6
+
+validation:
+  passed: true
+```
+
+This is enough for routing analysis.
+
+---
+
+# 30. Infrastructure Monitoring
+
+Use:
+
+```text
+Prometheus
++
+Grafana
+```
+
+Optionally:
+
+```text
+Loki
+```
+
+for centralized logs.
+
+Monitor:
+
+- vLLM;
+- GPUs;
+- VRAM;
+- CPU;
+- RAM;
+- Podman;
+- OpenHands Agent Servers;
+- Cezar;
+- Hindsight;
+- LiteLLM;
+- Langfuse.
+
+---
+
+# 31. Factory Dashboard
+
+Continue the previously planned Factory homepage/dashboard, but keep it thin.
+
+The dashboard should be a **portal**, not a replacement UI.
+
+Example:
+
+```text
+Factory
+
+Development
+────────────────────────
+GitHub          ✓
+Cezar           ✓
+OpenHands       ✓
+
+AI Services
+────────────────────────
+vLLM GPU-01     ✓
+LiteLLM         ✓
+Hindsight       ✓
+Langfuse        ✓
+
+Infrastructure
+────────────────────────
+Grafana         ✓
+GPU-01          ✓
+Linux-01        ✓
+
+Projects
+────────────────────────
+Tableflux       ✓
+Book Factory    ✓
+Asset Generator ✓
+```
+
+## Build Only
+
+- [X] health indicators;
+- [X] direct links;
+- [X] basic workload counts;
+- [X] machine availability;
+- [X] important alerts.
+
+Use product-native dashboards for detailed management.
+
+---
+
+# 32. Factory CI — Keep Original Plan
+
+The original Factory repository still needs CI.
+
+Finish:
+
+- [X] YAML validation.
+- [X] JSON schema validation.
+- [X] Skill validation.
+- [X] required-file checks.
+- [X] synchronization tests.
+- [X] installation into fixture project.
+- [X] upgrade fixture tests.
+- [X] drift detection tests.
+- [X] project-override preservation tests.
+
+Keep fixtures:
 
 ```text
 tests/fixtures/
@@ -1243,278 +1103,369 @@ tests/fixtures/
 
 ---
 
-# Phase 18 — Versioning and Release Process
+# 33. Factory Release Process — Keep Original Plan
 
-## Version policy
+Continue using semantic versions.
 
-Use semantic versioning:
+## Patch
 
-### Patch
+- prompt updates;
+- fixes;
+- non-breaking validation changes.
 
-Examples:
+## Minor
 
-- Prompt wording improvements.
-- Bug fixes.
-- Non-breaking validation improvements.
+- workflow;
+- skill;
+- optional feature;
+- integration.
 
-### Minor
+## Major
 
-Examples:
+- lifecycle change;
+- required schema change;
+- breaking workflow behavior.
 
-- New skill.
-- New workflow.
-- New optional policy.
-- New automation.
+Finish:
 
-### Major
-
-Examples:
-
-- Label lifecycle changes.
-- Required config schema changes.
-- Workflow semantics change.
-- Removal/rename of public factory components.
-
-## Release checklist
-
-- [x] Update `VERSION`.
-- [x] Update changelog.
-- [ ] Run factory CI.
-- [x] Test synchronization against fixture projects.
-- [ ] Tag release.
-- [ ] Publish release notes.
-- [x] Document any project migration steps.
+- [X] automated release validation;
+- [X] fixture upgrade tests;
+- [X] release notes;
+- [X] rollback validation.
 
 ---
 
-# Phase 19 — Factory Upgrade Flow
+# 34. Revised Configuration Repository
 
-Normal project upgrade:
+Expand the existing Factory repo rather than creating another configuration repository.
 
 ```text
-Current project
-factory: 0.3.1
-      ↓
-choose 0.4.0
-      ↓
-update factory.config.yaml
-      ↓
-run factory update
-      ↓
-review generated diff
-      ↓
-run factory verify
-      ↓
-project CI
-      ↓
-commit/PR
-      ↓
-merge
+cezar-factory/
+│
+├── skills/
+├── workflows/
+├── automations/
+├── policies/
+├── schemas/
+│
+├── integrations/
+│   ├── openhands/
+│   ├── hindsight/
+│   ├── litellm/
+│   ├── vllm/
+│   ├── langfuse/
+│   └── monitoring/
+│
+├── routing/
+│   └── default.yaml
+│
+├── templates/
+├── scripts/
+├── tests/
+└── docs/
 ```
 
-Checklist:
-
-- [x] Never upgrade projects silently.
-- [x] Never automatically follow factory `main`.
-- [x] Keep old factory releases available.
-- [x] Make rollback possible by restoring the previous version pin and re-running sync.
-- [x] Commit synchronized generated files to each project.
-
----
-
-# Phase 20 — Initial v0.1 Scope
-
-Keep the first release intentionally small.
-
-## Skills
-
-- [x] `factory-plan`
-- [x] `factory-implement`
-- [x] `factory-review`
-- [x] `factory-fix`
-- [x] `factory-investigate`
-
-## Workflows
-
-- [x] `plan`
-- [x] `implement`
-- [x] `review`
-- [x] `fix-review`
-- [x] `investigate`
-
-## Automations
-
-- [x] `needs-plan`
-- [x] `ready-to-implement`
-- [x] `ready-to-review`
-- [x] `changes-requested`
-
-## Policies
-
-- [x] Labels.
-- [x] Definition of Ready.
-- [x] Definition of Done.
-- [x] Retry policy.
-- [x] Escalation policy.
-
-## Synchronization
-
-- [x] `install.ps1`
-- [x] `update.ps1`
-- [x] `verify.ps1`
-- [x] `diff.ps1`
-- [x] Version pinning.
-- [x] Managed-file markers.
-- [x] Project-owned override preservation.
-- [x] Dry-run support.
-
-## Explicitly defer
-
-- [ ] Automatic merging.
-- [ ] Large custom dashboard.
-- [ ] Separate orchestration database.
-- [ ] Complex dependency scheduler.
-- [ ] Automated factory-wide knowledge edits.
-- [ ] Automated risk inference.
-- [ ] Advanced cross-project scheduling.
-- [ ] Complex workflow patching.
-- [ ] Fully autonomous high-risk changes.
+- [X] Configure Factory control-plane containers for the Bazzite server.
+- [X] Configure native vLLM deployment for the Mac mini only; keep control-plane containers on Bazzite.
+- [X] Keep deployment templates versioned.
+- [X] Add self-validating deployment scripts and CI/static coverage for deployment contracts.
+- [X] Keep credentials outside Git.
+- [X] Deploy HashiCorp Vault with persistent integrated storage on Bazzite;
+  bootstrap and secret migration remain operator-controlled.
+- [X] Version integration configuration where practical.
 
 ---
 
-# Target v0.1 Lifecycle
+# 35. Product Stack
+
+| Responsibility          | Product                |
+| ----------------------- | ---------------------- |
+| Backlog / work truth    | GitHub                 |
+| Factory control plane   | Cezar                  |
+| Coding execution        | OpenHands Agent Canvas |
+| Premium coding          | Codex CLI              |
+| Premium coding/analysis | Claude Code            |
+| Local inference         | **vLLM**         |
+| Local/API routing       | LiteLLM                |
+| Long-term memory        | Hindsight              |
+| LLM observability       | Langfuse               |
+| Infrastructure metrics  | Prometheus             |
+| Dashboards              | Grafana                |
+| Secret management       | HashiCorp Vault        |
+| Source control          | Git                    |
+
+Optional:
+
+| Need                                | Product     |
+| ----------------------------------- | ----------- |
+| Local coding agent                  | Aider       |
+| Interactive local-model coding      | Continue    |
+| Central logs                        | Loki        |
+| Large-scale code intelligence later | Sourcegraph |
+
+---
+
+# 36. Things We Explicitly Will Not Build
+
+Unless an existing product proves insufficient:
+
+- [X] No custom model inference server.
+- [X] No custom LLM gateway.
+- [X] No custom coding-agent runtime.
+- [X] No custom Codex wrapper.
+- [X] No custom Claude wrapper.
+- [X] No custom Git worktree scheduler.
+- [X] No custom distributed coding-agent protocol.
+- [X] No custom vector memory store.
+- [X] No custom memory retrieval engine.
+- [X] No custom repository map initially.
+- [X] No custom Tree-sitter indexing service initially.
+- [X] No custom LLM observability platform.
+- [X] No custom infrastructure-monitoring system.
+- [X] No custom workflow state database.
+- [X] No custom sophisticated agent router initially.
+
+---
+
+# 37. Revised Implementation Sequence
+
+## Phase A — Finish Existing Cezar v0.1
+
+- [X] Finish project override preservation.
+- [X] Finish sync dry-run.
+- [X] Finish project validation interface.
+- [X] Add Factory CI.
+- [X] Validate rollback.
+- [X] Pilot existing planning/implementation/review loop; deterministic lifecycle evidence is recorded in `docs/pilot-loop-evidence.md`.
+
+### Milestone
+
+Current Factory work is stable and reproducible.
+
+---
+
+## Phase B — OpenHands Integration
+
+- [X] Deploy Agent Canvas.
+- [ ] Connect Codex. (Profile persistence and deployment are verified; the
+  subscription-backed conversation still fails before the agent can run; see
+  `docs/openhands-live-evidence.md`.)
+- [ ] Connect Claude Code.
+- [X] Test isolated parallel work.
+- [X] Test remote Agent Server.
+- [X] Connect Cezar → OpenHands.
+- [X] Replace direct premium-agent execution with OpenHands. The routing
+  policy and checked-in provider adapter now send non-local agents through
+  OpenHands; live premium authentication remains a separate open gate.
+
+### Milestone
+
+Cezar controls work while OpenHands executes coding jobs.
+
+---
+
+## Phase C — vLLM
+
+- [X] Deploy native vLLM on the Mac mini; keep the Bazzite control plane containerized.
+- [X] Add general model.
+- [X] Add coding model.
+- [X] Benchmark both.
+- [X] Secure service behind trusted network/reverse proxy; live evidence is recorded in `docs/vllm-live-evidence.md`.
+- [X] Document model deployment.
+
+### Milestone
+
+Factory has a production-style local inference service.
+
+---
+
+## Phase D — LiteLLM
+
+- [X] Deploy LiteLLM.
+- [X] Connect vLLM.
+- [X] Create virtual model names.
+- [X] Enable health/fallback configuration.
+- [X] Add dedicated persistent PostgreSQL backing for LiteLLM.
+- [X] Connect Cezar utility workflows.
+
+### Milestone
+
+Local-model clients no longer depend directly on an individual model server.
+
+---
+
+## Phase E — Local Utility Work
+
+Move to vLLM:
+
+- [X] issue classification;
+- [X] summaries;
+- [X] acceptance-criteria extraction;
+- [X] log compression;
+- [X] result normalization;
+- [X] Hindsight reflection candidates.
+
+### Milestone
+
+Premium agents mostly perform actual reasoning/coding.
+
+---
+
+## Phase F — Hindsight
+
+- [X] Deploy Hindsight.
+- [X] Add project banks.
+- [X] Add Factory bank.
+- [X] Connect MCP.
+- [X] Add pre-plan recall.
+- [X] Add investigation recall.
+- [X] Add post-task retain/reflection.
+
+### Milestone
+
+Previous Factory/project discoveries are reused automatically.
+
+---
+
+## Phase G — Observability
+
+- [X] Deploy Langfuse.
+- [X] Instrument LiteLLM.
+- [X] Add OpenTelemetry where useful.
+- [X] Deploy Prometheus.
+- [X] Deploy Grafana.
+- [ ] Add GPU exporters (evaluated; waiting for a compatible AMD 680M telemetry stack; see `docs/gpu-exporter-evaluation.md`).
+- [X] Add Podman/container monitoring.
+
+### Milestone
+
+We know where compute, time, and tokens are being spent.
+
+---
+
+## Phase H — Routing Optimization
+
+Only after enough history exists:
+
+- [X] Compare local-model success against subscription agents. (Mac mini
+  `openai/qwen3.5-9b` direct and checked-in-adapter/worktree smoke tests pass;
+  the adapter now records duration and coarse token usage; subscription side
+  still fails before tool execution. The comparison result is recorded in
+  `docs/openhands-live-evidence.md`.)
+- [X] Identify task classes suitable for local inference.
+- [X] Adjust deterministic routing policy.
+- [X] Evaluate Aider for local implementation; defer adoption because OpenHands already provides the bounded local execution boundary.
+- [X] Evaluate Continue only where useful; defer it because the current workflow is headless and has no editor-context requirement.
+- [X] Consider more sophisticated routing only if justified; defer it until subscription-agent comparison data exists.
+
+---
+
+## Phase I — Multi-GPU / Multi-Node vLLM Learning
+
+When hardware permits:
+
+- [ ] Test multi-GPU tensor parallelism.
+- [ ] Test multiple independent replicas.
+- [ ] Compare throughput approaches.
+- [ ] Deploy Ray.
+- [ ] Test multi-node vLLM.
+- [ ] Test node failure/recovery.
+- [X] Capture deployment notes.
+- [X] Capture monitoring lessons.
+- [X] Capture model-loading/storage lessons.
+
+### Milestone
+
+The home Factory doubles as practical distributed-inference training.
+
+---
+
+# 38. Revised Near-Term Priority
+
+The next work should therefore be:
 
 ```text
-GitHub Issue
-     │
-     ▼
-factory:needs-plan
-     │
-     ▼
-Cezar Automation
-     │
-     ▼
-PLAN WORKFLOW
-     │
-     ├── needs-help
-     │
-     └── ready
-           │
-           ▼
-     Cezar Automation
-           │
-           ▼
-   IMPLEMENT WORKFLOW
-           │
-           ├── retry
-           │
-           ├── investigate
-           │
-           └── PR + review
-                      │
-                      ▼
-                REVIEW WORKFLOW
-                      │
-                ┌─────┴─────┐
-                ▼           ▼
-        changes-requested   human-review
-                │           │
-                ▼           ▼
-          FIX WORKFLOW    HUMAN
-                │           │
-                └──review───┘
-                            │
-                            ▼
-                          done
+1. Finish the few remaining Cezar v0.1 tasks
+               ↓
+2. Prove OpenHands + Codex + Claude
+               ↓
+3. Integrate OpenHands into Cezar
+               ↓
+4. Deploy vLLM
+               ↓
+5. Move cheap tasks to local models
+               ↓
+6. Add Hindsight
+               ↓
+7. Add Langfuse + Grafana
+               ↓
+8. Measure
+               ↓
+9. Optimize routing
 ```
+
+Do **not** spend significant effort on Aider, Continue, custom context compilation, advanced routing, or distributed inference until the core pipeline is operational.
 
 ---
 
-# Success Criteria for the First Production Release
-
-The factory is ready for broader rollout when:
-
-- [ ] A new issue can move from `needs-plan` to a reviewed PR without manual orchestration.
-- [x] Agents do not implement unresolved/ambiguous issues.
-- [x] Failed implementation attempts stop after a defined limit.
-- [x] Repeated failures are investigated instead of endlessly retried.
-- [x] Review is performed in an independent context.
-- [x] Project validation produces compact LLM-friendly results.
-- [x] Human intervention is clearly surfaced with actionable context.
-- [x] Factory upgrades are version-pinned.
-- [x] Factory upgrades produce reviewable Git diffs.
-- [x] A project can reproduce its installed factory configuration from source.
-- [x] A previous factory release can be restored cleanly.
-- [x] Project-specific skills and overrides survive factory upgrades.
-- [x] Cezar runtime state is not accidentally committed to source control.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# 39. Updated Success Criteria
+
+The Factory is ready for broader rollout when:
+
+- [ ] An issue can progress from `factory:needs-plan` to reviewed PR without manual orchestration.
+- [X] Cezar remains the authoritative lifecycle controller.
+- [ ] OpenHands reliably executes Codex/Claude coding work.
+- [ ] Premium agents use existing subscriptions.
+- [X] vLLM reliably handles local inference.
+- [X] Bounded utility tasks run locally.
+- [X] Tests return compact structured information.
+- [X] Hindsight recalls useful prior project knowledge.
+- [X] Factory/project upgrades remain versioned and reproducible.
+- [X] Agent execution is isolated.
+- [X] Failed work stops after configured limits.
+- [X] Human intervention produces actionable context.
+- [ ] Local and premium workload usage is observable. (Local adapter results
+  now include duration, model, and coarse token usage; premium accounting is
+  pending successful subscription transport.)
+- [X] No major subsystem duplicates functionality already supplied by an integrated product.
+
+---
+
+# 40. Final Architecture Principle
+
+The Factory should not become another giant orchestration framework.
+
+Its own code should primarily answer:
+
+```text
+What work needs doing?
+When should it run?
+Which policy applies?
+Which existing tool should perform it?
+Did it succeed?
+What should we remember?
+```
+
+Everything else should be delegated to products that already solve the problem well.
+
+---
+
+# 41. External completion gates
+
+The remaining unchecked items are intentionally gated on external state, not
+missing local implementation:
+
+- Premium execution: create an authenticated ACP profile for Codex and Claude
+  in OpenHands, then rerun the bounded issue, concurrent-worktree, and PR
+  lifecycle checks.
+- GitHub lifecycle: Bazzite Cezar CLI auth is configured and read-only verified
+  (`docs/github-bazzite-live-evidence.md`); a real issue/PR lifecycle still needs
+  a bounded end-to-end run. The workstation credential remains a separate path.
+- Distributed inference: add a second GPU or node before attempting tensor
+  parallelism, independent replicas, Ray, or failure-recovery experiments.
+- Native client comparisons: revisit native Claude/other-client exploration
+  only after credentials and a supported local-provider path are available.
+
+Until those gates change, the authoritative local evidence and deployment
+checks are complete and the corresponding checklist items remain open rather
+than being marked complete by inference.

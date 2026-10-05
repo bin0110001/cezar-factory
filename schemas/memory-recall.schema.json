@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["status","banksQueried","memoryIds","memoryCount","contextChars","selected"],
+  "properties":{
+    "status":{"enum":["ok","miss","unavailable"]},
+    "banksQueried":{"type":"array","items":{"type":"string"}},
+    "memoryIds":{"type":"array","maxItems":8,"items":{"type":"string"}},
+    "memoryCount":{"type":"integer","minimum":0,"maximum":8},
+    "contextChars":{"type":"integer","minimum":0,"maximum":12000},
+    "selected":{"type":"array","maxItems":8,"items":{"type":"object","required":["id","excerpt"],"properties":{"id":{"type":"string"},"score":{"type":"number"},"excerpt":{"type":"string","maxLength":12000}}}},
+    "warning":{"type":"string"}
+  }
+}

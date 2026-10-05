@@ -1,0 +1,16 @@
+{
+  "name": "hindsight",
+  "transport": "streamable-http",
+  "url": "${HINDSIGHT_URL}/mcp",
+  "headers": {
+    "Authorization": "Bearer ${HINDSIGHT_AUTH_TOKEN}"
+  },
+  "banks": {
+    "factory": "${HINDSIGHT_FACTORY_BANK}",
+    "project": "${HINDSIGHT_PROJECT_BANK}"
+  },
+  "limits": {
+    "maxMemories": 8,
+    "maxContextChars": 12000
+  }
+}

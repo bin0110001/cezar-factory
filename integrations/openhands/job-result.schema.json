@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenHandsJobResult",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "provider": { "const": "openhands" },
+    "agent": { "type": "string" },
+    "status": { "type": "string", "enum": ["success", "failure", "cancelled"] },
+    "issue": { "type": "integer", "minimum": 1 },
+    "branch": { "type": "string", "minLength": 1 },
+    "pr": { "type": "string" },
+    "attempts": { "type": "integer", "minimum": 1 },
+    "validationPassed": { "type": "boolean" },
+    "model": { "type": "string", "minLength": 1 },
+    "duration": { "type": "number", "minimum": 0 },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "promptTokens": { "type": "integer", "minimum": 0 },
+        "completionTokens": { "type": "integer", "minimum": 0 },
+        "cacheReadTokens": { "type": "integer", "minimum": 0 },
+        "cacheWriteTokens": { "type": "integer", "minimum": 0 },
+        "reasoningTokens": { "type": "integer", "minimum": 0 },
+        "totalTokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "failureArtifacts": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["provider", "agent", "status", "issue", "branch", "attempts", "validationPassed"]
+}

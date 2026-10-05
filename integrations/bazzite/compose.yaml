@@ -1,0 +1,152 @@
+name: cezar-factory
+
+services:
+  cezar:
+    image: ${CEZAR_IMAGE}
+    env_file: .env
+    environment:
+      CEZ_AUTOMATIONS: ${CEZAR_AUTOMATIONS}
+      CEZ_API_URL: ${CEZ_API_URL}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  openhands:
+    image: ${OPENHANDS_IMAGE}
+    env_file: .env
+    environment:
+      AGENT_SERVER_URL: ${OPENHANDS_AGENT_SERVER_URL}
+      LOCAL_BACKEND_API_KEY: ${OPENHANDS_SESSION_API_KEY}
+      FILE_STORE: local
+      LOCAL_STORAGE_PATH: /home/openhands/.openhands/storage
+      AUTOMATION_AGENT_SERVER_URL: http://127.0.0.1:18000
+    restart: unless-stopped
+    ports:
+      - "${OPENHANDS_BIND_ADDRESS:-127.0.0.1}:3001:8000"
+    volumes:
+      - openhands-data:/home/openhands/.openhands
+      - openhands-projects:/projects
+
+  hindsight:
+    image: ${HINDSIGHT_IMAGE}
+    env_file: .env
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY}
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_API_LLM_BASE_URL}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_API_LLM_MODEL}
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS}
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_PORT: 8888
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0:Z
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+
+  litellm:
+    image: ${LITELLM_IMAGE}
+    env_file: .env
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: ${LITELLM_DATABASE_URL}
+      VLLM_BASE_URL: ${VLLM_BASE_URL}
+      VLLM_API_KEY: ${VLLM_API_KEY}
+      NO_PROXY: ${NO_PROXY}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro,Z
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4001:4000"
+
+  litellm-db:
+    image: ${LITELLM_DB_IMAGE}
+    environment:
+      POSTGRES_DB: ${LITELLM_DB_NAME}
+      POSTGRES_USER: ${LITELLM_DB_USER}
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD}
+    volumes:
+      - litellm-db-data:/var/lib/postgresql/data:Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LITELLM_DB_USER} -d ${LITELLM_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  langfuse:
+    image: ${LANGFUSE_IMAGE}
+    env_file: .env
+    environment:
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_HOST: ${LANGFUSE_HOST}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3000"
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro
+      - ./prometheus-model-targets.generated.json:/etc/prometheus/model-targets.json:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: ${GRAFANA_IMAGE}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3003:3000"
+
+  vault:
+    image: ${VAULT_IMAGE}
+    # The official image loads every file in /vault/config automatically.
+    command: ["server"]
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./vault-config:/vault/config:ro,Z
+      - vault-data:/vault/file:Z
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8200:8200"
+
+  node-exporter:
+    image: ${NODE_EXPORTER_IMAGE}
+    command: ["--path.rootfs=/host"]
+    volumes:
+      - /:/host:ro,rslave
+    pid: host
+    restart: unless-stopped
+
+  cadvisor:
+    image: ${CADVISOR_IMAGE}
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/containers:/var/lib/containers:ro
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  openhands-data:
+  openhands-projects:
+  hindsight-data:
+  litellm-db-data:
+  vault-data:

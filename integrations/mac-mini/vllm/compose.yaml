@@ -1,0 +1,23 @@
+name: factory-vllm
+
+services:
+  vllm:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+    command:
+      - "--model"
+      - "${VLLM_MODEL}"
+      - "--served-model-name"
+      - "${VLLM_SERVED_MODEL}"
+      - "--api-key"
+      - "${VLLM_API_KEY}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ${VLLM_CACHE_DIR:-./cache}:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

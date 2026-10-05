@@ -24,9 +24,15 @@ skills:
 features:
   knowledge_extraction: false
   maintenance: false
+  backlog_reconciliation: false
+  backlog_label_cleanup: false
 
 project:
   type: godot
+
+execution:
+  provider: openhands
+  record: .factory/execution.json
 
 validation:
   changed: "./scripts/factory/test-changed.ps1"

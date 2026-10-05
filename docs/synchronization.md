@@ -1,6 +1,30 @@
 # Factory Synchronization
 
-How the factory is installed into, upgraded in, and verified against a project. All scripts are PowerShell 7 and live in `scripts/`; the ones workflows call at runtime are installed into the project under `.ai/factory/scripts/`.
+How the factory is installed into, upgraded in, and verified against a project. All scripts are PowerShell 7 and live in `scripts/`.
+
+## Cezar runtime registration
+
+Factory workflows run in Cezar's isolated Git worktrees. Do **not** make a
+workflow work by disabling worktree isolation, and do not depend on ignored or
+untracked `.ai/factory` files being copied into a worktree. Cezar discovers
+project workflows before it creates the worktree and materializes registered
+skills for the agent; check steps need a separately registered runtime.
+
+The supported deployment model is a version-pinned Factory checkout mounted in
+the Cezar container and exposed as `FACTORY_RUNTIME_ROOT`. On the Bazzite
+Factory host the managed checkout is `/projects/cezar-factory`, so Cezar's
+service must set:
+
+```text
+FACTORY_RUNTIME_ROOT=/projects/cezar-factory
+```
+
+Factory workflow check commands call `$FACTORY_RUNTIME_ROOT/scripts/...`.
+They write result artifacts to the current worktree, while schemas and policies
+come from that versioned runtime. `route-state.ps1` therefore accepts the
+current directory as its project path rather than inferring it from its script
+location. A missing runtime variable is a deployment error that must fail the
+check; it is never a reason to turn worktree isolation off.
 
 ## Where things land
 
@@ -10,8 +34,9 @@ Cezar only loads workflows and skills from fixed locations, so the installer wri
 | --- | --- | --- |
 | `workflows/X.yaml` | `.ai/cezar/workflows/factory-X.yaml` (workflow name `factory-X`) | Cezar's workflow directory; the prefix avoids clashing with built-in or project workflows |
 | `skills/S/SKILL.md` | `.ai/skills/S/SKILL.md` | Shared skill location, also read by other agent tooling |
-| `policies/*`, `schemas/*` | `.ai/factory/policies`, `.ai/factory/schemas` | Read by the factory scripts |
-| `scripts/{validate-result,route-state,sync-automations,create-labels}.ps1` | `.ai/factory/scripts/` | Called by workflows |
+| `policies/*`, `schemas/*`, `routing/*` | `.ai/factory/policies`, `.ai/factory/schemas`, `.ai/factory/routing` | Read by the factory scripts |
+| `scripts/{validate-result,route-state,hindsight/recall}.ps1` | registered Factory runtime (`$FACTORY_RUNTIME_ROOT/scripts/`) | Called by isolated-worktree workflow checks |
+| `scripts/{sync-automations,create-labels}.ps1` | `.ai/factory/scripts/` | Operator-facing project management commands |
 | `automations/*.json` | `.ai/factory/automations/` | Declarative definitions; applied to Cezar by `sync-automations.ps1` |
 
 Written alongside: `.ai/factory/VERSION`, `.ai/factory/manifest.json` (path and SHA-256 of every managed file), `.ai/factory/gitignore.fragment`. The project-owned `.ai/factory/factory.config.yaml` is created once from the template and never overwritten.

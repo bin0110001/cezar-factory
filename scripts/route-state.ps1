@@ -14,7 +14,8 @@ param(
     [string]$Path,
     [int]$Issue,
     [string]$GhCommand = 'gh',
-    [string]$PoliciesDir = (Join-Path $PSScriptRoot '../policies')
+    [string]$PoliciesDir = (Join-Path $PSScriptRoot '../policies'),
+    [string]$ProjectPath = (Get-Location).Path
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
@@ -66,6 +67,43 @@ function Add-Comment([string]$Body) {
     $f = [IO.Path]::GetTempFileName()
     try { [IO.File]::WriteAllText($f, $Body); Invoke-Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
+function Get-SelectedWorker([string[]]$IssueLabels) {
+    if ($IssueLabels -contains 'agent:codex') { return 'codex' }
+    if ($IssueLabels -contains 'agent:claude') { return 'claude' }
+    if ($IssueLabels -contains 'agent:local') { return 'local' }
+    if ($IssueLabels -contains 'type:docs' -or $IssueLabels -contains 'type:maintenance') { return 'local' }
+    if ($IssueLabels -contains 'agent:auto' -or $IssueLabels -contains 'agent:either') { return 'codex' }
+    'codex'
+}
+function Write-ExecutionRecord([string]$Status, $Result = $null) {
+    # Keep only workflow-decision data in the project artifact; OpenHands owns
+    # the session transcript, command history, and worktree internals.
+    $path = Join-Path $ProjectPath '.factory/execution.json'
+    $worker = Get-SelectedWorker $labels
+    $record = [ordered]@{
+        execution = [ordered]@{
+            provider = if ($worker -eq 'local') { 'local' } else { 'openhands' }
+            agent = $worker
+            status = $Status
+            issue = $Issue
+            metadata = [ordered]@{
+                project = if ($env:CEZ_PROJECT_ID) { $env:CEZ_PROJECT_ID } else { Split-Path $ProjectPath -Leaf }
+                workflow = if ($env:CEZ_WORKFLOW_NAME) { $env:CEZ_WORKFLOW_NAME } else { "factory-$Event" }
+                github_issue = $Issue
+                worker = $worker
+                provider = if ($worker -eq 'local') { 'local' } else { 'openhands' }
+                model = if ($env:FACTORY_MODEL) { $env:FACTORY_MODEL } else { $worker }
+            }
+        }
+    }
+    if ($Result) {
+        if ($Result.PSObject.Properties['pr']) { $record.execution.pr = $Result.pr }
+        if ($Result.PSObject.Properties['status']) { $record.execution.result = $Result.status }
+        if ($Result.PSObject.Properties['branch']) { $record.execution.branch = $Result.branch }
+    }
+    New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
+    $record | ConvertTo-Json -Depth 5 | Set-Content -Path $path -Encoding utf8
+}
 function Text($v) { if ($v -is [array]) { ($v | ForEach-Object { "- $_" }) -join "`n" } else { "$v" } }
 function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence, [string]$Hypothesis, [string]$Decision) {
     "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended human decision**`n$Decision"
@@ -79,6 +117,7 @@ switch ($Event) {
     'start' {
         if ($current -contains 'factory:working') { Done 'factory:working' 'already working' }
         Assert-Source 'factory:ready', 'factory:changes-requested', 'factory:blocked'
+        Write-ExecutionRecord 'selected'
         Set-State 'factory:working'; Done 'factory:working'
     }
     'plan-result' {
@@ -126,9 +165,11 @@ switch ($Event) {
     'implement-result' {
         Assert-Source 'factory:working'
         if ($result.status -ne 'success') {
+            Write-ExecutionRecord 'failed' $result
             Add-Comment "## Factory implementation failed`n`n$(Text $result.summary)`n`nTests: $(Text $result.testResult)`nConcerns: $(Text $result.knownConcerns)"
             Set-State 'factory:investigate'; Done 'factory:investigate' 'implementation failed'
         }
+        Write-ExecutionRecord 'complete' $result
         Add-Comment "## Factory implementation`n`nPR: $($result.pr)`n`n$(Text $result.summary)`n`n**Tests run**`n$(Text $result.testsRun)`n`n**Result:** $(Text $result.testResult)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaStatus)`n`n**Known concerns**`n$(Text $result.knownConcerns)"
         Set-State 'factory:review'; Done 'factory:review'
     }

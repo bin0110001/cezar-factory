@@ -16,3 +16,16 @@ Thumbs.db
 # Local script output
 scripts/artifacts/
 scripts/update.log
+
+# Deployment secrets and host-local state
+integrations/**/.env
+integrations/**/.env.*
+!integrations/**/env.example
+integrations/**/cache/
+
+# Installation-specific server inventory (SSH aliases, addresses, service placement)
+config/server-topology.env
+integrations/bazzite/prometheus-model-targets.generated.json
+
+
+connections/**/*

@@ -1,0 +1,16 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"type":"stat","title":"Services up","gridPos":{"h":4,"w":6,"x":0,"y":0},"targets":[{"expr":"count(up{job=~\"cezar|openhands|hindsight|litellm|model-host-vllm\"} == 1)","refId":"A"}]},
+    {"type":"stat","title":"Services down","gridPos":{"h":4,"w":6,"x":6,"y":0},"targets":[{"expr":"count(up{job=~\"cezar|openhands|hindsight|litellm|model-host-vllm\"} == 0)","refId":"A"}]},
+    {"type":"timeseries","title":"Service availability","gridPos":{"h":8,"w":12,"x":0,"y":4},"targets":[{"expr":"up{job=~\"cezar|openhands|hindsight|litellm|model-host-vllm\"}","legendFormat":"{{job}}","refId":"A"}]},
+    {"type":"timeseries","title":"Host CPU load","gridPos":{"h":8,"w":12,"x":12,"y":4},"targets":[{"expr":"node_load1","legendFormat":"{{instance}}","refId":"A"}]},
+    {"type":"timeseries","title":"Container memory","gridPos":{"h":8,"w":12,"x":0,"y":12},"targets":[{"expr":"container_memory_working_set_bytes{name!=\"\"}","legendFormat":"{{name}}","refId":"A"}]},
+    {"type":"timeseries","title":"vLLM availability","gridPos":{"h":8,"w":12,"x":12,"y":12},"targets":[{"expr":"up{job=\"model-host-vllm\"}","legendFormat":"Model host vLLM","refId":"A"}]}
+  ],
+  "schemaVersion": 39,
+  "title": "Cezar Factory Overview",
+  "timezone": "browser",
+  "version": 1
+}

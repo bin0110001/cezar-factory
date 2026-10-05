@@ -1,0 +1,28 @@
+version: 1
+
+banks:
+  factory:
+    purpose: reusable workflow, tool, routing, and operational lessons
+    retention: durable
+  project:
+    naming: "project-${PROJECT_ID}"
+    purpose: project architecture, conventions, failures, and fixes
+    retention: durable
+
+recall:
+  max_memories: 8
+  max_chars: 12000
+  include_scores: true
+
+retain:
+  allow:
+    - architectural_decision
+    - recurring_failure
+    - successful_fix
+    - project_convention
+    - environment_discovery
+  deny:
+    - transcript
+    - source_file
+    - raw_log
+    - temporary_task_state

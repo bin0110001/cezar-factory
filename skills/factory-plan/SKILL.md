@@ -8,6 +8,8 @@ source: skills/factory-plan/SKILL.md
 ## Responsibilities
 
 - Read the issue.
+- Recall a bounded set of relevant Hindsight memories before planning when the
+  Hindsight MCP integration is available.
 - Inspect relevant repository context.
 - Identify ambiguities.
 - Identify likely dependencies.
@@ -32,6 +34,10 @@ source: skills/factory-plan/SKILL.md
 - Extract the issue title, body, and any linked PRs or commits.
 - Note any existing comments, especially from humans.
 - Identify the work type (`type:bug`, `type:feature`, etc.) and risk level (`risk:low`, `risk:medium`, `risk:high`).
+- Query the project bank first and the Factory bank when cross-project lessons
+  are relevant. Limit recall to at most 8 memories and 12,000 characters.
+- Record the bank(s) queried and memory identifiers in `memoryRecall`; never
+  paste an entire memory bank into the planning context.
 
 ### 2. Inspect Repository Context
 

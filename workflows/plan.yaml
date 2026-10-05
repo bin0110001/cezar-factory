@@ -5,20 +5,25 @@
 name: factory-plan
 description: Plan an issue - validated plan result, then routed to factory:ready or factory:needs-help
 steps:
+  - id: recall
+    name: Create bounded memory-recall artifact
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1" -Objective "{{task}}" -TaskClass planning
   - id: plan
     name: Run factory-plan skill
     skill: factory-plan
     prompt: |
       Plan this GitHub issue: {{task}}
 
+      Read `.factory/context/memory-recall.json` when present. Treat an unavailable or miss status as a genuine recall miss; do not invent memories.
+
       Write the structured plan result as JSON to .factory/plan-result.json (create the directory).
       Include the issue number in the "issue" field. Do not edit factory:* labels; the workflow routes state.
   - id: validate
     name: Validate plan result and Definition of Ready
-    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1" -Kind plan -Path .factory/plan-result.json
     onFail:
       retry: plan
       max: 1
   - id: route
     name: Post plan to the issue and set factory state
-    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event plan-result -Path .factory/plan-result.json
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/route-state.ps1" -Event plan-result -Path .factory/plan-result.json

@@ -1,0 +1,30 @@
+# Factory worker routing policy.
+# Runtime credentials and endpoint URLs belong in the project environment, not Git.
+version: 1
+
+routing:
+  classify:
+    worker: local
+  summarize:
+    worker: local
+  docs:
+    preferred: local
+    fallback: codex
+  implementation:
+    preferred: codex
+  architecture:
+    preferred: claude
+  review:
+    different_from_implementation: true
+
+labels:
+  agent:codex: codex
+  agent:claude: claude
+  agent:either: auto
+  agent:local: local
+  agent:auto: auto
+
+execution:
+  record_selected_worker: true
+  state_owner: cezar
+  session_owner: openhands

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenHandsJobRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "provider": { "const": "openhands" },
+    "agent": { "type": "string", "enum": ["codex", "claude", "local"] },
+    "project": { "type": "string", "minLength": 1 },
+    "issue": { "type": "integer", "minimum": 1 },
+    "task": { "type": "string", "minLength": 1 },
+    "branch": { "type": "string", "minLength": 1 },
+    "validation": { "type": "array", "items": { "type": "string" } },
+    "risk": { "type": "string", "enum": ["risk:low", "risk:medium", "risk:high"] }
+  },
+  "required": ["provider", "agent", "project", "issue", "task", "branch", "validation", "risk"]
+}

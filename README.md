@@ -28,12 +28,39 @@ pwsh ../my-project/.ai/factory/scripts/sync-automations.ps1
 
 Run the factory's own tests with `pwsh tests/run-tests.ps1`.
 
+## Deployment
+
+The supported topology is declared in `config/server-topology.env`: it assigns
+control-plane services and vLLM to hosts, and declares their network
+relationship. Copy the example first, then copy the host-local environment
+examples and run the matching deployment script:
+
+```bash
+cp config/server-topology.env.example config/server-topology.env
+./scripts/deploy/deploy-control-plane.sh
+./scripts/deploy/deploy-model-host.sh
+```
+
+Both scripts validate the service endpoints after startup. See
+`integrations/deployment/README.md` for the network and secret boundary.
+
 ## Getting Started
 
-See the documentation in the docs/ directory for detailed information on:
-- Factory lifecycle and state transitions
-- Synchronization process
-- Project integration model
+Follow [docs/getting-started.md](docs/getting-started.md) for the complete,
+reusable setup and deployment path, including host preparation, secret
+handling, OpenHands configuration, local smoke testing, and remaining manual
+gates.
+
+Additional references:
+
+- [Factory lifecycle and state transitions](docs/lifecycle.md)
+- [Synchronization process](docs/synchronization.md)
+- [Project integration model](docs/project-integration.md)
+
+Factory issue routing: work on this Factory's workflows, skills, automations,
+runtime, model serving, and documentation is tracked in
+`bin0110001/cezar-factory`. A different repository used as a backlog-cleanup
+example is not the issue target unless the task explicitly says it is.
 
 ## Version
 

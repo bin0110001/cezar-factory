@@ -1,0 +1,6 @@
+[
+  {
+    "targets": ["REPLACE_AT_DEPLOY"],
+    "labels": {"role": "model-host"}
+  }
+]

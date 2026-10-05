@@ -1,0 +1,17 @@
+{
+  "name": "[factory] backlog-label-audit",
+  "description": "Hourly, capped normalization of legacy issue labels; opt-in via features.backlog_label_cleanup (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {
+    "type": "hours",
+    "every": 1
+  },
+  "task": {
+    "prompt": "Run the bounded legacy-label audit for {{project}} at {{time}} on {{date}}. Do not modify source code.",
+    "workflow": "factory-backlog-label-audit",
+    "runner": "opencode",
+    "model": "litellm/factory-small",
+    "worktree": true,
+    "autonomous": true
+  }
+}

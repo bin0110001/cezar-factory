@@ -68,6 +68,20 @@ validation:
   verify: ./scripts/factory/verify.ps1
 `
 
+## Issue repository routing
+
+Factory-owned work belongs to the Factory repository, `bin0110001/cezar-factory`.
+That includes changes to Factory workflows, skills, automation definitions,
+runtime deployment, model configuration, watchdogs, and Factory documentation.
+
+Other repositories may be named as backlog-cleanup pilots, but their issues are
+project work, not Factory work. Before creating or editing an issue, verify the
+repository from the task context. If the task concerns Factory infrastructure,
+use `bin0110001/cezar-factory`; do not infer the target from the example backlog
+being audited. If a source repository is private and the Factory repository is
+public, do not copy issue bodies, links, or private operational details without
+explicit approval; ask whether a sanitized public issue is acceptable.
+
 ## Version Pinning
 
 Projects pin to specific factory versions to ensure reproducible builds:

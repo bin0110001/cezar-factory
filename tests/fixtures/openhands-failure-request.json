@@ -1,0 +1,10 @@
+{
+  "provider": "openhands",
+  "agent": "local",
+  "project": "cezar-factory",
+  "issue": 9002,
+  "task": "Run the requested validation command exactly. Do not modify files.",
+  "branch": "factory/live-provider-failure-smoke",
+  "validation": ["false"],
+  "risk": "risk:low"
+}
