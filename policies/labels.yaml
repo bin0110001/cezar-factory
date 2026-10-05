@@ -12,6 +12,10 @@ factory-state:
   - factory:done
   - factory:investigate
 
+# Factory classification labels that do not participate in lifecycle routing
+factory-classification:
+  - factory:tracking
+
 # Work-type labels
 type:
   - type:bug
@@ -26,6 +30,12 @@ risk:
   - risk:low
   - risk:medium
   - risk:high
+
+# Estimated delivery complexity; exactly one is assigned by planning.
+complexity:
+  - complexity:small
+  - complexity:medium
+  - complexity:large
 
 # Optional routing labels
 agent:

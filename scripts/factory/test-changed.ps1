@@ -85,6 +85,7 @@ try {
 
     # --- Step 2: Run relevant tests ---
     foreach ($changedFile in $changedFiles) {
+        if ([IO.Path]::GetFileName($changedFile) -eq 'test-changed.ps1') { continue }
         $fileName = [System.IO.Path]::GetFileNameWithoutExtension($changedFile)
         $testCandidates = @()
 
@@ -101,6 +102,8 @@ try {
                 $candidates = Get-ChildItem -Path $dir -Recurse -ErrorAction SilentlyContinue |
                     Where-Object {
                         $_.Name -match "$fileName" -and
+                            $_.FullName -ne (Resolve-Path $changedFile -ErrorAction SilentlyContinue).Path -and
+                            ($_.Name -match '^(test|run-tests)' -or $_.Name -match '\.Tests\.' ) -and
                         ($_.Extension -in @('.ps1', '.cs', '.java', '.go', '.rs', '.ts', '.js'))
                     }
                 $testCandidates += $candidates

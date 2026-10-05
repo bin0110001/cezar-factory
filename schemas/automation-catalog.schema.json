@@ -24,7 +24,20 @@
         "properties": {
           "runner": { "enum": ["claude", "codex", "opencode"] },
           "model": { "type": "string", "minLength": 1 },
-          "spendTier": { "enum": ["local", "premium-planning", "premium-review", "premium-implementation"] }
+            "spendTier": { "enum": ["local", "premium-planning", "premium-review", "premium-implementation"] },
+            "complexityVariants": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["runner", "model", "spendTier"],
+                "properties": {
+                  "runner": { "enum": ["claude", "codex", "opencode"] },
+                  "model": { "type": "string", "minLength": 1 },
+                  "spendTier": { "enum": ["local", "premium-planning", "premium-review", "premium-implementation"] }
+                },
+                "additionalProperties": false
+              }
+            }
         },
         "additionalProperties": false
       }

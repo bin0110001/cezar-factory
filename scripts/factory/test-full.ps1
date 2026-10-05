@@ -72,7 +72,8 @@ try {
 
     foreach ($dir in $testDirs) {
         if (Test-Path $dir) {
-            $dirTests = Get-ChildItem -Path $dir -Recurse -Include "*.ps1", "*.cs", "*.java", "*.go", "*.rs", "*.ts", "*.js" -ErrorAction SilentlyContinue
+            $dirTests = Get-ChildItem -Path $dir -Recurse -Include "*.ps1", "*.cs", "*.java", "*.go", "*.rs", "*.ts", "*.js" -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^(test|run-tests)' -or $_.Name -match '\.Tests\.' -or $_.Extension -ne '.ps1' }
             $testFiles += $dirTests
         }
     }

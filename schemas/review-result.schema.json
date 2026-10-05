@@ -28,6 +28,9 @@
     },
     "riskObservations": {
       "type": "string"
+    },
+    "pr": {
+      "type": "string"
     }
   },
   "required": [

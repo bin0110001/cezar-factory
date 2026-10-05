@@ -9,7 +9,7 @@ steps:
     name: Maintenance sweep
     prompt: |
       Run a read-only maintenance sweep of this repository and report findings; do not modify code.
-      1. Issues labelled factory:working with no activity for 24h: add label factory:investigate and comment why.
+      1. Issues labelled factory:working with no activity for 24h: remove factory:working, then add factory:investigate and comment why. Never leave both lifecycle labels.
       2. Stale issues (no activity 60 days, not factory:done): list them in one summary issue.
       3. Unhandled TODO/FIXME, documentation drift, flaky tests: file at most 3 new issues labelled
          factory:new and type:maintenance, each with a clear objective.

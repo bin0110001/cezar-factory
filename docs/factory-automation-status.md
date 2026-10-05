@@ -78,8 +78,10 @@ is recorded here.
 `blackjackandhookersGadot` is the first backlog-cleanup pilot. Its opt-in
 `features.backlog_label_cleanup` installs an hourly Cezar schedule
 (`{ "type": "hours", "every": 1 }`) that is capped at three open issues per run,
-preserves legacy labels, and may add only `factory:new`, one `type:*`, and one
-`risk:*` label. It never makes legacy work implementation-ready.
+preserves legacy labels, and may classify executable work with `factory:new`,
+one `type:*`, and one `risk:*` label. Epic and tracking parents receive the
+non-lifecycle `factory:tracking` marker instead; it never makes legacy work
+implementation-ready.
 
 The schedule was registered paused. Manual run `e8dbf10c-40e0-4cba-88fc-dd5fc9d10c37`
 with OpenCode `litellm/factory-small` made no token progress and was cancelled;

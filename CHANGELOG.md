@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-05
+
 ### Added
+- Autonomous issue intake classification and routing to planning.
+- Low-risk approved review auto-merge routing, structured documentation and
+  acceptance verification, watchdog investigation routing, and bounded backlog
+  dispatch leases.
+
+### Fixed
+- Decomposed child issues now enter planning automatically, backlog review
+  mapping targets `factory:review`, and stale working issues transition without
+  conflicting lifecycle labels.
+
+## [0.3.6] - 2026-10-05
+
+### Added
+- Planning now assigns one `complexity:small|medium|large` label. Ready
+  implementation automations route those labels to the local bounded model,
+  Terra, and Sol respectively.
+
+## [0.3.5] - 2026-10-05
+
+### Fixed
+- The backlog audit now treats a skipped issue without a re-read, durable
+  closing label as failure. Tracking parents must end as `factory:tracking`;
+  human asset/fixture choices must end as `factory:needs-help`.
+
+## [0.3.4] - 2026-10-05
+
+### Added
+- `factory-release` and `push-factory-updates.ps1`, which version-pin,
+  update, verify, and optionally synchronize every explicitly configured
+  Factory project after a Factory change.
+
+## [0.3.3] - 2026-10-05
+
+### Added
+- `audit-backlog-labels.ps1`, an installed, bounded candidate-fetch script for
+  the legacy backlog audit. It uses its sibling label-setup script instead of
+  `FACTORY_RUNTIME_ROOT`; every fetched candidate is durably staged with
+  `factory:needs-help` so it is not evaluated again after an agent failure.
+- `factory:tracking`, a non-lifecycle label for epics and tracking parents;
+  the backlog audit replaces its temporary reservation with this label.
+- The backlog audit no longer lets an unavailable installed script or an unset
+  `FACTORY_RUNTIME_ROOT` prevent durable labeling: its skill has a bounded,
+  self-contained GitHub CLI fallback.
 - Bazzite Podman deployment templates and health-validation scripts for the
   Factory control plane, observability stack, and Mac mini vLLM endpoint.
 - Hindsight memory-bank/MCP configuration, LiteLLM-to-Langfuse instrumentation,

@@ -27,6 +27,7 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
     "https://github.com/x/y/issues/$n"
 }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
+elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { $state.prMerged = $true }
 else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
 $state | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
 exit 0

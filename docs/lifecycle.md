@@ -7,6 +7,8 @@ This document defines the state transitions for issues in the Cezar factory.
 - `factory:new` - Initial state when an issue is created.
 - `factory:needs-plan` - Ready for planning.
 - `factory:needs-help` - Requires human input to proceed.
+- `factory:tracking` - A non-lifecycle marker for an epic or tracking parent;
+  it is not executable work and does not require human intervention.
 - `factory:ready` - Planning complete, ready for implementation.
 - `factory:working` - Implementation in progress.
 - `factory:review` - Implementation submitted for review.
@@ -56,6 +58,15 @@ stateDiagram-v2
    - Exit from `factory:human-review` to `factory:done` (requires human merge)
 4. **Blocked work resumption**: When a blocker is removed, the issue returns to `factory:working`.
 5. **Conflicting state prevention**: An issue can only have one factory-state label at a time.
+
+## Complexity routing
+
+Planning assigns exactly one `complexity:*` label without changing lifecycle
+state. `complexity:small` routes implementation to the local bounded model,
+`complexity:medium` to Terra, and `complexity:large` to Sol. Apply a
+complexity label before `factory:needs-plan` when the planning model itself
+must be selected in advance; otherwise the normal planner assigns it for the
+implementation automation.
 
 ## Enforcement
 

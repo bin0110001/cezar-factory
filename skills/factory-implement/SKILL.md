@@ -14,6 +14,8 @@ source: skills/factory-implement/SKILL.md
 - Add/update tests.
 - Run targeted validation where appropriate.
 - Report structured completion information.
+- Explicitly verify substantive acceptance criteria and set
+  `documentationUpdated: true` only after required documentation is updated.
 - Prepare/update PR.
 
 ## Detailed Guidance
@@ -85,6 +87,7 @@ Produce an implementation result conforming to `implementation-result.schema.jso
   "testsRun": ["test name or identifier"],
   "testResult": "passed | failed | partial",
   "acceptanceCriteriaStatus": "All criteria met | Partially met | Not met",
+  "documentationUpdated": true,
   "knownConcerns": "Any concerns or caveats",
   "followUpSuggestions": "Recommended follow-up work",
   "durableKnowledgeCandidates": "Reusable knowledge discovered during implementation"

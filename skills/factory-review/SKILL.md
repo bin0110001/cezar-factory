@@ -85,6 +85,10 @@ Prefer a different agent/context from implementation.
 
 ## Risk-Based Routing
 
+Include the PR URL in the optional `pr` field. Approved `risk:low` work is
+eligible for the policy's bounded auto-merge path; medium/high risk still
+requires the human merge gate.
+
 - **Low risk** (docs, tests, minor UI, small bug fixes): Review may route directly to human-review or done.
 - **Medium risk** (features, refactoring, networking, persistence): Must route to human-review after approval.
 - **High risk** (auth, security, data migration, billing, architecture): Must route to human-review regardless of review outcome.

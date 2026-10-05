@@ -8,14 +8,14 @@ so workflow check steps can feed the short error list back to the retried agent.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('plan', 'implementation', 'review', 'investigation')][string]$Kind,
+    [Parameter(Mandatory)][ValidateSet('intake', 'plan', 'implementation', 'review', 'investigation')][string]$Kind,
     [Parameter(Mandatory)][string]$Path,
     [string]$SchemaDir = (Join-Path $PSScriptRoot '../schemas')
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 
-$schemaFile = @{ plan = 'plan.schema.json'; implementation = 'implementation-result.schema.json'; review = 'review-result.schema.json'; investigation = 'investigation-result.schema.json' }[$Kind]
+$schemaFile = @{ intake = 'intake-result.schema.json'; plan = 'plan.schema.json'; implementation = 'implementation-result.schema.json'; review = 'review-result.schema.json'; investigation = 'investigation-result.schema.json' }[$Kind]
 $errors = [System.Collections.Generic.List[string]]::new()
 
 function Done {
@@ -50,6 +50,10 @@ function Blank($v) { $null -eq $v -or ($v -is [string] -and ($v.Trim() -eq '' -o
 
 if (-not $errors.Count) {
     switch ($Kind) {
+        'intake' {
+            # A genuine unanswered question is a valid intake outcome; the router
+            # sends it to factory:needs-help instead of silently planning it.
+        }
         'plan' {
             if ($result.readyNotReadyStatus -eq 'decomposed') {
                 $policies = Join-Path $SchemaDir '../policies'
@@ -64,9 +68,10 @@ if (-not $errors.Count) {
                     for ($i = 0; $i -lt $subs.Count; $i++) {
                         $sub = $subs[$i]
                         if ($sub -isnot [hashtable]) { $errors.Add("subIssues[$i] must be an object"); continue }
-                        foreach ($k in 'title', 'body', 'type', 'risk') { if (-not $sub.ContainsKey($k) -or (Blank $sub[$k])) { $errors.Add("subIssues[$i].$k is required") } }
+                        foreach ($k in 'title', 'body', 'type', 'risk', 'complexity') { if (-not $sub.ContainsKey($k) -or (Blank $sub[$k])) { $errors.Add("subIssues[$i].$k is required") } }
                         if ($sub.type -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.type))\s*$") { $errors.Add("subIssues[$i].type '$($sub.type)' is not a known label (e.g. type:feature)") }
                         if ($sub.risk -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.risk))\s*$") { $errors.Add("subIssues[$i].risk '$($sub.risk)' is not a known label (e.g. risk:medium)") }
+                        if ($sub.complexity -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.complexity))\s*$") { $errors.Add("subIssues[$i].complexity '$($sub.complexity)' is not a known label (e.g. complexity:medium)") }
                         if ($sub.title) { if ($titles -contains $sub.title) { $errors.Add("subIssues[$i].title duplicates an earlier title") }; $titles += $sub.title }
                         if ($sub.ContainsKey('dependsOn')) { foreach ($d in @($sub.dependsOn)) { if ($d -isnot [int] -and $d -isnot [long] -or $d -lt 0 -or $d -ge $subs.Count -or $d -eq $i) { $errors.Add("subIssues[$i].dependsOn has invalid index '$d'") } } }
                     }
@@ -84,6 +89,8 @@ if (-not $errors.Count) {
                 if (Blank $result.testResult) { $errors.Add('status is success but testResult is empty') }
                 if (-not $result.ContainsKey('pr') -or (Blank $result.pr)) { $errors.Add('status is success but pr (PR URL) is missing') }
                 if (@($result.filesChanged).Count -eq 0) { $errors.Add('status is success but filesChanged is empty') }
+                if (-not $result.documentationUpdated) { $errors.Add('status is success but documentationUpdated is not true') }
+                if (Blank $result.acceptanceCriteriaStatus) { $errors.Add('status is success but acceptanceCriteriaStatus is empty') }
             }
         }
         'review' {

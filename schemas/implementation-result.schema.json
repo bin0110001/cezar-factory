@@ -35,6 +35,9 @@
     "acceptanceCriteriaStatus": {
       "type": "string"
     },
+    "documentationUpdated": {
+      "type": "boolean"
+    },
     "knownConcerns": {
       "type": "string"
     },
@@ -58,6 +61,7 @@
     "acceptanceCriteriaStatus",
     "knownConcerns",
     "followUpSuggestions",
-    "durableKnowledgeCandidates"
+    "durableKnowledgeCandidates",
+    "documentationUpdated"
   ]
 }

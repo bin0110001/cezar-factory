@@ -12,4 +12,8 @@ steps:
       {{task}}
 
       Apply only the bounded legacy-label policy in the Factory Backlog Label Audit skill.
+      Use its installed candidate script when present; otherwise use the
+      skill's self-contained fallback. Never depend on FACTORY_RUNTIME_ROOT.
+      A skipped issue without a durable closing Factory label is a failed audit,
+      not a valid result.
       Record the issue numbers considered and labels changed in `.factory/backlog-label-audit.json`.

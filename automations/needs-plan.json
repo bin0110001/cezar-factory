@@ -14,7 +14,10 @@
       "factory:needs-plan"
     ],
     "excludeLabels": [
-      "factory:blocked"
+      "factory:blocked",
+      "complexity:small",
+      "complexity:medium",
+      "complexity:large"
     ],
     "maxRecords": 1
   },

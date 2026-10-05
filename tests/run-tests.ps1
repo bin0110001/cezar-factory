@@ -36,7 +36,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
 'routing/default.yaml', 'integrations/deployment/README.md', 'integrations/bazzite/compose.yaml',
@@ -69,13 +69,18 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'policies/labels.yaml', 'pol
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/backlog-label-audit.yaml', 'automations/backlog-label-audit.json'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 Assert 'automation profiles pin Codex work to gpt-5.6-terra' ($catalog.automationProfiles.'factory-implement'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-fix-review'.model -eq 'gpt-5.6-terra')
+Assert 'complexity routes implementation across local, Terra, and Sol' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'litellm/factory-small' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
+Assert 'complexity routes pre-labelled planning across local, Terra, and Sol' ($catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.model -eq 'litellm/factory-small' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
 Assert 'backlog audit is pinned to bounded local model' ($catalog.automationProfiles.'factory-backlog-label-audit'.runner -eq 'opencode' -and $catalog.automationProfiles.'factory-backlog-label-audit'.model -eq 'litellm/factory-small')
+$backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
+Assert 'backlog audit has an isolated-worktree fallback' ($backlogAuditSkill -match 'self-contained fallback' -and $backlogAuditSkill -match 'gh label create factory:blocked')
+Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
@@ -340,12 +345,18 @@ try {
     function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0) {
         $f = Join-Path $tmp 'route-result.json'; if ($Obj) { ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f }
         $global:LASTEXITCODE = 0
-        $a = @{ Event = $Event; GhCommand = $gh }
+        $a = @{ Event = $Event; GhCommand = $gh; ProjectPath = $rp }
         if ($Obj) { $a.Path = $f } else { $a.Issue = $Issue }
         try { & pwsh -NoProfile -File $route @a *>&1 | Out-Null } catch { $global:LASTEXITCODE = 1 }
         $global:LASTEXITCODE
     }
-    $plan = @{ issue = 7; objective = 'o'; acceptanceCriteria = 'a'; nonGoals = 'n'; risks = 'r'; dependencies = 'd'; suggestedWorkBreakdown = '1. do'; requiredProjectSkills = @('s'); unresolvedQuestions = ''; readyNotReadyStatus = 'ready' }
+    $plan = @{ issue = 7; objective = 'o'; acceptanceCriteria = 'a'; nonGoals = 'n'; risks = 'r'; dependencies = 'd'; suggestedWorkBreakdown = '1. do'; requiredProjectSkills = @('s'); unresolvedQuestions = ''; complexity = 'complexity:medium'; readyNotReadyStatus = 'ready' }
+    $intake = @{ issue = 7; type = 'type:bug'; risk = 'risk:low'; summary = 'clear bug'; unresolvedQuestions = '' }
+    Assert 'validate: good intake passes' ((Test-Validate 'intake' $intake) -eq 0)
+    Set-Gh @('factory:new')
+    Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
+    Set-Gh @('factory:new')
+    Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)
     $memoryPlan = With $plan @{ memoryRecall = @{ banksQueried = @('project-7'); memoryIds = @('m1'); memoryCount = 1; contextChars = 4200 } }
     Assert 'validate: bounded memory recall passes' ((Test-Validate 'plan' $memoryPlan) -eq 0)
@@ -353,7 +364,7 @@ try {
     $bad = $plan.Clone(); $bad.Remove('issue')
     Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
-    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('t'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://x/pr/1' }
+    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('t'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://x/pr/1' }
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
     Assert 'validate: success without PR fails' ((Test-Validate 'implementation' $noPr) -ne 0)
@@ -365,7 +376,7 @@ try {
     Assert 'validate: unknown classification fails' ((Test-Validate 'investigation' (With $inv @{ failureClassification = 'gremlins' })) -ne 0)
 
     Set-Gh @('factory:needs-plan', 'type:bug')
-    Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug')
+    Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
     Set-Gh @('factory:needs-plan', 'risk:high')
     Assert 'route: risk:high plan held for approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
@@ -389,6 +400,8 @@ try {
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
     Set-Gh @('factory:review')
     Assert 'route: review approval -> human-review' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
+    Set-Gh @('factory:review', 'risk:low')
+    Assert 'route: low-risk approval -> done and auto-merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = 'https://x/pr/1' })) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged)
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')
@@ -405,8 +418,8 @@ try {
 
     # ---- Decomposition ------------------------------------------------------
     $subs = @(
-        @{ title = 'Phase A'; body = 'Do A'; type = 'type:feature'; risk = 'risk:medium' },
-        @{ title = 'Phase B'; body = 'Do B'; type = 'type:test'; risk = 'risk:low'; dependsOn = @(0) }
+        @{ title = 'Phase A'; body = 'Do A'; type = 'type:feature'; risk = 'risk:medium'; complexity = 'complexity:medium' },
+        @{ title = 'Phase B'; body = 'Do B'; type = 'type:test'; risk = 'risk:low'; complexity = 'complexity:small'; dependsOn = @(0) }
     )
     $dec = With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = $subs }
     Assert 'validate: good decomposition passes' ((Test-Validate 'plan' $dec) -eq 0)
@@ -417,7 +430,7 @@ try {
     Set-Gh @('factory:needs-plan')
     Assert 'route: decomposed -> human-review' ((Invoke-Route 'plan-result' $dec) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
     $iss = @((Get-Gh).issues)
-    Assert 'route: sub-issues created' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:new,type:feature,risk:medium')
+    Assert 'route: sub-issues queued for planning' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:needs-plan,type:feature,risk:medium,complexity:medium')
     Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
     Assert 'route: parent comment lists children and dependencies' ((@((Get-Gh).comments)[-1]) -match '#100' -and (@((Get-Gh).comments)[-1]) -match '\| #101 \| Phase B .* \| #100 \|')
     $st = Get-Gh; $st.labels = @('factory:needs-plan'); $st | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
@@ -428,8 +441,22 @@ try {
     & pwsh -NoProfile -File $labelScript -GhCommand $gh *>&1 | Out-Null
     $created = @((Get-Gh).created)
     Assert 'labels: all factory-state labels created' (@(@('factory:new', 'factory:ready', 'factory:investigate', 'factory:done') | Where-Object { $created -notcontains $_ }).Count -eq 0)
+    Assert 'labels: tracking-parent classification created' ($created -contains 'factory:tracking')
     Assert 'labels: type, risk and agent labels created' ($created -contains 'type:bug' -and $created -contains 'risk:high' -and $created -contains 'agent:either')
     Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & pwsh -NoProfile -File $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
+
+    $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'
+    @{ labels = @(); comments = @(); created = @(); issues = @(
+        @{ number = 3; title = 'Unmarked bug'; labels = @(@{ name = 'bug' }) },
+        @{ number = 2; title = 'Already audited'; labels = @(@{ name = 'factory:needs-help' }) },
+        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) }
+    ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
+    & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 2 -OutputPath $auditInput *>&1 | Out-Null
+    $auditCandidates = Get-Content -Raw $auditInput | ConvertFrom-Json
+    Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and @($auditCandidates.candidates).Count -eq 2 -and @($auditCandidates.candidates.number) -notcontains 2)
+    Assert 'backlog audit input: every candidate is durably staged' (@($auditCandidates.staged).Count -eq 2 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
 
     # Project override fully replaces a factory file, and survives re-sync.
     $ovDir = Join-Path $rp '.ai/factory/overrides/policies'

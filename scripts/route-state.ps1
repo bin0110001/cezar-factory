@@ -10,7 +10,7 @@ review/fix rounds and investigation retries per policies/retry.yaml, and posts e
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('start', 'plan-result', 'implement-result', 'review-result', 'investigate-result')][string]$Event,
+    [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result')][string]$Event,
     [string]$Path,
     [int]$Issue,
     [string]$GhCommand = 'gh',
@@ -32,6 +32,14 @@ foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
     if ($inState -and $l -match '^\S') { break }
 }
 if (-not $stateLabels) { Fail 'could not read factory-state labels from policies/labels.yaml' }
+$complexityLabels = @()
+$inComplexity = $false
+foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
+    if ($l -match '^complexity:') { $inComplexity = $true; continue }
+    if ($inComplexity -and $l -match '^\s+-\s+(\S+)') { $complexityLabels += $Matches[1]; continue }
+    if ($inComplexity -and $l -match '^\S') { break }
+}
+if (-not $complexityLabels) { Fail 'could not read complexity labels from policies/labels.yaml' }
 $retryText = Get-Content -Raw (Join-Path $PoliciesDir 'retry.yaml')
 $maxRounds = if ($retryText -match 'max_review_fix_rounds:\s*(\d+)') { [int]$Matches[1] } else { 2 }
 $maxInvestigateRetries = 1
@@ -50,6 +58,7 @@ $view = Invoke-Gh issue view $Issue --json 'labels,comments' | ConvertFrom-Json
 $labels = @($view.labels | ForEach-Object { $_.name })
 $comments = @($view.comments | ForEach-Object { $_.body })
 $current = @($labels | Where-Object { $stateLabels -contains $_ })
+$currentComplexity = @($labels | Where-Object { $complexityLabels -contains $_ })
 
 function Assert-Source([string[]]$Allowed) {
     if ($current.Count -eq 0 -or -not ($current | Where-Object { $Allowed -contains $_ })) {
@@ -62,6 +71,19 @@ function Set-State([string]$Target) {
     if ($current -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
     if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
+}
+function Set-Complexity([string]$Target) {
+    if ($complexityLabels -notcontains $Target) { Fail "unknown complexity label '$Target'" }
+    $remove = @($currentComplexity | Where-Object { $_ -ne $Target })
+    $ghArgs = @('issue', 'edit', $Issue)
+    if ($currentComplexity -notcontains $Target) { $ghArgs += '--add-label', $Target }
+    if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
+    if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
+}
+function Set-Classification([string]$Type, [string]$Risk) {
+    if ($Type -notmatch '^type:' -or $Risk -notmatch '^risk:') { Fail 'intake classification labels are invalid' }
+    $add = @(); foreach ($label in @($Type, $Risk)) { if ($labels -notcontains $label) { $add += $label } }
+    if ($add.Count) { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
 }
 function Add-Comment([string]$Body) {
     $f = [IO.Path]::GetTempFileName()
@@ -114,6 +136,16 @@ function Done([string]$To, [string]$Note = '') {
 }
 
 switch ($Event) {
+    'intake-result' {
+        Assert-Source 'factory:new'
+        Set-Classification ([string]$result.type) ([string]$result.risk)
+        Add-Comment "## Factory intake`n`n$(Text $result.summary)`n`n**Type:** $($result.type)`n**Risk:** $($result.risk)"
+        if (-not [string]::IsNullOrWhiteSpace([string]$result.unresolvedQuestions)) {
+            Add-Comment (New-Escalation (Text $result.unresolvedQuestions) 'Intake classification completed.' '(see intake result)' 'The issue cannot be safely planned without an answer.' 'Answer the questions, then relabel the issue factory:needs-plan.')
+            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'intake question'
+        }
+        Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'classified'
+    }
     'start' {
         if ($current -contains 'factory:working') { Done 'factory:working' 'already working' }
         Assert-Source 'factory:ready', 'factory:changes-requested', 'factory:blocked'
@@ -122,9 +154,10 @@ switch ($Event) {
     }
     'plan-result' {
         Assert-Source 'factory:needs-plan', 'factory:new'
+        Set-Complexity $result.complexity
         $plan = "## Factory plan`n`n**Objective**`n$(Text $result.objective)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteria)`n`n**Non-goals**`n$(Text $result.nonGoals)`n`n**Risks**`n$(Text $result.risks)`n`n**Dependencies**`n$(Text $result.dependencies)`n`n**Work breakdown**`n$(Text $result.suggestedWorkBreakdown)`n`n**Project skills**`n$(Text $result.requiredProjectSkills)"
         if ($result.readyNotReadyStatus -eq 'decomposed') {
-            # Create each sub-issue as factory:new (humans choose which to plan next), skipping any that a
+            # Create each sub-issue as factory:needs-plan so decomposition continues autonomously, skipping any that a
             # previous attempt already created (matched by the parent marker in the body and the title).
             $marker = "<!-- factory-parent:$Issue -->"
             $existing = @{}
@@ -139,7 +172,7 @@ switch ($Event) {
                 $f = [IO.Path]::GetTempFileName()
                 try {
                     [IO.File]::WriteAllText($f, $body)
-                    $url = (Invoke-Gh issue create --title $sub.title --body-file $f --label "factory:new,$($sub.type),$($sub.risk)" | Out-String).Trim()
+                    $url = (Invoke-Gh issue create --title $sub.title --body-file $f --label "factory:needs-plan,$($sub.type),$($sub.risk),$($sub.complexity)" | Out-String).Trim()
                 } finally { Remove-Item $f -ErrorAction SilentlyContinue }
                 if ($url -notmatch '/issues/(\d+)') { throw "could not read created issue number from: $url" }
                 $numbers += [int]$Matches[1]
@@ -148,7 +181,7 @@ switch ($Event) {
                 $deps = if ($subs[$i].PSObject.Properties['dependsOn'] -and @($subs[$i].dependsOn).Count) { (@($subs[$i].dependsOn) | ForEach-Object { "#$($numbers[$_])" }) -join ', ' } else { '-' }
                 "| #$($numbers[$i]) | $($subs[$i].title) | $($subs[$i].type) | $($subs[$i].risk) | $deps |"
             }
-            $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues, all labelled ``factory:new``. Review them, then add ``factory:needs-plan`` to the ones you want planned (planning runs one issue per poll).`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
+            $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues, all queued as ``factory:needs-plan`` for autonomous planning (planning runs one issue per poll).`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
             Add-Comment ($plan + "`n`n" + $table)
             Set-State 'factory:human-review'; Done 'factory:human-review' "decomposed into $($subs.Count) sub-issues"
         }
@@ -177,6 +210,12 @@ switch ($Event) {
         Assert-Source 'factory:review'
         $body = "## Factory review`n`n**Verdict:** $($result.approvalChangeRequestStatus)`n`n**Blocking findings**`n$(Text $result.blockingFindings)`n`n**Non-blocking findings**`n$(Text $result.nonBlockingFindings)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaVerification)`n`n**Test adequacy**`n$(Text $result.testAdequacy)`n`n**Risk observations**`n$(Text $result.riskObservations)"
         if ($result.approvalChangeRequestStatus -eq 'approval') {
+            $autoMerge = $labels -contains 'risk:low' -and [string]$result.pr
+            if ($autoMerge) {
+                Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch | Out-Null
+                Add-Comment ($body + "`n`nLow-risk approval: auto-merge requested for $($result.pr).")
+                Set-State 'factory:done'; Done 'factory:done' 'low-risk auto-merge requested'
+            }
             Add-Comment $body; Set-State 'factory:human-review'; Done 'factory:human-review'
         }
         $rounds = @($comments | Where-Object { $_ -match '<!-- factory:review-round -->' }).Count

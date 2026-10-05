@@ -8,6 +8,12 @@ if (-not $profiles) { throw 'Catalog must define automationProfiles.' }
 foreach ($profile in $profiles.PSObject.Properties) {
     if ($profile.Value.runner -notin @('claude', 'codex', 'opencode')) { throw "Automation profile '$($profile.Name)' has an invalid runner." }
     if (-not $profile.Value.model) { throw "Automation profile '$($profile.Name)' has no model." }
+    if ($profile.Value.complexityVariants) {
+        foreach ($variant in $profile.Value.complexityVariants.PSObject.Properties) {
+            if ($variant.Name -notin @('complexity:small', 'complexity:medium', 'complexity:large')) { throw "Automation profile '$($profile.Name)' has an invalid complexity variant '$($variant.Name)'." }
+            if ($variant.Value.runner -notin @('claude', 'codex', 'opencode') -or -not $variant.Value.model) { throw "Automation profile '$($profile.Name)' complexity variant '$($variant.Name)' is incomplete." }
+        }
+    }
 }
 $required = 'id','purpose','inputs','maxContextChars','tier','workers','fallback','verifier','retryBudget','timeoutSeconds','terminal','persistenceAuthority','approval','artifact','observability'
 $ids = @{}
@@ -36,6 +42,12 @@ foreach ($file in Get-ChildItem $automationDir -Filter *.json) {
     $workflow = [string]$automation.task.workflow
     $profile = $profiles.$workflow
     if (-not $profile) { throw "Automation '$($file.Name)' workflow '$workflow' has no catalog automation profile." }
-    if ($automation.task.runner -ne $profile.runner -or $automation.task.model -ne $profile.model) { throw "Automation '$($file.Name)' must use $($profile.runner)/$($profile.model) from the catalog profile for '$workflow'." }
+    $expected = $profile
+    if ($profile.complexityVariants) {
+        $complexity = @($automation.filters.allLabels | Where-Object { $_ -in @('complexity:small', 'complexity:medium', 'complexity:large') })
+        if ($complexity.Count -gt 1) { throw "Automation '$($file.Name)' selects multiple complexity labels." }
+        if ($complexity.Count -eq 1) { $expected = $profile.complexityVariants.($complexity[0]) }
+    }
+    if ($automation.task.runner -ne $expected.runner -or $automation.task.model -ne $expected.model) { throw "Automation '$($file.Name)' must use $($expected.runner)/$($expected.model) from the catalog profile for '$workflow'." }
 }
 Write-Host "Automation catalog valid: $($catalog.jobs.Count) jobs"

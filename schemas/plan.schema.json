@@ -36,6 +36,10 @@
     "unresolvedQuestions": {
       "type": "string"
     },
+    "complexity": {
+      "type": "string",
+      "enum": ["complexity:small", "complexity:medium", "complexity:large"]
+    },
     "readyNotReadyStatus": {
       "type": "string",
       "enum": [
@@ -87,6 +91,9 @@
           "risk": {
             "type": "string"
           },
+          "complexity": {
+            "type": "string"
+          },
           "dependsOn": {
             "type": "array",
             "items": {
@@ -98,7 +105,8 @@
           "title",
           "body",
           "type",
-          "risk"
+          "risk",
+          "complexity"
         ]
       }
     }
@@ -113,6 +121,7 @@
     "suggestedWorkBreakdown",
     "requiredProjectSkills",
     "unresolvedQuestions",
+    "complexity",
     "readyNotReadyStatus"
   ]
 }
