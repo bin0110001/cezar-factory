@@ -30,3 +30,6 @@ steps:
   - id: route
     name: Return issue to factory:review
     command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    onFail:
+      retry: validate
+      max: 1

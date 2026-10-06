@@ -24,3 +24,6 @@ steps:
   - id: route
     name: Post findings and set factory state
     command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json
+    onFail:
+      retry: validate
+      max: 1
