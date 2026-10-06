@@ -6,22 +6,10 @@ steps:
     command: pwsh -NoProfile -File /projects/cezar-factory/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
   - id: intake
     name: Classify selected existing issue
-    skill: factory-intake
-    prompt: |
-      Read the selector result from .factory/intake-issue.json.
-      The selector has already performed the only issue discovery step.
-      If its `issue` is null, report that no eligible existing issue was found
-      and stop. Otherwise classify exactly the selected issue from that result:
-      {{task}}
-
-      Write the structured intake result to .factory/intake-result.json.
-      Include the issue number. Do not edit factory:* labels.
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1" -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json
   - id: validate
     name: Validate intake result
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1" -Kind intake -Path .factory/intake-result.json
-    onFail:
-      retry: intake
-      max: 1
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1" -Path .factory/intake-result.json
   - id: route
     name: Route intake to planning
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/route-state.ps1" -Event intake-result -Path .factory/intake-result.json
+    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1" -Path .factory/intake-result.json

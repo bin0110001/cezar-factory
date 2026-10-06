@@ -1,0 +1,6 @@
+name: factory-failure-audit
+description: Daily script-driven audit of recent Cezar failures for Factory defects
+steps:
+  - id: collect
+    name: Collect bounded failure evidence
+    command: pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-factory-failures.ps1 -CreateIssue -RestartFailedIntake -OutputPath .factory/failure-audit-input.json

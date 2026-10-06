@@ -107,7 +107,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'audit-factory-failures.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.

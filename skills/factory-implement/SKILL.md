@@ -69,6 +69,18 @@ source: skills/factory-implement/SKILL.md
 - Create or update a pull request targeting the base branch.
 - Link the PR to the issue.
 
+### 9. Factory-managed asset release gate
+
+When the change touches a Factory-managed asset or its source equivalent
+(`skills/`, `workflows/`, `automations/`, `policies/`, `templates/`,
+`scripts/`, schemas, or Factory versioning), the implementation is not
+complete after the PR alone. Validate the Factory checkout, run the
+`factory-release` procedure, and synchronize every explicitly configured
+target from `config/factory-projects.json`. Do not discover targets by scanning
+drives. If the required Factory checkout or target registry is unavailable,
+report the implementation as blocked or incomplete rather than claiming
+success. Record the release output and any target that could not be updated.
+
 ## Retry Behavior
 
 - If validation fails, analyze the failure and attempt a fix.
