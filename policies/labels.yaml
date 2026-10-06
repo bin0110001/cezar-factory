@@ -14,6 +14,7 @@ factory-state:
 
 # Factory classification labels that do not participate in lifecycle routing
 factory-classification:
+  - factory:auditing
   - factory:tracking
 
 # Work-type labels

@@ -75,11 +75,11 @@ foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 Assert 'automation profiles pin Codex work to gpt-5.6-terra' ($catalog.automationProfiles.'factory-implement'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-fix-review'.model -eq 'gpt-5.6-terra')
-Assert 'complexity routes implementation across local, Terra, and Sol' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'litellm/factory-small' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
-Assert 'complexity routes pre-labelled planning across local, Terra, and Sol' ($catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.model -eq 'litellm/factory-small' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
-Assert 'backlog audit is pinned to bounded local model' ($catalog.automationProfiles.'factory-backlog-label-audit'.runner -eq 'opencode' -and $catalog.automationProfiles.'factory-backlog-label-audit'.model -eq 'litellm/factory-small')
+Assert 'complexity routes implementation across gateway, Terra, and Sol' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
+Assert 'complexity routes pre-labelled planning across gateway, Terra, and Sol' ($catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-terra' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
+Assert 'backlog audit is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-backlog-label-audit'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-backlog-label-audit'.model -eq 'factory-gateway/factory-code')
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
-Assert 'backlog audit has an isolated-worktree fallback' ($backlogAuditSkill -match 'self-contained fallback' -and $backlogAuditSkill -match 'gh label create factory:blocked')
+Assert 'backlog audit requires the stable Cezar candidate script' ($backlogAuditSkill -match 'installed audit script' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
 Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
@@ -447,15 +447,21 @@ try {
 
     $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'
     @{ labels = @(); comments = @(); created = @(); issues = @(
-        @{ number = 3; title = 'Unmarked bug'; labels = @(@{ name = 'bug' }) },
+        @{ number = 3; title = 'Unmarked test'; labels = @(@{ name = 'test' }) },
         @{ number = 2; title = 'Already audited'; labels = @(@{ name = 'factory:needs-help' }) },
-        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) }
+        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) },
+        @{ number = 4; title = 'Blocked legacy work'; labels = @(@{ name = 'blocker' }) },
+        @{ number = 5; title = 'Ambiguous legacy work'; labels = @(@{ name = 'question' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
-    & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 2 -OutputPath $auditInput *>&1 | Out-Null
+    & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
     $auditCandidates = Get-Content -Raw $auditInput | ConvertFrom-Json
-    Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and @($auditCandidates.candidates).Count -eq 2 -and @($auditCandidates.candidates.number) -notcontains 2)
-    Assert 'backlog audit input: every candidate is durably staged' (@($auditCandidates.staged).Count -eq 2 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and @($auditCandidates.candidates).Count -eq 0 -and @($auditCandidates.resolved.issue) -notcontains 2)
+    Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
+    Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
+    Assert 'backlog audit input: clear markers resolve without human escalation' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -notcontains 'factory:needs-help')
+    Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
+    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels -contains 'factory:auditing')
     Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
 
     # Project override fully replaces a factory file, and survives re-sync.

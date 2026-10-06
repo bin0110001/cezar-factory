@@ -1,0 +1,17 @@
+{
+  "name": "[factory] intake-existing",
+  "description": "Hourly intake for existing open issues still marked factory:new (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {
+    "type": "hours",
+    "every": 1
+  },
+  "task": {
+    "prompt": "Run the scheduled intake workflow. The workflow's registered selector chooses at most one oldest eligible existing issue labeled factory:new. If it reports no eligible issue, report that no work was available and stop.",
+    "workflow": "factory-intake",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
+    "worktree": true,
+    "autonomous": true
+  }
+}

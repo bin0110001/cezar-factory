@@ -38,11 +38,16 @@ for service in cezar openhands hindsight litellm langfuse prometheus grafana vau
   }
 done
 [[ -f "$ENV_FILE" ]] || { echo "missing $ENV_FILE; copy env.example and fill host secrets" >&2; exit 1; }
-required_vars=(CEZAR_IMAGE OPENHANDS_IMAGE HINDSIGHT_IMAGE LITELLM_IMAGE LITELLM_DB_IMAGE LANGFUSE_IMAGE PROMETHEUS_IMAGE GRAFANA_IMAGE NODE_EXPORTER_IMAGE CADVISOR_IMAGE VAULT_IMAGE HINDSIGHT_FACTORY_BANK HINDSIGHT_PROJECT_BANK LITELLM_MASTER_KEY LITELLM_SALT_KEY LITELLM_DB_NAME LITELLM_DB_USER LITELLM_DB_PASSWORD LITELLM_DATABASE_URL OPENHANDS_SESSION_API_KEY)
+required_vars=(CEZAR_IMAGE OPENHANDS_IMAGE HINDSIGHT_IMAGE LITELLM_IMAGE LITELLM_DB_IMAGE LANGFUSE_IMAGE PROMETHEUS_IMAGE GRAFANA_IMAGE NODE_EXPORTER_IMAGE CADVISOR_IMAGE VAULT_IMAGE HINDSIGHT_FACTORY_BANK HINDSIGHT_PROJECT_BANK LITELLM_MASTER_KEY LITELLM_SALT_KEY LITELLM_DB_NAME LITELLM_DB_USER LITELLM_DB_PASSWORD LITELLM_DATABASE_URL OPENHANDS_SESSION_API_KEY FACTORY_RUNTIME_HOST_DIR)
 for name in "${required_vars[@]}"; do
   value="$(grep -E "^${name}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   [[ -n "$value" ]] || { echo "missing required $name in $ENV_FILE" >&2; exit 1; }
 done
+FACTORY_RUNTIME_HOST_DIR_VALUE="$(grep -E '^FACTORY_RUNTIME_HOST_DIR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+[[ -f "$FACTORY_RUNTIME_HOST_DIR_VALUE/scripts/audit-backlog-labels.ps1" ]] || {
+  echo "Factory runtime is missing $FACTORY_RUNTIME_HOST_DIR_VALUE/scripts/audit-backlog-labels.ps1" >&2
+  exit 1
+}
 if grep -Eq '(change-me-on-host|REPLACE_ON_BAZZITE|REPLACE_WITH_|project-REPLACE_|registry\.example)' "$ENV_FILE"; then
   echo "replace all deployment secret/model placeholders in $ENV_FILE" >&2
   exit 1

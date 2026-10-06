@@ -12,8 +12,22 @@ steps:
       {{task}}
 
       Apply only the bounded legacy-label policy in the Factory Backlog Label Audit skill.
-      Use its installed candidate script when present; otherwise use the
-      skill's self-contained fallback. Never depend on FACTORY_RUNTIME_ROOT.
+      The only entry point is `audit-backlog-labels.ps1`. From the Cezar
+      worktree, run exactly this command once:
+      `pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1`.
+      Do not add a resolver, interpolate environment variables, wrap it in
+      another shell, or use a fallback path. If the command fails, stop and
+      report a failed audit; do not call
+      `gh issue list`, parse raw issue JSON, search for scripts, invoke
+      MCP/resource discovery, install command-line tools, switch shells, or
+      manually select issues. Create no temporary script and do not re-list
+      issues after candidates are emitted. Use each candidate's typeHint/riskHint and never
+      classify a `test` label as `type:maintenance`.
       A skipped issue without a durable closing Factory label is a failed audit,
       not a valid result.
-      Record the issue numbers considered and labels changed in `.factory/backlog-label-audit.json`.
+      The command output identifies its exact worktree-local `outputPath`.
+      Read that path, never a project-root or prior-run `.factory` artifact.
+      Copy every `resolved` entry directly to the result; the script has already
+      normalized all deterministic items it fetched. Only entries still in
+      `candidates` need LLM evaluation, and there are at most three. Record the
+      issue numbers considered and labels changed in `.factory/backlog-label-audit.json`.

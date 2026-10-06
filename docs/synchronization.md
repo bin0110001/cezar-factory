@@ -29,15 +29,25 @@ project workflows before it creates the worktree and materializes registered
 skills for the agent; check steps need a separately registered runtime.
 
 The supported deployment model is a version-pinned Factory checkout mounted in
-the Cezar container and exposed as `FACTORY_RUNTIME_ROOT`. On the Bazzite
-Factory host the managed checkout is `/projects/cezar-factory`, so Cezar's
-service must set:
+the Cezar container and exposed as `FACTORY_RUNTIME_ROOT`. Factory automations
+execute in Cezar; OpenHands is not required or used by the active automation
+path. On the Bazzite
+Factory host, set a host-local `FACTORY_RUNTIME_HOST_DIR` to the absolute path
+of that checkout and mount it read-only at `/projects/cezar-factory`. Cezar's
+service must then set:
 
 ```text
 FACTORY_RUNTIME_ROOT=/projects/cezar-factory
 ```
 
-Factory workflow check commands call `$FACTORY_RUNTIME_ROOT/scripts/...`.
+The host checkout must contain
+`scripts/audit-backlog-labels.ps1`. `scripts/deploy/deploy-bazzite.sh`
+preflights that file before starting the stack, so an hourly audit fails early
+with an actionable deployment error instead of searching for scripts or
+falling back to manual issue parsing. The Cezar service receives the read-only
+runtime mount.
+
+Factory workflow check commands call `$env:FACTORY_RUNTIME_ROOT/scripts/...`.
 They write result artifacts to the current worktree, while schemas and policies
 come from that versioned runtime. `route-state.ps1` therefore accepts the
 current directory as its project path rather than inferring it from its script
@@ -78,6 +88,19 @@ The remote-only command can also be run directly for one Cezar project:
 This remote-only mode updates only Cezar's `[factory]` automations. It does not
 install project workflows, skills, policies, or scripts; those still require a
 local or mounted project checkout.
+
+It also does not deploy files under `integrations/`. Those are host deployment
+assets. For the Bazzite control plane, keep `config/server-topology.env` and
+the host-local `integrations/bazzite/.env` authoritative, then run
+`scripts/deploy/deploy-bazzite.sh` from the Bazzite checkout. This recreates
+the Compose configuration and restarts the selected services. A Bazzite
+deployment may use a host-local bind-mounted config path even when no local
+Windows `projectPath` exists; do not encode that remote path as `projectPath`.
+
+For a target that needs both Cezar automation synchronization and the complete
+project Factory layer, the registry entry must include an absolute Windows
+`projectPath` pointing to a verified checkout. Use `-DryRun` before the first
+deployment and confirm the project contains `.ai/factory/factory.config.yaml`.
 
 `-FactoryPath` is a checkout of the factory at the version the project pins (default: the checkout the script runs from). The scripts refuse to run when that checkout's `VERSION` differs from the pin, so a project never follows `main` by accident.
 

@@ -11,7 +11,6 @@ local Podman VM for this stack.
 Required services:
 
 - Cezar control plane;
-- OpenHands Agent Server/Canvas;
 - Hindsight memory;
 - LiteLLM gateway;
 - dedicated PostgreSQL database for LiteLLM;
@@ -19,11 +18,11 @@ Required services:
 - Prometheus and Grafana infrastructure monitoring.
 - HashiCorp Vault for Factory and project secrets.
 
-OpenHands Canvas is loopback-bound by default at Bazzite port 3001. For
-temporary trusted-LAN configuration access, set the host-local
-`OPENHANDS_BIND_ADDRESS=0.0.0.0`, redeploy the OpenHands service, and restore
-`127.0.0.1` afterward. Do not expose the Agent Server or other control-plane
-ports directly.
+Factory automations execute directly in Cezar. OpenHands is not used by the
+active deployment and is not required to run scheduled jobs. The retained
+OpenHands Compose service and related validation scripts are legacy/reference
+material; do not enable or troubleshoot them as part of the current Factory
+runtime.
 
 The template intentionally uses image variables because image tags and the
 chosen persistence backends are deployment decisions. Pin concrete digests in
@@ -54,13 +53,10 @@ a job from failing during worktree creation because the persistent `/projects`
 volume was mounted without a repository checkout. Add `--require-origin` when
 the deployment is expected to use a configured remote.
 
-## Cezar OpenCode runner
+## Legacy Cezar runner configuration
 
-The locally built Cezar image includes OpenCode. To configure its persistent
-profile for the Bazzite LiteLLM gateway, run
-`scripts/deploy/configure-cezar-opencode.sh` from the Bazzite checkout. The
-script reads LiteLLM's master key from the running gateway container into a
-Podman secret, mounts that secret into Cezar, and configures OpenCode to use
-`factory-code` (with `factory-small` also available). OpenCode config and state
-are stored in the existing Cezar OpenCode volumes; the key is not written to
-the repository or systemd unit.
+The former OpenCode runner configuration is retained only for migration
+history. Current Factory automations do not use OpenCode or OpenHands; Cezar
+executes the configured Codex, Claude, and Factory-gateway routes directly.
+Do not run the legacy `configure-cezar-opencode.sh` helper for the active
+deployment.

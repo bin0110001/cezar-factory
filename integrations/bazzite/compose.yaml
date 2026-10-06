@@ -7,6 +7,9 @@ services:
     environment:
       CEZ_AUTOMATIONS: ${CEZAR_AUTOMATIONS}
       CEZ_API_URL: ${CEZ_API_URL}
+      FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
+    volumes:
+      - ${FACTORY_RUNTIME_HOST_DIR}:/projects/cezar-factory:ro,Z
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -20,12 +23,14 @@ services:
       FILE_STORE: local
       LOCAL_STORAGE_PATH: /home/openhands/.openhands/storage
       AUTOMATION_AGENT_SERVER_URL: http://127.0.0.1:18000
+      FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
     restart: unless-stopped
     ports:
       - "${OPENHANDS_BIND_ADDRESS:-127.0.0.1}:3001:8000"
     volumes:
       - openhands-data:/home/openhands/.openhands
       - openhands-projects:/projects
+      - ${FACTORY_RUNTIME_HOST_DIR}:/projects/cezar-factory:ro,Z
 
   hindsight:
     image: ${HINDSIGHT_IMAGE}

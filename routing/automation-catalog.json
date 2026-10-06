@@ -9,14 +9,14 @@
     "stateAuthority": "cezar"
   },
   "automationProfiles": {
-    "factory-intake": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},
-    "factory-plan": {"runner":"claude","model":"sonnet","spendTier":"premium-planning","complexityVariants":{"complexity:small":{"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},"complexity:medium":{"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-planning"},"complexity:large":{"runner":"codex","model":"gpt-6.1-sol","spendTier":"premium-planning"}}},
-    "factory-investigate": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},
+    "factory-intake": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
+    "factory-plan": {"runner":"claude","model":"sonnet","spendTier":"premium-planning","complexityVariants":{"complexity:small":{"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},"complexity:medium":{"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-planning"},"complexity:large":{"runner":"codex","model":"gpt-6.1-sol","spendTier":"premium-planning"}}},
+    "factory-investigate": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-review": {"runner":"claude","model":"sonnet","spendTier":"premium-review"},
-    "factory-implement": {"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation","complexityVariants":{"complexity:small":{"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},"complexity:medium":{"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation"},"complexity:large":{"runner":"codex","model":"gpt-6.1-sol","spendTier":"premium-implementation"}}},
+    "factory-implement": {"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation","complexityVariants":{"complexity:small":{"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},"complexity:medium":{"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation"},"complexity:large":{"runner":"codex","model":"gpt-6.1-sol","spendTier":"premium-implementation"}}},
     "factory-fix-review": {"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation"},
-    "factory-maintenance": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},
-    "factory-backlog-label-audit": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"}
+    "factory-maintenance": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
+    "factory-backlog-label-audit": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"}
   },
   "jobs": [
     {"id":"state-transition","purpose":"Validate and route legal lifecycle transitions.","inputs":["structured-result"],"maxContextChars":0,"tier":"tool","workers":["route-state.ps1"],"fallback":["human"],"verifier":"exit-code-and-json","retryBudget":0,"timeoutSeconds":60,"terminal":"refused","persistenceAuthority":"cezar","approval":"none","artifact":".factory/route-result.json","observability":["issue","workflow","tier","terminalReason"]},

@@ -8,7 +8,7 @@ It is deliberately an index, not a second policy source; `routing/automation-cat
 | Lifecycle labels and transitions | Factory scripts / Cezar | `scripts/route-state.ps1`, `tests/run-tests.ps1` |
 | Workflow initiation and retries | Cezar | `workflows/*.yaml`, automation fixtures; workflows run isolated worktrees |
 | Workflow runtime scripts, policies and schemas | Version-pinned Factory runtime | `$FACTORY_RUNTIME_ROOT`, `docs/synchronization.md` |
-| Premium isolated sessions | OpenHands | `integrations/openhands/*`, `docs/openhands-live-evidence.md` |
+| Scheduled and isolated automation execution | Cezar service | `automations/*.json`, `workflows/*.yaml`, `routing/automation-catalog.json` |
 | Local advisory jobs | LiteLLM + vLLM | `scripts/local/run-local-job.ps1`, `routing/local-jobs.yaml` |
 | Automation selection | Factory catalog | `routing/automation-catalog.json`, `scripts/validate-automation-catalog.ps1` |
 | Bounded recall and retention | Hindsight | `scripts/hindsight/*`, `integrations/hindsight/*` |
@@ -17,3 +17,7 @@ It is deliberately an index, not a second policy source; `routing/automation-cat
 
 Hindsight is deployed and the NeonPath planning pilot consumed a bounded recall
 artifact. Retention remains human-approved and has not been exercised.
+
+OpenHands is not part of the active execution path. The `integrations/openhands`
+files and OpenHands evidence documents are retained as legacy/reference
+material only.

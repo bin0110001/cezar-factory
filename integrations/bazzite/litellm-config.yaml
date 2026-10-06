@@ -4,11 +4,19 @@ model_list:
       model: openai/qwen3.5-9b
       api_base: os.environ/VLLM_BASE_URL
       api_key: os.environ/VLLM_API_KEY
+      use_chat_completions_api: true
+    model_info:
+      max_input_tokens: 65536
+      max_output_tokens: 4096
   - model_name: factory-code
     litellm_params:
       model: openai/qwen3.5-9b
       api_base: os.environ/VLLM_BASE_URL
       api_key: os.environ/VLLM_API_KEY
+      use_chat_completions_api: true
+    model_info:
+      max_input_tokens: 65536
+      max_output_tokens: 4096
 
 router_settings:
   routing_strategy: simple-shuffle

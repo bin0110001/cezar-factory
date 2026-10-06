@@ -3,9 +3,13 @@
 This guide is a reusable setup path for a new Factory deployment. It uses
 three logical roles:
 
+> Active-path note: scheduled Factory automations execute directly in Cezar.
+> OpenHands is not used or required. The OpenHands setup sections below are
+> retained as legacy migration notes and can be skipped for a current install.
+
 - **operator workstation**: the machine used to edit configuration and run
   deployment commands;
-- **control-plane host**: runs Cezar, OpenHands, the gateway, memory, and
+- **control-plane host**: runs Cezar, the gateway, memory, and
   observability services;
 - **model host**: runs the local vLLM-compatible model endpoint.
 
@@ -20,7 +24,7 @@ Install the tools required by the selected deployment method:
 - PowerShell 7 when using the Windows project-installation scripts;
 - Podman and Podman Compose on the control-plane host, or a configured Podman
   remote connection from the operator workstation;
-- Python 3 on the control-plane host for the OpenHands adapter and validators;
+- Python 3 on the control-plane host for validators and optional legacy tools;
 - SSH key authentication from the operator workstation to both hosts;
 - a native vLLM runtime appropriate for the model host.
 
@@ -201,7 +205,7 @@ in. If the key is unavailable, rotate it through the deployment secret
 process and restart the LiteLLM service rather than committing a replacement
 to the repository.
 
-## 6. Initialize OpenHands persistence
+## 6. Legacy: initialize OpenHands persistence (skip for current deployments)
 
 The persistent OpenHands project workspace must already be a valid, clean Git
 worktree before any job requests `worktree=true`.
@@ -223,7 +227,7 @@ When the project must have a configured remote, use:
 The validator must report a valid `HEAD` and a clean status. This step avoids
 the common failure where worktree creation fails with an invalid reference.
 
-## 7. Configure OpenHands agents and MCP
+## 7. Legacy: configure OpenHands agents and MCP (skip for current deployments)
 
 Use the Canvas configuration surface to create provider profiles. Keep the
 following concerns separate:

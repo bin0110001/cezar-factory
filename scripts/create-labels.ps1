@@ -29,6 +29,7 @@ $descriptions = @{
     'factory:blocked'           = 'Factory: blocked by an external dependency'
     'factory:done'              = 'Factory: complete'
     'factory:investigate'       = 'Factory: repeated failure awaiting investigation'
+    'factory:auditing'          = 'Factory: bounded backlog-label audit in progress'
     'factory:tracking'          = 'Factory: tracking parent, not executable work'
     'complexity:small'          = 'Factory: isolated, low-complexity change'
     'complexity:medium'         = 'Factory: substantial multi-step change'

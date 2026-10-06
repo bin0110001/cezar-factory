@@ -1,4 +1,9 @@
-# OpenHands execution boundary
+# Legacy: OpenHands execution boundary
+
+This document describes a retired integration. The active Factory deployment
+executes automations directly through Cezar and does not use OpenHands. Keep
+this document only for migration history; do not use it as the runtime
+contract for current jobs.
 
 The clean launch boundary is a provider request from Cezar to an OpenHands
 Agent Server on Bazzite. Agent Canvas remains the operator-facing control and

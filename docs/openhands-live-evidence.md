@@ -1,4 +1,9 @@
-# OpenHands Agent Canvas live evidence
+# Historical: OpenHands Agent Canvas live evidence
+
+This is historical evidence from a retired execution path. OpenHands is not
+part of the active Factory deployment; current automation execution belongs to
+Cezar. Do not interpret this document as proof that the OpenHands service is
+required or currently enabled.
 
 Verified on 2026-10-02 against the Bazzite Podman host.
 

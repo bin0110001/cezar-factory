@@ -2,6 +2,14 @@
 
 A reusable, version-controlled development factory for Cezar that enables standardized, automated software development workflows.
 
+## Active execution model
+
+Production Factory automations run directly through the Cezar service. Their
+`runner` and `model` fields select Codex, Claude, or the Factory gateway; they
+do not submit work to OpenHands. The OpenHands integration and deployment
+files remain only as legacy/reference material and are not required for the
+active automation path.
+
 ## Overview
 
 This factory provides:
@@ -50,8 +58,9 @@ Both scripts validate the service endpoints after startup. See
 
 Follow [docs/getting-started.md](docs/getting-started.md) for the complete,
 reusable setup and deployment path, including host preparation, secret
-handling, OpenHands configuration, local smoke testing, and remaining manual
-gates.
+handling, Cezar runtime configuration, local smoke testing, and remaining
+manual gates. Its OpenHands sections are retained as legacy migration notes
+and are not part of the active deployment.
 
 Additional references:
 

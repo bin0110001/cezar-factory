@@ -1,11 +1,18 @@
 name: factory-intake
 description: Classify a newly opened issue, then route it to planning or genuine-question help
 steps:
+  - id: select-issue
+    name: Select one existing issue for intake
+    command: pwsh -NoProfile -File /projects/cezar-factory/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
   - id: intake
-    name: Classify newly opened issue
+    name: Classify selected existing issue
     skill: factory-intake
     prompt: |
-      Classify this newly opened GitHub issue: {{task}}
+      Read the selector result from .factory/intake-issue.json.
+      The selector has already performed the only issue discovery step.
+      If its `issue` is null, report that no eligible existing issue was found
+      and stop. Otherwise classify exactly the selected issue from that result:
+      {{task}}
 
       Write the structured intake result to .factory/intake-result.json.
       Include the issue number. Do not edit factory:* labels.

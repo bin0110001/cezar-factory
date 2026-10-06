@@ -13,8 +13,8 @@
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
     "workflow": "factory-intake",
-    "runner": "opencode",
-    "model": "litellm/factory-small",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
     "worktree": true,
     "autonomous": true
   }

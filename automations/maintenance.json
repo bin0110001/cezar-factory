@@ -10,8 +10,8 @@
   "task": {
     "prompt": "Nightly maintenance sweep for {{project}} on {{date}}.",
     "workflow": "factory-maintenance",
-    "runner": "opencode",
-    "model": "litellm/factory-small",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
     "worktree": true,
     "autonomous": true
   }

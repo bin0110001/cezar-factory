@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Moved deterministic legacy-label resolution into the backlog audit: blocked
+  work, decomposition markers, and unambiguous type markers now receive a
+  durable Factory state before the agent sees the artifact. The artifact now
+  records its actual worktree and absolute output path, preventing stale
+  project-root JSON from being treated as the current run.
+- Made the untagged-candidate filter explicit after GitHub search and record
+  the audit reservation separately from each candidate's pre-audit labels.
+- Made the audit normalize all statically classifiable issues in the fetched
+  backlog; the three-issue cap now applies only to ambiguous LLM work.
+- Expanded the source fetch to the GitHub CLI maximum so static normalization
+  covers the full open backlog rather than only the first page.
+- Made the backlog-label audit treat a missing Cezar runtime mount as a
+  deployment failure and explicitly forbid nested-shell recovery or script
+  discovery.
+- Replaced the Cezar audit's shell-fragile inline PowerShell resolver with its
+  stable mounted-runtime entry point.
+- Reserved `factory:needs-help` for genuine human escalation; decomposition
+  findings now enter large-model planning instead.
+
+## [0.3.20] - 2026-10-05
+
+### Fixed
+- Made backlog-audit script resolution shell-safe and explicitly prevented
+  treating `create-labels.ps1` as the audit entry point.
+
+## [0.3.19] - 2026-10-05
+
+### Fixed
+- Resolve the backlog audit from the mounted Cezar runtime first and document
+  shell-safe PowerShell invocation.
+
+## [0.3.18] - 2026-10-05
+
+### Documentation
+- Clarified that active automations execute directly in Cezar and that
+  OpenHands/OpenCode materials are legacy reference paths.
+
+## [0.3.17] - 2026-10-05
+
+### Fixed
+- Made backlog-audit execution opaque and fail-fast so agents cannot inspect,
+  replace, or reconstruct the registered audit script.
+
+## [0.3.16] - 2026-10-05
+
+### Fixed
+- Made the Bazzite deployment mount the version-pinned Factory runtime into
+  Cezar and OpenHands and preflight the backlog-audit script.
+
+## [0.3.15] - 2026-10-05
+
+### Fixed
+- Made the backlog audit resolve its candidate script from the installed
+  project layer or registered Factory runtime, supporting remote-only worktrees
+  without reintroducing manual issue-list parsing.
+
+## [0.3.14] - 2026-10-05
+
+### Changed
+- Made the installed backlog-audit candidate script the mandatory discovery
+  path, eliminating agent-side issue-list parsing and fallback reconstruction.
+
+## [0.3.13] - 2026-10-05
+
+### Changed
+- Routed all Factory automations through Codex `factory-gateway/factory-code`
+  wherever they previously used OpenCode or `litellm/factory-small`.
+
+## [0.3.12] - 2026-10-05
+
+### Fixed
+- Restored the valid LiteLLM vLLM model identifier for the `factory-small`
+  and `factory-code` logical model groups.
+
+## [0.3.11] - 2026-10-05
+
+### Changed
+- Made backlog audits fail fast when the installed candidate source is
+  unavailable and added taxonomy hints to prevent repeated manual rework.
+
+## [0.3.10] - 2026-10-05
+
+### Changed
+- Bounded backlog-label audits now fetch only their requested candidate count
+  and explicitly run as a single pass without ad hoc scripts or re-listing.
+
 ## [0.3.9] - 2026-10-05
 
 ### Changed
