@@ -15,7 +15,7 @@ param(
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 
-$colors = @{ 'factory-state' = '1d76db'; type = '0e8a16'; risk = 'fbca04'; agent = '5319e7' }
+$colors = @{ 'factory-state' = '1d76db'; 'factory-classification' = '6f42c1'; type = '0e8a16'; risk = 'fbca04'; complexity = 'd4c5f9'; agent = '5319e7' }
 $riskColors = @{ 'risk:low' = '0e8a16'; 'risk:medium' = 'fbca04'; 'risk:high' = 'b60205' }
 $descriptions = @{
     'factory:new'               = 'Factory: newly filed, not yet triaged'
@@ -29,6 +29,11 @@ $descriptions = @{
     'factory:blocked'           = 'Factory: blocked by an external dependency'
     'factory:done'              = 'Factory: complete'
     'factory:investigate'       = 'Factory: repeated failure awaiting investigation'
+    'factory:auditing'          = 'Factory: bounded backlog-label audit in progress'
+    'factory:tracking'          = 'Factory: tracking parent, not executable work'
+    'complexity:small'          = 'Factory: isolated, low-complexity change'
+    'complexity:medium'         = 'Factory: substantial multi-step change'
+    'complexity:large'          = 'Factory: large or cross-cutting change'
 }
 
 $group = $null

@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["taskClass","difficulty","risk","contextChars","worker","model","schemaValid","validationPassed","retries","durationSeconds","premiumFallback"],
+  "properties":{
+    "taskClass":{"type":"string","pattern":"^[a-z0-9-]+$"},
+    "difficulty":{"enum":["low","medium","high"]},
+    "risk":{"enum":["low","medium","high"]},
+    "contextChars":{"type":"integer","minimum":0,"maximum":12000},
+    "worker":{"type":"string"},"model":{"type":"string"},
+    "schemaValid":{"type":"boolean"},"validationPassed":{"type":"boolean"},
+    "correctionReason":{"type":"string","maxLength":500},"retries":{"type":"integer","minimum":0,"maximum":3},
+    "durationSeconds":{"type":"number","minimum":0},"tokenEstimate":{"type":"integer","minimum":0},"premiumFallback":{"type":"boolean"},
+    "humanReviewOutcome":{"enum":["approved","rejected","not-required"]}
+  },
+  "additionalProperties":false
+}

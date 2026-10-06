@@ -1,0 +1,31 @@
+{
+  "$schema": "../schemas/automation-catalog.schema.json",
+  "version": 1,
+  "defaults": {
+    "maxContextChars": 12000,
+    "retryBudget": 1,
+    "timeoutSeconds": 300,
+    "artifactRoot": ".factory",
+    "stateAuthority": "cezar"
+  },
+  "automationProfiles": {
+    "factory-plan": {"runner":"claude","model":"sonnet","spendTier":"premium-planning"},
+    "factory-investigate": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},
+    "factory-review": {"runner":"claude","model":"sonnet","spendTier":"premium-review"},
+    "factory-implement": {"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation"},
+    "factory-fix-review": {"runner":"codex","model":"gpt-5.6-terra","spendTier":"premium-implementation"},
+    "factory-maintenance": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"},
+    "factory-backlog-label-audit": {"runner":"opencode","model":"litellm/factory-small","spendTier":"local"}
+  },
+  "jobs": [
+    {"id":"state-transition","purpose":"Validate and route legal lifecycle transitions.","inputs":["structured-result"],"maxContextChars":0,"tier":"tool","workers":["route-state.ps1"],"fallback":["human"],"verifier":"exit-code-and-json","retryBudget":0,"timeoutSeconds":60,"terminal":"refused","persistenceAuthority":"cezar","approval":"none","artifact":".factory/route-result.json","observability":["issue","workflow","tier","terminalReason"]},
+    {"id":"validation","purpose":"Run tests, builds, lint, package and schema checks.","inputs":["repository","test-command"],"maxContextChars":0,"tier":"tool","workers":["native"],"fallback":["investigate"],"verifier":"native-report","retryBudget":0,"timeoutSeconds":1800,"terminal":"investigate","persistenceAuthority":"none","approval":"none","artifact":".factory/validation-result.json","observability":["issue","workflow","tier","terminalReason"]},
+    {"id":"issue-classification","purpose":"Suggest issue type and risk without changing labels.","inputs":["issue-title","issue-body"],"maxContextChars":12000,"tier":"local","workers":["litellm-vllm"],"fallback":["premium","human"],"verifier":"json-schema-and-policy","retryBudget":1,"timeoutSeconds":120,"terminal":"premium","persistenceAuthority":"cezar","approval":"policy-check","artifact":".factory/local-classification.json","observability":["issue","workflow","worker","model","validationOutcome"],"localJobs":["classify-issue","recommend-work-type","recommend-risk","extract-acceptance-criteria"],"promotion":{"sampleSize":30,"schemaValidRate":0.98,"verifiedSuccessRate":0.95}},
+    {"id":"backlog-label-audit","purpose":"Conservatively normalize legacy issue labels without advancing lifecycle state.","inputs":["issue-title","issue-body","existing-labels"],"maxContextChars":12000,"tier":"local","workers":["litellm-vllm"],"fallback":["human"],"verifier":"bounded-label-policy","retryBudget":0,"timeoutSeconds":120,"terminal":"human-review","persistenceAuthority":"github","approval":"bounded-policy-check","artifact":".factory/backlog-label-audit.json","observability":["issue","workflow","worker","model","labelsChanged"],"localJobs":["audit-backlog-labels"],"promotion":{"sampleSize":30,"schemaValidRate":0.98,"verifiedSuccessRate":0.95}},
+    {"id":"compression","purpose":"Summarize logs, diffs and test results while retaining references.","inputs":["artifact-reference"],"maxContextChars":12000,"tier":"local","workers":["litellm-vllm"],"fallback":["premium"],"verifier":"reference-check","retryBudget":1,"timeoutSeconds":120,"terminal":"premium","persistenceAuthority":"none","approval":"none","artifact":".factory/local-summary.json","observability":["issue","workflow","worker","model","validationOutcome"],"localJobs":["summarize-issue","normalize-test-result","summarize-logs","summarize-diff","draft-pr-summary"],"promotion":{"sampleSize":30,"schemaValidRate":0.98,"verifiedSuccessRate":0.95}},
+    {"id":"memory-candidate-extraction","purpose":"Extract bounded durable-memory candidates.","inputs":["completed-result","investigation-result"],"maxContextChars":12000,"tier":"local","workers":["litellm-vllm"],"fallback":["human"],"verifier":"memory-candidate-schema-and-filter","retryBudget":1,"timeoutSeconds":120,"terminal":"human-review","persistenceAuthority":"hindsight","approval":"human-required","artifact":".factory/memory-candidates.json","observability":["issue","workflow","worker","model","validationOutcome"],"localJobs":["extract-memory-candidates"],"promotion":{"sampleSize":50,"schemaValidRate":0.99,"verifiedSuccessRate":0.98}},
+    {"id":"planning","purpose":"Resolve a bounded implementation plan from requirements and recall.","inputs":["issue","memory-recall"],"maxContextChars":12000,"tier":"premium","workers":["openhands-codex","openhands-claude"],"fallback":["human"],"verifier":"plan-schema-and-definition-of-ready","retryBudget":1,"timeoutSeconds":1800,"terminal":"needs-help","persistenceAuthority":"cezar","approval":"risk-gate","artifact":".factory/plan-result.json","observability":["issue","workflow","worker","model","validationOutcome"]},
+    {"id":"implementation","purpose":"Perform non-trivial implementation in an isolated OpenHands worktree.","inputs":["approved-plan","repository"],"maxContextChars":12000,"tier":"premium","workers":["openhands-codex","openhands-claude"],"fallback":["human"],"verifier":"native-validation-and-independent-review","retryBudget":1,"timeoutSeconds":3600,"terminal":"needs-help","persistenceAuthority":"github","approval":"human-merge","artifact":".factory/implementation-result.json","observability":["issue","workflow","worker","model","validationOutcome"]},
+    {"id":"human-decision","purpose":"Make product, legal, security, privacy and merge decisions.","inputs":["github-record"],"maxContextChars":0,"tier":"human","workers":["human"],"fallback":[],"verifier":"github-approval","retryBudget":0,"timeoutSeconds":0,"terminal":"human","persistenceAuthority":"github","approval":"human-required","artifact":".factory/human-gate.json","observability":["issue","workflow","terminalReason"]}
+  ]
+}

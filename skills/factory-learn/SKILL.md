@@ -8,6 +8,9 @@ source: skills/factory-learn/SKILL.md
 ## Responsibilities
 
 - Review successful work and failures.
+- Recall related Factory/project memories before proposing a lesson when Hindsight is available.
+- Retain approved durable candidates to the appropriate Hindsight bank; do not
+  write directly to normative Git documentation.
 - Identify durable reusable knowledge.
 - Avoid storing task-specific/transient facts.
 - Recommend or update:
@@ -54,6 +57,13 @@ source: skills/factory-learn/SKILL.md
 - Initially, the learn skill should only recommend changes, not apply them.
 - Human review is required before any shared factory skill is modified.
 - This ensures that factory-wide changes are deliberate and vetted.
+
+### 5. Hindsight and Git Boundary
+
+- Hindsight stores operational lessons and candidate documentation changes.
+- Git remains the source of truth for architecture, policies, skills, and
+  normative project documentation.
+- A candidate becomes a documentation change only through a normal reviewed PR.
 
 ## Output Format
 

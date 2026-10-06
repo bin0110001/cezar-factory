@@ -16,3 +16,4 @@ Thumbs.db
 # Local script output
 scripts/artifacts/
 scripts/update.log
+.factory/

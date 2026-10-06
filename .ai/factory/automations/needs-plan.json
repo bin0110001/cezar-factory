@@ -1,0 +1,27 @@
+{
+  "name": "[factory] needs-plan",
+  "description": "Plan issues that gain factory:needs-plan (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "github",
+  "events": [
+    "issue.labeled"
+  ],
+  "intervalSeconds": 300,
+  "filters": {
+    "changedLabels": [
+      "factory:needs-plan"
+    ],
+    "allLabels": [
+      "factory:needs-plan"
+    ],
+    "excludeLabels": [
+      "factory:blocked"
+    ],
+    "maxRecords": 1
+  },
+  "task": {
+    "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
+    "workflow": "factory-plan",
+    "worktree": true,
+    "autonomous": true
+  }
+}

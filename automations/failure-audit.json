@@ -1,0 +1,18 @@
+{
+  "name": "[factory] failure-audit",
+  "description": "Daily bounded audit for recurring Cezar failures that may indicate Factory defects (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {
+    "type": "daily",
+    "hour": 1,
+    "minute": 0
+  },
+  "task": {
+    "prompt": "Audit recent Cezar failures for {{project}} on {{date}}. Inspect at most the latest 20 run records and create at most one deduplicated Factory maintenance issue if warranted.",
+    "workflow": "factory-failure-audit",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
+    "worktree": true,
+    "autonomous": true
+  }
+}

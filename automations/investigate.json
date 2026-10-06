@@ -21,6 +21,8 @@
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
     "workflow": "factory-investigate",
+    "runner": "opencode",
+    "model": "litellm/factory-small",
     "worktree": true,
     "autonomous": true
   }

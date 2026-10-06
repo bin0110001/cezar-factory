@@ -1,0 +1,62 @@
+version: 1
+
+jobs:
+  classify-issue:
+    worker: local
+    output: labels
+    inputs: [issue_title, issue_body]
+    max_context_chars: 12000
+  recommend-work-type:
+    worker: local
+    output: work_type_label
+    inputs: [issue_title, issue_body]
+    max_context_chars: 12000
+  recommend-risk:
+    worker: local
+    output: risk_label
+    inputs: [issue_title, issue_body]
+    max_context_chars: 12000
+  summarize-issue:
+    worker: local
+    output: summary
+    inputs: [issue_title, issue_body, issue_comments]
+    max_context_chars: 16000
+  extract-acceptance-criteria:
+    worker: local
+    output: acceptance_criteria
+    inputs: [issue_title, issue_body]
+    max_context_chars: 12000
+  normalize-test-result:
+    worker: local
+    output: structured_result
+    inputs: [result_json, failure_artifact]
+    max_context_chars: 12000
+  summarize-logs:
+    worker: local
+    output: failure_summary
+    inputs: [failure_artifact]
+    max_context_chars: 12000
+  summarize-diff:
+    worker: local
+    output: pull_request_summary
+    inputs: [git_diff, test_result]
+    max_context_chars: 16000
+  draft-pr-summary:
+    worker: local
+    output: pull_request_summary
+    inputs: [git_diff, test_result]
+    max_context_chars: 16000
+  extract-memory-candidates:
+    worker: local
+    output: durable_knowledge_candidates
+    inputs: [task_result, investigation_result]
+    max_context_chars: 12000
+  audit-backlog-labels:
+    worker: local
+    output: bounded_label_changes
+    inputs: [issue_title, issue_body, existing_labels]
+    max_context_chars: 12000
+
+policy:
+  no_code_changes: true
+  human_review_required_for_persistence: true

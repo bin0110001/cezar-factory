@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["version", "automationProfiles", "jobs"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "maxContextChars": { "type": "integer", "minimum": 0, "maximum": 12000 },
+        "retryBudget": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "timeoutSeconds": { "type": "integer", "minimum": 0 },
+        "artifactRoot": { "type": "string" },
+        "stateAuthority": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "automationProfiles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["runner", "model", "spendTier"],
+        "properties": {
+          "runner": { "enum": ["claude", "codex", "opencode"] },
+          "model": { "type": "string", "minLength": 1 },
+          "spendTier": { "enum": ["local", "premium-planning", "premium-review", "premium-implementation"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "purpose", "inputs", "maxContextChars", "tier", "workers", "fallback", "verifier", "retryBudget", "timeoutSeconds", "terminal", "persistenceAuthority", "approval", "artifact", "observability"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "purpose": { "type": "string", "minLength": 1 },
+          "inputs": { "type": "array" },
+          "maxContextChars": { "type": "integer", "minimum": 0, "maximum": 12000 },
+          "tier": { "enum": ["tool", "local", "premium", "human"] },
+          "workers": { "type": "array", "minItems": 1 },
+          "fallback": { "type": "array" },
+          "verifier": { "type": "string", "minLength": 1 },
+          "retryBudget": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "timeoutSeconds": { "type": "integer", "minimum": 0 },
+          "terminal": { "type": "string", "minLength": 1 },
+          "persistenceAuthority": { "enum": ["none", "cezar", "github", "hindsight"] },
+          "approval": { "type": "string", "minLength": 1 },
+          "artifact": { "type": "string", "pattern": "^\\.factory/" },
+          "observability": { "type": "array", "minItems": 1 },
+          "localJobs": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9-]+$" } },
+          "promotion": {
+            "type": "object",
+            "required": ["sampleSize", "schemaValidRate", "verifiedSuccessRate"],
+            "properties": {
+              "sampleSize": { "type": "integer", "minimum": 1 },
+              "schemaValidRate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "verifiedSuccessRate": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          { "if": { "properties": { "tier": { "const": "local" } } }, "then": { "required": ["localJobs", "promotion"] } }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,133 @@
+{
+  "factory_version": "0.3.2",
+  "files": [
+    {
+      "path": ".ai/factory/automations/changes-requested.json",
+      "sha256": "964980ccd2b9379e5322d2546615fa47f9190ffbf2c984b9eef94080fa494b2d"
+    },
+    {
+      "path": ".ai/factory/automations/investigate.json",
+      "sha256": "5cda2ca81f7dc4bb998a425a89e03800571eef82e004c1b6a514332ea2e708ca"
+    },
+    {
+      "path": ".ai/factory/automations/maintenance.json",
+      "sha256": "90e608f427e4ae282e1f6884d7709011447bb9136a2403cf1701cfe4e7330719"
+    },
+    {
+      "path": ".ai/factory/automations/needs-plan.json",
+      "sha256": "06c2de8387976d06f8d9e5a8f425f2b11f2737ad33c3f16a3da3c3a495185ac3"
+    },
+    {
+      "path": ".ai/factory/automations/ready-to-implement.json",
+      "sha256": "3858a6c17cb4b5a635a15eba2f77e42c1f7af416690d2a927fda05d204c2d240"
+    },
+    {
+      "path": ".ai/factory/automations/ready-to-review.json",
+      "sha256": "e97fd544270e5ddf4e738d91beb3a86500ca5444d1eb051861b348f411768a67"
+    },
+    {
+      "path": ".ai/factory/policies/definition-of-done.md",
+      "sha256": "2e0d721310467c7728453bcf0ef69bc3e0a3100badc77e06261ab6f528bdf17e"
+    },
+    {
+      "path": ".ai/factory/policies/definition-of-ready.md",
+      "sha256": "8ecb0443c44c73f248f41585d1b91b1ff75c17b216d3a0c38842529d5e0c4cf2"
+    },
+    {
+      "path": ".ai/factory/policies/escalation.md",
+      "sha256": "7002f6ed88ed343edf9afadf0984e85f3f0a8e2180fa2d06eafc979d874b1e87"
+    },
+    {
+      "path": ".ai/factory/policies/labels.yaml",
+      "sha256": "9f26090cf14df6bab1e96e48b32894269daa542f662352e94fd4d60bd41b4432"
+    },
+    {
+      "path": ".ai/factory/policies/retry.yaml",
+      "sha256": "5c7f062be69943b47e4d82c50bbf8033763315f1d5eb03f1d2e00226b2e8fd30"
+    },
+    {
+      "path": ".ai/factory/policies/risk.yaml",
+      "sha256": "63dc5b22c9cd081d575033230ca1c90ab6e89b50dff9325938b412f3a437c584"
+    },
+    {
+      "path": ".ai/factory/schemas/factory.config.schema.json",
+      "sha256": "9af6211bc9e3e3bd08757471526525926aafa9bc9a254a5d349c5ec0183e2261"
+    },
+    {
+      "path": ".ai/factory/schemas/implementation-result.schema.json",
+      "sha256": "7610e39c32c63b6f05f5c8aeabf6c35969b4d46846d3d98e5c737481ae467dad"
+    },
+    {
+      "path": ".ai/factory/schemas/investigation-result.schema.json",
+      "sha256": "f8919d5e53565f61e93d605e0348ad50b6602f6cf017b25f909b62ce3b0ea018"
+    },
+    {
+      "path": ".ai/factory/schemas/plan.schema.json",
+      "sha256": "8c7d3198f1b65fbb7c55598b338c060e786879c10d0d63cad076c3d77bc34eca"
+    },
+    {
+      "path": ".ai/factory/schemas/review-result.schema.json",
+      "sha256": "093f27db2a9fcc8cca922fdfa8d90d2c2a2d66d1ac418833442cf827952c9cbe"
+    },
+    {
+      "path": ".ai/factory/scripts/create-labels.ps1",
+      "sha256": "bb845208946a694ef126ac8ca6d71f545c9351ad49071bea189c8300177e80ad"
+    },
+    {
+      "path": ".ai/factory/scripts/route-state.ps1",
+      "sha256": "582cf8e7d7b68dfbcdea1fbb04e5d5b31cea9ca1847ddfbfaf24f36767bab84b"
+    },
+    {
+      "path": ".ai/factory/scripts/sync-automations.ps1",
+      "sha256": "eb2c003e4bccc681fa1b45dd725612eeb29d389f783b7ba9eb36ebbbcadd3a9f"
+    },
+    {
+      "path": ".ai/factory/scripts/validate-result.ps1",
+      "sha256": "d5f023dc039a29473a87376badd388b9b40e9a43bf21dba98e8433b12c2e6e92"
+    },
+    {
+      "path": ".ai/skills/factory-fix/SKILL.md",
+      "sha256": "976531d4b9fca307e6818281c19fd0e8708fa6f71fe1de3f107c1341ba3be665"
+    },
+    {
+      "path": ".ai/skills/factory-implement/SKILL.md",
+      "sha256": "ce817d0a34c1461bef83587b8bbda5951aeb796e364c6befa90c1b64d1ae111d"
+    },
+    {
+      "path": ".ai/skills/factory-investigate/SKILL.md",
+      "sha256": "1dda377218b6e878266de7e4e0ef7f547e1e576923fe6cbecfe672111e4fad4d"
+    },
+    {
+      "path": ".ai/skills/factory-plan/SKILL.md",
+      "sha256": "b2b3ca5856f47a05b9b80062967e78c98956e5fbecf957832825dacb507fac3f"
+    },
+    {
+      "path": ".ai/skills/factory-review/SKILL.md",
+      "sha256": "3c622af60272eda533a96da3ccd26cf44df21ba60e2aaa8ea122a922a3c3b739"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-fix-review.yaml",
+      "sha256": "c302036896b363e8a2b8c76fd900427cbd013dfb81d83db1a75f211fc1fdf98b"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-implement.yaml",
+      "sha256": "cd78e9fdea10061b43cf95126049224cb044d0b15bef05ea1bf57a81a0c2d990"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-investigate.yaml",
+      "sha256": "a90c24e33cc852f123b698d4fd8e0d353bcbf080869dc6a52a451292b98a9fab"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-maintenance.yaml",
+      "sha256": "f4684a881f6144ffac875d3b09b188e6c59e521adb7ce9625a5da571a9bec099"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-plan.yaml",
+      "sha256": "f136122db743d25ffe684883d53e35951cbedf8eec449c1050be0f9dd061ef71"
+    },
+    {
+      "path": ".ai/cezar/workflows/factory-review.yaml",
+      "sha256": "cd4740eede279a86e360c3de2b922da83ee39d8513687d313c83331ac6a34436"
+    }
+  ]
+}

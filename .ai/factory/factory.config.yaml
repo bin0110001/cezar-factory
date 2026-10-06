@@ -1,0 +1,33 @@
+# Project-owned factory configuration. Edit freely; change factory.version to upgrade.
+
+factory:
+  source: "cezar-factory"
+  version: "0.3.2"
+
+workflows:
+  - plan
+  - implement
+  - review
+  - fix-review
+  - investigate
+  - failure-audit
+
+skills:
+  - factory-plan
+  - factory-implement
+  - factory-review
+  - factory-fix
+  - factory-investigate
+  - factory-failure-audit
+
+features:
+  knowledge_extraction: false
+  maintenance: true
+
+project:
+  type: generic
+
+validation:
+  changed: "./scripts/factory/test-changed.ps1"
+  full: "./scripts/factory/test-full.ps1"
+  verify: "./scripts/factory/verify.ps1"

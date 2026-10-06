@@ -1,0 +1,24 @@
+[
+  {
+    "apiUrl": "http://192.168.86.69:4321",
+    "projectId": "blackjackandhookersgadot",
+    "deployment": {
+      "mode": "remote-cezar-plus-bazzite-host",
+      "bazziteSshTarget": "bazzite",
+      "bazziteAddress": "192.168.86.69",
+      "litellmConfigPath": "/var/home/bin0110001/cezar-factory-litellm-config.yaml",
+      "fullFactoryProjectPath": "not-configured-on-windows"
+    }
+  },
+  {
+    "apiUrl": "http://192.168.86.69:4321",
+    "projectId": "cezar-factory",
+    "deployment": {
+      "mode": "remote-cezar-plus-bazzite-host",
+      "bazziteSshTarget": "bazzite",
+      "bazziteAddress": "192.168.86.69",
+      "litellmConfigPath": "/var/home/bin0110001/cezar-factory-litellm-config.yaml",
+      "fullFactoryProjectPath": "not-configured-on-windows"
+    }
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IntakeResult",
+  "type": "object",
+  "properties": {
+    "issue": { "type": "integer", "minimum": 1 },
+    "type": { "type": "string", "enum": ["type:bug", "type:feature", "type:refactor", "type:test", "type:docs", "type:maintenance"] },
+    "risk": { "type": "string", "enum": ["risk:low", "risk:medium", "risk:high"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "unresolvedQuestions": { "type": "string" }
+  },
+  "required": ["issue", "type", "risk", "summary", "unresolvedQuestions"]
+}
