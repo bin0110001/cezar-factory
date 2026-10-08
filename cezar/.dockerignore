@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+packages/cezar/web/dist
+.git
+.ai
+.agents
+.claude
+*.tsbuildinfo
+notes.md
