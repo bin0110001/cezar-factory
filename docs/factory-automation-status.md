@@ -76,8 +76,9 @@ is recorded here.
 # Blackjack backlog-label audit pilot (2026-10-05)
 
 `blackjackandhookersGadot` is the first backlog-cleanup pilot. Its opt-in
-`features.backlog_label_cleanup` installs an hourly Cezar schedule
-(`{ "type": "hours", "every": 1 }`) that is capped at three open issues per run,
+`features.maintenance` or `features.backlog_label_cleanup` installs the combined
+hourly Cezar maintenance schedule (`{ "type": "hours", "every": 1 }`). It is
+capped at three backlog-audit issues and two stale-workable refreshes per run,
 preserves legacy labels, and may classify executable work with `factory:new`,
 one `type:*`, and one `risk:*` label. Epic and tracking parents receive the
 non-lifecycle `factory:tracking` marker instead; it never makes legacy work

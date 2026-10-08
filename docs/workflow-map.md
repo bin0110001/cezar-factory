@@ -44,7 +44,8 @@ executable state.
 implementation or fix workflow sets it first, then emits `factory:review` or
 `factory:investigate` when its run completes.
 
-The scheduled `[factory] refresh-stale-workable` automation is a bounded repair
+The combined `[factory] maintenance` automation includes the bounded
+`refresh-stale-workable` repair
 loop, not a new lifecycle state. Every four hours it selects at most two open
 issues older than 24 hours in `factory:new`, `factory:needs-plan`,
 `factory:ready`, `factory:review`, `factory:changes-requested`, or

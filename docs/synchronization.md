@@ -5,6 +5,11 @@ installation as a fallback. All scripts are PowerShell 7 and live in `scripts/`.
 
 ## Default release pipeline
 
+Every Factory-managed change must force a release attempt on every configured
+target, even when the Factory version is unchanged. A matching version does
+not prove that the target's automations, runtime mount, or service deployment
+is current.
+
 Use remote-only synchronization whenever the target project already exists in
 Cezar. Configure `apiUrl` and `projectId` in the host-local
 `config/factory-projects.json`, omit `projectPath`, and run:
@@ -41,7 +46,12 @@ FACTORY_RUNTIME_ROOT=/projects/cezar-factory
 ```
 
 The host checkout must contain
-`scripts/audit-backlog-labels.ps1`. `scripts/deploy/deploy-bazzite.sh`
+`scripts/audit-backlog-labels.ps1`. Remote targets with
+`deployment.mode: remote-cezar-plus-bazzite-host` also run a mandatory Bazzite
+runtime parity/deploy phase. It refuses a dirty or version-mismatched remote
+checkout rather than syncing the automation definition to a runtime that
+cannot execute it. Use `-SkipBazziteRuntime` only for an explicit
+automation-only operation. `scripts/deploy/deploy-bazzite.sh`
 preflights that file before starting the stack, so an hourly audit fails early
 with an actionable deployment error instead of searching for scripts or
 falling back to manual issue parsing. The Cezar service receives the read-only

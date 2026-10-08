@@ -107,7 +107,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'prepare-implementation.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'prepare-implementation.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.
@@ -132,17 +132,16 @@ function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [stri
     foreach ($sc in $script:RuntimeScripts) { $selected.Add("scripts/$sc") }
     $maint = Get-FeatureOn $Config 'maintenance'
     $labelCleanup = Get-FeatureOn $Config 'backlog_label_cleanup'
-    if ($maint -and $workflows -notcontains 'maintenance') { $selected.Add('workflows/maintenance.yaml') }
-    if ($labelCleanup -and $workflows -notcontains 'backlog-label-audit') { $selected.Add('workflows/backlog-label-audit.yaml') }
-    if ($labelCleanup -and $skills -notcontains 'factory-backlog-label-audit') { $selected.Add('skills/factory-backlog-label-audit/SKILL.md') }
+    $combinedMaintenance = $maint -or $labelCleanup
+    if ($combinedMaintenance -and $workflows -notcontains 'maintenance') { $selected.Add('workflows/maintenance.yaml') }
+    if ($combinedMaintenance -and $skills -notcontains 'factory-backlog-label-audit') { $selected.Add('skills/factory-backlog-label-audit/SKILL.md') }
     if ((Get-FeatureOn $Config 'knowledge_extraction') -and $skills -notcontains 'factory-learn') { $selected.Add('skills/factory-learn/SKILL.md') }
     if ((Get-FeatureOn $Config 'backlog_reconciliation') -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
     # Automations: only those whose workflow is installed (maintenance only with the feature on).
-    $allWorkflows = @($workflows) + $(if ($maint) { 'maintenance' }) + $(if ($labelCleanup) { 'backlog-label-audit' })
+    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' })
     foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.json) {
         $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
-        if ($f.BaseName -eq 'maintenance' -and -not $maint) { continue }
-        if ($f.BaseName -eq 'backlog-label-audit' -and -not $labelCleanup) { continue }
+        if ($f.BaseName -eq 'maintenance' -and -not $combinedMaintenance) { continue }
         $wf = $def.task.workflow -replace '^factory-', ''
         if ($wf -and $allWorkflows -notcontains $wf) { continue }
         $selected.Add("automations/$($f.Name)")

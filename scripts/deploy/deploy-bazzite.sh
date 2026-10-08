@@ -44,10 +44,25 @@ for name in "${required_vars[@]}"; do
   [[ -n "$value" ]] || { echo "missing required $name in $ENV_FILE" >&2; exit 1; }
 done
 FACTORY_RUNTIME_HOST_DIR_VALUE="$(grep -E '^FACTORY_RUNTIME_HOST_DIR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-[[ -f "$FACTORY_RUNTIME_HOST_DIR_VALUE/scripts/audit-backlog-labels.ps1" ]] || {
-  echo "Factory runtime is missing $FACTORY_RUNTIME_HOST_DIR_VALUE/scripts/audit-backlog-labels.ps1" >&2
-  exit 1
-}
+# Cezar runs these workflows inside Linux and receives this host checkout at
+# /projects/cezar-factory. Validate the startup path as well as the scheduled
+# audit path so a stale or partial checkout cannot deploy successfully and
+# fail later when a workflow starts.
+required_runtime_files=(
+  scripts/factory-startup.ps1
+  scripts/select-intake-issue.ps1
+  scripts/classify-intake.ps1
+  scripts/validate-intake-or-no-work.ps1
+  scripts/route-intake-or-no-work.ps1
+  scripts/audit-backlog-labels.ps1
+  scripts/maintain-repository.ps1
+)
+for runtime_file in "${required_runtime_files[@]}"; do
+  [[ -f "$FACTORY_RUNTIME_HOST_DIR_VALUE/$runtime_file" ]] || {
+    echo "Factory runtime is missing $FACTORY_RUNTIME_HOST_DIR_VALUE/$runtime_file" >&2
+    exit 1
+  }
+done
 if grep -Eq '(change-me-on-host|REPLACE_ON_BAZZITE|REPLACE_WITH_|project-REPLACE_|registry\.example)' "$ENV_FILE"; then
   echo "replace all deployment secret/model placeholders in $ENV_FILE" >&2
   exit 1

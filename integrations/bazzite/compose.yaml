@@ -7,9 +7,17 @@ services:
     environment:
       CEZ_AUTOMATIONS: ${CEZAR_AUTOMATIONS}
       CEZ_API_URL: ${CEZ_API_URL}
+      # Cezar executes Factory workflows in Linux; this is the in-container
+      # mount path, not a Windows host path.
       FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
     volumes:
+      # Preserve the shared project checkouts; the Factory bind mount below
+      # overlays only /projects/cezar-factory.
+      - openhands-projects:/projects
       - ${FACTORY_RUNTIME_HOST_DIR}:/projects/cezar-factory:ro,Z
+      # The Factory checkout is immutable at runtime; Cezar still needs a
+      # persistent writable home for run receipts and worktree metadata.
+      - cezar-factory-runtime:/projects/cezar-factory/.ai/cezar:Z
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -148,6 +156,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  cezar-factory-runtime:
   prometheus-data:
   grafana-data:
   openhands-data:

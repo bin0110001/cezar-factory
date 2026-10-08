@@ -21,13 +21,17 @@ if cross-repository tracking is required.
 - The script may normalize every deterministically classifiable open issue in
   one run. Process **at most three** genuinely ambiguous issues in the LLM
   session.
-- Consider only the candidates emitted by the installed audit script. In Cezar,
-  invoke the mounted runtime directly at
-  `/projects/cezar-factory/scripts/audit-backlog-labels.ps1`. Use
-  `.ai/factory/scripts/audit-backlog-labels.ps1` only outside Cezar as a
-  local-install fallback. The script is mandatory; it
-  fetches, filters, and reserves the bounded candidates.
-- This is a single bounded pass: run the candidate source once, process only its emitted candidates, and write one result. Do not list issues again, create a temporary audit script, or retry with a different shell command. If the source command fails, stop and report the failure.
+- Consider only the candidates emitted by the installed audit script. The
+  workflow must invoke the mounted runtime directly at
+  `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` before this skill
+  is given to the LLM. The script is mandatory; it
+  fetches, filters, reserves, and retrieves the bodies for the bounded
+  candidates.
+- This is a single bounded pass: consume the candidate source run performed
+  before the LLM step, process only its emitted candidates, and write one
+  result. Do not run the candidate source, list issues again, create a
+  temporary audit script, or retry with a different shell command. If the
+  pre-LLM source command fails, stop and report the failure.
 - If neither registered script path exists or the selected command fails, stop the run as failed. Do not search the filesystem, call `gh issue list`, switch shells, call MCP/resource discovery, install tools, or reconstruct the candidate list manually.
 - Do not read, print, parse, lint, or judge the script source. A displayed or serialized script body is not an audit result; only its exit status and the emitted input artifact are valid evidence. Never replace it because it appears incomplete.
 - The only filename to resolve or execute is `audit-backlog-labels.ps1`.
@@ -53,24 +57,24 @@ documentation, or non-production maintenance. When uncertain, skip.
 
 ## Procedure
 
-1. In Cezar, run exactly one direct command from the scheduled worktree:
+1. Require the workflow's pre-LLM step to have run exactly once from the
+   scheduled worktree:
 
    `pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1`
 
-   Do not add a resolver, environment-variable interpolation, shell wrapper,
-   or fallback search. Outside Cezar only, use
-   `pwsh -NoProfile -File .ai/factory/scripts/audit-backlog-labels.ps1` when
-   that local-install path exists. If the selected command fails, the audit is
-   failed and must stop. Do not substitute `create-labels.ps1`, search for
-   scripts, or inspect source.
+   The LLM must not run this command. Do not add a resolver,
+   environment-variable interpolation, shell wrapper, fallback search, or
+   retry. If the pre-LLM command failed, the audit is failed and must stop. Do
+   not substitute `create-labels.ps1`, search for scripts, or inspect source.
    Then read the exact `outputPath` reported in the emitted JSON. It must be
    under the current scheduled worktree; never read a project-root or prior-run
    `.factory/backlog-label-audit-input.json`. This is the only issue-discovery
    operation. Do not call `gh issue list`, inspect raw issue-list JSON, or
    list additional issues.
 2. Copy `resolved` entries directly into the result; do not inspect or alter
-   them. Choose only from the remaining at-most-three `candidates`. Retrieve
-   only those issue bodies if needed. Do not fetch or inspect any other issue.
+   them. Choose only from the remaining at-most-three `candidates`, using the
+   pre-fetched `body` included for each candidate. Do not retrieve issue bodies,
+   fetch, or inspect any other issue.
 3. Re-read each candidate's labels immediately before writing, to avoid racing a human or another run. The expected audit reservation is `factory:auditing`; if any other Factory label has appeared, record it as skipped without editing.
 4. For every candidate, execute and re-read one closing label edit before reporting it. For classifiable work, replace the reservation with `factory:new`, one `type:*`, and one `risk:*`. For decomposition-needed work, replace it with `factory:needs-plan`, one `type:*`, one `risk:*`, and `complexity:large`; this routes it to autonomous large-model planning. For an epic or tracking parent, replace it with `factory:tracking`; for blocked work, replace it with `factory:blocked`; retain `factory:needs-help` only for a genuine human escalation.
 5. If the closing edit or re-read fails, stop the audit as failed. Do not call the issue skipped and do not emit a successful audit record. A `skipped` entry is valid only when its `added` array names the durable closing label visible in the re-read.

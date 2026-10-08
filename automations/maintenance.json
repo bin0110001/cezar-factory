@@ -1,14 +1,13 @@
 {
   "name": "[factory] maintenance",
-  "description": "Nightly housekeeping sweep, opt-in via features.maintenance (managed by cezar-factory; do not edit in the cockpit)",
+  "description": "Hourly deterministic Factory housekeeping with a capped ambiguous-label review (managed by cezar-factory; do not edit in the cockpit)",
   "kind": "schedule",
   "schedule": {
-    "type": "daily",
-    "hour": 0,
-    "minute": 0
+    "type": "hours",
+    "every": 1
   },
   "task": {
-    "prompt": "Nightly maintenance sweep for {{project}} on {{date}}.",
+    "prompt": "Run the combined bounded Factory maintenance workflow for {{project}} at {{time}} on {{date}}. Execute the registered workflow exactly once; do not inspect or select issues manually.",
     "workflow": "factory-maintenance",
     "runner": "codex",
     "model": "factory-gateway/factory-code",

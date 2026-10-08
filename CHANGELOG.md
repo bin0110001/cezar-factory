@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.35
+
+- Made scheduled maintenance deterministic: scripts now perform repository
+  lifecycle hygiene and stale-issue summaries, numeric runner arguments are
+  removed, and the model is limited to the existing capped ambiguous-label
+  review.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -8,10 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Combined backlog-label normalization, stale-workable refresh, existing-issue
+  intake, and the repository maintenance sweep into one bounded hourly
+  maintenance workflow and automation.
 - Added an implementation preparation step that fetches the selected issue
   through authenticated `gh`, captures applicable instructions and repository
   tooling, and hands the agent a worktree-local context artifact before code
   changes begin.
+- Added a shared startup preflight to every Factory workflow. It validates the
+  registered runtime, required tools, and workflow-specific scripts before the
+  first agent or command step and records a bounded worktree-local receipt.
+
+## [0.3.34]
+
+### Added
+- Added a shared startup preflight to every Factory workflow. It validates the
+  registered runtime, required tools, and workflow-specific scripts before the
+  first agent or command step and records a bounded worktree-local receipt.
 
 ## [0.3.33]
 
