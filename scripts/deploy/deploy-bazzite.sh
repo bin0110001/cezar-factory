@@ -51,7 +51,11 @@ FACTORY_RUNTIME_HOST_DIR_VALUE="$(grep -E '^FACTORY_RUNTIME_HOST_DIR=' "$ENV_FIL
 required_runtime_files=(
   scripts/factory-startup.ps1
   scripts/select-intake-issue.ps1
+  scripts/classify-intake.ps1
+  scripts/validate-intake-or-no-work.ps1
+  scripts/route-intake-or-no-work.ps1
   scripts/audit-backlog-labels.ps1
+  scripts/maintain-repository.ps1
 )
 for runtime_file in "${required_runtime_files[@]}"; do
   [[ -f "$FACTORY_RUNTIME_HOST_DIR_VALUE/$runtime_file" ]] || {

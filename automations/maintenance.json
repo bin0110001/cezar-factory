@@ -1,6 +1,6 @@
 {
   "name": "[factory] maintenance",
-  "description": "Hourly bounded Factory housekeeping: backlog labels, stale workable issues, existing-issue intake, and the maintenance sweep (managed by cezar-factory; do not edit in the cockpit)",
+  "description": "Hourly deterministic Factory housekeeping with a capped ambiguous-label review (managed by cezar-factory; do not edit in the cockpit)",
   "kind": "schedule",
   "schedule": {
     "type": "hours",

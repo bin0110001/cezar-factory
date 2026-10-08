@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.35
+
+- Made scheduled maintenance deterministic: scripts now perform repository
+  lifecycle hygiene and stale-issue summaries, numeric runner arguments are
+  removed, and the model is limited to the existing capped ambiguous-label
+  review.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
