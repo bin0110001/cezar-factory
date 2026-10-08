@@ -6,6 +6,13 @@ versioning), validate the change and then use the `factory-release` skill to
 push the new Factory version to all explicitly configured projects. Do not
 silently leave a source-only Factory update.
 
+When an update is finished, invoke the `factory-finish-release` skill. It
+orchestrates validation, configured-target synchronization, Bazzite checkout
+and Cezar runtime parity checks, and the reviewed `dev` PR auto-merge handoff.
+It must stop on failed validation, missing target configuration, dirty or
+mismatched remote checkouts, or missing review gates rather than overwriting
+state.
+
 The default release pipeline is remote-only Cezar synchronization: read
 `apiUrl` and `projectId` from `config/factory-projects.json` and synchronize
 the Factory checkout's automation definitions directly to each Cezar project.

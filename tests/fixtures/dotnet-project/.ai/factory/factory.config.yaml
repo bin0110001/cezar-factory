@@ -10,7 +10,6 @@ workflows:
   - review
   - fix-review
   - investigate
-  - refresh-stale-workable
 
 skills:
   - factory-intake
