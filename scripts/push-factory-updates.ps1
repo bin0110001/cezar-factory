@@ -15,6 +15,7 @@ param(
     [string]$TargetsPath = (Join-Path $PSScriptRoot '../config/factory-projects.json'),
     [string]$FactoryPath = (Join-Path $PSScriptRoot '..'),
     [switch]$SyncAutomations,
+    [switch]$Enable,
     [switch]$DryRun
 )
 
@@ -43,6 +44,7 @@ foreach ($target in $targets) {
         if (-not $SyncAutomations) { throw "Remote Cezar target '$($target.projectId)' requires -SyncAutomations." }
         if (-not $target.apiUrl) { throw "Remote Cezar target '$($target.projectId)' requires apiUrl." }
         $syncArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/sync-automations.ps1'), '-SourceOnly', '-FactoryPath', $factory, '-ApiUrl', $target.apiUrl, '-ProjectId', $target.projectId)
+        if ($Enable) { $syncArgs += '-Enable' }
         if ($DryRun) { $syncArgs += '-DryRun' }
         & pwsh @syncArgs
         if ($LASTEXITCODE -ne 0) { throw "Remote Cezar target $($target.projectId): automation synchronization failed." }
@@ -73,6 +75,7 @@ foreach ($target in $targets) {
             if (-not $apiUrl) { throw "${project}: -SyncAutomations requires apiUrl in the target registry or CEZ_API_URL." }
             $syncArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/sync-automations.ps1'), '-ProjectPath', $project, '-ApiUrl', $apiUrl)
             if ($projectId) { $syncArgs += @('-ProjectId', $projectId) }
+            if ($Enable) { $syncArgs += '-Enable' }
             & pwsh @syncArgs
             if ($LASTEXITCODE -ne 0) { throw "${project}: automation synchronization failed." }
         }

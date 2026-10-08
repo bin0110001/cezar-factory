@@ -1,27 +1,38 @@
 <!--
 managed-by: cezar-factory
-factory-version: 0.3.2
+factory-version: 0.3.33
 source: skills/factory-implement/SKILL.md
 -->
 # Factory Implement Skill
 
 ## Responsibilities
 
-- Read approved issue plan.
+- Consume the prepared `.factory/implementation-context.json` handoff.
+- Read the approved issue plan from the prepared issue body/comments.
 - Follow acceptance criteria.
 - Use project-specific skills.
 - Make the smallest appropriate change.
 - Add/update tests.
 - Run targeted validation where appropriate.
 - Report structured completion information.
-- Explicitly verify substantive acceptance criteria and set
-  `documentationUpdated: true` only after required documentation is updated.
+- Explicitly verify substantive acceptance criteria and report whether required
+  documentation was updated. Set `documentationUpdated` to `false` when the
+  documentation review finds that no update is needed.
 - Prepare/update PR.
 
 ## Detailed Guidance
 
-### 1. Read the Approved Issue Plan
+### 1. Read the Prepared Issue Context and Approved Plan
 
+- Read `.factory/implementation-context.json` before any discovery. It must
+  contain the issue number, URL, body/comments, nearest project instructions,
+  and environment metadata written by `prepare-implementation.ps1`.
+- Work only on the prepared issue. Treat the recorded issue and approved plan
+  as authoritative. If the artifact is missing, stale, malformed, or names a
+  different issue than the workflow prompt, report the environment blocker and
+  stop. Do not repeat broad issue discovery.
+- Do not use anonymous GitHub `curl` calls or guess repository owners; the
+  preparation script already performed the authenticated issue read.
 - Review the plan's objective, acceptance criteria, and non-goals.
 - Note any risks, dependencies, and required project skills.
 - Ensure you understand the expected outcome before making changes.
@@ -37,6 +48,26 @@ source: skills/factory-implement/SKILL.md
 - Discover and apply project-specific skills relevant to the task.
 - Follow any architecture, testing, or convention guidance provided by those skills.
 - Project skills extend or specialize factory behavior; they do not replace it.
+- Do not dispatch a child Cezar task from an implementation run. The current
+  run already owns the issue and its isolated worktree.
+
+### 3a. Command and Environment Discipline
+
+- Use the shell and tools provided by the runner. Do not switch to `/bin/sh`,
+  invent container paths, or replace a failed command with one whose semantics
+  are unknown.
+- Invoke Factory scripts from `$FACTORY_RUNTIME_ROOT/scripts/...` and project
+  scripts from the current worktree. Never hard-code `/projects/...` or another
+  machine-specific path.
+- A non-zero command is evidence to inspect: capture its complete error, check
+  the command help or manual, and retry at most once with corrected syntax. If
+  the second attempt shows a missing tool, inaccessible runtime, or unavailable
+  credential, stop and write a failure result with the blocker. Do not spend
+  the run trying unrelated commands.
+- Do not run workflow verification or result-validation commands inside the
+  skill; those are separate workflow steps. Leave the result artifact for them.
+- Do not use Cezar task/automation commands for issue lookup or implementation
+  delegation.
 
 ### 4. Make the Smallest Appropriate Change
 
@@ -55,6 +86,9 @@ source: skills/factory-implement/SKILL.md
 - Execute the project's `test-changed.ps1` script to run tests relevant to changed files.
 - If that script is unavailable, run the most relevant unit or integration tests manually.
 - Do not skip validation; even targeted validation provides signal.
+- If the test script fails because the runtime command itself is unavailable,
+  distinguish that infrastructure failure from a test failure; do not claim
+  the tests passed.
 
 ### 7. Report Structured Completion Information
 
@@ -66,7 +100,9 @@ source: skills/factory-implement/SKILL.md
 
 - Create a new branch if not already on one.
 - Commit changes with a clear, concise message.
-- Create or update a pull request targeting the base branch.
+- Create or update a pull request targeting the configured `dev` base branch.
+  After validation and independent approval, the review router requests GitHub
+  auto-merge into `dev`.
 - Link the PR to the issue.
 
 ### 9. Factory-managed asset release gate
@@ -86,6 +122,8 @@ success. Record the release output and any target that could not be updated.
 - If validation fails, analyze the failure and attempt a fix.
 - Maximum implementation retries: 2 (see `policies/retry.yaml`).
 - After the retry limit is reached, stop modifying code and trigger investigation.
+- Retries must address the reported failure. Repeating the same failed command,
+  changing shells, or searching unrelated paths is not a retry.
 
 ## Output Format
 

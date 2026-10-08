@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "baseBranch": "main",
+  "baseBranch": "dev",
   "tracker": "github",
   "validation": {
     "commands": [

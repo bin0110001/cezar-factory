@@ -3,13 +3,19 @@ description: Classify a newly opened issue, then route it to planning or genuine
 steps:
   - id: select-issue
     name: Select one existing issue for intake
-    command: pwsh -NoProfile -File /projects/cezar-factory/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
   - id: intake
     name: Classify selected existing issue
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1" -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1 -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json
   - id: validate
     name: Validate intake result
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1" -Path .factory/intake-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1 -Path .factory/intake-result.json
+    onFail:
+      retry: intake
+      max: 1
   - id: route
     name: Route intake to planning
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1" -Path .factory/intake-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json
+    onFail:
+      retry: validate
+      max: 1

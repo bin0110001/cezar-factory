@@ -39,7 +39,10 @@ foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
     if ($inComplexity -and $l -match '^\s+-\s+(\S+)') { $complexityLabels += $Matches[1]; continue }
     if ($inComplexity -and $l -match '^\S') { break }
 }
-if (-not $complexityLabels) { Fail 'could not read complexity labels from policies/labels.yaml' }
+# Older installed Factory layers predate complexity labels. Keep lifecycle
+# routing backward-compatible so `start` can still make progress, while using
+# the canonical taxonomy for plan-result validation until the layer is updated.
+if (-not $complexityLabels) { $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large') }
 $retryText = Get-Content -Raw (Join-Path $PoliciesDir 'retry.yaml')
 $maxRounds = if ($retryText -match 'max_review_fix_rounds:\s*(\d+)') { [int]$Matches[1] } else { 2 }
 $maxInvestigateRetries = 1
@@ -90,6 +93,10 @@ function Add-Comment([string]$Body) {
     try { [IO.File]::WriteAllText($f, $Body); Invoke-Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
 function Get-SelectedWorker([string[]]$IssueLabels) {
+    # Complexity is an implementation-tier guard. Medium and large work must
+    # never fall through to the bounded local worker, even if a stale or
+    # conflicting agent:local label is present.
+    if ($IssueLabels -contains 'complexity:medium' -or $IssueLabels -contains 'complexity:large') { return 'codex' }
     if ($IssueLabels -contains 'agent:codex') { return 'codex' }
     if ($IssueLabels -contains 'agent:claude') { return 'claude' }
     if ($IssueLabels -contains 'agent:local') { return 'local' }
@@ -210,11 +217,11 @@ switch ($Event) {
         Assert-Source 'factory:review'
         $body = "## Factory review`n`n**Verdict:** $($result.approvalChangeRequestStatus)`n`n**Blocking findings**`n$(Text $result.blockingFindings)`n`n**Non-blocking findings**`n$(Text $result.nonBlockingFindings)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaVerification)`n`n**Test adequacy**`n$(Text $result.testAdequacy)`n`n**Risk observations**`n$(Text $result.riskObservations)"
         if ($result.approvalChangeRequestStatus -eq 'approval') {
-            $autoMerge = $labels -contains 'risk:low' -and [string]$result.pr
+            $autoMerge = [string]$result.pr
             if ($autoMerge) {
                 Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch | Out-Null
-                Add-Comment ($body + "`n`nLow-risk approval: auto-merge requested for $($result.pr).")
-                Set-State 'factory:done'; Done 'factory:done' 'low-risk auto-merge requested'
+                Add-Comment ($body + "`n`nValidated approval: auto-merge requested into dev for $($result.pr).")
+                Set-State 'factory:done'; Done 'factory:done' 'validated auto-merge to dev requested'
             }
             Add-Comment $body; Set-State 'factory:human-review'; Done 'factory:human-review'
         }

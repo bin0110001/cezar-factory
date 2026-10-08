@@ -31,3 +31,9 @@ Targets must be listed in the host-local `config/factory-projects.json` file or
 explicitly supplied by the user. Do not scan drives for targets or deploy to an
 unlisted project. If no target registry exists, create no external changes;
 report that the release is ready but needs target configuration.
+
+After an update passes validation and independent review, the implementation PR
+must target `dev` and request GitHub auto-merge. This applies to every approved
+risk level; high-risk work still requires its human plan-approval and independent
+review gates before auto-merge can be requested. Do not merge a failed,
+unreviewed, or unresolved PR.

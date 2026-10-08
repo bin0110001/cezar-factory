@@ -1,0 +1,6 @@
+name: factory-refresh-stale-workable
+description: Bounded scheduled retrigger for old executable Factory issues
+steps:
+  - id: refresh
+    name: Refresh at most two stale workable issues
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OlderThanHours 24 -Limit 2 -OutputPath .factory/stale-workable-refresh.json

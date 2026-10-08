@@ -8,7 +8,8 @@
 
 param(
     [switch]$Verbose,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [string]$ProjectPath = (Get-Location).Path
 )
 
 $VerbosePreference = if ($Verbose) { 'Continue' } else { 'SilentlyContinue' }
@@ -84,7 +85,7 @@ try {
     }
 
     # --- Step 2: Pinned factory version exists ---
-    $factoryDir = Join-Path (Split-Path $PSScriptRoot) '.ai\factory'
+    $factoryDir = Join-Path $ProjectPath '.ai\factory'
     $versionPath = Join-Path $factoryDir 'VERSION'
     if (Test-Path $versionPath) {
         $version = (Get-Content $versionPath).Trim()
@@ -106,6 +107,7 @@ try {
     $requiredSkills = @(
         'factory-plan',
         'factory-implement',
+        'factory-implement-prepare',
         'factory-review',
         'factory-fix',
         'factory-investigate'

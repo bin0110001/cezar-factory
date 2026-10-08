@@ -7,7 +7,7 @@ description: Classify repeated failures, then retry (factory:ready) or escalate 
 steps:
   - id: recall
     name: Create bounded memory-recall artifact
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1" -Objective "{{task}}" -TaskClass investigation
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective "{{task}}" -TaskClass investigation
   - id: investigate
     name: Run factory-investigate skill
     skill: factory-investigate
@@ -20,10 +20,13 @@ steps:
       .factory/investigate-result.json (create the directory) with the issue number in "issue".
   - id: validate
     name: Validate investigation result
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1" -Kind investigation -Path .factory/investigate-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json
     onFail:
       retry: investigate
       max: 1
   - id: route
     name: Route to retry or needs-help
-    command: pwsh -NoProfile -File "$FACTORY_RUNTIME_ROOT/scripts/route-state.ps1" -Event investigate-result -Path .factory/investigate-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event investigate-result -Path .factory/investigate-result.json
+    onFail:
+      retry: validate
+      max: 1

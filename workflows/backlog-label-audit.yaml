@@ -14,7 +14,7 @@ steps:
       Apply only the bounded legacy-label policy in the Factory Backlog Label Audit skill.
       The only entry point is `audit-backlog-labels.ps1`. From the Cezar
       worktree, run exactly this command once:
-      `pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1`.
+      `pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1`.
       Do not add a resolver, interpolate environment variables, wrap it in
       another shell, or use a fallback path. If the command fails, stop and
       report a failed audit; do not call

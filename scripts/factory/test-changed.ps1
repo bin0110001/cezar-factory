@@ -56,20 +56,42 @@ $failedTests = @()
 
 try {
     # --- Step 1: Determine changed files ---
-    if (Test-Path .git) {
+    if (Get-Command git -ErrorAction SilentlyContinue) {
         try {
-            $gitOutput = git diff --name-only HEAD@{1} HEAD 2>&1
-            if ($LASTEXITCODE -eq 0 -and $gitOutput) {
-                $changedFiles = $gitOutput -split "`n" | Where-Object { $_ -and $_.Trim() -ne '' }
-                Write-Verbose "Changed files from git diff: $($changedFiles.Count)"
-            } else {
-                # Fallback: git status
-                $gitStatus = git status --porcelain 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    $changedFiles = $gitStatus -split "`n" |
-                        Where-Object { $_ -and $_.Trim() -ne '' } |
-                        ForEach-Object { ($_ -split '\s+')[-1] }
-                    Write-Verbose "Changed files from git status: $($changedFiles.Count)"
+            # Resolve the repository root so the script behaves the same when
+            # invoked from an isolated worktree or a nested project directory.
+            $repoRoot = (& git rev-parse --show-toplevel 2>$null)
+            $gitExitCode = $LASTEXITCODE
+            if ($gitExitCode -eq 0 -and $repoRoot) {
+                $repoRoot = (Resolve-Path ([string]$repoRoot).Trim()).Path
+
+                # HEAD@{1} is not guaranteed to exist in a newly-created
+                # worktree.  Prefer the working-tree diff, then the index, and
+                # finally the previous commit when one is available.
+                $gitOutput = @(& git -C $repoRoot diff --name-only HEAD 2>$null)
+                if ($LASTEXITCODE -ne 0 -or $gitOutput.Count -eq 0) {
+                    $gitOutput = @(& git -C $repoRoot diff --cached --name-only 2>$null)
+                }
+                if ($LASTEXITCODE -ne 0 -or $gitOutput.Count -eq 0) {
+                    $gitOutput = @(& git -C $repoRoot diff --name-only HEAD^ HEAD 2>$null)
+                }
+
+                if ($LASTEXITCODE -eq 0 -and $gitOutput.Count -gt 0) {
+                    $changedFiles = $gitOutput | Where-Object { $_ -and $_.Trim() -ne '' }
+                    Write-Verbose "Changed files from git diff: $($changedFiles.Count)"
+                }
+
+                if ($changedFiles.Count -eq 0) {
+                    # Use -z so paths containing spaces are not split into
+                    # unrelated tokens.  Porcelain v1 emits XY + path; strip
+                    # only the two status columns and the separating space.
+                    $gitStatus = (& git -C $repoRoot status --porcelain=v1 -z 2>$null) -join ''
+                    if ($LASTEXITCODE -eq 0 -and $gitStatus) {
+                        $changedFiles = $gitStatus -split "`0" |
+                            Where-Object { $_ -and $_.Length -gt 3 } |
+                            ForEach-Object { $_.Substring(3) }
+                        Write-Verbose "Changed files from git status: $($changedFiles.Count)"
+                    }
                 }
             }
         } catch {
@@ -84,7 +106,7 @@ try {
     }
 
     # --- Step 2: Run relevant tests ---
-    foreach ($changedFile in $changedFiles) {
+    foreach ($changedFile in ($changedFiles | Select-Object -Unique)) {
         if ([IO.Path]::GetFileName($changedFile) -eq 'test-changed.ps1') { continue }
         $fileName = [System.IO.Path]::GetFileNameWithoutExtension($changedFile)
         $testCandidates = @()

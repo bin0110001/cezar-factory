@@ -9,23 +9,23 @@ risk-levels:
     requires-human-plan-approval: false
     requires-human-merge: false
     requires-full-validation: false
-    flow: implement -> test -> review -> human-review (optional after system proves reliable)
+    flow: implement -> test -> independent review -> auto-merge to dev
   risk:medium:
     description: Medium risk changes (feature work, refactoring, networking, persistence)
     requires-human-review: true
-    allows-auto-merge: false
+    allows-auto-merge: true
     requires-human-plan-approval: false
-    requires-human-merge: true
+    requires-human-merge: false
     requires-full-validation: true
-    flow: implement -> test -> review -> human PR review
+    flow: implement -> test -> independent review -> auto-merge to dev
   risk:high:
     description: High risk changes (authentication, security, data migration, billing, large architectural changes, deployment infrastructure)
     requires-human-review: true
-    allows-auto-merge: false
+    allows-auto-merge: true
     requires-human-plan-approval: true
-    requires-human-merge: true
+    requires-human-merge: false
     requires-full-validation: true
-    flow: human plan approval -> implement -> full validation -> independent review -> human merge
+    flow: human plan approval -> implement -> full validation -> independent review -> auto-merge to dev
 
 # Risk assessment guidelines
 assessment:
@@ -53,8 +53,8 @@ human-gates:
     trigger: risk:medium or risk:high issues entering factory:review
     action: require independent review
   merge:
-    trigger: risk:medium or risk:high PRs
-    action: require human merge approval
+    trigger: approved and validated PRs for any risk level
+    action: request GitHub auto-merge into dev
   escalation:
     trigger: repeated failures or investigation needed
     action: escalate with summary and context

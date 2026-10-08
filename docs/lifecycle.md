@@ -13,7 +13,7 @@ This document defines the state transitions for issues in the Cezar factory.
 - `factory:working` - Implementation in progress.
 - `factory:review` - Implementation submitted for review.
 - `factory:changes-requested` - Reviewer requested changes.
-- `factory:human-review` - Requires human review (e.g., for high-risk changes).
+- `factory:human-review` - Manual hold for an exceptional human decision.
 - `factory:blocked` - Blocked by external dependencies.
 - `factory:done` - Work is complete.
 - `factory:investigate` - Repeated failure awaiting classification.
@@ -30,7 +30,7 @@ stateDiagram-v2
     factory:working --> factory:review
     factory:review --> factory:changes-requested
     factory:changes-requested --> factory:working
-    factory:review --> factory:human-review
+    factory:review --> factory:done
     factory:human-review --> factory:done
     factory:blocked --> factory:working
     factory:working --> factory:investigate
@@ -49,21 +49,23 @@ stateDiagram-v2
    - `factory:ready` → `factory:working`: Implementation automation
    - `factory:working` → `factory:review`: Implementation automation (after completion)
    - `factory:review` → `factory:changes-requested`: Review automation
-   - `factory:review` → `factory:human-review`: Review automation (for high-risk)
+   - `factory:review` → `factory:done`: Review automation after successful validation and approval; requests auto-merge into `dev`
    - `factory:changes-requested` → `factory:working`: Fix automation
-   - `factory:human-review` → `factory:done`: Merge automation (after human approval)
+   - `factory:human-review` → `factory:done`: Human decision for an exceptional hold
 3. **Human-required transitions**:
    - Entry to `factory:needs-help`
-   - Entry to `factory:human-review` (optional, based on risk)
-   - Exit from `factory:human-review` to `factory:done` (requires human merge)
+   - Entry to `factory:human-review` only for an explicit human decision or exception
+   - Exit from `factory:human-review` remains human-owned
 4. **Blocked work resumption**: When a blocker is removed, the issue returns to `factory:working`.
 5. **Conflicting state prevention**: An issue can only have one factory-state label at a time.
 
 ## Complexity routing
 
 Planning assigns exactly one `complexity:*` label without changing lifecycle
-state. `complexity:small` routes implementation to the local bounded model,
-`complexity:medium` to Terra, and `complexity:large` to Sol. Apply a
+state. Implementation automation routes small and medium work through the
+configured Factory gateway, while large work uses the configured premium
+large-work model. The bounded local model is reserved for explicitly cataloged
+advisory jobs and never owns implementation. Apply a
 complexity label before `factory:needs-plan` when the planning model itself
 must be selected in advance; otherwise the normal planner assigns it for the
 implementation automation.
@@ -77,7 +79,10 @@ implementation automation.
 | start | ready, changes-requested, blocked (no-op if working) | working |
 | plan-result | needs-plan, new | ready; needs-help if not ready or `risk:high` (human plan approval); human-review if decomposed (sub-issues created as `factory:new`, humans pick which to plan) |
 | implement-result | working | review; investigate if the agent reports failure |
-| review-result | review | human-review on approval; changes-requested otherwise; needs-help once `max_review_fix_rounds` is reached |
+| review-result | review | done with auto-merge requested on approval; changes-requested otherwise; needs-help once `max_review_fix_rounds` is reached |
 | investigate-result | investigate, working | ready once if the retry is appropriate and confidence is not low; otherwise needs-help |
 
-Humans own: leaving `needs-help`, `human-review` -> `done` (merge), approving `risk:high` plans (relabel `factory:ready`), and resuming `blocked` work (relabel `factory:ready`; blocked is never set by automation).
+Humans own: leaving `needs-help`, exceptional `human-review` decisions,
+approving `risk:high` plans (relabel `factory:ready`), and resuming `blocked`
+work (relabel `factory:ready`; blocked is never set by automation). Approved,
+validated PRs are otherwise auto-merged into `dev`.

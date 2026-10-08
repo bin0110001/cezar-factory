@@ -3,36 +3,60 @@
 # source: workflows/implement.yaml
 # DO NOT EDIT DIRECTLY
 name: factory-implement
-description: Implement a ready issue - targeted tests, full verification, PR, then factory:review
+description: Prepare a ready issue, implement it, run verification, PR, then factory:review
 steps:
+  - id: prepare
+    name: Prepare issue and environment context
+    skill: factory-implement-prepare
+    prompt: |
+      Prepare this implementation run before any code work: {{task}}
+
+      Extract the numeric issue number and URL from the task, then run the
+      preparation script exactly as required by factory-implement-prepare. The
+      script must produce .factory/implementation-context.json in this
+      worktree. Do not edit source files or labels during preparation.
   - id: implement
     name: Run factory-implement skill
     skill: factory-implement
     prompt: |
       Implement this GitHub issue: {{task}}
 
-      First action: run `pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event start -Issue <issue number>`
-      to move the issue to factory:working. When done, open or update the PR, then write the structured
-      result as JSON to .factory/implement-result.json (create the directory) with the issue number in
-      "issue" and the PR URL in "pr". Do not set any other factory:* label; the workflow routes state.
+      Before editing code, read the prepared .factory/implementation-context.json
+      artifact, the nearest AGENTS.md/manual, and the issue body/comments recorded
+      there. The issue and approved plan are the source of truth. Do not repeat
+      broad discovery, use anonymous GitHub curl calls, guess repositories, or
+      dispatch a child Cezar task.
+
+      First implementation lifecycle action: run `pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Issue <issue number>`
+      to move the issue to factory:working. Use only the current worktree and
+      registered Factory runtime paths. If a command fails, inspect its actual
+      error and retry once with corrected syntax; if the tool/runtime/credential
+      is unavailable, stop and report that blocker instead of switching shells
+      or inventing paths. When done, open or update the PR, then write the
+      structured result as JSON to .factory/implement-result.json (create the
+      directory) with the issue number in "issue" and the PR URL in "pr". Do
+      not set any other factory:* label; the workflow routes state.
   - id: targeted-tests
     name: Run targeted tests
-    command: pwsh -NoProfile -File ./scripts/factory/test-changed.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1
     onFail:
       retry: implement
       max: 2
   - id: full-verification
     name: Run required verification
-    command: pwsh -NoProfile -File ./scripts/factory/verify.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1
     onFail:
       retry: implement
       max: 1
   - id: validate
     name: Validate implementation result
-    command: pwsh -NoProfile -File .ai/factory/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
     onFail:
       retry: implement
       max: 1
   - id: route
     name: Set factory:review
-    command: pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    onFail:
+      retry: validate
+      max: 1

@@ -14,6 +14,28 @@ ALLOWED = {"architecture", "recurring-failure", "successful-fix", "convention", 
 def scrub(value):
     return SECRET.sub("[redacted]", str(value)).strip()
 
+def decode_mcp_response(text):
+    """Decode a JSON or Server-Sent Events MCP response body.
+
+    Streamable HTTP MCP servers may return either a JSON response or an SSE
+    response whose event metadata precedes one or more ``data:`` lines.  Do
+    not pass SSE framing to json.loads(), since that turns a healthy recall
+    into a fail-open JSONDecodeError.
+    """
+    body = text.lstrip('\ufeff\r\n \t')
+    if not body:
+        return {}
+    if body[0] in '[{':
+        return json.loads(body)
+
+    data = []
+    for line in body.splitlines():
+        if line.startswith('data:'):
+            data.append(line[5:].lstrip())
+    if data:
+        return json.loads('\n'.join(data))
+    return json.loads(body)
+
 def mcp_request(base, bank, token, method, params, timeout, session_id=None, request_id=1):
     """Make one streamable-HTTP MCP request and return JSON-RPC body/session."""
     endpoint = base.rstrip("/") + "/mcp/" + quote(bank, safe="") + "/"
@@ -27,8 +49,7 @@ def mcp_request(base, bank, token, method, params, timeout, session_id=None, req
         text = response.read().decode()
         returned_session_id = response.headers.get("Mcp-Session-Id")
     if not text.strip(): return {}, returned_session_id
-    if text.startswith("data:"): text = "\n".join(line[5:].strip() for line in text.splitlines() if line.startswith("data:"))
-    return json.loads(text), returned_session_id
+    return decode_mcp_response(text), returned_session_id
 
 def mcp_call(base, bank, token, tool, arguments, timeout):
     """Invoke Hindsight's built-in stateful single-bank MCP endpoint."""

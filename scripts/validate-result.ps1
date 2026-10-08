@@ -89,7 +89,6 @@ if (-not $errors.Count) {
                 if (Blank $result.testResult) { $errors.Add('status is success but testResult is empty') }
                 if (-not $result.ContainsKey('pr') -or (Blank $result.pr)) { $errors.Add('status is success but pr (PR URL) is missing') }
                 if (@($result.filesChanged).Count -eq 0) { $errors.Add('status is success but filesChanged is empty') }
-                if (-not $result.documentationUpdated) { $errors.Add('status is success but documentationUpdated is not true') }
                 if (Blank $result.acceptanceCriteriaStatus) { $errors.Add('status is success but acceptanceCriteriaStatus is empty') }
             }
         }

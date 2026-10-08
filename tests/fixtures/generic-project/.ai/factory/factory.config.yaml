@@ -1,7 +1,7 @@
 # Project-owned factory configuration.
 factory:
   source: "cezar-factory"
-  version: "0.3.20"
+  version: "0.3.33"
 
 workflows:
   - intake
@@ -10,11 +10,13 @@ workflows:
   - review
   - fix-review
   - investigate
+  - refresh-stale-workable
 
 skills:
   - factory-intake
   - factory-plan
   - factory-implement
+  - factory-implement-prepare
   - factory-review
   - factory-fix
   - factory-investigate

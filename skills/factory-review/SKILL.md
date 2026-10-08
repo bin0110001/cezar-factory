@@ -81,17 +81,21 @@ Prefer a different agent/context from implementation.
 
 - Set `approvalChangeRequestStatus` to `approval` only when no blocking findings remain; `change-request` requires `blockingFindings`.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/review-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
-- The workflow posts your findings to the issue and routes to `factory:human-review` or `factory:changes-requested`. Never route to `factory:done`; merging is human-owned.
+- The workflow posts your findings to the issue and routes approved, validated
+  PRs to the bounded auto-merge path; rejected PRs go to
+  `factory:changes-requested`. Never approve a PR with unresolved blocking
+  findings or failed validation.
 
 ## Risk-Based Routing
 
-Include the PR URL in the optional `pr` field. Approved `risk:low` work is
-eligible for the policy's bounded auto-merge path; medium/high risk still
-requires the human merge gate.
+Include the PR URL in the optional `pr` field. Approved work at every risk
+level is eligible for the policy's bounded auto-merge path after validation.
+High-risk work still requires human plan approval before implementation and
+independent review before merge is requested.
 
-- **Low risk** (docs, tests, minor UI, small bug fixes): Review may route directly to human-review or done.
-- **Medium risk** (features, refactoring, networking, persistence): Must route to human-review after approval.
-- **High risk** (auth, security, data migration, billing, architecture): Must route to human-review regardless of review outcome.
+- **Low risk** (docs, tests, minor UI, small bug fixes): Approved review may request auto-merge to `dev`.
+- **Medium risk** (features, refactoring, networking, persistence): Approved review may request auto-merge to `dev`.
+- **High risk** (auth, security, data migration, billing, architecture): Requires human plan approval and independent review before auto-merge to `dev`.
 
 ## Output Format
 

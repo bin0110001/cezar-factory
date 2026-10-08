@@ -8,6 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Added an implementation preparation step that fetches the selected issue
+  through authenticated `gh`, captures applicable instructions and repository
+  tooling, and hands the agent a worktree-local context artifact before code
+  changes begin.
+
+## [0.3.33]
+
+### Added
+- Added the preparation-first implementation workflow and bounded context
+  generation script.
+
+### Fixed
+- Made lifecycle routing backward-compatible with older installed policy layers
+  that lack the `complexity` section; routing now uses the canonical complexity
+  taxonomy instead of failing and sending the agent into discovery loops.
+- Added a complexity guard to lifecycle worker selection so medium and large
+  implementation issues cannot be routed to the bounded local worker, even
+  when stale `agent:local` labels are present.
+- Updated lifecycle and Cezar integration documentation to distinguish
+  advisory local jobs from implementation automation.
+- Routed medium implementation and review-fix automation through the configured
+  Factory gateway model instead of the unavailable Terra pin, which allowed
+  runs to start checks without producing an implementation result artifact.
+- Hardened the implementation step against command drift: it now requires
+  authenticated issue/manual reads, forbids speculative child dispatch and
+  machine-specific paths, and stops with a structured blocker after bounded
+  command recovery instead of wandering through unrelated discovery attempts.
+- Allowed successful implementation results to set `documentationUpdated: false`
+  when documentation was reviewed and no update was required; previously this
+  caused otherwise valid implementation runs to fail validation and retry.
+- Replaced unavailable `FACTORY_RUNTIME_ROOT` command paths with the mounted
+  `/projects/cezar-factory` path across intake, planning, implementation,
+  review-fix, and investigation workflows so validated results can route to
+  the next lifecycle state.
+- Made the scheduled refresh check use the mounted `/projects/cezar-factory`
+  runtime path because Cezar check steps do not expand `FACTORY_RUNTIME_ROOT`.
+- Registered the stale-workable workflow in Cezar and routed its check step
+  through the version-pinned `FACTORY_RUNTIME_ROOT` instead of an unregistered
+  workflow-only path.
+- Included the stale-workable workflow in the default Factory installation
+  profile so full-layer projects receive its script, workflow, and automation.
+- Added explicit `-Enable` propagation to Factory release synchronization so a
+  newly registered requested schedule is not left paused by default.
+- Added a four-hour, two-issue stale-workable refresh that retriggers only
+  executable lifecycle labels and excludes manual, blocked, malformed, and
+  unroutable issues.
+- Documented the complete label-driven lifecycle and added a validated GitHub
+  lifecycle updater that writes routing labels before the downstream state event
+  and can deliberately retrigger an unchanged state.
 - Moved deterministic legacy-label resolution into the backlog audit: blocked
   work, decomposition markers, and unambiguous type markers now receive a
   durable Factory state before the agent sees the artifact. The artifact now
