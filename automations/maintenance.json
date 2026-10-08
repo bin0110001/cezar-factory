@@ -1,13 +1,13 @@
 {
   "name": "[factory] maintenance",
-  "description": "Hourly deterministic Factory housekeeping with a capped ambiguous-label review (managed by cezar-factory; do not edit in the cockpit)",
+  "description": "Hourly deterministic Factory housekeeping (label audit, stale refresh, repository sweep) (managed by cezar-factory; do not edit in the cockpit)",
   "kind": "schedule",
   "schedule": {
     "type": "hours",
     "every": 1
   },
   "task": {
-    "prompt": "Run the combined bounded Factory maintenance workflow for {{project}} at {{time}} on {{date}}. Execute the registered workflow exactly once; do not inspect or select issues manually.",
+    "prompt": "Run the bounded Factory maintenance workflow for {{project}} at {{time}} on {{date}}. The workflow steps do all the work; do not inspect, select, or create issues or tasks yourself.",
     "workflow": "factory-maintenance",
     "runner": "codex",
     "model": "factory-gateway/factory-code",

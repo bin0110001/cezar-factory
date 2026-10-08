@@ -83,7 +83,7 @@ source: skills/factory-implement/SKILL.md
 
 ### 6. Run Targeted Validation
 
-- Execute the project's `test-changed.ps1` script to run tests relevant to changed files.
+- Run the project's own test commands while developing. The workflow runs `test-changed.ps1` and the full verification itself after you finish; do not run those Factory scripts.
 - If that script is unavailable, run the most relevant unit or integration tests manually.
 - Do not skip validation; even targeted validation provides signal.
 - If the test script fails because the runtime command itself is unavailable,
@@ -146,7 +146,7 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ## Workflow Contract
 
-- Your first action is `pwsh -NoProfile -File .ai/factory/scripts/route-state.ps1 -Event start -Issue <number>`, which moves the issue to `factory:working` (it refuses if the issue is not ready).
+- The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory scripts (`route-state.ps1`, `prepare-implementation.ps1`, `validate-result.ps1`, ...); the workflow owns every script step.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
 - Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
 - Result files live under `.factory/`, which projects gitignore; never commit them.

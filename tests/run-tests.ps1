@@ -85,15 +85,33 @@ $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
-$prepareSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement-prepare/SKILL.md')
 $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implementation.ps1')
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
-Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'factory-implement-prepare' -and $implementWorkflow -match 'implementation-context\.json' -and $implementWorkflow -match 'registered Factory runtime paths')
-Assert 'implementation preparation fetches issue and captures environment' ($prepareSkill -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
+Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
+Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
-Assert 'implement skill prevents speculative recovery' ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
+$maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
+$scriptOwnershipViolations = @()
+foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
+    # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
+    $inPrompt = $false
+    foreach ($line in Get-Content $wf.FullName) {
+        if ($line -match '^\s+prompt:') { $inPrompt = $true; continue }
+        if ($inPrompt -and $line -match '^\s{0,5}\S') { $inPrompt = $false }
+        if ($inPrompt -and $line -match '(pwsh|powershell).*\.ps1|run `[^`]*\.ps1') { $scriptOwnershipViolations += "$($wf.Name): $($line.Trim())" }
+    }
+}
+foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'interactive-github-backlog', 'factory-work-backlog', 'factory-release', 'factory-finish-release', 'factory-cezar-skill-operations' }) {
+    foreach ($line in Get-Content (Join-Path $sk.FullName 'SKILL.md')) {
+        if ($line -match '(pwsh|powershell)\s+.*\.ps1' -and $line -notmatch '(?i)\b(not|never|must not|do not)\b') { $scriptOwnershipViolations += "$($sk.Name): $($line.Trim())" }
+    }
+}
+Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
+Assert 'implement skill prevents speculative recovery'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
 Assert 'route-state tolerates pre-complexity installed layers' ($routeState -match 'Older installed Factory layers predate complexity labels' -and $routeState -match 'complexity:small.*complexity:medium.*complexity:large')
 Assert 'central route-state writes execution data to the current project' ($routeState -match '\[string\]\$ProjectPath = \(Get-Location\)\.Path' -and $routeState -match 'Join-Path \$ProjectPath ''.factory/execution.json''')
 Assert 'deployment env examples do not contain real secrets' ((Get-Content -Raw (Join-Path $factory 'integrations/bazzite/env.example')) -match 'change-me-on-host' -and (Get-Content -Raw (Join-Path $factory 'integrations/mac-mini/vllm/env.example')) -match 'REPLACE_ON_HOST')

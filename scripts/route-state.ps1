@@ -3,6 +3,7 @@
 .SYNOPSIS
 Deterministic GitHub state routing for factory workflows. Applies the lifecycle in policies/labels.yaml.
 .DESCRIPTION
+For `start`, pass -Issue or -Task (the workflow task text; the issue number is parsed from it).
 Events: start, plan-result, implement-result, review-result, investigate-result.
 Guarantees a single factory:* state label, refuses transitions from the wrong source state, caps
 review/fix rounds and investigation retries per policies/retry.yaml, and posts escalation summaries.
@@ -13,6 +14,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result')][string]$Event,
     [string]$Path,
     [int]$Issue,
+    [string]$Task,
     [string]$GhCommand = 'gh',
     [string]$PoliciesDir = (Join-Path $PSScriptRoot '../policies'),
     [string]$ProjectPath = (Get-Location).Path
@@ -22,6 +24,11 @@ $ErrorActionPreference = 'Stop'
 
 function Fail([string]$Msg) { Write-Output (@{ status = 'refused'; event = $Event; reason = $Msg } | ConvertTo-Json -Compress); exit 1 }
 function Invoke-Gh { & $GhCommand @args; if ($LASTEXITCODE -ne 0) { throw "gh $($args -join ' ') failed ($LASTEXITCODE)" } }
+
+# Workflow commands pass the raw task text ("GitHub issue #N (...) at <url>") so no agent has to extract it.
+if ($Issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
+    $Issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
+}
 
 # --- policy ---------------------------------------------------------------
 $stateLabels = @()

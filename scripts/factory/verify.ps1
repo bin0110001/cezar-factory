@@ -107,7 +107,6 @@ try {
     $requiredSkills = @(
         'factory-plan',
         'factory-implement',
-        'factory-implement-prepare',
         'factory-review',
         'factory-fix',
         'factory-investigate'

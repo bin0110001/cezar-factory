@@ -44,9 +44,11 @@ executable state.
 implementation or fix workflow sets it first, then emits `factory:review` or
 `factory:investigate` when its run completes.
 
-The combined `[factory] maintenance` automation includes the bounded
-`refresh-stale-workable` repair
-loop, not a new lifecycle state. Every four hours it selects at most two open
+The `[factory] maintenance` automation runs only fixed script steps plus the
+capped legacy-label audit: backlog-label audit, `refresh-stale-workable`, and
+`maintain-repository.ps1`. It does not select or classify issues for intake;
+`[factory] intake` is the only intake path. `refresh-stale-workable` is a
+repair loop, not a new lifecycle state. It selects at most two open
 issues older than 24 hours in `factory:new`, `factory:needs-plan`,
 `factory:ready`, `factory:review`, `factory:changes-requested`, or
 `factory:investigate`. It skips manual/terminal states, multiple or missing

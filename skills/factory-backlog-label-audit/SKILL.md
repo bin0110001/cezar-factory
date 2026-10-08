@@ -34,11 +34,9 @@ if cross-repository tracking is required.
   pre-LLM source command fails, stop and report the failure.
 - If neither registered script path exists or the selected command fails, stop the run as failed. Do not search the filesystem, call `gh issue list`, switch shells, call MCP/resource discovery, install tools, or reconstruct the candidate list manually.
 - Do not read, print, parse, lint, or judge the script source. A displayed or serialized script body is not an audit result; only its exit status and the emitted input artifact are valid evidence. Never replace it because it appears incomplete.
-- The only filename to resolve or execute is `audit-backlog-labels.ps1`.
-  `create-labels.ps1` is an internal sibling used by that script; never resolve
-  it as the audit entry point.
+- `create-labels.ps1` is an internal sibling of the audit script; never run it.
 - Preserve every existing non-Factory label. Never remove a legacy/project label.
-- Resolve the script only from `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` in Cezar, then `.ai/factory/scripts/audit-backlog-labels.ps1` outside Cezar; do not use any other path. It ensures Factory labels using its own installed location and writes `.factory/backlog-label-audit-input.json`. The candidate's `labels` are the pre-audit source snapshot; the `staged` entry records the post-fetch `factory:auditing` reservation. Do not treat that source snapshot as the issue's current labels.
+- You never execute or resolve any Factory script. The workflow runs `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` directly; it ensures Factory labels using its own installed location and writes `.factory/backlog-label-audit-input.json`. The candidate's `labels` are the pre-audit source snapshot; the `staged` entry records the post-fetch `factory:auditing` reservation. Do not treat that source snapshot as the issue's current labels.
 - For each selected issue, add exactly `factory:new`, one `type:*`, and one `risk:*` label. Use the candidate's `typeHint` and `riskHint` when present; `test` is `type:test`, never `type:maintenance`. Do not add
   `agent:*` labels.
 - Never use `factory:needs-help` for work that can proceed autonomously. It is reserved for a genuine human decision, missing external input, or conflicting requirement. The candidate script's temporary `factory:auditing` reservation is the sole audit exception.
@@ -57,16 +55,11 @@ documentation, or non-production maintenance. When uncertain, skip.
 
 ## Procedure
 
-1. Require the workflow's pre-LLM step to have run exactly once from the
-   scheduled worktree:
-
-   `pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1`
-
-   The LLM must not run this command. Do not add a resolver,
-   environment-variable interpolation, shell wrapper, fallback search, or
-   retry. If the pre-LLM command failed, the audit is failed and must stop. Do
-   not substitute `create-labels.ps1`, search for scripts, or inspect source.
-   Then read the exact `outputPath` reported in the emitted JSON. It must be
+1. The workflow's pre-LLM step has already run the candidate script exactly
+   once from the scheduled worktree. You must not run it, or any other Factory
+   script, and must not add a resolver, shell wrapper, fallback search, or
+   retry. If that step failed, the workflow stops before this skill. Do not
+   search for scripts or inspect source. Read the exact `outputPath` reported in the emitted JSON. It must be
    under the current scheduled worktree; never read a project-root or prior-run
    `.factory/backlog-label-audit-input.json`. This is the only issue-discovery
    operation. Do not call `gh issue list`, inspect raw issue-list JSON, or

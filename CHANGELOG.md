@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.3.35
+## [0.3.36] - 2026-10-08
+
+- Workflows now own every script. `implement` and `fix-review` run
+  `prepare-implementation.ps1` and `route-state.ps1 -Event start` as command
+  steps (new `-Task "{{task}}"` parameter parses the issue number); the model
+  is no longer told to run Factory scripts. The `factory-implement-prepare`
+  skill is removed.
+- Maintenance no longer selects or routes intake issues; it runs only the
+  label audit, stale-workable refresh, and repository sweep. Intake remains the
+  `[factory] intake` automation.
+- `review` now uses `$FACTORY_RUNTIME_ROOT` scripts and startup checks like the
+  other workflows. Skills and AGENTS.md state that agents queue an automation
+  and stop rather than inspecting or recreating its work.
+- `tests/run-tests.ps1` fails when a skill or workflow prompt tells the model
+  to run a Factory script.
+
+## [0.3.35]
 
 - Made scheduled maintenance deterministic: scripts now perform repository
   lifecycle hygiene and stale-issue summaries, numeric runner arguments are
