@@ -1,7 +1,7 @@
 # Project-owned factory configuration.
 factory:
   source: "cezar-factory"
-  version: "0.3.33"
+  version: "0.3.34"
 
 workflows:
   - intake

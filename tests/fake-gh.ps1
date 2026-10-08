@@ -4,7 +4,8 @@ $a = @($args)
 # Real gh receives plain strings; PowerShell turns unquoted `a,b` into an array, which gh would reject.
 foreach ($x in $a) { if ($x -isnot [string] -and $x -isnot [int]) { Write-Error "fake gh: non-string argument ($($x.GetType().Name)) in: $($a -join ' ')"; exit 2 } }
 if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
-    @{ labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
+    $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
+    @{ body = [string]$issue.body; labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     for ($i = 3; $i -lt $a.Count; $i += 2) {

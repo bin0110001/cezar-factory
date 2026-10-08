@@ -1,6 +1,11 @@
 name: factory-intake
 description: Classify a newly opened issue, then route it to planning or genuine-question help
 steps:
+  - id: startup
+    name: Prepare workflow environment
+    # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
+    # container checkout, not a Windows host path.
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-intake -Step select-issue -RequireGh -RequiredScripts select-intake-issue.ps1
   - id: select-issue
     name: Select one existing issue for intake
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json

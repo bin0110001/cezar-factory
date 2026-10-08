@@ -1,29 +1,41 @@
 ---
 name: factory-release
-description: Push a completed cezar-factory version to configured Cezar projects, using remote-only automation synchronization by default and local project installation as a fallback.
+description: Validate and force-synchronize Factory-managed assets to every explicitly configured Cezar project and Bazzite runtime.
 ---
 
-# Factory Release
+# Factory release
 
-After validating a Factory change, synchronize it to every explicit target with:
+Use this skill after any change under `scripts/`, `skills/`, `workflows/`,
+`policies/`, `templates/`, `automations/`, or Factory versioning.
 
-```powershell
-pwsh -NoProfile -File scripts/push-factory-updates.ps1 -SyncAutomations
-```
+## Invariants
 
-Targets live in the host-local `config/factory-projects.json` registry (copy the
-checked-in `.example` first). The default target shape is remote-only:
-`apiUrl` plus `projectId`, with no local application checkout. The release
-syncs definitions directly from this Factory checkout.
+- Read targets only from `config/factory-projects.json`; never scan for or
+  invent deployment targets.
+- Always perform the release action on every invocation, even when the Factory
+  version is unchanged. A matching version is not proof that the target is
+  synchronized.
+- Run catalog/release validation before synchronization.
+- Remote-only targets receive automation synchronization through
+  `scripts/push-factory-updates.ps1 -SyncAutomations`.
+- Bazzite-hosted runtime changes also require the supported deployment flow
+  from the Bazzite Factory checkout. Factory workflow commands run inside
+  Cezar's Linux container; `/projects/cezar-factory` is an in-container mount,
+  never a Windows path.
+- Stop on a target failure and report the exact target; do not silently skip
+  it or redirect to another project.
 
-Use a target with `projectPath` only when the project needs the full local
-`.ai/factory` installation or version pin updated. That fallback updates and
-verifies managed project files, then optionally reconciles Cezar automations.
-Never discover projects by scanning drives or change an unlisted project.
+## Procedure
 
-The script validates the automation catalog, synchronizes remote automations,
-or updates and verifies local managed files when `projectPath` is present. It
-reports each target successfully pushed and stops when any target fails.
+1. Validate the changed assets and automation catalog.
+2. Run the configured remote release for all targets:
 
-Use `-DryRun` before a first deployment to a newly added target. Do not push
-without the user's authorization to change the configured target projects.
+   ```powershell
+   pwsh -NoProfile -File .\scripts\push-factory-updates.ps1 -SyncAutomations
+   ```
+
+3. For Bazzite service/runtime changes, run the supported deployment script
+   from the Bazzite checkout and verify the Cezar container sees
+   `/projects/cezar-factory/scripts/factory-startup.ps1`.
+4. Report successful targets and any target that failed because its Cezar
+   project folder or deployment configuration is absent.

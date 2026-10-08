@@ -5,6 +5,11 @@ installation as a fallback. All scripts are PowerShell 7 and live in `scripts/`.
 
 ## Default release pipeline
 
+Every Factory-managed change must force a release attempt on every configured
+target, even when the Factory version is unchanged. A matching version does
+not prove that the target's automations, runtime mount, or service deployment
+is current.
+
 Use remote-only synchronization whenever the target project already exists in
 Cezar. Configure `apiUrl` and `projectId` in the host-local
 `config/factory-projects.json`, omit `projectPath`, and run:

@@ -33,6 +33,12 @@ function Get-LabelNames($Issue) {
     } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Get-IssueBody([int]$IssueNumber) {
+    $rawBody = Invoke-Gh @('issue', 'view', [string]$IssueNumber, '--json', 'body')
+    $view = ($rawBody -join "`n") | ConvertFrom-Json
+    [string]$view.body
+}
+
 # Use the installed script beside this one, not FACTORY_RUNTIME_ROOT. The
 # latter is only available to Cezar check steps and was absent in the pilot.
 $labelArgs = @{ GhCommand = $GhCommand }
@@ -103,8 +109,10 @@ foreach ($candidate in $unmarked) {
     }
 
     # Reservation is only for genuinely ambiguous items. The LLM receives
-    # only the first requested number of unresolved issues.
+    # only the first requested number of unresolved issues. Fetch their bodies
+    # here, before the LLM step, so the LLM never performs issue discovery.
     if ($remainingCandidates.Count -ge $Limit) { continue }
+    $candidate.body = Get-IssueBody ([int]$candidate.number)
     if (-not $DryRun) { Invoke-Gh @('issue', 'edit', [string]$candidate.number, '--add-label', 'factory:auditing') | Out-Null }
     $staged += [ordered]@{
         issue = $candidate.number
