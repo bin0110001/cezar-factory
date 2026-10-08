@@ -1,0 +1,29 @@
+# podman compose -f compose.yaml up -d --build
+services:
+  cezar:
+    image: localhost/cezar:local
+    container_name: cezar
+    build: .
+    restart: unless-stopped
+    ports:
+      # Host loopback only: cezar has NO built-in auth, so never publish on 0.0.0.0.
+      - "127.0.0.1:4321:4321"
+    environment:
+      CEZ_REMOTE: "1"
+    volumes:
+      # cezar state (project registry, agent accounts) and the agent CLIs' logins survive rebuilds.
+      - cezar-home:/home/cezar/.cezar
+      - claude-home:/home/cezar/.claude
+      - gh-config:/home/cezar/.config/gh
+      - codex-home:/home/cezar/.codex
+      - opencode-data:/home/cezar/.local/share/opencode
+      - opencode-config:/home/cezar/.config/opencode
+      # The repo cezar operates on (worktrees land in .ai/cezar/ inside it).
+      - ${CEZAR_WORKSPACE:-.}:/workspace:Z
+volumes:
+  cezar-home:
+  claude-home:
+  gh-config:
+  codex-home:
+  opencode-data:
+  opencode-config:
