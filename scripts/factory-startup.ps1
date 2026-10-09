@@ -25,6 +25,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Cezar supplies command arguments as shell text. A YAML value such as
+# "a.ps1,b.ps1" therefore reaches PowerShell as one argument rather than an
+# array. Normalize both forms before validating files or writing the receipt.
+$RequiredScripts = @($RequiredScripts | ForEach-Object {
+    @($_ -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+})
+
 function Fail([string]$Code, [string]$Message) {
     $result = [ordered]@{
         ok = $false

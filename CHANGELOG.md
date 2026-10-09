@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.40] - 2026-10-09
+
+- Release synchronization now emits JSON-line status records and persists them
+  under `.factory/release-reports/`. A blocked normal managed update is marked
+  `forceRefreshRequired`, with the exact recovery command, instead of looking
+  like an ambiguous failed push.
+
+## [0.3.39] - 2026-10-09
+
+- Startup now accepts the comma-delimited `RequiredScripts` form emitted by
+  Cezar workflow commands, validates each script separately, and records the
+  normalized list in its receipt. This prevents a valid maintenance runtime
+  from failing preflight as though three script names were one file.
+
+## [0.3.38] - 2026-10-09
+
+- Added an explicit `-ForceManagedRefresh` release path for a project whose
+  installed Factory manifest has drifted beyond the normal safe updater. It
+  archives the current Factory layer, replaces only Factory-owned files, then
+  reinstalls and verifies the pinned source. This is an operator-authorized
+  recovery mode; normal releases still refuse ambiguous or modified files.
+
 ## [0.3.37] - 2026-10-08
 
 - Restored `factory-implement-prepare` as a no-op compatibility skill so

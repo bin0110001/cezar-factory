@@ -1340,6 +1340,22 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
 
   const steps = (id: string) => store.getRun(id)?.steps.map((s) => ({ id: s.id, status: s.status }));
 
+  it('expands {{task}} in a command step verbatim, without shell interpretation', async () => {
+    const task = `GitHub issue #42 "quoted" $(touch injected) \`x\` $HOME`;
+    const wf: WorkflowDef = {
+      name: 'command-task',
+      source: 'built-in',
+      steps: [
+        { id: 'capture', name: 'Capture', command: 'printf %s "{{task}}" > captured-task.txt' },
+      ],
+    };
+    const record = manager.startRun(wf, { task, worktree: false });
+    currentId = record.id;
+    await waitFor(record.id, (r) => r?.steps.find((s) => s.id === 'capture')?.status === 'done');
+    expect(readFileSync(join(repoRoot, 'captured-task.txt'), 'utf8')).toBe(task);
+    expect(existsSync(join(repoRoot, 'injected'))).toBe(false);
+  }, 30_000);
+
   it('a CEZ:ASK turn-end parks the run as waiting (attention) and emits ask.requested', async () => {
     const record = manager.startRun(SINGLE_STEP, { task: 'mock:ask which library?', worktree: false });
     currentId = record.id;
