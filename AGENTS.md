@@ -52,3 +52,9 @@ must target `dev` and request GitHub auto-merge. This applies to every approved
 risk level; high-risk work still requires its human plan-approval and independent
 review gates before auto-merge can be requested. Do not merge a failed,
 unreviewed, or unresolved PR.
+
+When you finish making changes, commit them and push the branch to its remote
+before reporting the work as done. Never leave finished work only in the local
+checkout. Stage only the files that belong to the change (leave unrelated
+untracked files such as `.factory/release-reports/` alone), and push only after
+validation has passed.
