@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.38] - 2026-10-09
+
+- Added an explicit `-ForceManagedRefresh` release path for a project whose
+  installed Factory manifest has drifted beyond the normal safe updater. It
+  archives the current Factory layer, replaces only Factory-owned files, then
+  reinstalls and verifies the pinned source. This is an operator-authorized
+  recovery mode; normal releases still refuse ambiguous or modified files.
+
 ## [0.3.37] - 2026-10-08
 
 - Restored `factory-implement-prepare` as a no-op compatibility skill so

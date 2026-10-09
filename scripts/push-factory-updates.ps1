@@ -17,6 +17,7 @@ param(
     [switch]$SyncAutomations,
     [switch]$Enable,
     [switch]$DryRun,
+    [switch]$ForceManagedRefresh,
     [switch]$SkipBazziteRuntime
 )
 
@@ -101,7 +102,8 @@ foreach ($target in $targets) {
 
     try {
         [IO.File]::WriteAllText($configPath, $updatedConfig)
-        $updateArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/update.ps1'), '-ProjectPath', $project, '-FactoryPath', $factory)
+        $updateScript = if ($ForceManagedRefresh) { 'force-update.ps1' } else { 'update.ps1' }
+        $updateArgs = @('-NoProfile', '-File', (Join-Path $factory "scripts/$updateScript"), '-ProjectPath', $project, '-FactoryPath', $factory)
         & pwsh @updateArgs
         if ($LASTEXITCODE -ne 0) { throw "${project}: Factory update failed." }
 

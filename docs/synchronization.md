@@ -84,6 +84,7 @@ Written alongside: `.ai/factory/VERSION`, `.ai/factory/manifest.json` (path and 
 ```powershell
 ./scripts/install.ps1 -ProjectPath ../proj -ProjectType godot [-DryRun]   # first install
 ./scripts/update.ps1  -ProjectPath ../proj -FactoryPath ../cezar-factory-0.2.0 [-DryRun]
+./scripts/push-factory-updates.ps1 -ProjectPath ../proj -ForceManagedRefresh [-SyncAutomations]
 ./scripts/diff.ps1    -ProjectPath ../proj   # exit 1 on drift
 ./scripts/verify.ps1  -ProjectPath ../proj   # exit 1 on any failed check
 ```
@@ -122,6 +123,16 @@ deployment and confirm the project contains `.ai/factory/factory.config.yaml`.
 - If a manifest-listed file was edited locally, update refuses and names it. Move the change into an override instead.
 - Obsolete managed files (dropped by the new version) are removed; empty directories are tidied.
 - `-DryRun` prints the full change summary and writes nothing.
+
+### Forced managed refresh
+
+`-ForceManagedRefresh` is the deliberate recovery path when a previously
+installed Factory layer has drifted so far that the normal updater refuses it.
+It archives `.ai/factory` plus only `factory-*` workflow and skill files under
+`.factory/factory-force-backups/<timestamp>`, then reinstalls the pinned
+Factory version and runs `verify.ps1`. Project-owned skills and workflows are
+not removed. Use it only after reviewing the failed normal update; a failed
+verification still blocks the release.
 
 ## Upgrade and rollback
 
