@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.41] - 2026-10-09
+
+- `GODOT_BIN` in the Cezar image is now a per-project version selector backed by a persistent
+  `godot-versions` volume; Godot versions install on demand (checksum-verified), so adopting a
+  new release needs no image rebuild or container restart. See `docs/godot-upgrades.md`.
+- Added the `factory-godot-upgrade` workflow, skill, and daily `[factory] godot-upgrade`
+  automation: detect a new stable Godot, pin it on a branch, run the project's Godot tests,
+  let the agent fix regressions, and open an auto-merge PR. Enabled with `features.godot_upgrade`
+  or, for remote-only targets, `"projectType": "godot"` in the target registry.
+
 ## [0.3.40] - 2026-10-09
 
 - Release synchronization now emits JSON-line status records and persists them

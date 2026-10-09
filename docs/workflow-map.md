@@ -73,3 +73,9 @@ When the requested state is already present, `-Retrigger` removes and re-adds
 it in separate edits so Cezar receives a fresh `issue.labeled` event. It never
 dispatches a run directly and it refuses an unroutable `factory:ready` unless
 `-AllowUnroutable` is explicitly supplied.
+
+## Godot upgrade
+
+`factory-godot-upgrade` (`[factory] godot-upgrade`, daily) adopts new stable Godot releases per
+Godot project: check, stage, pin on `factory/godot-<version>`, test, agent fix, re-test, auto-merge
+PR. Details in `docs/godot-upgrades.md`.

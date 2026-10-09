@@ -18,6 +18,8 @@ param(
     [string]$ApiUrl = $env:CEZ_API_URL,
     [string]$ProjectId = $env:CEZ_PROJECT_ID,
     [switch]$SourceOnly,
+    # Remote-only (-SourceOnly) sync cannot see the project's config; definitions with factoryRequires.projectType apply only when this matches.
+    [string]$ProjectType = '',
     [switch]$Enable,
     [switch]$Prune,
     [switch]$DryRun
@@ -74,6 +76,11 @@ $wanted = @{}
 foreach ($f in Get-ChildItem $automationDir -Filter *.json -ErrorAction SilentlyContinue) {
     $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
     if (-not $def.name.StartsWith($prefix)) { throw "$($f.Name): factory automation names must start with '$prefix'" }
+    if ($def.PSObject.Properties.Name -contains 'factoryRequires') {
+        $required = [string]$def.factoryRequires.projectType
+        $def.PSObject.Properties.Remove('factoryRequires')
+        if ($SourceOnly -and $required -and $required -ne $ProjectType) { continue }
+    }
     $def.description = "$($def.description) [cezar-factory $version]"
     $wanted[$def.name] = $def
 }

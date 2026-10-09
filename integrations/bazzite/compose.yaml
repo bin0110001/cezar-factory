@@ -18,6 +18,8 @@ services:
       # The Factory checkout is immutable at runtime; Cezar still needs a
       # persistent writable home for run receipts and worktree metadata.
       - cezar-factory-runtime:/projects/cezar-factory/.ai/cezar:Z
+      # Godot versions install on demand into this volume; a project pins one in .godot-version.
+      - godot-versions:/opt/godot-versions
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -157,6 +159,7 @@ services:
 
 volumes:
   cezar-factory-runtime:
+  godot-versions:
   prometheus-data:
   grafana-data:
   openhands-data:

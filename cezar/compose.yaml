@@ -6,7 +6,7 @@ services:
     build:
       context: .
       args:
-        # Swap Godot versions with `GODOT_VERSION=4.8 podman compose up -d --build`.
+        # Baseline Godot only; projects pin their own version in .godot-version (no rebuild needed).
         GODOT_VERSION: ${GODOT_VERSION:-4.7}
         GODOT_CHANNEL: ${GODOT_CHANNEL:-stable}
     restart: unless-stopped
@@ -23,6 +23,8 @@ services:
       - codex-home:/home/cezar/.codex
       - opencode-data:/home/cezar/.local/share/opencode
       - opencode-config:/home/cezar/.config/opencode
+      # Godot versions installed on demand (godot-install); survive rebuilds so upgrades need no image change.
+      - godot-versions:/opt/godot-versions
       # The repo cezar operates on (worktrees land in .ai/cezar/ inside it).
       - ${CEZAR_WORKSPACE:-.}:/workspace:Z
 volumes:
@@ -32,3 +34,4 @@ volumes:
   codex-home:
   opencode-data:
   opencode-config:
+  godot-versions:

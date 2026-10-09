@@ -70,7 +70,8 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json'
+'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
+'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
@@ -578,7 +579,12 @@ try {
         Assert 'prune deletes obsolete factory automation' (-not (@((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations").automations | ForEach-Object { $_.id }) -contains 'f-old'))
         Assert 'sync records factory version in description' ((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations/a100").automation.description -match "cezar-factory $([regex]::Escape($curVer))")
         Clear-Content $log
-        & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-only' -DryRun *>&1 | Out-Null
+        & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-only' -DryRun *>&1 | Out-String | Set-Variable plainSync
+        $plainCode = $LASTEXITCODE
+        $godotSync = & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-godot' -ProjectType godot -DryRun *>&1 | Out-String
+        Assert 'godot-upgrade automation is skipped for non-Godot remote targets' ($plainSync -notmatch 'godot-upgrade')
+        Assert 'godot-upgrade automation is synced to Godot remote targets' ($godotSync -match 'godot-upgrade')
+        $global:LASTEXITCODE = $plainCode
         Assert 'source-only sync works without a project checkout' ($LASTEXITCODE -eq 0 -and -not (Select-String -Path $log -Pattern '^(POST|PUT|DELETE)' -Quiet))
         $remoteTargets = Join-Path $tmp 'remote-targets.json'
         @(@{ apiUrl = "http://127.0.0.1:$port"; projectId = 'remote-only' }) | ConvertTo-Json -Depth 4 | Set-Content $remoteTargets
@@ -586,6 +592,78 @@ try {
         Assert 'release supports remote-only target registry entries' ($LASTEXITCODE -eq 0)
     }
     finally { if ($srv -and -not $srv.HasExited) { $srv.Kill() } }
+
+# ---- Godot upgrade -------------------------------------------------------
+Write-Host '== godot upgrade =='
+$godotDockerfile = Get-Content -Raw (Join-Path $factory 'cezar/Dockerfile')
+Assert 'Cezar image maps GODOT_BIN to the version selector' ($godotDockerfile -match 'GODOT_BIN=/usr/local/bin/godot' -and $godotDockerfile -match 'godot-select\.sh' -and $godotDockerfile -match 'GODOT_VERSIONS_DIR')
+Assert 'Godot versions live on a persistent volume in both compose files' ((Get-Content -Raw (Join-Path $factory 'cezar/compose.yaml')) -match 'godot-versions:/opt/godot-versions' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'godot-versions:/opt/godot-versions')
+Assert 'godot-upgrade automation is gated to Godot projects' ((Get-Content -Raw (Join-Path $factory 'automations/godot-upgrade.json')) -match '"projectType":\s*"godot"')
+
+$gd = Join-Path $tmp 'godot'
+New-Item -ItemType Directory $gd | Out-Null
+$origin = Join-Path $gd 'origin.git'
+$work = Join-Path $gd 'work'
+& git init -q --bare $origin
+& git clone -q $origin $work 2>&1 | Out-Null
+Push-Location $work
+try {
+    & git config user.email t@example.com; & git config user.name t
+    & git checkout -q -b main
+    New-Item -ItemType Directory -Force '.ai/factory' | Out-Null
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 0`"`n"
+    Set-Content '.godot-version' '4.7-stable'
+    & git add -A; & git commit -q -m init; & git push -q -u origin main 2>&1 | Out-Null
+    & git remote set-head origin main 2>&1 | Out-Null
+    $installer = Join-Path $gd 'fake-install.ps1'
+    Set-Content $installer 'Write-Output "/fake/$($args[0])/godot"'
+    $up = Join-Path $scripts 'godot-upgrade.ps1'
+    function GodotStep([string]$Step, [string[]]$More = @()) {
+        $out = & pwsh -NoProfile -File $up -Step $Step -InstallCommand $installer @More 2>&1 | Out-String
+        [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
+    }
+
+    $r = GodotStep check @('-LatestTag', '4.7-stable')
+    Assert 'godot check: same version is a no-op' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+    $r = GodotStep check @('-LatestTag', '4.8-rc1')
+    Assert 'godot check: prerelease is ignored' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+    $r = GodotStep check @('-LatestTag', '4.8-stable')
+    Assert 'godot check: newer stable is an upgrade' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'upgrade')
+    $r = GodotStep stage
+    Assert 'godot stage installs the target version' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).godotBin -eq '/fake/4.8-stable/godot')
+    $r = GodotStep apply
+    Assert 'godot apply pins the version on a pushed branch' ($r.Code -eq 0 -and (Get-Content -Raw .godot-version).Trim() -eq '4.8-stable' -and (& git ls-remote --heads origin factory/godot-4.8))
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot test passes with the project command' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 3`"`n"
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot test -AllowFailure records a failure without failing the step' ($r.Code -eq 0 -and -not (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
+    $r = GodotStep test
+    Assert 'godot test fails the step when tests fail (drives the fix retry)' ($r.Code -ne 0)
+    $r = GodotStep publish
+    Assert 'godot publish refuses when tests failed' ($r.Code -ne 0)
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 0`"`n"
+    Set-Content 'fix.gd' 'extends Node'
+    GodotStep test | Out-Null
+
+    $ghState = Join-Path $gd 'gh.json'
+    Set-Content $ghState '{"labels":[],"comments":[],"issues":[]}'
+    $env:FAKE_GH_STATE = $ghState
+    $fakePr = Join-Path $gd 'fake-gh-pr.ps1'
+    Set-Content $fakePr @'
+$a = @($args)
+if ($a[0] -eq 'pr' -and $a[1] -eq 'create') { 'https://github.com/x/y/pull/7'; exit 0 }
+if ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { exit 0 }
+Write-Error "unsupported $($a -join ' ')"; exit 2
+'@
+    $r = GodotStep publish @('-GhCommand', $fakePr)
+    $published = Get-Content -Raw .factory/godot-upgrade-result.json | ConvertFrom-Json
+    Assert 'godot publish opens a PR with auto-merge and commits the fixes' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
+    Remove-Item Env:FAKE_GH_STATE -ErrorAction SilentlyContinue
+    $r = GodotStep check @('-LatestTag', '4.8-stable')
+    Assert 'godot check: an existing upgrade branch suppresses re-attempts' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+}
+finally { Pop-Location }
 }
 finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 

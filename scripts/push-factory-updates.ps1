@@ -96,6 +96,7 @@ foreach ($target in $targets) {
         if (-not $SyncAutomations) { throw "Remote Cezar target '$($target.projectId)' requires -SyncAutomations." }
         if (-not $target.apiUrl) { throw "Remote Cezar target '$($target.projectId)' requires apiUrl." }
         $syncArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/sync-automations.ps1'), '-SourceOnly', '-FactoryPath', $factory, '-ApiUrl', $target.apiUrl, '-ProjectId', $target.projectId)
+        if ($target.PSObject.Properties.Name -contains 'projectType' -and $target.projectType) { $syncArgs += @('-ProjectType', [string]$target.projectType) }
         if ($Enable) { $syncArgs += '-Enable' }
         if ($DryRun) { $syncArgs += '-DryRun' }
         & pwsh @syncArgs

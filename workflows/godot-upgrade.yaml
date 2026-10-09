@@ -1,0 +1,41 @@
+name: factory-godot-upgrade
+description: Adopt a newly released stable Godot in one project - pin it on a branch, run the project's Godot tests, let the agent fix regressions, then open an auto-merge PR. Needs no image rebuild or container restart.
+steps:
+  - id: startup
+    name: Prepare workflow environment
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-godot-upgrade -Step check -RequireGh -RequiredScripts godot-upgrade.ps1
+  - id: check
+    name: Look for a newer stable Godot release
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step check
+  - id: stage
+    name: Install the new Godot version
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step stage
+  - id: apply
+    name: Pin the new version on an upgrade branch
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step apply
+  - id: baseline-tests
+    name: Run the project's Godot tests on the new version
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step test -AllowFailure
+  - id: fix
+    name: Fix regressions caused by the new Godot version
+    skill: factory-godot-upgrade
+    prompt: |
+      {{task}}
+
+      The workflow already looked for a new Godot release, installed it, pinned it on the
+      upgrade branch, and ran the project's tests. Do not run any Factory script and do not
+      look for releases, create branches, or open pull requests yourself.
+
+      Read `.factory/godot-upgrade.json`. If its status is not `upgrade`, reply with one line
+      saying there is nothing to do and stop. Otherwise read `.factory/godot-test.json`; if
+      `passed` is true, reply with one line saying so and stop. If it failed, follow the
+      Factory Godot Upgrade skill to fix the project so its tests pass on the new version.
+  - id: tests
+    name: Re-run the project's Godot tests
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step test
+    onFail:
+      retry: fix
+      max: 2
+  - id: publish
+    name: Open the upgrade pull request with auto-merge
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step publish

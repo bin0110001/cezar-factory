@@ -28,6 +28,8 @@ features:
   maintenance: false
   backlog_reconciliation: false
   backlog_label_cleanup: false
+  # Godot projects: daily check for a new stable Godot, pin + test + fix + auto-merge PR.
+  godot_upgrade: false
 
 project:
   type: godot
