@@ -11,13 +11,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$input = Get-Content -Raw $InputPath | ConvertFrom-Json
+$backlog = Get-Content -Raw $InputPath | ConvertFrom-Json
 $now = [DateTimeOffset]::UtcNow
 $actions = @(); $invalid = @(); $excluded = @()
 $stateLabels = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate')
 $actionForState = @{ 'factory:needs-plan' = 'plan'; 'factory:ready' = 'implement'; 'factory:review' = 'review'; 'factory:changes-requested' = 'fix-review'; 'factory:investigate' = 'investigate' }
 if ($Dispatch -and -not $LeaseOwner) { throw '-Dispatch requires an explicit -LeaseOwner or FACTORY_LEASE_OWNER.' }
-foreach ($issue in $input.issues) {
+foreach ($issue in $backlog.issues) {
     $states = @($issue.labels | Where-Object { $stateLabels -contains $_ })
     if ($states.Count -ne 1) { $invalid += [ordered]@{ issue = $issue.number; reason = 'invalid-factory-state'; states = $states }; continue }
     $lease = $issue.lease

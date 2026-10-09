@@ -30,7 +30,7 @@ function Run([string]$Script, [hashtable]$Args2) {
 
 function Copy-Factory([string]$From, [string]$To) {
     New-Item -ItemType Directory $To | Out-Null
-    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests' } | Copy-Item -Destination $To -Recurse
+    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests', 'cezar', 'node_modules', '.factory' } | Copy-Item -Destination $To -Recurse
 }
 
 # ---- Static checks -------------------------------------------------------
