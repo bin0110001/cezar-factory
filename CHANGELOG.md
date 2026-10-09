@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.39] - 2026-10-09
+
+- Startup now accepts the comma-delimited `RequiredScripts` form emitted by
+  Cezar workflow commands, validates each script separately, and records the
+  normalized list in its receipt. This prevents a valid maintenance runtime
+  from failing preflight as though three script names were one file.
+
 ## [0.3.38] - 2026-10-09
 
 - Added an explicit `-ForceManagedRefresh` release path for a project whose
