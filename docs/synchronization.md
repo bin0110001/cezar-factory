@@ -134,6 +134,12 @@ Factory version and runs `verify.ps1`. Project-owned skills and workflows are
 not removed. Use it only after reviewing the failed normal update; a failed
 verification still blocks the release.
 
+Every `push-factory-updates.ps1` invocation writes JSON-line records to
+`.factory/release-reports/release-status.jsonl` (or `-ReportPath`). Each target
+is marked `synchronized` or `failed`; a blocked standard update sets
+`forceRefreshRequired: true` and gives the recovery command. Treat a missing
+success record as an unpushed update.
+
 ## Upgrade and rollback
 
 1. Edit `factory.version` in `.ai/factory/factory.config.yaml`.

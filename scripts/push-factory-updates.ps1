@@ -18,6 +18,7 @@ param(
     [switch]$Enable,
     [switch]$DryRun,
     [switch]$ForceManagedRefresh,
+    [string]$ReportPath = '',
     [switch]$SkipBazziteRuntime
 )
 
@@ -25,6 +26,24 @@ $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path $FactoryPath).Path
 $version = (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Factory VERSION '$version' is not semver." }
+if (-not $ReportPath) { $ReportPath = Join-Path $factory '.factory/release-reports/release-status.jsonl' }
+
+function Write-ReleaseStatus([string]$Target, [string]$Mode, [string]$Status, [string]$Detail, [bool]$ForceRefreshRequired = $false) {
+    $record = [ordered]@{
+        timestamp = (Get-Date).ToUniversalTime().ToString('o')
+        factoryVersion = $version
+        target = $Target
+        mode = $Mode
+        status = $Status
+        forceRefreshRequired = $ForceRefreshRequired
+        detail = $Detail
+    }
+    $json = $record | ConvertTo-Json -Compress
+    Write-Host "RELEASE_STATUS $json"
+    $parent = Split-Path -Parent $ReportPath
+    if ($parent) { New-Item -ItemType Directory -Force $parent | Out-Null }
+    Add-Content -LiteralPath $ReportPath -Value $json -Encoding utf8
+}
 
 $targets = @()
 if ($ProjectPath) {
@@ -80,7 +99,11 @@ foreach ($target in $targets) {
         if ($Enable) { $syncArgs += '-Enable' }
         if ($DryRun) { $syncArgs += '-DryRun' }
         & pwsh @syncArgs
-        if ($LASTEXITCODE -ne 0) { throw "Remote Cezar target $($target.projectId): automation synchronization failed." }
+        if ($LASTEXITCODE -ne 0) {
+            Write-ReleaseStatus $target.projectId 'remote-automation' 'failed' 'Automation synchronization failed.'
+            throw "Remote Cezar target $($target.projectId): automation synchronization failed."
+        }
+        Write-ReleaseStatus $target.projectId 'remote-automation' 'synchronized' 'Factory automation definitions accepted by Cezar.'
         Write-Host "Synchronized Factory $version automations to Cezar project $($target.projectId)" -ForegroundColor Green
         if (-not $SkipBazziteRuntime -and $target.deployment -and $target.deployment.mode -eq 'remote-cezar-plus-bazzite-host') {
             $key = if ($target.deployment.bazziteSshTarget) { [string]$target.deployment.bazziteSshTarget } else { Get-TopologyValue 'FACTORY_CONTROL_PLANE_SSH_TARGET' }
@@ -105,7 +128,12 @@ foreach ($target in $targets) {
         $updateScript = if ($ForceManagedRefresh) { 'force-update.ps1' } else { 'update.ps1' }
         $updateArgs = @('-NoProfile', '-File', (Join-Path $factory "scripts/$updateScript"), '-ProjectPath', $project, '-FactoryPath', $factory)
         & pwsh @updateArgs
-        if ($LASTEXITCODE -ne 0) { throw "${project}: Factory update failed." }
+        if ($LASTEXITCODE -ne 0) {
+            $forceNeeded = -not $ForceManagedRefresh
+            $detail = if ($forceNeeded) { 'Managed update was blocked. Review drift, then rerun with -ForceManagedRefresh to archive and replace only Factory-owned files.' } else { 'Forced managed refresh failed; inspect the recovery backup reported by force-update.ps1.' }
+            Write-ReleaseStatus $project 'full-project' 'failed' $detail $forceNeeded
+            throw "${project}: Factory update failed. $detail"
+        }
 
         if ($SyncAutomations) {
             $apiUrl = if ($target.apiUrl) { $target.apiUrl } else { $env:CEZ_API_URL }
@@ -118,6 +146,7 @@ foreach ($target in $targets) {
             if ($LASTEXITCODE -ne 0) { throw "${project}: automation synchronization failed." }
         }
         Write-Host "Pushed Factory $version to $project" -ForegroundColor Green
+        Write-ReleaseStatus $project 'full-project' 'synchronized' $(if ($ForceManagedRefresh) { 'Forced managed refresh completed and verified.' } else { 'Normal managed update completed and verified.' })
     }
     catch {
         [IO.File]::WriteAllText($configPath, $originalConfig)

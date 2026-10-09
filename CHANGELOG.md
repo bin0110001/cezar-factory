@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.40] - 2026-10-09
+
+- Release synchronization now emits JSON-line status records and persists them
+  under `.factory/release-reports/`. A blocked normal managed update is marked
+  `forceRefreshRequired`, with the exact recovery command, instead of looking
+  like an ambiguous failed push.
+
 ## [0.3.39] - 2026-10-09
 
 - Startup now accepts the comma-delimited `RequiredScripts` form emitted by
