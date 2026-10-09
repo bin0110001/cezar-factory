@@ -4296,7 +4296,7 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode } = await this.runCheckStep(state, step, emit);
+      const { ok, output, exitCode } = await this.runCheckStep(state, step, input.task, emit);
       if (state.cancelled) break;
       if (ok) {
         this.finishStep(runId, step.id, 'done', undefined, emit);
@@ -5641,13 +5641,16 @@ export class RunManager {
   private runCheckStep(
     state: ActiveRun,
     step: WorkflowStepDef,
+    task: string,
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
-    const command = step.command as string;
+    // `{{task}}` in a command expands through an env var, never by pasting the
+    // task text into the shell line, so task content cannot inject commands.
+    const command = (step.command as string).replaceAll('{{task}}', '${CEZAR_TASK}');
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env: process.env });
+      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env: { ...process.env, CEZAR_TASK: task } });
       state.interrupt = () => child.kill('SIGTERM');
 
       let output = '';
