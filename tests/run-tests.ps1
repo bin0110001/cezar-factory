@@ -322,6 +322,10 @@ try {
     Write-Host '== runtime scripts =='
     $rp = Join-Path $tmp 'runtime-project'
     Copy-Item (Join-Path $PSScriptRoot 'fixtures/generic-project') $rp -Recurse
+    $runtimeConfig = Join-Path $rp '.ai/factory/factory.config.yaml'
+    $runtimeConfigText = [IO.File]::ReadAllText($runtimeConfig)
+    $runtimeConfigText = [regex]::Replace($runtimeConfigText, '(?m)^(\s*version:\s*)"\d+\.\d+\.\d+"', "`${1}`"$curVer`"")
+    [IO.File]::WriteAllText($runtimeConfig, $runtimeConfigText, [Text.UTF8Encoding]::new($false))
     # The shipped scripts declare a PowerShell 7 shebang; invoke the runtime
     # scenario through pwsh even when the test harness itself is launched by
     # Windows PowerShell 5.1.
