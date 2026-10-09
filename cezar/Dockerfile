@@ -52,6 +52,32 @@ RUN apt-get update \
  && chmod +x /opt/microsoft/powershell/7/pwsh \
  && ln -s /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
 
+# Godot: headless imports/tests/exports for Godot projects. To upgrade, change only
+# GODOT_VERSION (and GODOT_CHANNEL for e.g. "rc1"/"beta2") here or override with
+# `--build-arg GODOT_VERSION=4.8`; the download is verified against the SHA512-SUMS.txt
+# published with that release. GODOT_BIN points at the binary; `godot` is also on PATH.
+ARG GODOT_VERSION=4.7
+ARG GODOT_CHANNEL=stable
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends unzip libfontconfig1 libx11-6 libxcursor1 \
+      libxext6 libxi6 libxinerama1 libxrandr2 libxrender1 libgl1 libudev1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && arch="$(uname -m)" && case "$arch" in x86_64) ga=x86_64 ;; aarch64) ga=arm64 ;; *) echo "unsupported arch $arch" >&2; exit 1 ;; esac \
+ && tag="${GODOT_VERSION}-${GODOT_CHANNEL}" \
+ && zip="Godot_v${tag}_linux.${ga}.zip" \
+ && base="https://github.com/godotengine/godot/releases/download/${tag}" \
+ && mkdir -p /opt/godot /tmp/godot && cd /tmp/godot \
+ && curl -fsSLO "${base}/${zip}" && curl -fsSLO "${base}/SHA512-SUMS.txt" \
+ && grep " ${zip}\$" SHA512-SUMS.txt | sha512sum -c - \
+ && unzip -q "${zip}" -d /opt/godot \
+ && mv "/opt/godot/Godot_v${tag}_linux.${ga}" /opt/godot/godot \
+ && chmod +x /opt/godot/godot \
+ && ln -s /opt/godot/godot /usr/local/bin/godot \
+ && cd / && rm -rf /tmp/godot \
+ && ! ldd /opt/godot/godot | grep "not found" \
+ && /opt/godot/godot --version
+ENV GODOT_BIN=/opt/godot/godot
+
 COPY --from=build /out/*.tgz /tmp/cezar.tgz
 RUN npm install -g /tmp/cezar.tgz && rm /tmp/cezar.tgz
 

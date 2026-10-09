@@ -3,7 +3,12 @@ services:
   cezar:
     image: localhost/cezar:local
     container_name: cezar
-    build: .
+    build:
+      context: .
+      args:
+        # Swap Godot versions with `GODOT_VERSION=4.8 podman compose up -d --build`.
+        GODOT_VERSION: ${GODOT_VERSION:-4.7}
+        GODOT_CHANNEL: ${GODOT_CHANNEL:-stable}
     restart: unless-stopped
     ports:
       # Host loopback only: cezar has NO built-in auth, so never publish on 0.0.0.0.
