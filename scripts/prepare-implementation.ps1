@@ -10,12 +10,19 @@ tooling. This script does not edit source files or lifecycle labels.
 ##>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$Issue,
+    [ValidateRange(0, 2147483647)][int]$Issue = 0,
+    [string]$Task,
     [string]$GhCommand = 'gh',
     [string]$OutputPath = '.factory/implementation-context.json'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Workflow commands pass the raw task text ("GitHub issue #N (...) at <url>") so no agent has to extract it.
+if ($Issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
+    $Issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
+}
+if ($Issue -lt 1) { throw 'An issue number is required: pass -Issue or a -Task containing "GitHub issue #N".' }
 
 function Invoke-Gh([string[]]$Arguments) {
     $output = & $GhCommand @Arguments 2>&1

@@ -12,14 +12,13 @@ skill, workflow, automation, schema, policy, or runtime contract.
 
 - This is a read-only audit. Do not modify source code, skills, workflows,
   automations, labels, or runtime state.
-- Inspect only the compact artifact emitted by
-  `audit-factory-failures.ps1`. The script fetches and filters at most 20
+- The workflow runs `audit-factory-failures.ps1` directly; never run it
+  yourself. Inspect only the compact artifact it emits. The script fetches and filters at most 20
   recent run records; do not fetch or parse raw run logs in the agent.
 - Do not run directory listings, recursive searches, filesystem discovery, or
   commands that dump run logs.
-- The audit runs in an isolated worktree. Use the exact shared project path
-  supplied by the workflow when invoking the script; do not search for an
-  alternate path.
+- The audit runs in an isolated worktree. Do not search for an alternate
+  script path.
 - Do not search other drives, discover unregistered projects, or inspect
   secrets, tokens, or unrelated application data.
 - Treat a missing or inaccessible run directory as an audit finding, not as

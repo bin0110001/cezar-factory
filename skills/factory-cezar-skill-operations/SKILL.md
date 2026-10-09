@@ -26,6 +26,29 @@ update runtime scripts or a project's managed skills/workflows. When a change
 touches those layers, use the configured full-install or Bazzite host deployment
 path; do not claim that an automation-only release deployed the change.
 
+## Scripts belong to workflows
+
+- Every Factory script (`route-state.ps1`, `prepare-implementation.ps1`,
+  `audit-*.ps1`, `maintain-repository.ps1`, ...) is invoked by a `command:`
+  step in `workflows/*.yaml`. A skill or workflow `prompt:` must never tell the
+  model to run one, and a script that needs the issue number takes the raw
+  `{{task}}` text (`-Task`) instead of asking the model to extract it.
+- Skills describe how to judge and write results from artifacts the workflow
+  already produced. If a step needs a script, add a workflow step before the
+  skill step.
+- `tests/run-tests.ps1` enforces this; a new violation fails validation.
+- Operator-driven skills outside Cezar (`interactive-github-backlog`,
+  `factory-work-backlog`) are the exception: a human or interactive agent runs
+  them directly.
+
+## Launching an automation or workflow
+
+When asked to run maintenance (or any automation), queue it with
+`cez automation run <id>`, report the returned task ID, and stop. Do not
+browse the task's worktree, read its `.factory/` artifacts, wait on it, or
+create replacement tasks to "do the work": the workflow is the work. Inspect a
+run only when the user asks, through the run API history.
+
 ## Operating rules
 
 - Validate the Factory change, then use the Factory release procedure for all

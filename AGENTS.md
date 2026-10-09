@@ -6,6 +6,14 @@ versioning), validate the change and then use the `factory-release` skill to
 push the new Factory version to all explicitly configured projects. Do not
 silently leave a source-only Factory update.
 
+Workflows own scripts. Every Factory script runs from a `command:` step in
+`workflows/*.yaml`; skills and workflow `prompt:` text must never instruct the
+model to run a Factory script, extract an issue number for one (pass `-Task
+"{{task}}"`), or discover work the workflow already selected. An agent asked to
+run an automation queues it (`cez automation run <id>`), reports the task ID and
+stops; it does not inspect the worktree or create replacement tasks.
+`tests/run-tests.ps1` enforces the script rule.
+
 When an update is finished, invoke the `factory-finish-release` skill. It
 orchestrates validation, configured-target synchronization, Bazzite checkout
 and Cezar runtime parity checks, and the reviewed `dev` PR auto-merge handoff.

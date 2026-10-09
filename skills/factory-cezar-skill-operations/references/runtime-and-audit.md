@@ -15,7 +15,7 @@
 
 ## Backlog-label audit
 
-The Cezar entrypoint is deliberately simple:
+The workflow command step (never the model) runs this entrypoint:
 
 ```text
 pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1

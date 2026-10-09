@@ -42,8 +42,7 @@ source: skills/factory-fix/SKILL.md
 
 ### 5. Re-run Validation
 
-- Execute the project's `test-changed.ps1` script to validate the fixes.
-- If full validation is required, run `test-full.ps1` or `verify.ps1`.
+- Run the project's own test commands while fixing. The workflow runs `test-changed.ps1` after you finish; do not run Factory scripts yourself.
 - Ensure all tests pass before returning to review.
 
 ### 6. Return to Review
