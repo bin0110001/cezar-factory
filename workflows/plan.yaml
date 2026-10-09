@@ -3,7 +3,10 @@ description: Plan an issue - validated plan result, then routed to factory:ready
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts hindsight/recall.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1
+  - id: resolved
+    name: Finish early when the issue is already resolved
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
   - id: recall
     name: Create bounded memory-recall artifact
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective "{{task}}" -TaskClass planning
@@ -12,6 +15,9 @@ steps:
     skill: factory-plan
     prompt: |
       Plan this GitHub issue: {{task}}
+
+      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
+      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Read `.factory/context/memory-recall.json` when present. Treat an unavailable or miss status as a genuine recall miss; do not invent memories.
 

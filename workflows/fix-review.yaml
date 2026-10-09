@@ -3,7 +3,10 @@ description: Address actionable review findings, re-validate, and return the iss
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts route-state.ps1,validate-result.ps1,factory/test-changed.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,factory/test-changed.ps1
+  - id: resolved
+    name: Finish early when the issue is already resolved
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
   - id: start
     name: Move issue to factory:working
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task "{{task}}"
@@ -12,6 +15,9 @@ steps:
     skill: factory-fix
     prompt: |
       Address the review findings on this GitHub issue's PR: {{task}}
+
+      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
+      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       The workflow already moved the issue to factory:working. Do not run Factory lifecycle or routing
       scripts and do not edit factory:* labels. Read only the latest review comment's blocking findings.

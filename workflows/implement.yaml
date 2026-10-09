@@ -3,7 +3,10 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts prepare-implementation.ps1,route-state.ps1,validate-result.ps1,factory/test-changed.ps1,factory/test-full.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,factory/test-changed.ps1,factory/test-full.ps1
+  - id: resolved
+    name: Finish early when the issue is already resolved
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
   - id: prepare
     name: Prepare issue and environment context
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/prepare-implementation.ps1 -Task "{{task}}" -OutputPath .factory/implementation-context.json
@@ -15,6 +18,9 @@ steps:
     skill: factory-implement
     prompt: |
       Implement this GitHub issue: {{task}}
+
+      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
+      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Before editing code, read the prepared .factory/implementation-context.json
       artifact, the nearest AGENTS.md/manual, and the issue body/comments recorded

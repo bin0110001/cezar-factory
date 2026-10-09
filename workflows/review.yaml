@@ -3,13 +3,19 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts validate-result.ps1,route-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,route-state.ps1
+  - id: resolved
+    name: Finish early when the issue is already resolved
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
   - id: review
     name: Run factory-review skill
     skill: factory-review
     # Each Cezar run starts a fresh session in its own worktree, so the reviewer never shares the implementer's context.
     prompt: |
       Review the pull request for this GitHub issue: {{task}}
+
+      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
+      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Do not modify code. Write the structured review result as JSON to .factory/review-result.json
       (create the directory) with the issue number in "issue". Do not run Factory scripts or edit factory:* labels; the

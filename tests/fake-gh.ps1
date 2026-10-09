@@ -5,7 +5,7 @@ $a = @($args)
 foreach ($x in $a) { if ($x -isnot [string] -and $x -isnot [int]) { Write-Error "fake gh: non-string argument ($($x.GetType().Name)) in: $($a -join ' ')"; exit 2 } }
 if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
-    @{ body = [string]$issue.body; labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
+    @{ state = $(if ($state.issueState) { [string]$state.issueState } else { 'OPEN' }); body = [string]$issue.body; labels = @($state.labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     for ($i = 3; $i -lt $a.Count; $i += 2) {

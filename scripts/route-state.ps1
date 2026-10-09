@@ -11,7 +11,7 @@ review/fix rounds and investigation retries per policies/retry.yaml, and posts e
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result')][string]$Event,
+    [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result', 'already-resolved')][string]$Event,
     [string]$Path,
     [int]$Issue,
     [string]$Task,
@@ -21,6 +21,10 @@ param(
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
+
+if ($Event -ne 'already-resolved' -and (Test-Path (Join-Path $ProjectPath '.factory/already-resolved.json'))) {
+    Write-Output (@{ status = 'skipped'; event = $Event; reason = 'already-resolved' } | ConvertTo-Json -Compress); exit 0
+}
 
 function Fail([string]$Msg) { Write-Output (@{ status = 'refused'; event = $Event; reason = $Msg } | ConvertTo-Json -Compress); exit 1 }
 function Invoke-Gh { & $GhCommand @args; if ($LASTEXITCODE -ne 0) { throw "gh $($args -join ' ') failed ($LASTEXITCODE)" } }
@@ -56,7 +60,7 @@ $maxInvestigateRetries = 1
 
 # --- input ----------------------------------------------------------------
 $result = $null
-if ($Event -ne 'start') {
+if ($Event -notin 'start', 'already-resolved') {
     if (-not $Path -or -not (Test-Path $Path)) { Fail "result file not found: $Path" }
     $result = Get-Content -Raw $Path | ConvertFrom-Json
     $Issue = [int]$result.issue
@@ -159,6 +163,10 @@ switch ($Event) {
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'intake question'
         }
         Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'classified'
+    }
+    'already-resolved' {
+        # Closed/done issue: collapse to the single terminal state label. No comment; nothing new happened.
+        Set-State 'factory:done'; Done 'factory:done' 'already resolved'
     }
     'start' {
         if ($current -contains 'factory:working') { Done 'factory:working' 'already working' }

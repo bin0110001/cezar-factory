@@ -18,6 +18,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
+
 # Workflow commands pass the raw task text ("GitHub issue #N (...) at <url>") so no agent has to extract it.
 if ($Issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
     $Issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)

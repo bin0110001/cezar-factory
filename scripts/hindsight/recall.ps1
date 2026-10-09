@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param([string]$Project = $env:FACTORY_PROJECT_ID, [string]$ProjectBank = $env:HINDSIGHT_PROJECT_BANK, [string]$FactoryBank = $env:HINDSIGHT_FACTORY_BANK, [Parameter(Mandatory)][string]$Objective, [Parameter(Mandatory)][string]$TaskClass, [string[]]$Keywords = @(), [string]$FailureSignature = '', [string]$OutputPath = '.factory/context/memory-recall.json')
 $ErrorActionPreference = 'Stop'
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 if (-not $Project) { $Project = (Split-Path -Leaf (Get-Location)) }
 if (-not $ProjectBank) { $ProjectBank = "project-$Project" }
 $python = Get-Command python3 -ErrorAction SilentlyContinue; if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }

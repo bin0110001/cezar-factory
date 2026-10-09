@@ -14,6 +14,8 @@ param(
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 
 $schemaFile = @{ intake = 'intake-result.schema.json'; plan = 'plan.schema.json'; implementation = 'implementation-result.schema.json'; review = 'review-result.schema.json'; investigation = 'investigation-result.schema.json' }[$Kind]
 $errors = [System.Collections.Generic.List[string]]::new()

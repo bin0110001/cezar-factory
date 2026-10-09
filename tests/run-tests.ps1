@@ -438,6 +438,25 @@ try {
     Assert 'route: start is idempotent while working' ((Invoke-Route 'start' $null 7) -eq 0)
     Set-Gh @('factory:needs-plan')
     Assert 'route: start from needs-plan refused' ((Invoke-Route 'start' $null 7) -ne 0)
+    # already-resolved: closed issues finish early, reconcile to factory:done, and later steps no-op
+    $resolvedScript = Join-Path $rp '.ai/factory/scripts/check-already-resolved.ps1'
+    $marker = Join-Path $tmp '.factory/already-resolved.json'
+    function Invoke-Resolved { Push-Location $tmp; try { $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $resolvedScript -Task 'GitHub issue #7 (x) at https://github.com/o/r/issues/7' -GhCommand $gh *>&1 | Out-Null; $global:LASTEXITCODE } finally { Pop-Location } }
+    function Set-IssueState([string]$S) { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable; $o.issueState = $S; $o | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE }
+    Set-Gh @('factory:ready'); Set-IssueState 'OPEN'
+    Assert 'resolved: open issue writes no marker' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:ready')
+    Set-IssueState 'CLOSED'
+    Assert 'resolved: closed issue writes marker and reconciles to factory:done' ((Invoke-Resolved) -eq 0 -and (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).labels -notcontains 'factory:ready')
+    Push-Location $tmp
+    try {
+        Set-Gh @('factory:done'); Set-IssueState 'CLOSED'
+        $v = & pwsh -NoProfile -File (Join-Path $rp '.ai/factory/scripts/validate-result.ps1') -Kind implementation -Path (Join-Path $tmp 'missing.json') *>&1 | Out-String
+        Assert 'resolved: validate-result skips when marker present' ($LASTEXITCODE -eq 0 -and $v -match 'already-resolved')
+        $r = & pwsh -NoProfile -File $route -Event implement-result -Path (Join-Path $tmp 'missing.json') -GhCommand $gh -ProjectPath $tmp *>&1 | Out-String
+        Assert 'resolved: route-state skips when marker present' ($LASTEXITCODE -eq 0 -and $r -match 'already-resolved')
+    } finally { Pop-Location }
+    Set-IssueState 'OPEN'; Set-Gh @('factory:ready')
+    Assert 'resolved: stale marker removed once issue is open' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker))
     Set-Gh @('factory:working')
     Assert 'route: implement success -> review' ((Invoke-Route 'implement-result' $impl) -eq 0 -and (Get-Gh).labels -contains 'factory:review')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
