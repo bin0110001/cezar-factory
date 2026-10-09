@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.37] - 2026-10-08
+
+- Restored `factory-implement-prepare` as a no-op compatibility skill so
+  projects pinned before 0.3.36 can synchronize their Factory installation.
+  Preparation is owned by the `implement` workflow; the compatibility skill
+  must not run Factory scripts or be added to new project configurations.
+
 ## [0.3.36] - 2026-10-08
 
 - Workflows now own every script. `implement` and `fix-review` run
