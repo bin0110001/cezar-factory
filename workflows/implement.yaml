@@ -31,9 +31,12 @@ steps:
       The workflow already prepared the context and moved the issue to factory:working.
       Do not run Factory lifecycle, routing, or preparation scripts and do not set any
       factory:* label. Use only the current worktree. If a command fails, inspect its
-      actual error and retry once with corrected syntax; if the tool/runtime/credential
-      is unavailable, stop and report that blocker instead of switching shells or
-      inventing paths. When done, open or update the PR, then write the structured
+      actual error and retry once with corrected syntax. Prefer structured file edits
+      over shell heredocs or nested quoting for multiline files. If the corrected
+      command also fails, or two consecutive calls are spent recovering the same
+      command failure, stop and write a failure result immediately; do not switch
+      shells, invent paths, recursively list directories, or delete/recreate files.
+      When done, open or update the PR, then write the structured
       result as JSON to .factory/implement-result.json (create the directory) with the
       issue number in "issue" and the PR URL in "pr".
   - id: targeted-tests

@@ -59,11 +59,16 @@ source: skills/factory-implement/SKILL.md
 - Invoke Factory scripts from `$FACTORY_RUNTIME_ROOT/scripts/...` and project
   scripts from the current worktree. Never hard-code `/projects/...` or another
   machine-specific path.
+- Prefer the runner's structured file-edit tool for multiline files. Avoid shell
+  heredocs and nested quoting when a structured edit is available; malformed
+  quoting can create literal paths or partial files.
 - A non-zero command is evidence to inspect: capture its complete error, check
   the command help or manual, and retry at most once with corrected syntax. If
-  the second attempt shows a missing tool, inaccessible runtime, or unavailable
-  credential, stop and write a failure result with the blocker. Do not spend
-  the run trying unrelated commands.
+  the second attempt fails—or if two consecutive tool calls are spent cleaning
+  up the same command failure—stop and write a failure result immediately with
+  the blocker. Do not list recursively, switch shells, delete/recreate paths,
+  or spend the remaining run trying unrelated recovery commands. Repeating the
+  same failed command is not a retry.
 - Do not run workflow verification or result-validation commands inside the
   skill; those are separate workflow steps. Leave the result artifact for them.
 - Do not use Cezar task/automation commands for issue lookup or implementation
