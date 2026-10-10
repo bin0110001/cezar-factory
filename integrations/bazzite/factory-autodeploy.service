@@ -1,0 +1,7 @@
+[Unit]
+Description=Fast-forward the Factory checkout to tested origin/stable and reconcile Cezar automations
+
+[Service]
+Type=oneshot
+# Adjust to this host's Factory checkout (FACTORY_CONTROL_PLANE_FACTORY_DIR in config/server-topology.env).
+ExecStart=/usr/bin/bash %h/cezar-factory/scripts/deploy/factory-autodeploy.sh

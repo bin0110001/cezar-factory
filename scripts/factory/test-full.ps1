@@ -10,6 +10,9 @@ param(
     [switch]$Quiet
 )
 
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
+
 $VerbosePreference = if ($Verbose) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference = 'SilentlyContinue'
 

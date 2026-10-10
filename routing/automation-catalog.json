@@ -17,6 +17,7 @@
     "factory-fix-review": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-maintenance": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-failure-audit": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
+    "factory-godot-upgrade": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
   },
   "jobs": [
     {"id":"state-transition","purpose":"Validate and route legal lifecycle transitions.","inputs":["structured-result"],"maxContextChars":0,"tier":"tool","workers":["route-state.ps1"],"fallback":["human"],"verifier":"exit-code-and-json","retryBudget":0,"timeoutSeconds":60,"terminal":"refused","persistenceAuthority":"cezar","approval":"none","artifact":".factory/route-result.json","observability":["issue","workflow","tier","terminalReason"]},

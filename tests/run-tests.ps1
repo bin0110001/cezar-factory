@@ -30,7 +30,7 @@ function Run([string]$Script, [hashtable]$Args2) {
 
 function Copy-Factory([string]$From, [string]$To) {
     New-Item -ItemType Directory $To | Out-Null
-    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests' } | Copy-Item -Destination $To -Recurse
+    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests', 'cezar', 'node_modules', '.factory' } | Copy-Item -Destination $To -Recurse
 }
 
 # ---- Static checks -------------------------------------------------------
@@ -69,8 +69,10 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json'
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
+'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
+'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
@@ -94,6 +96,9 @@ Assert 'implementation preparation fetches issue and captures environment' ($imp
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
+$onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
+Assert 'new-project onboarding creates dev from the default branch' ($onboardScript -match 'git/ref/heads/dev' -and $onboardScript -match 'refs/heads/dev' -and $onboardScript -match 'defaultBranchRef')
+Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 $scriptOwnershipViolations = @()
@@ -438,6 +443,25 @@ try {
     Assert 'route: start is idempotent while working' ((Invoke-Route 'start' $null 7) -eq 0)
     Set-Gh @('factory:needs-plan')
     Assert 'route: start from needs-plan refused' ((Invoke-Route 'start' $null 7) -ne 0)
+    # already-resolved: closed issues finish early, reconcile to factory:done, and later steps no-op
+    $resolvedScript = Join-Path $rp '.ai/factory/scripts/check-already-resolved.ps1'
+    $marker = Join-Path $tmp '.factory/already-resolved.json'
+    function Invoke-Resolved { Push-Location $tmp; try { $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $resolvedScript -Task 'GitHub issue #7 (x) at https://github.com/o/r/issues/7' -GhCommand $gh *>&1 | Out-Null; $global:LASTEXITCODE } finally { Pop-Location } }
+    function Set-IssueState([string]$S) { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable; $o.issueState = $S; $o | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE }
+    Set-Gh @('factory:ready'); Set-IssueState 'OPEN'
+    Assert 'resolved: open issue writes no marker' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:ready')
+    Set-IssueState 'CLOSED'
+    Assert 'resolved: closed issue writes marker and reconciles to factory:done' ((Invoke-Resolved) -eq 0 -and (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).labels -notcontains 'factory:ready')
+    Push-Location $tmp
+    try {
+        Set-Gh @('factory:done'); Set-IssueState 'CLOSED'
+        $v = & pwsh -NoProfile -File (Join-Path $rp '.ai/factory/scripts/validate-result.ps1') -Kind implementation -Path (Join-Path $tmp 'missing.json') *>&1 | Out-String
+        Assert 'resolved: validate-result skips when marker present' ($LASTEXITCODE -eq 0 -and $v -match 'already-resolved')
+        $r = & pwsh -NoProfile -File $route -Event implement-result -Path (Join-Path $tmp 'missing.json') -GhCommand $gh -ProjectPath $tmp *>&1 | Out-String
+        Assert 'resolved: route-state skips when marker present' ($LASTEXITCODE -eq 0 -and $r -match 'already-resolved')
+    } finally { Pop-Location }
+    Set-IssueState 'OPEN'; Set-Gh @('factory:ready')
+    Assert 'resolved: stale marker removed once issue is open' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker))
     Set-Gh @('factory:working')
     Assert 'route: implement success -> review' ((Invoke-Route 'implement-result' $impl) -eq 0 -and (Get-Gh).labels -contains 'factory:review')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
@@ -559,7 +583,12 @@ try {
         Assert 'prune deletes obsolete factory automation' (-not (@((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations").automations | ForEach-Object { $_.id }) -contains 'f-old'))
         Assert 'sync records factory version in description' ((Invoke-RestMethod "http://127.0.0.1:$port/api/v1/automations/a100").automation.description -match "cezar-factory $([regex]::Escape($curVer))")
         Clear-Content $log
-        & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-only' -DryRun *>&1 | Out-Null
+        & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-only' -DryRun *>&1 | Out-String | Set-Variable plainSync
+        $plainCode = $LASTEXITCODE
+        $godotSync = & pwsh -NoProfile -File (Join-Path $factory 'scripts/sync-automations.ps1') -SourceOnly -FactoryPath $factory -ApiUrl "http://127.0.0.1:$port" -ProjectId 'remote-godot' -ProjectType godot -DryRun *>&1 | Out-String
+        Assert 'godot-upgrade automation is skipped for non-Godot remote targets' ($plainSync -notmatch 'godot-upgrade')
+        Assert 'godot-upgrade automation is synced to Godot remote targets' ($godotSync -match 'godot-upgrade')
+        $global:LASTEXITCODE = $plainCode
         Assert 'source-only sync works without a project checkout' ($LASTEXITCODE -eq 0 -and -not (Select-String -Path $log -Pattern '^(POST|PUT|DELETE)' -Quiet))
         $remoteTargets = Join-Path $tmp 'remote-targets.json'
         @(@{ apiUrl = "http://127.0.0.1:$port"; projectId = 'remote-only' }) | ConvertTo-Json -Depth 4 | Set-Content $remoteTargets
@@ -567,6 +596,134 @@ try {
         Assert 'release supports remote-only target registry entries' ($LASTEXITCODE -eq 0)
     }
     finally { if ($srv -and -not $srv.HasExited) { $srv.Kill() } }
+
+
+# ---- Shared Factory (stable gate, mounted workflows, migration) -------------
+Write-Host '== shared factory =='
+$bazzCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
+Assert 'Cezar loads Factory workflows and skills from the mounted checkout' ($bazzCompose -match 'CEZ_SHARED_WORKFLOWS_DIRS:.*/workflows' -and $bazzCompose -match 'CEZ_SHARED_SKILL_DIRS:.*/skills')
+$autodeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/factory-autodeploy.sh')
+Assert 'autodeploy only fast-forwards, refuses dirty or diverged checkouts, and never resets' ($autodeploy -match 'merge-base --is-ancestor' -and $autodeploy -match 'BLOCKED' -and $autodeploy -notmatch 'reset --hard|git clean|git stash')
+Assert 'autodeploy tracks the tested stable branch' ($autodeploy -match 'FACTORY_DEPLOY_BRANCH:-stable')
+
+$sg = Join-Path $tmp 'shared'
+New-Item -ItemType Directory $sg | Out-Null
+$sgOrigin = Join-Path $sg 'origin.git'; $sgWork = Join-Path $sg 'work'
+& git init -q --bare $sgOrigin
+& git clone -q $sgOrigin $sgWork 2>&1 | Out-Null
+foreach ($rel in @('scripts/validate-automation-catalog.ps1', 'routing/automation-catalog.json', 'routing/local-jobs.yaml', 'routing/default.yaml') + @(Get-ChildItem (Join-Path $factory 'automations') -Filter *.json | ForEach-Object { "automations/$($_.Name)" })) {
+    New-Item -ItemType Directory -Force (Split-Path (Join-Path $sgWork $rel)) | Out-Null
+    Copy-Item (Join-Path $factory $rel) (Join-Path $sgWork $rel)
+}
+$okTests = Join-Path $sg 'ok.ps1'; $badTests = Join-Path $sg 'bad.ps1'
+Set-Content $okTests 'exit 0'; Set-Content $badTests 'exit 1'
+$promote = Join-Path $scripts 'release/promote-stable.ps1'
+Push-Location $sgWork
+try {
+    & git config user.email t@example.com; & git config user.name t
+    & git checkout -q -b main
+    & git add -A; & git commit -q -m one
+    function Promote([string]$Tests) { & pwsh -NoProfile -File $promote -FactoryPath $sgWork -TestScript $Tests -ReportPath (Join-Path $sg 'report.jsonl') *>&1 | Out-Null; $LASTEXITCODE }
+    Assert 'promote: failing tests never create stable' ((Promote $badTests) -ne 0 -and -not (& git ls-remote --heads origin stable))
+    Assert 'promote: passing tests push stable' ((Promote $okTests) -eq 0 -and ((& git ls-remote --heads origin stable) -match (& git rev-parse HEAD)))
+    $first = (& git rev-parse HEAD)
+    Set-Content 'two.txt' 'two'; & git add -A; & git commit -q -m two
+    Assert 'promote: failing tests leave stable on the old commit' ((Promote $badTests) -ne 0 -and ((& git ls-remote --heads origin stable) -match $first))
+    Assert 'promote: stable fast-forwards on a later pass' ((Promote $okTests) -eq 0 -and ((& git ls-remote --heads origin stable) -match (& git rev-parse HEAD)))
+    & git reset -q --hard $first; Set-Content 'diverged.txt' 'x'; & git add -A; & git commit -q -m diverged
+    Assert 'promote: refuses to move stable off its history' ((Promote $okTests) -ne 0)
+    Set-Content 'two.txt' 'dirty'
+    Assert 'promote: refuses an uncommitted tree' ((Promote $okTests) -ne 0)
+}
+finally { Pop-Location }
+
+$noRegistry = & pwsh -NoProfile -File (Join-Path $scripts 'sync-all-automations.ps1') -FactoryPath $factory -RegistryPath (Join-Path $sg 'missing.json') *>&1 | Out-String
+Assert 'sync-all refuses to run without a target registry' ($LASTEXITCODE -ne 0 -and $noRegistry -match 'No target registry')
+
+$mp = Join-Path $tmp 'migrate-project'
+Copy-Item (Join-Path $PSScriptRoot 'fixtures/godot-project') $mp -Recurse
+$mcfg = Join-Path $mp '.ai/factory/factory.config.yaml'
+[IO.File]::WriteAllText($mcfg, [regex]::Replace([IO.File]::ReadAllText($mcfg), '(?m)^(\s*version:\s*)"\d+\.\d+\.\d+"', "`${1}`"$curVer`""), [Text.UTF8Encoding]::new($false))
+Assert 'migrate: fixture installs' ((Run 'install.ps1' @{ ProjectPath = $mp; FactoryPath = $factory }).Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+Add-Content (Join-Path $mp '.ai/skills/factory-plan/SKILL.md') 'local edit'
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp }
+Assert 'migrate: a locally edited managed file blocks and nothing is removed' ($r.Code -ne 0 -and (Test-Path (Join-Path $mp '.ai/skills/factory-plan/SKILL.md')) -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true; DryRun = $true }
+Assert 'migrate: dry-run removes nothing' ($r.Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true }
+Assert 'migrate: removes installed workflows, skills and manifest but keeps project config' ($r.Code -eq 0 -and -not (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')) -and -not (Test-Path (Join-Path $mp '.ai/skills/factory-plan')) -and -not (Test-Path (Join-Path $mp '.ai/factory/manifest.json')) -and (Test-Path $mcfg))
+
+# ---- Godot upgrade -------------------------------------------------------
+Write-Host '== godot upgrade =='
+$godotDockerfile = Get-Content -Raw (Join-Path $factory 'cezar/Dockerfile')
+Assert 'Cezar image maps GODOT_BIN to the version selector' ($godotDockerfile -match 'GODOT_BIN=/usr/local/bin/godot' -and $godotDockerfile -match 'godot-select\.sh' -and $godotDockerfile -match 'GODOT_VERSIONS_DIR')
+Assert 'Godot versions live on a persistent volume in both compose files' ((Get-Content -Raw (Join-Path $factory 'cezar/compose.yaml')) -match 'godot-versions:/opt/godot-versions' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'godot-versions:/opt/godot-versions')
+Assert 'godot-upgrade automation is gated to Godot projects' ((Get-Content -Raw (Join-Path $factory 'automations/godot-upgrade.json')) -match '"projectType":\s*"godot"')
+
+$gd = Join-Path $tmp 'godot'
+New-Item -ItemType Directory $gd | Out-Null
+$origin = Join-Path $gd 'origin.git'
+$work = Join-Path $gd 'work'
+& git init -q --bare $origin
+& git clone -q $origin $work 2>&1 | Out-Null
+Push-Location $work
+try {
+    & git config user.email t@example.com; & git config user.name t
+    & git checkout -q -b main
+    New-Item -ItemType Directory -Force '.ai/factory' | Out-Null
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 0`"`n"
+    Set-Content '.godot-version' '4.7-stable'
+    & git add -A; & git commit -q -m init; & git push -q -u origin main 2>&1 | Out-Null
+    & git remote set-head origin main 2>&1 | Out-Null
+    $installer = Join-Path $gd 'fake-install.ps1'
+    Set-Content $installer 'Write-Output "/fake/$($args[0])/godot"'
+    $up = Join-Path $scripts 'godot-upgrade.ps1'
+    function GodotStep([string]$Step, [string[]]$More = @()) {
+        $out = & pwsh -NoProfile -File $up -Step $Step -InstallCommand $installer @More 2>&1 | Out-String
+        [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
+    }
+
+    $r = GodotStep check @('-LatestTag', '4.7-stable')
+    Assert 'godot check: same version is a no-op' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+    $r = GodotStep check @('-LatestTag', '4.8-rc1')
+    Assert 'godot check: prerelease is ignored' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+    $r = GodotStep check @('-LatestTag', '4.8-stable')
+    Assert 'godot check: newer stable is an upgrade' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'upgrade')
+    $r = GodotStep stage
+    Assert 'godot stage installs the target version' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).godotBin -eq '/fake/4.8-stable/godot')
+    $r = GodotStep apply
+    Assert 'godot apply pins the version on a pushed branch' ($r.Code -eq 0 -and (Get-Content -Raw .godot-version).Trim() -eq '4.8-stable' -and (& git ls-remote --heads origin factory/godot-4.8))
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot test passes with the project command' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 3`"`n"
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot test -AllowFailure records a failure without failing the step' ($r.Code -eq 0 -and -not (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
+    $r = GodotStep test
+    Assert 'godot test fails the step when tests fail (drives the fix retry)' ($r.Code -ne 0)
+    $r = GodotStep publish
+    Assert 'godot publish refuses when tests failed' ($r.Code -ne 0)
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 0`"`n"
+    Set-Content 'fix.gd' 'extends Node'
+    GodotStep test | Out-Null
+
+    $ghState = Join-Path $gd 'gh.json'
+    Set-Content $ghState '{"labels":[],"comments":[],"issues":[]}'
+    $env:FAKE_GH_STATE = $ghState
+    $fakePr = Join-Path $gd 'fake-gh-pr.ps1'
+    Set-Content $fakePr @'
+$a = @($args)
+if ($a[0] -eq 'pr' -and $a[1] -eq 'create') { 'https://github.com/x/y/pull/7'; exit 0 }
+if ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { exit 0 }
+Write-Error "unsupported $($a -join ' ')"; exit 2
+'@
+    $r = GodotStep publish @('-GhCommand', $fakePr)
+    $published = Get-Content -Raw .factory/godot-upgrade-result.json | ConvertFrom-Json
+    Assert 'godot publish opens a PR with auto-merge and commits the fixes' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
+    Remove-Item Env:FAKE_GH_STATE -ErrorAction SilentlyContinue
+    $r = GodotStep check @('-LatestTag', '4.8-stable')
+    Assert 'godot check: an existing upgrade branch suppresses re-attempts' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')
+}
+finally { Pop-Location }
 }
 finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 

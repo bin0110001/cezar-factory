@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.42] - 2026-10-09
+
+- One place to update: Cezar now loads Factory workflows and skills directly from the mounted
+  Factory checkout (`CEZ_SHARED_WORKFLOWS_DIRS` / `CEZ_SHARED_SKILL_DIRS`; project files still win
+  by name). `scripts/release/promote-stable.ps1` moves `origin/stable` only after the full test
+  suite passes, and `scripts/deploy/factory-autodeploy.sh` (systemd timer) fast-forwards the
+  Bazzite checkout to it and reconciles automations. `scripts/migrate-to-shared.ps1` removes a
+  project's installed copy. See `docs/shared-factory.md`.
+- Fixed the test suite hanging (`reconcile-backlog.ps1` assigned the automatic `$input` variable)
+  and the fixtures copying the vendored `cezar/` tree.
+
+## [0.3.41] - 2026-10-09
+
+- `GODOT_BIN` in the Cezar image is now a per-project version selector backed by a persistent
+  `godot-versions` volume; Godot versions install on demand (checksum-verified), so adopting a
+  new release needs no image rebuild or container restart. See `docs/godot-upgrades.md`.
+- Added the `factory-godot-upgrade` workflow, skill, and daily `[factory] godot-upgrade`
+  automation: detect a new stable Godot, pin it on a branch, run the project's Godot tests,
+  let the agent fix regressions, and open an auto-merge PR. Enabled with `features.godot_upgrade`
+  or, for remote-only targets, `"projectType": "godot"` in the target registry.
+
 ## [0.3.40] - 2026-10-09
 
 - Release synchronization now emits JSON-line status records and persists them

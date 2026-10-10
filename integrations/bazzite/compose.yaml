@@ -10,6 +10,11 @@ services:
       # Cezar executes Factory workflows in Linux; this is the in-container
       # mount path, not a Windows host path.
       FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
+      # Factory workflows and skills are loaded straight from the mounted checkout for every
+      # project (a project's own .ai/ files still win by name), so a Factory update needs no
+      # per-project copy. Updating the checkout is the only deployment step.
+      CEZ_SHARED_WORKFLOWS_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/workflows
+      CEZ_SHARED_SKILL_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/skills
     volumes:
       # Preserve the shared project checkouts; the Factory bind mount below
       # overlays only /projects/cezar-factory.
@@ -18,6 +23,8 @@ services:
       # The Factory checkout is immutable at runtime; Cezar still needs a
       # persistent writable home for run receipts and worktree metadata.
       - cezar-factory-runtime:/projects/cezar-factory/.ai/cezar:Z
+      # Godot versions install on demand into this volume; a project pins one in .godot-version.
+      - godot-versions:/opt/godot-versions
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -157,6 +164,7 @@ services:
 
 volumes:
   cezar-factory-runtime:
+  godot-versions:
   prometheus-data:
   grafana-data:
   openhands-data:

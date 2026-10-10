@@ -150,3 +150,9 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
 - Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
 - Result files live under `.factory/`, which projects gitignore; never commit them.
+
+## Already-resolved issues
+
+The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
+writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
+resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.

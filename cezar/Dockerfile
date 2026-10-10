@@ -52,6 +52,30 @@ RUN apt-get update \
  && chmod +x /opt/microsoft/powershell/7/pwsh \
  && ln -s /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
 
+# Godot: headless imports/tests/exports for Godot projects.
+# GODOT_BIN is a selector (godot-select.sh) that runs the version a project pins in its
+# `.godot-version` file, installing it on demand into GODOT_VERSIONS_DIR. That directory is a
+# persistent volume (see compose.yaml), so adopting a new Godot release is a PR to the project
+# that bumps its pin: no image rebuild or container restart. GODOT_VERSION/GODOT_CHANNEL below
+# only choose the baseline that is pre-installed and used by projects with no pin.
+ARG GODOT_VERSION=4.7
+ARG GODOT_CHANNEL=stable
+ENV GODOT_VERSIONS_DIR=/opt/godot-versions \
+    GODOT_DEFAULT_VERSION=${GODOT_VERSION}-${GODOT_CHANNEL} \
+    GODOT_BIN=/usr/local/bin/godot
+COPY godot-install.sh /usr/local/bin/godot-install
+COPY godot-select.sh /usr/local/bin/godot
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends unzip libfontconfig1 libx11-6 libxcursor1 \
+      libxext6 libxi6 libxinerama1 libxrandr2 libxrender1 libgl1 libudev1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && chmod +x /usr/local/bin/godot-install /usr/local/bin/godot \
+ && bin="$(godot-install "$GODOT_DEFAULT_VERSION")" \
+ && ! ldd "$bin" | grep "not found" \
+ && godot --version \
+ && chmod -R a+rX "$GODOT_VERSIONS_DIR" \
+ && chown -R 1001:1001 "$GODOT_VERSIONS_DIR"
+
 COPY --from=build /out/*.tgz /tmp/cezar.tgz
 RUN npm install -g /tmp/cezar.tgz && rm /tmp/cezar.tgz
 

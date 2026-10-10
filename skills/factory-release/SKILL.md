@@ -25,6 +25,23 @@ Use this skill after any change under `scripts/`, `skills/`, `workflows/`,
 - Stop on a target failure and report the exact target; do not silently skip
   it or redirect to another project.
 
+## Shared-mount release (default)
+
+Projects use the Factory checkout mounted into Cezar, so releasing means promoting a tested
+commit, not copying files into projects:
+
+1. Make sure the change is committed and pushed, and the working tree is clean.
+2. `pwsh -NoProfile -File .\scriptselease\promote-stable.ps1` runs the automation catalog check
+   and the full test suite, then fast-forwards `origin/stable`. If it fails, stop and report the
+   failure; never bypass it.
+3. The Bazzite `factory-autodeploy` timer fast-forwards the mounted checkout and reconciles
+   automations within five minutes. To deploy immediately use the `homelab-ssh` instructions to run
+   `scripts/deploy/factory-autodeploy.sh --force` on the host, and report any BLOCKED exit (20 dirty,
+   21 diverged, 22 container/host version mismatch) without touching the checkout.
+
+The procedure below is the legacy per-project path; use it only for a project whose registry entry
+is not `"mode": "shared"`.
+
 ## Procedure
 
 1. Validate the changed assets and automation catalog.

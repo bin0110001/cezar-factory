@@ -91,3 +91,9 @@ Produce an investigation result conforming to `investigation-result.schema.json`
   "automaticRetryAppropriate": true | false
 }
 ```
+
+## Already-resolved issues
+
+The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
+writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
+resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.
