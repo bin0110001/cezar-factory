@@ -64,7 +64,11 @@ if ($ProjectId) {
         $apiBase = "$($ApiUrl.TrimEnd('/'))/api/v1/p/$([uri]::EscapeDataString($ProjectId))"
         $payload = (Invoke-WebRequest -UseBasicParsing -Uri "$apiBase/runs" -Method Get).Content | ConvertFrom-Json
         $runs = if ($payload.PSObject.Properties.Name -contains 'runs') { @($payload.runs) } else { @($payload) }
-        foreach ($run in ($runs | Where-Object { $_.issueNumber } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) })) {
+        foreach ($run in ($runs | Where-Object {
+            $_.PSObject.Properties.Name -contains 'issueNumber' -and
+            $null -ne $_.issueNumber -and
+            [string]$_.issueNumber -ne ''
+        } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) })) {
             $latestRunStatus[[int]$run.issueNumber] = [string]$run.status
         }
     } catch {
