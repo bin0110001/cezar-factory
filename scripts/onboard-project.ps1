@@ -71,11 +71,11 @@ $summary = [ordered]@{
     dryRun = [bool]$DryRun
 }
 
-$devRefArgs = @('api', "repos/$script:repo/git/ref/heads/dev", '--silent')
+$devRefArgs = @('api', "repos/$script:repo/git/ref/heads/dev")
 $devExists = $true
 try { Invoke-Gh $devRefArgs | Out-Null } catch { $devExists = $false }
 if (-not $devExists) {
-    $defaultRef = Invoke-GhJson @('api', "repos/$script:repo/git/ref/heads/$defaultBranch", '--silent')
+    $defaultRef = Invoke-GhJson @('api', "repos/$script:repo/git/ref/heads/$defaultBranch")
     if ($DryRun) { Write-Host "[DRY-RUN] gh api repos/$script:repo/git/refs --method POST -f ref=refs/heads/dev -f sha=$($defaultRef.object.sha)" }
     else { Invoke-Gh @('api', "repos/$script:repo/git/refs", '--method', 'POST', '--raw-field', 'ref=refs/heads/dev', '--raw-field', "sha=$($defaultRef.object.sha)") | Out-Null }
     $summary.devBranch = 'created'
