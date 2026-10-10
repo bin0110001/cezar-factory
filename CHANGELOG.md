@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.42] - 2026-10-09
+
+- One place to update: Cezar now loads Factory workflows and skills directly from the mounted
+  Factory checkout (`CEZ_SHARED_WORKFLOWS_DIRS` / `CEZ_SHARED_SKILL_DIRS`; project files still win
+  by name). `scripts/release/promote-stable.ps1` moves `origin/stable` only after the full test
+  suite passes, and `scripts/deploy/factory-autodeploy.sh` (systemd timer) fast-forwards the
+  Bazzite checkout to it and reconciles automations. `scripts/migrate-to-shared.ps1` removes a
+  project's installed copy. See `docs/shared-factory.md`.
+- Fixed the test suite hanging (`reconcile-backlog.ps1` assigned the automatic `$input` variable)
+  and the fixtures copying the vendored `cezar/` tree.
+
 ## [0.3.41] - 2026-10-09
 
 - `GODOT_BIN` in the Cezar image is now a per-project version selector backed by a persistent

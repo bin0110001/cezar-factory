@@ -92,7 +92,9 @@ $bazziteDeployments = @{}
 
 foreach ($target in $targets) {
     if (-not $target.projectPath -and -not $target.projectId) { throw 'Each update target requires projectPath or projectId.' }
-    if (-not $target.projectPath) {
+    # mode 'shared': the project uses the mounted Factory (Cezar loads workflows and skills from it), so only
+    # automations are synchronized even when a local checkout exists.
+    if (-not $target.projectPath -or ($target.PSObject.Properties.Name -contains 'mode' -and $target.mode -eq 'shared')) {
         if (-not $SyncAutomations) { throw "Remote Cezar target '$($target.projectId)' requires -SyncAutomations." }
         if (-not $target.apiUrl) { throw "Remote Cezar target '$($target.projectId)' requires apiUrl." }
         $syncArgs = @('-NoProfile', '-File', (Join-Path $factory 'scripts/sync-automations.ps1'), '-SourceOnly', '-FactoryPath', $factory, '-ApiUrl', $target.apiUrl, '-ProjectId', $target.projectId)

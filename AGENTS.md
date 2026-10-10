@@ -21,7 +21,13 @@ It must stop on failed validation, missing target configuration, dirty or
 mismatched remote checkouts, or missing review gates rather than overwriting
 state.
 
-The default release pipeline is remote-only Cezar synchronization: read
+Factory content reaches Cezar through the shared mount (`docs/shared-factory.md`): after a change
+is merged, run `scripts/release/promote-stable.ps1` (it runs the full test suite and only then
+fast-forwards `origin/stable`); the Bazzite host's `factory-autodeploy` timer fast-forwards the
+mounted checkout to `stable` and reconciles automations. Never promote or deploy an untested
+commit, and never edit the Bazzite checkout by hand.
+
+The legacy per-project release pipeline is remote-only Cezar synchronization: read
 `apiUrl` and `projectId` from `config/factory-projects.json` and synchronize
 the Factory checkout's automation definitions directly to each Cezar project.
 Use a local `projectPath` only as a fallback when a project must receive the

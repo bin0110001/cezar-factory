@@ -10,6 +10,11 @@ services:
       # Cezar executes Factory workflows in Linux; this is the in-container
       # mount path, not a Windows host path.
       FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
+      # Factory workflows and skills are loaded straight from the mounted checkout for every
+      # project (a project's own .ai/ files still win by name), so a Factory update needs no
+      # per-project copy. Updating the checkout is the only deployment step.
+      CEZ_SHARED_WORKFLOWS_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/workflows
+      CEZ_SHARED_SKILL_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/skills
     volumes:
       # Preserve the shared project checkouts; the Factory bind mount below
       # overlays only /projects/cezar-factory.

@@ -71,7 +71,8 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
-'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh'
+'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
+'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
@@ -592,6 +593,62 @@ try {
         Assert 'release supports remote-only target registry entries' ($LASTEXITCODE -eq 0)
     }
     finally { if ($srv -and -not $srv.HasExited) { $srv.Kill() } }
+
+
+# ---- Shared Factory (stable gate, mounted workflows, migration) -------------
+Write-Host '== shared factory =='
+$bazzCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
+Assert 'Cezar loads Factory workflows and skills from the mounted checkout' ($bazzCompose -match 'CEZ_SHARED_WORKFLOWS_DIRS:.*/workflows' -and $bazzCompose -match 'CEZ_SHARED_SKILL_DIRS:.*/skills')
+$autodeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/factory-autodeploy.sh')
+Assert 'autodeploy only fast-forwards, refuses dirty or diverged checkouts, and never resets' ($autodeploy -match 'merge-base --is-ancestor' -and $autodeploy -match 'BLOCKED' -and $autodeploy -notmatch 'reset --hard|git clean|git stash')
+Assert 'autodeploy tracks the tested stable branch' ($autodeploy -match 'FACTORY_DEPLOY_BRANCH:-stable')
+
+$sg = Join-Path $tmp 'shared'
+New-Item -ItemType Directory $sg | Out-Null
+$sgOrigin = Join-Path $sg 'origin.git'; $sgWork = Join-Path $sg 'work'
+& git init -q --bare $sgOrigin
+& git clone -q $sgOrigin $sgWork 2>&1 | Out-Null
+foreach ($rel in @('scripts/validate-automation-catalog.ps1', 'routing/automation-catalog.json', 'routing/local-jobs.yaml', 'routing/default.yaml') + @(Get-ChildItem (Join-Path $factory 'automations') -Filter *.json | ForEach-Object { "automations/$($_.Name)" })) {
+    New-Item -ItemType Directory -Force (Split-Path (Join-Path $sgWork $rel)) | Out-Null
+    Copy-Item (Join-Path $factory $rel) (Join-Path $sgWork $rel)
+}
+$okTests = Join-Path $sg 'ok.ps1'; $badTests = Join-Path $sg 'bad.ps1'
+Set-Content $okTests 'exit 0'; Set-Content $badTests 'exit 1'
+$promote = Join-Path $scripts 'release/promote-stable.ps1'
+Push-Location $sgWork
+try {
+    & git config user.email t@example.com; & git config user.name t
+    & git checkout -q -b main
+    & git add -A; & git commit -q -m one
+    function Promote([string]$Tests) { & pwsh -NoProfile -File $promote -FactoryPath $sgWork -TestScript $Tests -ReportPath (Join-Path $sg 'report.jsonl') *>&1 | Out-Null; $LASTEXITCODE }
+    Assert 'promote: failing tests never create stable' ((Promote $badTests) -ne 0 -and -not (& git ls-remote --heads origin stable))
+    Assert 'promote: passing tests push stable' ((Promote $okTests) -eq 0 -and ((& git ls-remote --heads origin stable) -match (& git rev-parse HEAD)))
+    $first = (& git rev-parse HEAD)
+    Set-Content 'two.txt' 'two'; & git add -A; & git commit -q -m two
+    Assert 'promote: failing tests leave stable on the old commit' ((Promote $badTests) -ne 0 -and ((& git ls-remote --heads origin stable) -match $first))
+    Assert 'promote: stable fast-forwards on a later pass' ((Promote $okTests) -eq 0 -and ((& git ls-remote --heads origin stable) -match (& git rev-parse HEAD)))
+    & git reset -q --hard $first; Set-Content 'diverged.txt' 'x'; & git add -A; & git commit -q -m diverged
+    Assert 'promote: refuses to move stable off its history' ((Promote $okTests) -ne 0)
+    Set-Content 'two.txt' 'dirty'
+    Assert 'promote: refuses an uncommitted tree' ((Promote $okTests) -ne 0)
+}
+finally { Pop-Location }
+
+$noRegistry = & pwsh -NoProfile -File (Join-Path $scripts 'sync-all-automations.ps1') -FactoryPath $factory -RegistryPath (Join-Path $sg 'missing.json') *>&1 | Out-String
+Assert 'sync-all refuses to run without a target registry' ($LASTEXITCODE -ne 0 -and $noRegistry -match 'No target registry')
+
+$mp = Join-Path $tmp 'migrate-project'
+Copy-Item (Join-Path $PSScriptRoot 'fixtures/godot-project') $mp -Recurse
+$mcfg = Join-Path $mp '.ai/factory/factory.config.yaml'
+[IO.File]::WriteAllText($mcfg, [regex]::Replace([IO.File]::ReadAllText($mcfg), '(?m)^(\s*version:\s*)"\d+\.\d+\.\d+"', "`${1}`"$curVer`""), [Text.UTF8Encoding]::new($false))
+Assert 'migrate: fixture installs' ((Run 'install.ps1' @{ ProjectPath = $mp; FactoryPath = $factory }).Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+Add-Content (Join-Path $mp '.ai/skills/factory-plan/SKILL.md') 'local edit'
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp }
+Assert 'migrate: a locally edited managed file blocks and nothing is removed' ($r.Code -ne 0 -and (Test-Path (Join-Path $mp '.ai/skills/factory-plan/SKILL.md')) -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true; DryRun = $true }
+Assert 'migrate: dry-run removes nothing' ($r.Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true }
+Assert 'migrate: removes installed workflows, skills and manifest but keeps project config' ($r.Code -eq 0 -and -not (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')) -and -not (Test-Path (Join-Path $mp '.ai/skills/factory-plan')) -and -not (Test-Path (Join-Path $mp '.ai/factory/manifest.json')) -and (Test-Path $mcfg))
 
 # ---- Godot upgrade -------------------------------------------------------
 Write-Host '== godot upgrade =='
