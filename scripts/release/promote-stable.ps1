@@ -41,7 +41,8 @@ function Write-Report([string]$Status, [string]$Detail, [string]$Sha) {
 }
 
 $sha = ((Invoke-Git @('rev-parse', 'HEAD')) -join '').Trim()
-$dirty = @(Invoke-Git @('status', '--porcelain', '--untracked-files=no'))
+$dirty = @(& git -C $factory status --porcelain --untracked-files=no 2>$null)
+if ($LASTEXITCODE -ne 0) { throw 'git status failed while checking the Factory working tree.' }
 if ($dirty.Count) { Write-Report 'refused' 'Working tree has uncommitted tracked changes; commit them so the tested tree is the promoted commit.' $sha; exit 1 }
 
 & pwsh -NoProfile -File (Join-Path $factory 'scripts/validate-automation-catalog.ps1')
