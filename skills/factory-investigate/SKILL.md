@@ -82,6 +82,7 @@ Produce an investigation result conforming to `investigation-result.schema.json`
 
 ```json
 {
+  "issue": 272,
   "failureClassification": "implementation | test | flaky-test | environment | dependency | merge-conflict | requirements | architecture | unknown",
   "evidence": "Summary of evidence collected",
   "attemptsReviewed": "Description of previous attempts and outcomes",
