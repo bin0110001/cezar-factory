@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.43] - 2026-10-11
+
+- Added a workflow-owned post-implementation guard that ensures successful PRs
+  contain a GitHub closing reference for their Factory issue.
+
 ## [0.3.42] - 2026-10-09
 
 - One place to update: Cezar now loads Factory workflows and skills directly from the mounted
