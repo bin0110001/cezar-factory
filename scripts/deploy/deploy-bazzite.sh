@@ -55,6 +55,7 @@ required_runtime_files=(
   scripts/validate-intake-or-no-work.ps1
   scripts/route-intake-or-no-work.ps1
   scripts/audit-backlog-labels.ps1
+  scripts/recover-audit-reservations.ps1
   scripts/maintain-repository.ps1
 )
 for runtime_file in "${required_runtime_files[@]}"; do

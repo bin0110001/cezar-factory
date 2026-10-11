@@ -70,6 +70,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/recover-audit-reservations.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
@@ -106,6 +107,7 @@ Assert 'new-project onboarding creates dev from the default branch' ($onboardScr
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
+Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -540,7 +542,22 @@ try {
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
     Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels -contains 'factory:auditing')
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
+    Assert 'backlog audit input: reservation marker is durable' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
     Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
+
+    $recoveryOutput = Join-Path $tmp 'audit-reservation-recovery.json'
+    $expired = @{ issue = 5; owner = 'test'; createdAt = '2020-01-01T00:00:00Z'; expiresAt = '2020-01-01T01:00:00Z' } | ConvertTo-Json -Compress
+    Set-Gh @('factory:auditing') @("<!-- factory-audit-reservation:5 -->`n$expired")
+    $recoveryState = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
+    $recoveryState.issueState = 'OPEN'
+    $recoveryState.issues = @(@{ number = 5; title = 'Stale audit'; body = 'audit fixture'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:auditing' }); url = 'https://github.com/x/y/issues/5' })
+    $recoveryState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $recoveryScript = Join-Path $rp '.ai/factory/scripts/recover-audit-reservations.ps1'
+    $recoveryLog = & pwsh -NoProfile -File $recoveryScript -GhCommand $gh -OutputPath $recoveryOutput -SkipRunCheck *>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Write-Host "  recovery diagnostic: $recoveryLog" }
+    $recovery = Get-Content -Raw $recoveryOutput | ConvertFrom-Json
+    Assert 'audit recovery releases expired reservation' ($LASTEXITCODE -eq 0 -and @($recovery.recovered).Count -eq 1 -and (Get-Gh).labels -notcontains 'factory:auditing')
+    Assert 'audit recovery leaves an evidence comment' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-recovery:5' }).Count -eq 1)
 
     # Project override fully replaces a factory file, and survives re-sync.
     $ovDir = Join-Path $rp '.ai/factory/overrides/policies'

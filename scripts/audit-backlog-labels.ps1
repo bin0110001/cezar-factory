@@ -39,6 +39,23 @@ function Get-IssueBody([int]$IssueNumber) {
     [string]$view.body
 }
 
+function Add-AuditReservation([int]$IssueNumber) {
+    $marker = "<!-- factory-audit-reservation:$IssueNumber -->"
+    $reservation = [ordered]@{
+        issue = $IssueNumber
+        owner = if ($env:CEZAR_PROJECT_ID) { [string]$env:CEZAR_PROJECT_ID } else { 'factory-maintenance' }
+        createdAt = [DateTimeOffset]::UtcNow.ToString('o')
+        expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(90).ToString('o')
+    }
+    $temp = Join-Path ([IO.Path]::GetTempPath()) "factory-audit-$([guid]::NewGuid()).md"
+    try {
+        "$marker`n$($reservation | ConvertTo-Json -Compress)" | Set-Content -NoNewline $temp
+        Invoke-Gh @('issue', 'comment', [string]$IssueNumber, '--body-file', $temp) | Out-Null
+    } finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # Use the installed script beside this one, not FACTORY_RUNTIME_ROOT. The
 # latter is only available to Cezar check steps and was absent in the pilot.
 $labelArgs = @{ GhCommand = $GhCommand }
@@ -113,7 +130,10 @@ foreach ($candidate in $unmarked) {
     # here, before the LLM step, so the LLM never performs issue discovery.
     if ($remainingCandidates.Count -ge $Limit) { continue }
     $candidate.body = Get-IssueBody ([int]$candidate.number)
-    if (-not $DryRun) { Invoke-Gh @('issue', 'edit', [string]$candidate.number, '--add-label', 'factory:auditing') | Out-Null }
+    if (-not $DryRun) {
+        Invoke-Gh @('issue', 'edit', [string]$candidate.number, '--add-label', 'factory:auditing') | Out-Null
+        Add-AuditReservation ([int]$candidate.number)
+    }
     $staged += [ordered]@{
         issue = $candidate.number
         added = @('factory:auditing')
