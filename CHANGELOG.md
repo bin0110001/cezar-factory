@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.44] - 2026-10-11
+
+- Added expiring, Cezar-aware recovery for abandoned `factory:auditing`
+  reservations, with durable reservation markers, recovery evidence, and
+  regression coverage.
+
 ## [0.3.43] - 2026-10-11
 
 - Added a workflow-owned post-implementation guard that ensures successful PRs
