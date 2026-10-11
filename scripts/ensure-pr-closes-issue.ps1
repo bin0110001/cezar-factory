@@ -31,7 +31,10 @@ if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
 
 $result = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
 $issue = [int]$result.issue
-if ($result.status -ne 'success') { throw 'Only a successful implementation can update PR closing metadata.' }
+if ($result.status -ne 'success') {
+    Write-Output (@{ status = 'skipped'; reason = 'implementation-failure'; path = $Path } | ConvertTo-Json -Compress)
+    exit 0
+}
 if ($issue -lt 1) { throw 'Implementation result must contain a positive issue number.' }
 $pr = [string]$result.pr
 if ([string]::IsNullOrWhiteSpace($pr)) { throw 'Successful implementation result must contain a PR URL.' }
