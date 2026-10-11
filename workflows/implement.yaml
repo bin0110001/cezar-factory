@@ -3,7 +3,7 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,factory/test-changed.ps1,factory/test-full.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-pr-closes-issue.ps1,factory/test-changed.ps1,factory/test-full.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -39,6 +39,9 @@ steps:
       When done, open or update the PR, then write the structured
       result as JSON to .factory/implement-result.json (create the directory) with the
       issue number in "issue" and the PR URL in "pr".
+  - id: ensure-pr-closes-issue
+    name: Ensure successful PR closes the issue on merge
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1
