@@ -18,6 +18,13 @@ activity from which to advance its cursor.
 | Fix succeeds | `factory:review` | Review | `factory:review` |
 | Implementation fails | `factory:investigate` | Investigation | `factory:investigate` |
 | Investigation retry approved | `factory:ready` plus retained complexity | Implementation | `factory:ready` plus `complexity:*` |
+| Review approved with a PR URL | Auto-merge requested, then `factory:done` | GitHub auto-merge | All risk levels; high-risk work still requires human plan approval |
+
+The current router marks `factory:done` when it requests auto-merge; that label
+does not prove the PR has merged. An approved review without a PR URL goes to
+`factory:human-review`. The merge-gate audit in
+[issue #20](https://github.com/bin0110001/cezar-factory/issues/20) tracks checks
+that must be enforced before this handoff can be treated as verified completion.
 
 Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the
@@ -35,10 +42,9 @@ executable state.
 | Plan is not ready | `factory:needs-help` | Resolve blockers and set `factory:needs-plan` |
 | High-risk plan | `factory:needs-help` | Approve the plan and set `factory:ready` with complexity |
 | Decomposition parent | `factory:human-review` | Review the decomposition; child issues independently enter planning |
-| Approved non-low-risk implementation | `factory:human-review` | Complete human review, then set the chosen terminal/executable state |
+| Approved review without a PR URL | `factory:human-review` | Identify the PR and complete the validated review handoff |
 | Review limit reached | `factory:needs-help` | Decide whether to revise requirements or resume review/fix |
 | Investigation cannot safely retry | `factory:needs-help` | Resolve the external blocker and set the chosen executable state |
-| Accepted low-risk review | `factory:done` | None; auto-merge is requested |
 
 `factory:working` is an in-run state, not an inbound automation. The
 implementation or fix workflow sets it first, then emits `factory:review` or
