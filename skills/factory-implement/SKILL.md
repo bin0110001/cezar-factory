@@ -110,15 +110,17 @@ source: skills/factory-implement/SKILL.md
   auto-merge into `dev`.
 - Link the PR to the issue.
 
-### 9. Factory-managed asset release gate
+### 9. Factory-managed asset handoff
 
 When the change touches a Factory-managed asset or its source equivalent
 (`skills/`, `workflows/`, `automations/`, `policies/`, `templates/`,
 `scripts/`, schemas, or Factory versioning), identify those files in the
-implementation result. The workflow owns Factory validation, release, and
-configured-target synchronization commands. If the workflow cannot complete
-that release gate, report the implementation as blocked or incomplete rather
-than claiming the Factory update was delivered.
+implementation result. This implementation workflow runs its configured
+validation commands and routes the PR to review. The Factory release and
+configured-target synchronization are later gates handled by the reviewed
+finish-release process, after the PR is approved and merged. A successful
+implementation result means the code and PR are ready for review; do not claim
+the Factory update has been released or delivered to targets at this stage.
 
 ## Retry Behavior
 
