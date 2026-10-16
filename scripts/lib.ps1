@@ -192,6 +192,11 @@ function Invoke-FactoryValidation {
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
     } finally {
+        # A project runner can modify tracked files or create untracked files
+        # after the initial snapshot. Keep the receipt clean only if both the
+        # pre-run and post-run worktree are clean.
+        $postRunStatus = @(& git -C $root status --porcelain 2>$null)
+        $receipt.worktreeClean = ($receipt.worktreeClean -and $LASTEXITCODE -eq 0 -and $postRunStatus.Count -eq 0)
         [IO.File]::WriteAllBytes($stdoutPath, $stdout)
         [IO.File]::WriteAllBytes($stderrPath, $stderr)
         $receipt.finishedAt = (Get-Date).ToUniversalTime().ToString('o')
