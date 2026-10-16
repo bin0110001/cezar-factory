@@ -17,7 +17,13 @@
       "type": "array",
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
-    }
+    },
+    "worktreeClean": { "type": "boolean" },
+    "startedAt": { "type": "string" },
+    "finishedAt": { "type": "string" },
+    "command": { "type": "string" },
+    "truncated": { "type": "boolean" },
+    "message": { "type": "string" }
   },
   "required": ["schemaVersion", "issue", "repository", "pr", "headSha", "stage", "status", "exitCode", "artifactPaths"]
 }

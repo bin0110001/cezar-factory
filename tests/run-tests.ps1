@@ -820,5 +820,10 @@ finally { Pop-Location }
 }
 finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 
+Write-Host '== project validation adapters =='
+$adapterOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'validation-adapters.ps1') 2>&1 | Out-String
+Write-Host $adapterOutput
+Assert 'configured project validation adapters pass fixture cases' ($LASTEXITCODE -eq 0)
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

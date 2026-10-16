@@ -49,6 +49,150 @@ function Test-FactoryConfig($Config) {
     $errs
 }
 
+# Drain both child streams while retaining at most 64 KiB of each. In
+# particular, one enormous line must not defeat the output bound.
+function New-ValidationCapture {
+    if (-not ('FactoryValidationCappedStream' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+public sealed class FactoryValidationCappedStream : Stream {
+    private readonly MemoryStream saved = new MemoryStream();
+    private readonly int limit;
+    public long BytesSeen { get; private set; }
+    public FactoryValidationCappedStream(int limit) { this.limit = limit; }
+    public byte[] SavedBytes() { return saved.ToArray(); }
+    public override void Write(byte[] buffer, int offset, int count) {
+        BytesSeen += count;
+        int keep = Math.Min(count, Math.Max(0, limit - (int)saved.Length));
+        if (keep > 0) saved.Write(buffer, offset, keep);
+    }
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken token) {
+        Write(buffer, offset, count);
+        return Task.CompletedTask;
+    }
+    public override bool CanRead { get { return false; } }
+    public override bool CanSeek { get { return false; } }
+    public override bool CanWrite { get { return true; } }
+    public override long Length { get { return saved.Length; } }
+    public override long Position { get { return saved.Position; } set { throw new NotSupportedException(); } }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
+    public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
+    public override void SetLength(long value) { throw new NotSupportedException(); }
+}
+'@
+    }
+    [FactoryValidationCappedStream]::new(65536)
+}
+
+function Invoke-FactoryValidation {
+    param(
+        [ValidateSet('changed', 'full', 'verify')][string]$Stage,
+        [string]$WrapperPath,
+        [string]$Task = '',
+        [switch]$Quiet
+    )
+    $root = (Get-Location).Path
+    $gitRoot = @(& git rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $gitRoot.Count -gt 0) { $root = ([string]$gitRoot[0]).Trim() }
+    $attempt = [guid]::NewGuid().ToString('N')
+    $relative = ".factory/artifacts/validation/$Stage/$attempt"
+    $directory = Join-Path $root $relative
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $stdoutPath = Join-Path $directory 'stdout.log'
+    $stderrPath = Join-Path $directory 'stderr.log'
+    $receiptPath = Join-Path $directory 'receipt.json'
+    $receipt = [ordered]@{
+        schemaVersion = 1; issue = 0; repository = ''; pr = ''; headSha = ''
+        stage = $Stage; status = 'error'; exitCode = 1
+        artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
+        worktreeClean = $false; startedAt = (Get-Date).ToUniversalTime().ToString('o')
+        finishedAt = ''; command = ''; truncated = $false; message = ''
+    }
+    $stdout = [byte[]]@(); $stderr = [byte[]]@()
+    try {
+        if ($env:FACTORY_VALIDATION_DEPTH) { throw 'Nested Factory validation wrapper invocation is not allowed.' }
+        if ($LASTEXITCODE -ne 0 -or $gitRoot.Count -eq 0) { throw 'Current directory is not inside a Git worktree.' }
+        $head = @(& git -C $root rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) { throw 'Cannot resolve the current worktree HEAD.' }
+        $receipt.headSha = ([string]$head[0]).Trim()
+        $dirty = @(& git -C $root status --porcelain 2>$null)
+        $receipt.worktreeClean = ($LASTEXITCODE -eq 0 -and $dirty.Count -eq 0)
+        $remote = [string](@(& git -C $root config --get remote.origin.url 2>$null) | Select-Object -First 1)
+        if ($remote -match '(?i)github\.com[:/](?<slug>[^/\s]+/[^/\s]+?)(?:\.git)?$') { $receipt.repository = $Matches.slug }
+        $resultPath = Join-Path $root '.factory/implement-result.json'
+        if (-not (Test-Path $resultPath)) { $resultPath = Join-Path $root '.factory/review-result.json' }
+        if (Test-Path $resultPath) {
+            $result = Get-Content -Raw $resultPath | ConvertFrom-Json
+            if ($result.issue) { $receipt.issue = [int]$result.issue }
+            if ($result.pr) { $receipt.pr = [string]$result.pr }
+        }
+        if ($Task -match '(?:issues/|#)?([1-9][0-9]*)$') { $receipt.issue = [int]$Matches[1] }
+        if (Test-Path (Join-Path $root '.factory/already-resolved.json')) {
+            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Issue already resolved.'
+            return 0
+        }
+        $configPath = Join-Path $root '.ai/factory/factory.config.yaml'
+        $config = Read-FactoryConfig $configPath
+        if (-not $config.Contains('validation') -or $null -eq $config.validation -or -not $config.validation.Contains($Stage)) {
+            throw "Configured validation.$Stage command is missing from $configPath."
+        }
+        $command = ([string]$config.validation[$Stage]).Trim()
+        if (-not $command) { throw "Configured validation.$Stage command is empty." }
+        if ($command -eq 'skip' -and $Stage -eq 'changed') {
+            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
+            return 0
+        }
+        if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
+        $receipt.command = $command
+        foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
+            $candidate = $match.Value.Trim('"', "'")
+            $candidatePath = if ([IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $root $candidate }
+            $resolved = [IO.Path]::GetFullPath($candidatePath)
+            if ([string]::Equals($resolved, [IO.Path]::GetFullPath($WrapperPath), [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Configured validation.$Stage recursively invokes its Factory wrapper."
+            }
+        }
+        $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
+        $start.ArgumentList.Add('-NoProfile')
+        $start.ArgumentList.Add('-EncodedCommand')
+        $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+        $start.WorkingDirectory = $root
+        $start.UseShellExecute = $false
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $start.Environment['FACTORY_VALIDATION_DEPTH'] = '1'
+        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+        if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
+        $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
+        $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
+        $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
+        if (-not $process.WaitForExit(1200000)) {
+            $process.Kill($true); $process.WaitForExit()
+            throw "Configured validation.$Stage exceeded the 20-minute limit."
+        }
+        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+        $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+        $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
+        $receipt.exitCode = [int]$process.ExitCode
+        $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
+        if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
+    } catch {
+        $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
+    } finally {
+        [IO.File]::WriteAllBytes($stdoutPath, $stdout)
+        [IO.File]::WriteAllBytes($stderrPath, $stderr)
+        $receipt.finishedAt = (Get-Date).ToUniversalTime().ToString('o')
+        $receipt | ConvertTo-Json -Depth 6 | Set-Content -Path $receiptPath -Encoding utf8
+        if (-not $Quiet) { Write-Host ($receipt | ConvertTo-Json -Compress -Depth 6) }
+    }
+    if ($receipt.status -eq 'passed' -or ($Stage -eq 'changed' -and $receipt.status -eq 'skipped')) { return 0 }
+    return 1
+}
+
 function Get-MarkerStyle([string]$RelPath) {
     if ($RelPath -match '\.md$') { return 'html' }
     if ($RelPath -match '\.(ya?ml|ps1)$') { return 'hash' }
