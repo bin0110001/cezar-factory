@@ -28,6 +28,7 @@ try {
 param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
+if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
 if ($env:ADAPTER_EXIT) { exit [int]$env:ADAPTER_EXIT }
 Write-Output "ran $Stage"
 exit 0
@@ -95,6 +96,12 @@ validation:
     Check 'huge output is bounded and marked truncated' ($run.Code -eq 0 -and $run.Receipt.truncated -and (Get-Item $logPath).Length -le 65536)
     Remove-Item Env:ADAPTER_HUGE
 
+    $env:ADAPTER_DIRTY = '1'
+    $run = Run-Stage full
+    Check 'runner-created untracked file makes receipt dirty' ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and -not $run.Receipt.worktreeClean)
+    Remove-Item Env:ADAPTER_DIRTY
+    Remove-Item (Join-Path $project 'adapter-output.tmp')
+
     $peer = Join-Path ([IO.Path]::GetTempPath()) "factory validation peer $([guid]::NewGuid().ToString('N').Substring(0, 8))"
     & git -C $project worktree add -q --detach $peer HEAD
     New-Item -ItemType Directory -Path (Join-Path $peer '.factory') -Force | Out-Null
@@ -138,6 +145,7 @@ validation:
 } finally {
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_DIRTY -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if ($peer -and (Test-Path -LiteralPath $peer)) {
