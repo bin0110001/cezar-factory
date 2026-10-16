@@ -825,5 +825,10 @@ $adapterOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'validation-ad
 Write-Host $adapterOutput
 Assert 'configured project validation adapters pass fixture cases' ($LASTEXITCODE -eq 0)
 
+Write-Host '== bounded failure audit =='
+$failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-bounds.ps1') 2>&1 | Out-String
+Write-Host $failureAuditOutput
+Assert 'failure collector obeys identity and read budgets' ($LASTEXITCODE -eq 0)
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

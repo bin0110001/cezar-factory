@@ -1,208 +1,140 @@
 #!/usr/bin/env pwsh
+# Bounded, read-only collection. Publication and recovery are separate work.
 [CmdletBinding()]
 param(
     [string]$ProjectPath,
     [Parameter(Mandatory)][string]$OutputPath,
     [int]$MaxRuns = 20,
+    [int]$WindowHours = 24,
+    [int]$MaxCandidates = 200,
+    [string]$ProjectId = $env:CEZAR_PROJECT_ID,
+    [string]$ApiUrl = $env:CEZAR_API_URL,
     [switch]$CreateIssue,
-    [switch]$RestartFailedIntake,
-    [string]$ApiUrl = 'http://127.0.0.1:4321',
-    [string]$ProjectId,
-    [string]$FactoryRepo = 'bin0110001/cezar-factory',
-    [int]$RestartCooldownMinutes = 60
+    [switch]$RestartFailedIntake
 )
-
 $ErrorActionPreference = 'Stop'
 if ($MaxRuns -lt 1 -or $MaxRuns -gt 20) { throw 'MaxRuns must be between 1 and 20.' }
-
+if ($WindowHours -lt 1 -or $WindowHours -gt 168) { throw 'WindowHours must be between 1 and 168.' }
+if ($MaxCandidates -lt 1 -or $MaxCandidates -gt 200) { throw 'MaxCandidates must be between 1 and 200.' }
+if ($CreateIssue -or $RestartFailedIntake) { throw 'Failure collection is read-only; publication and recovery require separate workflow commands.' }
+if (-not $ProjectId -or -not $ApiUrl) { throw 'Registered ProjectId and ApiUrl are required; folder names are not project identity.' }
+if ($ApiUrl -notmatch '^https?://') { throw 'ApiUrl must be an http(s) URL.' }
 if (-not $ProjectPath) {
     $cwd = (Get-Location).Path
-    if ($cwd -match '^(?<root>.+)[\\/]\.ai[\\/]cezar[\\/]worktrees[\\/][^\\/]+$') { $ProjectPath = $Matches.root }
+    if ($cwd -match '^(?<root>.+)[\/].ai[\/]cezar[\/]worktrees[\/][^\/]+$') { $ProjectPath = $Matches.root }
     else { throw 'ProjectPath is required outside a Cezar isolated worktree.' }
 }
 $project = [IO.Path]::GetFullPath($ProjectPath)
-$projectName = Split-Path $project -Leaf
-if (-not $ProjectId) { $ProjectId = $projectName.ToLowerInvariant() }
 $runDir = Join-Path $project '.ai/cezar/runs'
-$output = [IO.Path]::GetFullPath($OutputPath)
-$parent = Split-Path $output -Parent
-if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-
-$result = [ordered]@{
-    status = 'ready'
-    project = (Split-Path $project -Leaf)
-    runsInspected = 0
-    failures = @()
-    limitations = @()
-    issueCreated = $false
-    issueNumber = $null
-    factoryIssueCreated = $false
-    factoryIssueNumber = $null
-    restarted = $false
-    restartRunId = $null
-}
-
-if (-not (Test-Path $runDir)) {
-    $result.status = 'limited'
-    $result.limitations = @("runtime run directory not found: $runDir")
-    $result | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 $output
-    Write-Output (($result | ConvertTo-Json -Compress -Depth 8))
-    exit 0
-}
-
-function Read-ApiArray([string]$Uri, [string]$PropertyName) {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -Method Get
-    $payload = $response.Content | ConvertFrom-Json
-    if ($PropertyName -and $payload.PSObject.Properties.Name -contains $PropertyName) { return @($payload.$PropertyName) }
-    return @($payload)
-}
-
-$handoffs = @(Get-ChildItem -LiteralPath $runDir -Filter '*.handoff.md' -File |
-    Sort-Object LastWriteTimeUtc -Descending | Select-Object -First $MaxRuns)
+$output = if ([IO.Path]::IsPathRooted($OutputPath)) { [IO.Path]::GetFullPath($OutputPath) } else { [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutputPath)) }
+$outputDir = Split-Path $output -Parent
+$since = [datetime]::UtcNow.AddHours(-$WindowHours)
+$readLimit = 65536
+$evidenceBudget = 12000
+$evidenceUsed = 0
 $failurePattern = '(?i)(failed|failure|error|cancelled|canceled|unknown workflow|timed out|timeout)'
-$failures = [System.Collections.Generic.List[object]]::new()
-function Compact([string]$Text) {
-    $clean = ($Text -replace '\s+', ' ').Trim()
+$result = [ordered]@{
+    schemaVersion = 1; status = 'ready'; projectId = $ProjectId
+    windowStartUtc = $since.ToString('o'); windowHours = $WindowHours
+    runsInspected = 0; candidatesScanned = 0; failures = @(); limitations = @()
+    budgets = @{ maxRuns = $MaxRuns; maxCandidates = $MaxCandidates; maxReadBytesPerSource = $readLimit; maxEventLines = 200; maxFailureSummaries = 8; maxEvidenceChars = $evidenceBudget }
+    issueCreated = $false; issueNumber = $null; restarted = $false; restartRunId = $null
+}
+function Limit([string]$reason) {
+    if ($result.limitations -notcontains $reason) { $result.limitations += $reason }
+    $result.status = 'limited'
+}
+function Bounded-Text([string]$path, [bool]$tail) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{ text = ''; truncated = $false; missing = $true } }
+    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        $truncated = $stream.Length -gt $readLimit
+        if ($tail -and $truncated) { [void]$stream.Seek(-$readLimit, [IO.SeekOrigin]::End) }
+        $count = [int][Math]::Min($stream.Length, $readLimit)
+        $bytes = [byte[]]::new($count)
+        $read = 0
+        while ($read -lt $count) {
+            $n = $stream.Read($bytes, $read, $count - $read)
+            if ($n -le 0) { break }
+            $read += $n
+        }
+        $value = [Text.Encoding]::UTF8.GetString($bytes, 0, $read)
+        return @{ text = $value; truncated = $truncated; missing = $false }
+    } finally { $stream.Dispose() }
+}
+function Redact([string]$value) {
+    $clean = $value -replace '(?i)\b(?:gh[psu]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b', '[REDACTED]'
+    $clean = $clean -replace '(?i)(Bearer\s+)\S+', '$1[REDACTED]'
+    $clean = $clean -replace '(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,]+', '$1=[REDACTED]'
+    $clean = ($clean -replace '\s+', ' ').Trim()
     if ($clean.Length -gt 400) { return $clean.Substring(0, 400) + '…' }
     return $clean
 }
-foreach ($handoff in $handoffs) {
-    $runId = $handoff.BaseName -replace '\.handoff$',''
-    $eventPath = Join-Path $runDir "$runId.ndjson"
-    $handoffText = Get-Content -LiteralPath $handoff.FullName -Raw
-    $tail = if (Test-Path $eventPath) { @(Get-Content -LiteralPath $eventPath -Tail 200) } else { @() }
-    $knownEvidence = @($handoffText -split "`r?`n" | Where-Object { $_ -match '(?i)(unknown workflow|workflow.*not found|missing.*(skill|workflow)|validate-result.*kind)' } | Select-Object -First 4 | ForEach-Object { Compact $_ })
-    $evidence = @($knownEvidence)
-    $evidence += @($handoffText -split "`r?`n" | Where-Object { $_ -match $failurePattern -and $_ -notmatch '(?i)(unknown workflow|workflow.*not found|missing.*(skill|workflow)|validate-result.*kind)' } | Select-Object -First 4 | ForEach-Object { Compact $_ })
-    $evidence += @($tail | Where-Object { $_ -match $failurePattern } | Select-Object -Last 6 | ForEach-Object { Compact $_ })
-    if ($evidence.Count -gt 0) {
-        $failures.Add([ordered]@{
-            runId = $runId
-            lastWriteUtc = $handoff.LastWriteTimeUtc.ToString('o')
-            handoffPath = $handoff.FullName
-            eventPath = if (Test-Path $eventPath) { $eventPath } else { $null }
-            evidence = @($evidence | Select-Object -Unique)
-        })
-    }
+function Fingerprint([string[]]$lines) {
+    $normalized = ((@($lines) -join '|').ToLowerInvariant() -replace '\b[0-9a-f]{8}-[0-9a-f-]{27,}\b', '<id>' -replace '\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}[^\s|]*', '<time>')
+    $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([Convert]::ToHexString($sha.ComputeHash($bytes))).ToLowerInvariant() }
+    finally { $sha.Dispose() }
 }
-$result.runsInspected = $handoffs.Count
-$result.failures = @($failures | Select-Object -First 8)
-$factorySignature = '(?i)(unknown workflow|workflow.*not found|missing.*(skill|workflow)|validate-result.*kind|factory[- ]intake|intake.*validate|validate.*intake|kind intake)'
-$factoryFailures = @($result.failures | Where-Object { (@($_.evidence) -join "`n") -match $factorySignature })
-$intakeFailures = @($factoryFailures | Where-Object { (@($_.evidence) -join "`n") -match '(?i)(factory[- ]intake|intake.*validate|validate.*intake|kind intake)' })
 try {
-    $apiBase = "$($ApiUrl.TrimEnd('/'))/api/v1/p/$([uri]::EscapeDataString($ProjectId))"
-    $apiRuns = @(Read-ApiArray "$apiBase/runs" 'runs')
-    $failedIntakeRuns = @($apiRuns | Where-Object { $_.workflow -eq 'factory-intake' -and $_.status -eq 'failed' } | Sort-Object createdAt -Descending | Select-Object -First 8)
-    $apiFailures = [System.Collections.Generic.List[object]]::new()
-    foreach ($apiRun in $failedIntakeRuns) {
-        $stepSummary = @($apiRun.steps | ForEach-Object { "$($_.id):$($_.status)" }) -join ','
-        $synthetic = [ordered]@{
-            runId = [string]$apiRun.id
-            lastWriteUtc = ([datetime]$apiRun.createdAt).ToUniversalTime().ToString('o')
-            handoffPath = $null
-            eventPath = $null
-            evidence = @("workflow=factory-intake status=failed steps=$stepSummary title=$([string]$apiRun.titleSummary)")
+    if (-not (Test-Path -LiteralPath $runDir -PathType Container)) {
+        Limit 'runtime run directory is unavailable'
+    } else {
+        $candidates = [System.Collections.Generic.List[object]]::new()
+        foreach ($path in [IO.Directory]::EnumerateFiles($runDir, '*.handoff.md', [IO.SearchOption]::TopDirectoryOnly)) {
+            $result.candidatesScanned++
+            if ($result.candidatesScanned -gt $MaxCandidates) { Limit 'candidate discovery budget exhausted; recency coverage is incomplete'; break }
+            $info = [IO.FileInfo]::new($path)
+            if ($info.LastWriteTimeUtc -ge $since) { $candidates.Add($info) }
         }
-        if (-not (@($result.failures | Where-Object runId -eq $synthetic.runId)).Count) { $apiFailures.Add($synthetic) }
-    }
-    $result.failures = @(@($apiFailures) + @($result.failures) | Select-Object -First 8)
-    $factoryFailures = @($result.failures | Where-Object { (@($_.evidence) -join "`n") -match $factorySignature })
-    $intakeFailures = @($factoryFailures | Where-Object { (@($_.evidence) -join "`n") -match '(?i)(factory[- ]intake|intake.*validate|validate.*intake|kind intake)' })
-} catch {
-    $result.limitations += 'Cezar run API unavailable: ' + $_.Exception.Message
-}
-if ($RestartFailedIntake -and $intakeFailures.Count -gt 0) {
-    $latestFailure = $intakeFailures | Sort-Object lastWriteUtc -Descending | Select-Object -First 1
-    try {
-        $apiBase = "$($ApiUrl.TrimEnd('/'))/api/v1/p/$([uri]::EscapeDataString($ProjectId))"
-        $automations = @(Read-ApiArray "$apiBase/automations" 'automations')
-        $intakeAutomation = $automations | Where-Object name -eq '[factory] intake' | Select-Object -First 1
-        $runs = @(Read-ApiArray "$apiBase/runs" 'runs')
-        $newerIntake = @($runs | Where-Object { $_.workflow -eq 'factory-intake' -and ([datetime]$_.createdAt) -gt ([datetime]$latestFailure.lastWriteUtc) })
-        $recentIntake = @($runs | Where-Object { $_.workflow -eq 'factory-intake' } | Sort-Object createdAt -Descending | Select-Object -First 1)
-        $cooldownActive = $recentIntake.Count -gt 0 -and $recentIntake[0].status -ne 'failed' -and (([datetime]::UtcNow - [datetime]$recentIntake[0].createdAt).TotalMinutes -lt $RestartCooldownMinutes)
-        if ($intakeAutomation -and $newerIntake.Count -eq 0 -and -not $cooldownActive) {
-            if ($intakeAutomation.kind -eq 'github') {
-                $check = Invoke-RestMethod -Method Post -Uri "$apiBase/automations/$([uri]::EscapeDataString([string]$intakeAutomation.id))/check" -ContentType 'application/json' -Body '{"mode":"execute"}'
-                for ($attempt = 0; $attempt -lt 15; $attempt++) {
-                    Start-Sleep -Seconds 2
-                    $checkState = Invoke-RestMethod -Method Get -Uri "$apiBase/automation-checks/$([uri]::EscapeDataString([string]$check.checkId))"
-                    if ($checkState.status -in @('complete','error')) { break }
+        $selected = @($candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First $MaxRuns)
+        $result.runsInspected = $selected.Count
+        $failures = [System.Collections.Generic.List[object]]::new()
+        foreach ($handoff in $selected) {
+            $runId = $handoff.Name -replace '\.handoff\.md$', ''
+            $eventPath = Join-Path $runDir "$runId.ndjson"
+            $handoffData = Bounded-Text $handoff.FullName $false
+            $eventData = Bounded-Text $eventPath $true
+            if ($handoffData.truncated) { Limit "handoff read truncated for run $runId" }
+            if ($eventData.truncated) { Limit "event read truncated for run $runId" }
+            if ($eventData.missing) { Limit "event evidence missing for run $runId" }
+            $lines = @([regex]::Split($handoffData.text, '\r?\n') | Where-Object { $_ -match $failurePattern } | Select-Object -First 4)
+            $eventLines = @([regex]::Split($eventData.text, '\r?\n') | Select-Object -Last 200)
+            $lines += @($eventLines | Where-Object { $_ -match $failurePattern } | Select-Object -Last 6)
+            if ($lines.Count -eq 0) { continue }
+            $evidence = [System.Collections.Generic.List[string]]::new()
+            $step = ''; $command = ''
+            foreach ($line in $lines) {
+                $clean = Redact $line
+                if (-not $clean -or $evidence.Contains($clean)) { continue }
+                if ($evidenceUsed + $clean.Length -gt $evidenceBudget) { Limit 'evidence character budget exhausted'; break }
+                $evidence.Add($clean); $evidenceUsed += $clean.Length
+                if ($line.TrimStart().StartsWith('{')) {
+                    try {
+                        $event = $line | ConvertFrom-Json
+                        if ($event.stepId) { $step = [string]$event.stepId }
+                        if ($event.command) { $command = Redact ([string]$event.command) }
+                    } catch { }
                 }
-                $runs = @(Read-ApiArray "$apiBase/runs" 'runs')
-                $recovery = @($runs | Where-Object { $_.workflow -eq 'factory-intake' -and ([datetime]$_.createdAt) -gt ([datetime]$latestFailure.lastWriteUtc) } | Sort-Object createdAt -Descending | Select-Object -First 1)
-                if ($recovery.Count -gt 0) {
-                    $result.restarted = $true
-                    $result.restartRunId = $recovery[0].id
-                } else { $result.limitations += 'intake check completed but launched no recovery run' }
-            } else {
-                $restart = Invoke-RestMethod -Method Post -Uri "$apiBase/automations/$([uri]::EscapeDataString([string]$intakeAutomation.id))/run" -ContentType 'application/json' -Body '{}'
-                $result.restarted = $true
-                $result.restartRunId = $restart.runId
             }
-        } elseif ($newerIntake.Count -gt 0) {
-            $result.limitations += 'intake restart skipped: a newer intake run already exists'
-        } elseif ($cooldownActive) {
-            $result.limitations += "intake restart skipped: cooldown of $RestartCooldownMinutes minutes is active"
-        } else {
-            $result.limitations += 'intake restart skipped: [factory] intake automation was not found'
+            if ($evidence.Count -gt 0) {
+                $failures.Add([ordered]@{
+                    runId = $runId; step = $step; command = $command
+                    lastWriteUtc = $handoff.LastWriteTimeUtc.ToString('o')
+                    fingerprint = (Fingerprint @($evidence))
+                    evidence = @($evidence)
+                    sources = @{ handoff = $handoff.Name; events = if ($eventData.missing) { $null } else { "$runId.ndjson" } }
+                })
+            }
+            if ($failures.Count -ge 8) { break }
         }
-    } catch { $result.limitations += 'intake restart failed: ' + $_.Exception.Message }
+        $result.failures = @($failures)
+    }
+} catch {
+    Limit ('local collection error: ' + (Redact $_.Exception.Message))
+} finally {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $output -Encoding utf8
+    $result | ConvertTo-Json -Compress -Depth 10 | Write-Output
 }
-if ($CreateIssue -and $factoryFailures.Count -gt 0) {
-    $title = if ($intakeFailures.Count -gt 0) { "[Factory audit] factory-intake validation failures in $($result.project)" } else { "[Factory audit] runtime/workflow failures detected in $($result.project)" }
-    $existing = @()
-    try { $existing = @((& gh issue list --state open --limit 100 --search $title --json number,title 2>$null | ConvertFrom-Json)) } catch { $existing = @() }
-    if ($existing.Count -eq 0) {
-        $evidenceText = @($factoryFailures | ForEach-Object { "- run $($_.runId): $((@($_.evidence) -join ' | '))" }) -join "`n"
-        $body = @(
-            "The bounded Factory failure audit detected likely Factory-managed runtime/workflow defects in **$($result.project)**.",
-            '',
-            "Runs inspected: $($result.runsInspected)",
-            "Recovery rerun: $($result.restartRunId)",
-            "", $evidenceText,
-            '',
-            'Acceptance criteria:',
-            '- Identify the affected Factory skill, workflow, automation, or runtime contract.',
-            '- Fix and validate the Factory source checkout.',
-            '- Run the factory-release procedure and synchronize every target in config/factory-projects.json.',
-            '- Verify the corrected workflow end to end in this project.'
-        ) -join "`n"
-        $created = & gh issue create --title $title --body $body --label 'factory:new' --label 'type:maintenance' --label 'risk:medium' 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $result.issueCreated = $true
-            if (($created -join "`n") -match '/issues/(\d+)') { $result.issueNumber = [int]$Matches[1] }
-        } else { $result.limitations += 'could not create GitHub issue: ' + (($created -join ' ').Trim()) }
-    } else { $result.limitations += "deduplicated against open issue #$($existing[0].number)" }
-
-    $factoryTitle = if ($intakeFailures.Count -gt 0) { "[Factory audit] intake validation defect affecting $($result.project)" } else { "[Factory audit] Factory-managed runtime defect affecting $($result.project)" }
-    $factoryExisting = @()
-    try { $factoryExisting = @((& gh issue list --repo $FactoryRepo --state open --limit 100 --search $factoryTitle --json number,title 2>$null | ConvertFrom-Json)) } catch { $factoryExisting = @() }
-    if ($factoryExisting.Count -eq 0) {
-        $factoryBody = @(
-            "The Factory failure audit detected a Factory-managed defect affecting **$($result.project)**.",
-            '',
-            "Affected project issue: $($result.issueNumber)",
-            "Recovery rerun: $($result.restartRunId)",
-            "Runs inspected: $($result.runsInspected)",
-            '', $evidenceText,
-            '',
-            'Acceptance criteria:',
-            '- Identify and fix the affected Factory skill, workflow, automation, or runtime contract in this repository.',
-            '- Validate the Factory source checkout.',
-            '- Run factory-release and synchronize every target in config/factory-projects.json.',
-            '- Verify the corrected workflow end to end in the affected project.'
-        ) -join "`n"
-        $factoryCreated = & gh issue create --repo $FactoryRepo --title $factoryTitle --body $factoryBody --label 'factory:new' --label 'type:maintenance' --label 'risk:medium' 2>&1
-        if ($LASTEXITCODE -ne 0 -and (($factoryCreated -join ' ') -match '(?i)label.*not found')) {
-            $factoryCreated = & gh issue create --repo $FactoryRepo --title $factoryTitle --body $factoryBody 2>&1
-        }
-        if ($LASTEXITCODE -eq 0) {
-            $result.factoryIssueCreated = $true
-            if (($factoryCreated -join "`n") -match '/issues/(\d+)') { $result.factoryIssueNumber = [int]$Matches[1] }
-        } else { $result.limitations += 'could not create Factory GitHub issue: ' + (($factoryCreated -join ' ').Trim()) }
-    } else { $result.limitations += "deduplicated against Factory issue #$($factoryExisting[0].number)" }
-}
-$result | ConvertTo-Json -Depth 10 | Set-Content -Encoding utf8 $output
-Write-Output (($result | ConvertTo-Json -Compress -Depth 10))

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.48] - 2026-10-16
+
+- Bounded and redacted local failure collection, removed bulk run enumeration
+  and collector-side publication/restarts, and recorded explicit coverage
+  limitations in a versioned artifact.
+
 ## [0.3.47] - 2026-10-16
 
 - Replaced heuristic Factory test discovery with configured project validation
