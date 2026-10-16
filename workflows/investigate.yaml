@@ -3,7 +3,7 @@ description: Classify repeated failures, then retry (factory:ready) or escalate 
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,validate-result.ps1,route-state.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
