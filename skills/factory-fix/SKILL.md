@@ -62,17 +62,25 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ```json
 {
-  "status": "success | failure",
-  "summary": "Description of fixes applied",
-  "filesChanged": ["path/to/file1"],
-  "testsRun": ["test name"],
-  "testResult": "passed | failed",
-  "acceptanceCriteriaStatus": "All criteria met | Partially met",
-  "knownConcerns": "Any remaining concerns",
-  "followUpSuggestions": "Recommended follow-up work",
-  "durableKnowledgeCandidates": "Reusable knowledge discovered"
+  "issue": 272,
+  "status": "success",
+  "summary": "Fixed the blocking review finding.",
+  "filesChanged": ["src/example.ps1"],
+  "testsRun": ["focused regression test"],
+  "testResult": "passed",
+  "acceptanceCriteriaStatus": "All criteria met",
+  "documentationUpdated": false,
+  "knownConcerns": "",
+  "followUpSuggestions": "",
+  "durableKnowledgeCandidates": "",
+  "pr": "https://github.com/example/project/pull/12"
 }
 ```
+
+The example shows a successful fix. Use `status: failure` and describe the
+blocker when the review finding cannot be resolved; a successful result needs
+the existing PR URL. Set `documentationUpdated` to `false` after confirming
+that no documentation change is needed.
 
 ## Already-resolved issues
 

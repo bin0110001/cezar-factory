@@ -126,6 +126,50 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+# Copyable result examples must remain valid JSON and satisfy their declared
+# schema. A missing required field is a real contract failure, not just prose
+# drift; #33 will extend this to the full workflow command inventory.
+$resultExamples = @(
+    @{ Skill = 'factory-plan'; Schema = 'plan.schema.json' },
+    @{ Skill = 'factory-implement'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-fix'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-review'; Schema = 'review-result.schema.json' },
+    @{ Skill = 'factory-investigate'; Schema = 'investigation-result.schema.json' }
+)
+foreach ($entry in $resultExamples) {
+    $skillPath = Join-Path $factory "skills/$($entry.Skill)/SKILL.md"
+    $example = [regex]::Match((Get-Content -Raw $skillPath), '(?ms)```json\s*(\{.*?\})\s*```')
+    Assert "$($entry.Skill) has a concrete JSON result example" $example.Success
+    if (-not $example.Success) { continue }
+    $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
+    $valid = $false
+    try { $valid = [bool](Test-Json -Json $example.Groups[1].Value -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+    Assert "$($entry.Skill) example satisfies $($entry.Schema)" $valid
+    if ($valid) {
+        $withoutIssue = $example.Groups[1].Value | ConvertFrom-Json -AsHashtable
+        $withoutIssue.Remove('issue')
+        $invalid = $false
+        try { $invalid = [bool](Test-Json -Json ($withoutIssue | ConvertTo-Json -Depth 10) -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+        Assert "$($entry.Skill) example contract rejects a missing issue" (-not $invalid)
+    }
+}
+
+function Missing-StartupScripts([string]$WorkflowText) {
+    $startup = [regex]::Match($WorkflowText, '(?m)^\s+command:.*factory-startup\.ps1.*-RequiredScripts\s+([^\s]+)')
+    if (-not $startup.Success) { return @('startup manifest missing') }
+    $required = @($startup.Groups[1].Value -split ',')
+    $called = @([regex]::Matches($WorkflowText, '(?m)^\s+command:.*?/scripts/([a-zA-Z0-9/_-]+\.ps1)') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Where-Object { $_ -ne 'factory-startup.ps1' })
+    @($called | Where-Object { $_ -notin $required } | Sort-Object -Unique)
+}
+foreach ($workflowName in @('intake', 'plan', 'investigate')) {
+    $workflowText = Get-Content -Raw (Join-Path $factory "workflows/$workflowName.yaml")
+    Assert "$workflowName startup lists every called script" (@(Missing-StartupScripts $workflowText).Count -eq 0)
+}
+$investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')) -replace ',route-state\.ps1(?=\r?\n)', ''
+Assert 'startup manifest check detects a missing route script' (@(Missing-StartupScripts $investigateWithoutRouter) -contains 'route-state.ps1')
+Assert 'plan startup includes its routing helper' ((Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')) -match 'RequiredScripts[^\r\n]*route-state\.ps1')
 Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
 Assert 'implement skill prevents speculative recovery'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
 Assert 'route-state tolerates pre-complexity installed layers' ($routeState -match 'Older installed Factory layers predate complexity labels' -and $routeState -match 'complexity:small.*complexity:medium.*complexity:large')

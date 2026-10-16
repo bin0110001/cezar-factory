@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.45] - 2026-10-16
+
+- Made plan, implementation, fix, review, and investigation result examples
+  valid against their schemas; kept Factory script execution in workflow
+  commands and completed startup script preflight lists.
+
 ## [0.3.44] - 2026-10-11
 
 - Added expiring, Cezar-aware recovery for abandoned `factory:auditing`
