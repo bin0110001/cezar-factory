@@ -71,7 +71,7 @@ function Redact([string]$value) {
     return $clean
 }
 function Fingerprint([string[]]$lines) {
-    $normalized = ((@($lines) -join '|').ToLowerInvariant() -replace '\b[0-9a-f]{8}-[0-9a-f-]{27,}\b', '<id>' -replace '\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}[^\s|]*', '<time>')
+    $normalized = ((@($lines) -join '|').ToLowerInvariant() -replace '\b[0-9a-f]{8}-[0-9a-f-]{27,}\b', '<id>' -replace '\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}[^\s|]*', '<time>' -replace '\b(run(?:id)?\s*[:=]\s*)[a-z0-9_-]+\b', '$1<run>')
     $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
     $sha = [Security.Cryptography.SHA256]::Create()
     try { return ([Convert]::ToHexString($sha.ComputeHash($bytes))).ToLowerInvariant() }

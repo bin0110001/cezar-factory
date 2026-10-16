@@ -42,6 +42,14 @@ try {
     $run = Collect
     $structured = @($run.record.failures | Where-Object runId -eq 'run-two' | Select-Object -First 1)
     Check 'known run, step, and command survive redaction' ($structured.Count -eq 1 -and $structured[0].step -eq 'install' -and $structured[0].command -match 'pwsh test.ps1' -and $structured[0].command -notmatch 'secretvalue123')
+    Set-Content (Join-Path $runs 'run-alpha.handoff.md') 'error workflow=factory-intake runId=abc123 at 2026-10-16T12:00:00Z'
+    Set-Content (Join-Path $runs 'run-beta.handoff.md') 'error workflow=factory-intake runId=def456 at 2026-10-17T13:00:00Z'
+    Set-Content (Join-Path $runs 'run-alpha.ndjson') ''
+    Set-Content (Join-Path $runs 'run-beta.ndjson') ''
+    $run = Collect
+    $firstSignature = @($run.record.failures | Where-Object runId -eq 'run-alpha' | Select-Object -First 1)
+    $secondSignature = @($run.record.failures | Where-Object runId -eq 'run-beta' | Select-Object -First 1)
+    Check 'fingerprint ignores volatile run IDs and timestamps' ($firstSignature.Count -eq 1 -and $secondSignature.Count -eq 1 -and $firstSignature[0].fingerprint -eq $secondSignature[0].fingerprint)
     $run = Collect @('-MaxCandidates', '1')
     Check 'candidate discovery exhaustion is disclosed' ($run.record.status -eq 'limited' -and (@($run.record.limitations) -join ' ') -match 'discovery budget')
     Check 'scan and run counts are bounded' ($run.record.candidatesScanned -le 2 -and $run.record.runsInspected -le 1)
