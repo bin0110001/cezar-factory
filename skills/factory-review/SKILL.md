@@ -103,14 +103,19 @@ Produce a review result conforming to `review-result.schema.json`:
 
 ```json
 {
-  "approvalChangeRequestStatus": "approval | change-request",
-  "blockingFindings": "Description of blocking issues (empty if none)",
-  "nonBlockingFindings": "Description of non-blocking issues (empty if none)",
-  "acceptanceCriteriaVerification": "Verification of each acceptance criterion",
-  "testAdequacy": "Assessment of test coverage and quality",
-  "riskObservations": "Any risk-related observations"
+  "issue": 272,
+  "approvalChangeRequestStatus": "approval",
+  "blockingFindings": "",
+  "nonBlockingFindings": "",
+  "acceptanceCriteriaVerification": "Each acceptance criterion is met.",
+  "testAdequacy": "Focused regression and required validation passed.",
+  "riskObservations": "No unresolved risks found.",
+  "pr": "https://github.com/example/project/pull/12"
 }
 ```
+
+For `change-request`, replace the verdict and name each blocking finding in
+`blockingFindings`. Keep `pr` pointed at the reviewed PR.
 
 ## Already-resolved issues
 

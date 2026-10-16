@@ -126,6 +126,50 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+# Copyable result examples must remain valid JSON and satisfy their declared
+# schema. A missing required field is a real contract failure, not just prose
+# drift; #33 will extend this to the full workflow command inventory.
+$resultExamples = @(
+    @{ Skill = 'factory-plan'; Schema = 'plan.schema.json' },
+    @{ Skill = 'factory-implement'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-fix'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-review'; Schema = 'review-result.schema.json' },
+    @{ Skill = 'factory-investigate'; Schema = 'investigation-result.schema.json' }
+)
+foreach ($entry in $resultExamples) {
+    $skillPath = Join-Path $factory "skills/$($entry.Skill)/SKILL.md"
+    $example = [regex]::Match((Get-Content -Raw $skillPath), '(?ms)```json\s*(\{.*?\})\s*```')
+    Assert "$($entry.Skill) has a concrete JSON result example" $example.Success
+    if (-not $example.Success) { continue }
+    $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
+    $valid = $false
+    try { $valid = [bool](Test-Json -Json $example.Groups[1].Value -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+    Assert "$($entry.Skill) example satisfies $($entry.Schema)" $valid
+    if ($valid) {
+        $withoutIssue = $example.Groups[1].Value | ConvertFrom-Json -AsHashtable
+        $withoutIssue.Remove('issue')
+        $invalid = $false
+        try { $invalid = [bool](Test-Json -Json ($withoutIssue | ConvertTo-Json -Depth 10) -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+        Assert "$($entry.Skill) example contract rejects a missing issue" (-not $invalid)
+    }
+}
+
+function Missing-StartupScripts([string]$WorkflowText) {
+    $startup = [regex]::Match($WorkflowText, '(?m)^\s+command:.*factory-startup\.ps1.*-RequiredScripts\s+([^\s]+)')
+    if (-not $startup.Success) { return @('startup manifest missing') }
+    $required = @($startup.Groups[1].Value -split ',')
+    $called = @([regex]::Matches($WorkflowText, '(?m)^\s+command:.*?/scripts/([a-zA-Z0-9/_-]+\.ps1)') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Where-Object { $_ -ne 'factory-startup.ps1' })
+    @($called | Where-Object { $_ -notin $required } | Sort-Object -Unique)
+}
+foreach ($workflowName in @('intake', 'plan', 'investigate')) {
+    $workflowText = Get-Content -Raw (Join-Path $factory "workflows/$workflowName.yaml")
+    Assert "$workflowName startup lists every called script" (@(Missing-StartupScripts $workflowText).Count -eq 0)
+}
+$investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')) -replace ',route-state\.ps1(?=\r?\n)', ''
+Assert 'startup manifest check detects a missing route script' (@(Missing-StartupScripts $investigateWithoutRouter) -contains 'route-state.ps1')
+Assert 'plan startup includes its routing helper' ((Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')) -match 'RequiredScripts[^\r\n]*route-state\.ps1')
 Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
 Assert 'implement skill prevents speculative recovery'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
 Assert 'route-state tolerates pre-complexity installed layers' ($routeState -match 'Older installed Factory layers predate complexity labels' -and $routeState -match 'complexity:small.*complexity:medium.*complexity:large')
@@ -385,6 +429,12 @@ try {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
         $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null; $global:LASTEXITCODE
     }
+    function Validation-Errors($Obj) {
+        $f = Join-Path $tmp 'r-semantic.json'; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
+        $global:LASTEXITCODE = 0
+        $output = & pwsh -NoProfile -File $val -Kind implementation -Path $f | ConvertFrom-Json
+        @($output.errors)
+    }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments) } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
     $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
@@ -421,11 +471,30 @@ try {
     $bad = $plan.Clone(); $bad.Remove('issue')
     Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
-    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('t'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://x/pr/1' }
+    $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
+    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
-    Assert 'validate: implementation with no documentation change passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false })) -eq 0)
+    Assert 'validate: implementation with no documentation change and nonblocking concern passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false; knownConcerns = 'Minor follow-up suggested.' })) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
     Assert 'validate: success without PR fails' ((Test-Validate 'implementation' $noPr) -ne 0)
+    foreach ($badTests in @('failed', 'Not met', 'not-run', 'skipped', 'unknown')) {
+        Assert "validate: success with $badTests tests fails" ((Test-Validate 'implementation' (With $impl @{ testResult = $badTests })) -ne 0)
+    }
+    foreach ($badAcceptance in @('Not met', 'Partially met', 'TODO', 'Acceptance criteria status')) {
+        Assert "validate: success with $badAcceptance acceptance fails" ((Test-Validate 'implementation' (With $impl @{ acceptanceCriteriaStatus = $badAcceptance })) -ne 0)
+    }
+    Assert 'validate: success with empty testsRun fails' ((Test-Validate 'implementation' (With $impl @{ testsRun = @() })) -ne 0)
+    Assert 'validate: success with placeholder testsRun fails' ((Test-Validate 'implementation' (With $impl @{ testsRun = @('test name or identifier') })) -ne 0)
+    Assert 'validate: success with placeholder filesChanged fails' ((Test-Validate 'implementation' (With $impl @{ filesChanged = @('path/to/file1') })) -ne 0)
+    Assert 'validate: success with malformed PR fails' ((Test-Validate 'implementation' (With $impl @{ pr = 'https://github.com/example/project/issues/1' })) -ne 0)
+    Assert 'validate: legitimate failure result passes' ((Test-Validate 'implementation' (With $impl @{ status = 'failure'; testResult = 'failed'; acceptanceCriteriaStatus = 'Not met'; pr = '' })) -eq 0)
+    Assert 'validate: contradictory result names its field' ((Validation-Errors (With $impl @{ testResult = 'failed' })) -match 'testResult')
+    $receiptSchema = Join-Path $factory 'schemas/validation-receipt.schema.json'
+    $receipt = @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = 'https://github.com/example/project/pull/1'; headSha = ('a' * 40); stage = 'full'; status = 'passed'; exitCode = 0; artifactPaths = @('.factory/artifacts/validation/full/attempt/receipt.json') }
+    Assert 'receipt: valid head-bound workflow record satisfies v1 schema' (Test-Json -Json ($receipt | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema)
+    Assert 'receipt: legacy agent result cannot satisfy receipt schema' (-not (Test-Json -Json ($impl | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
+    Assert 'receipt: missing head cannot satisfy receipt schema' (-not (Test-Json -Json ((With $receipt @{ headSha = '' }) | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
+    Assert 'validation has no GitHub side effects' ((Get-Content -Raw $env:FAKE_GH_STATE) -eq $validationGhState)
     $rev = @{ issue = 7; approvalChangeRequestStatus = 'change-request'; blockingFindings = ''; nonBlockingFindings = ''; acceptanceCriteriaVerification = 'v'; testAdequacy = 't'; riskObservations = 'r' }
     Assert 'validate: change-request without findings fails' ((Test-Validate 'review' $rev) -ne 0)
     Assert 'validate: change-request with findings passes' ((Test-Validate 'review' (With $rev @{ blockingFindings = 'bug at x' })) -eq 0)
@@ -750,6 +819,11 @@ Write-Error "unsupported $($a -join ' ')"; exit 2
 finally { Pop-Location }
 }
 finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+
+Write-Host '== project validation adapters =='
+$adapterOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'validation-adapters.ps1') 2>&1 | Out-String
+Write-Host $adapterOutput
+Assert 'configured project validation adapters pass fixture cases' ($LASTEXITCODE -eq 0)
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

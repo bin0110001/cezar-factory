@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.47] - 2026-10-16
+
+- Replaced heuristic Factory test discovery with configured project validation
+  adapters, bounded worktree-local receipts, and required full/verify workflow
+  stages. Added the Factory source checkout's own explicit validation adapter
+  configuration.
+
+## [0.3.46] - 2026-10-16
+
+- Reject contradictory implementation success results and define versioned,
+  head-bound workflow validation receipts separately from agent handoffs.
+
+## [0.3.45] - 2026-10-16
+
+- Made plan, implementation, fix, review, and investigation result examples
+  valid against their schemas; kept Factory script execution in workflow
+  commands and completed startup script preflight lists.
+
 ## [0.3.44] - 2026-10-11
 
 - Added expiring, Cezar-aware recovery for abandoned `factory:auditing`
