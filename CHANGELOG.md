@@ -4,7 +4,8 @@
 
 - Replaced heuristic Factory test discovery with configured project validation
   adapters, bounded worktree-local receipts, and required full/verify workflow
-  stages.
+  stages. Added the Factory source checkout's own explicit validation adapter
+  configuration.
 
 ## [0.3.46] - 2026-10-16
 
