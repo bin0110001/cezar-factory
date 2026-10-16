@@ -3,7 +3,7 @@ description: Collect bounded runtime, schedule, and failure evidence for Factory
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequireGh -RequiredScripts collect-environment-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequiredScripts collect-environment-state.ps1
   - id: collect
     name: Export current environment state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-environment-state.ps1 -OutputDirectory .factory/environment-analysis
@@ -13,4 +13,4 @@ steps:
     prompt: |
       {{task}}
 
-      Read the generated `.factory/environment-analysis/environment-state-*.json` and `.md` artifacts. Produce `.factory/environment-analysis/analysis.md` with evidence-backed findings and prioritized improvement paths. Do not run scripts, rediscover targets, inspect raw logs, or mutate external systems.
+      Read the generated `.factory/environment-analysis/environment-state-latest.json` and `.md` artifacts. Produce `.factory/environment-analysis/analysis.md` with evidence-backed findings and prioritized improvement paths. Do not run scripts, rediscover targets, inspect raw logs, or mutate external systems.
