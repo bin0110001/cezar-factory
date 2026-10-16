@@ -51,6 +51,7 @@ function Compact-Run($Run, [string]$ProjectId) {
         titleSummary = Compact ([string]$Run.titleSummary)
         workflow = [string]$Run.workflow
         status = [string]$Run.status
+        conclusion = [string]$Run.conclusion
         createdAt = [string]$Run.createdAt
         startedAt = [string]$Run.startedAt
         finishedAt = [string]$Run.finishedAt
@@ -58,8 +59,13 @@ function Compact-Run($Run, [string]$ProjectId) {
         inputTokens = $Run.inputTokens
         outputTokens = $Run.outputTokens
         steps = @($Run.steps | ForEach-Object { [ordered]@{ id = [string]$_.id; status = [string]$_.status; startedAt = [string]$_.startedAt; finishedAt = [string]$_.finishedAt } })
+        failureSignatures = @($Run.steps | Where-Object { $_.status -in @('failed','error','cancelled','canceled') } | ForEach-Object { [string]$_.id })
+        terminalReason = Compact ([string]$Run.terminalReason)
+        validationOutcome = Compact ([string]$Run.validationOutcome)
         automationTrigger = if ($Run.automationTrigger) { [ordered]@{ trigger = [string]$Run.automationTrigger.trigger; occurrenceAt = [string]$Run.automationTrigger.occurrenceAt } } else { $null }
         diffStat = if ($Run.diffStat) { [ordered]@{ files = $Run.diffStat.files; adds = $Run.diffStat.adds; dels = $Run.diffStat.dels } } else { $null }
+        prCount = @($Run.prRefs).Count
+        issueNumber = if ([int]$Run.issueNumber -gt 0) { [int]$Run.issueNumber } else { $null }
     }
 }
 function Compact-Automation($Automation) {
