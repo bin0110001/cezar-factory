@@ -59,6 +59,14 @@ validation:
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
     }
     Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
+    $priorValidationRoot = $env:FACTORY_VALIDATION_ROOT
+    $env:FACTORY_VALIDATION_ROOT = $factory
+    try { $otherWorktreeRun = Run-Stage full }
+    finally {
+        if ($priorValidationRoot) { $env:FACTORY_VALIDATION_ROOT = $priorValidationRoot }
+        else { Remove-Item Env:FACTORY_VALIDATION_ROOT -ErrorAction SilentlyContinue }
+    }
+    Check 'nested suite may validate a different worktree' ($otherWorktreeRun.Code -eq 0 -and $otherWorktreeRun.Receipt.status -eq 'passed')
     $full = Receipt full
     Check 'receipt validates against versioned schema' (Test-Json -Json ($full | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/validation-receipt.schema.json'))
     Check 'artifacts stay in the worktree' ((Test-Path (Join-Path $project '.factory/artifacts/validation/full')) -and -not (Test-Path (Join-Path $factory 'scripts/artifacts')))

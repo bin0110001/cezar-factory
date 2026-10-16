@@ -114,7 +114,10 @@ function Invoke-FactoryValidation {
     }
     $stdout = [byte[]]@(); $stderr = [byte[]]@()
     try {
-        if ($env:FACTORY_VALIDATION_DEPTH) { throw 'Nested Factory validation wrapper invocation is not allowed.' }
+        if ($env:FACTORY_VALIDATION_ROOT -and
+            [string]::Equals([IO.Path]::GetFullPath($env:FACTORY_VALIDATION_ROOT), [IO.Path]::GetFullPath($root), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Nested Factory validation in the same worktree is not allowed.'
+        }
         if ($LASTEXITCODE -ne 0 -or $gitRoot.Count -eq 0) { throw 'Current directory is not inside a Git worktree.' }
         $head = @(& git -C $root rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) { throw 'Cannot resolve the current worktree HEAD.' }
@@ -164,7 +167,7 @@ function Invoke-FactoryValidation {
         $start.UseShellExecute = $false
         $start.RedirectStandardOutput = $true
         $start.RedirectStandardError = $true
-        $start.Environment['FACTORY_VALIDATION_DEPTH'] = '1'
+        $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
