@@ -57,6 +57,8 @@ validation:
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
+        $expectedTimeout = if ($stage -eq 'changed') { 1200 } else { 7200 }
+        Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
     }
     Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
     $priorValidationRoot = $env:FACTORY_VALIDATION_ROOT

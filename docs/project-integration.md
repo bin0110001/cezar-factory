@@ -79,6 +79,11 @@ project can use `full: "npm test"`, and a Godot project can call its own
 headless test script. A PowerShell adapter can use `pwsh ./scripts/factory/test-full.ps1`.
 Each command runs once; the Factory wrapper does not discover source files or
 guess a package runner. Quote paths with spaces in the command value.
+Targeted validation has a 20-minute deadline. Full and verify each have a
+two-hour deadline so projects with a genuine long-running suite can run it;
+the wrapper terminates an overlong child and records the applicable
+`timeoutSeconds` in its receipt. A suite that needs longer than two hours is
+an explicit release blocker, not a reason to substitute a smaller test set.
 
 Before moving an installed or shared-mount project to this Factory version,
 check that its `.ai/factory/factory.config.yaml` points to real project-owned
@@ -89,7 +94,7 @@ command that points back at a Factory validation wrapper is rejected.
 
 Each attempt stores bounded stdout, stderr, and a versioned receipt beneath
 the worktree's `.factory/artifacts/validation/<stage>/<attempt>/`. The receipt
-records the repository, issue, PR, head commit, command, exit code, outcome,
+records the repository, issue, PR, head commit, command, timeout, exit code, outcome,
 and whether the worktree was clean. Workflow review requires both full and
 verify stages. The current-head merge gate is tracked in #27; an agent result
 or an old receipt does not by itself authorize merging.
