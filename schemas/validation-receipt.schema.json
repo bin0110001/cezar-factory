@@ -19,6 +19,7 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "worktreeClean": { "type": "boolean" },
+    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },
     "startedAt": { "type": "string" },
     "finishedAt": { "type": "string" },
     "command": { "type": "string" },

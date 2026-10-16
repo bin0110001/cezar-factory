@@ -88,6 +88,11 @@ public sealed class FactoryValidationCappedStream : Stream {
     [FactoryValidationCappedStream]::new(65536)
 }
 
+function Get-ValidationTimeoutSeconds([string]$Stage) {
+    if ($Stage -eq 'changed') { return 1200 }
+    return 7200
+}
+
 function Invoke-FactoryValidation {
     param(
         [ValidateSet('changed', 'full', 'verify')][string]$Stage,
@@ -109,7 +114,8 @@ function Invoke-FactoryValidation {
         schemaVersion = 1; issue = 0; repository = ''; pr = ''; headSha = ''
         stage = $Stage; status = 'error'; exitCode = 1
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
-        worktreeClean = $false; startedAt = (Get-Date).ToUniversalTime().ToString('o')
+        worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
+        startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
     $stdout = [byte[]]@(); $stderr = [byte[]]@()
@@ -173,9 +179,9 @@ function Invoke-FactoryValidation {
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
         $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
         $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
-        if (-not $process.WaitForExit(1200000)) {
+        if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
             $process.Kill($true); $process.WaitForExit()
-            throw "Configured validation.$Stage exceeded the 20-minute limit."
+            throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
         }
         [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
         $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
