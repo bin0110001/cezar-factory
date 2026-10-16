@@ -59,7 +59,7 @@ steps:
       max: 1
   - id: validate
     name: Validate implementation result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -RouteOnFailure -FailureContextPath .factory/implementation-context.json -Task "{{task}}"
     onFail:
       retry: implement
       max: 1

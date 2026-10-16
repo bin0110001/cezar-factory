@@ -10,7 +10,10 @@ so workflow check steps can feed the short error list back to the retried agent.
 param(
     [Parameter(Mandatory)][ValidateSet('intake', 'plan', 'implementation', 'review', 'investigation')][string]$Kind,
     [Parameter(Mandatory)][string]$Path,
-    [string]$SchemaDir = (Join-Path $PSScriptRoot '../schemas')
+    [string]$SchemaDir = (Join-Path $PSScriptRoot '../schemas'),
+    [switch]$RouteOnFailure,
+    [string]$FailureContextPath = '.factory/implementation-context.json',
+    [string]$Task
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
@@ -22,6 +25,39 @@ $errors = [System.Collections.Generic.List[string]]::new()
 
 function Done {
     $status = if ($errors.Count) { 'invalid' } else { 'valid' }
+    if ($errors.Count -and $RouteOnFailure -and $Kind -eq 'implementation') {
+        $issue = 0
+        if ($result -is [hashtable] -and $result.ContainsKey('issue')) { $issue = [int]$result.issue }
+        if ($issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
+            $issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
+        }
+        if ($issue -lt 1 -and (Test-Path -LiteralPath $FailureContextPath)) {
+            try {
+                $context = Get-Content -Raw -LiteralPath $FailureContextPath | ConvertFrom-Json
+                if ($context.issue.number) { $issue = [int]$context.issue.number }
+                elseif ($context.issue) { $issue = [int]$context.issue }
+            } catch { }
+        }
+        if ($issue -ge 1) {
+            $failure = [ordered]@{
+                issue = $issue
+                status = 'failure'
+                summary = 'Implementation result failed Factory validation.'
+                filesChanged = @()
+                testsRun = @()
+                testResult = 'not-run'
+                acceptanceCriteriaStatus = 'Not met'
+                documentationUpdated = $false
+                knownConcerns = 'Validation errors: ' + ($errors -join '; ')
+                followUpSuggestions = 'Inspect the validation errors, correct the implementation handoff, and retry through factory:investigate.'
+                durableKnowledgeCandidates = 'Implementation result validation failures must route to investigation instead of leaving the workflow pending.'
+            }
+            if ($result -is [hashtable] -and $result.ContainsKey('pr') -and $result.pr) { $failure.pr = [string]$result.pr }
+            $failure | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8
+            ([ordered]@{ status = 'failure-routed'; kind = $Kind; issue = $issue; errors = @($errors) } | ConvertTo-Json -Compress -Depth 4) | Write-Output
+            exit 0
+        }
+    }
     ([ordered]@{ status = $status; kind = $Kind; errors = @($errors) } | ConvertTo-Json -Compress -Depth 4) | Write-Output
     exit $(if ($errors.Count) { 1 } else { 0 })
 }

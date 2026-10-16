@@ -31,7 +31,7 @@ steps:
       max: 1
   - id: validate
     name: Validate fix result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -RouteOnFailure -Task "{{task}}"
     onFail:
       retry: fix
       max: 1

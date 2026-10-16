@@ -140,6 +140,12 @@ function Write-ExecutionRecord([string]$Status, $Result = $null) {
         if ($Result.PSObject.Properties['pr']) { $record.execution.pr = $Result.pr }
         if ($Result.PSObject.Properties['status']) { $record.execution.result = $Result.status }
         if ($Result.PSObject.Properties['branch']) { $record.execution.branch = $Result.branch }
+        if ($Status -eq 'failed') {
+            $record.execution.failure = [ordered]@{}
+            foreach ($field in 'summary', 'testResult', 'knownConcerns', 'followUpSuggestions') {
+                if ($Result.PSObject.Properties[$field]) { $record.execution.failure[$field] = [string]$Result.$field }
+            }
+        }
     }
     New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
     $record | ConvertTo-Json -Depth 5 | Set-Content -Path $path -Encoding utf8

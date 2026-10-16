@@ -70,7 +70,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'scripts/recover-audit-reservations.ps1',
+'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
@@ -99,6 +99,7 @@ Assert 'investigation output example includes the required issue field' ($invest
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
+Assert 'implementation validation failure routes through a structured failure' ($implementWorkflow -match 'validate-result\.ps1 .*RouteOnFailure' -and (Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'validate-result\.ps1 .*RouteOnFailure' -and $implementWorkflow -match 'FailureContextPath')
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
 Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
@@ -110,6 +111,9 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
+Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
+$auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
+Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -381,9 +385,10 @@ try {
     Assert 'reconciler: no candidate terminates cleanly' ($LASTEXITCODE -eq 0 -and $noCandidates.terminalReason -eq 'no-candidates' -and @($noCandidates.actions).Count -eq 0)
     $gh = Join-Path $PSScriptRoot 'fake-gh.ps1'
     $env:FAKE_GH_STATE = Join-Path $tmp 'gh-state.json'
-    function Test-Validate([string]$Kind, $Obj) {
+    function Test-Validate([string]$Kind, $Obj, [switch]$RouteOnFailure) {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
-        $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null; $global:LASTEXITCODE
+        $args = @{ Kind = $Kind; Path = $f }; if ($RouteOnFailure) { $args.RouteOnFailure = $true; $args.Task = 'GitHub issue #7' }
+        $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $val @args *>&1 | Out-Null; $global:LASTEXITCODE
     }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments) } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
@@ -426,6 +431,8 @@ try {
     Assert 'validate: implementation with no documentation change passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false })) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
     Assert 'validate: success without PR fails' ((Test-Validate 'implementation' $noPr) -ne 0)
+    $invalidImpl = $impl.Clone(); $invalidImpl.Remove('pr')
+    Assert 'validate: implementation failure routes as structured failure' ((Test-Validate 'implementation' $invalidImpl -RouteOnFailure) -eq 0 -and (Get-Content -Raw (Join-Path $tmp 'r-implementation.json') | ConvertFrom-Json).status -eq 'failure')
     $rev = @{ issue = 7; approvalChangeRequestStatus = 'change-request'; blockingFindings = ''; nonBlockingFindings = ''; acceptanceCriteriaVerification = 'v'; testAdequacy = 't'; riskObservations = 'r' }
     Assert 'validate: change-request without findings fails' ((Test-Validate 'review' $rev) -ne 0)
     Assert 'validate: change-request with findings passes' ((Test-Validate 'review' (With $rev @{ blockingFindings = 'bug at x' })) -eq 0)
@@ -477,6 +484,7 @@ try {
     Assert 'route: execution completion recorded' ($execution.execution.status -eq 'complete' -and $execution.execution.result -eq 'success' -and $execution.execution.pr -eq $impl.pr)
     Set-Gh @('factory:working')
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
+Assert 'route: failed execution records bounded failure evidence' ((Get-Content -Raw (Join-Path $rp '.factory/execution.json')) -match 'failure' -and (Get-Content -Raw (Join-Path $rp '.factory/execution.json')) -match 'knownConcerns')
     Set-Gh @('factory:review')
     Assert 'route: review approval -> human-review' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
