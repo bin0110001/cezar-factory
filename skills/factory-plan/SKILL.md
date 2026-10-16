@@ -19,7 +19,7 @@ source: skills/factory-plan/SKILL.md
 - Identify risks.
 - Estimate delivery complexity.
 - Decide whether decomposition is needed.
-- Update the issue with the plan.
+- Write the structured plan result for the workflow to post to the issue.
 - Route to:
   - `factory:ready`
   - `factory:needs-help`
@@ -103,11 +103,12 @@ source: skills/factory-plan/SKILL.md
 - Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
 - In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
 
-### 10. Update the Issue with the Plan
+### 10. Record the Plan
 
-- Post the plan as a comment on the issue.
-- Use a structured format that includes all required fields from the plan schema.
-- Reference the plan schema fields explicitly.
+- Write the structured result to `.factory/plan-result.json`. The workflow
+  validates it, posts the plan comment, and updates the issue state.
+- Include all required fields from the plan schema. Do not post a separate
+  comment or edit lifecycle labels from this skill.
 
 ### 11. Route the Issue
 
@@ -121,21 +122,23 @@ Produce a structured plan result conforming to `plan.schema.json`:
 
 ```json
 {
-  "objective": "Clear statement of what this task achieves",
-  "acceptanceCriteria": "Testable criteria for completion",
-  "nonGoals": "Explicitly stated out-of-scope items",
-  "risks": "Identified risks and mitigation strategies",
-  "dependencies": "Required dependencies and setup steps",
-  "suggestedWorkBreakdown": "Ordered list of implementation steps",
-  "requiredProjectSkills": ["skill-ids needed for this task"],
-  "unresolvedQuestions": "Questions requiring human input (empty if none)",
+  "issue": 272,
+  "objective": "Prevent an empty test suite from reporting success.",
+  "acceptanceCriteria": "An empty suite reports a non-passing result.",
+  "nonGoals": "Do not change the project's test cases.",
+  "risks": "Existing projects may rely on the old empty-suite behavior.",
+  "dependencies": "None.",
+  "suggestedWorkBreakdown": "Add a regression test, correct the result, then validate.",
+  "requiredProjectSkills": ["factory-implement"],
+  "unresolvedQuestions": "",
   "complexity": "complexity:medium",
-  "readyNotReadyStatus": "ready, not-ready or decomposed",
-  "subIssues": [{ "title": "...", "body": "...", "type": "type:feature", "risk": "risk:medium", "dependsOn": [0] }]
+  "readyNotReadyStatus": "ready"
 }
 ```
 
-`subIssues` is required only when `readyNotReadyStatus` is `decomposed`.
+Use `not-ready` with the blocking questions in `unresolvedQuestions` when
+the work cannot start. Use `decomposed` with schema-valid `subIssues` when the
+workflow needs to create smaller issues. Omit `subIssues` for a ready plan.
 
 ## Already-resolved issues
 
