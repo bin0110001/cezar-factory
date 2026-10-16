@@ -29,6 +29,11 @@ param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
+if ($env:ADAPTER_COMMIT) {
+    Set-Content ./adapter-commit.txt changed
+    & git add -- adapter-commit.txt
+    & git commit -qm runner-change
+}
 if ($env:ADAPTER_EXIT) { exit [int]$env:ADAPTER_EXIT }
 Write-Output "ran $Stage"
 exit 0
@@ -102,6 +107,15 @@ validation:
     Remove-Item Env:ADAPTER_DIRTY
     Remove-Item (Join-Path $project 'adapter-output.tmp')
 
+    $headBefore = & git -C $project rev-parse HEAD
+    $env:ADAPTER_COMMIT = '1'
+    $run = Run-Stage full
+    Check 'runner commit invalidates the old-head receipt' ($run.Code -ne 0 -and
+        $run.Receipt.status -eq 'error' -and $run.Receipt.headSha -eq $headBefore -and
+        -not $run.Receipt.worktreeClean -and $run.Receipt.message -match 'HEAD changed' -and
+        (& git -C $project rev-parse HEAD) -ne $headBefore)
+    Remove-Item Env:ADAPTER_COMMIT
+
     $peer = Join-Path ([IO.Path]::GetTempPath()) "factory validation peer $([guid]::NewGuid().ToString('N').Substring(0, 8))"
     & git -C $project worktree add -q --detach $peer HEAD
     New-Item -ItemType Directory -Path (Join-Path $peer '.factory') -Force | Out-Null
@@ -146,6 +160,7 @@ validation:
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_DIRTY -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_COMMIT -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if ($peer -and (Test-Path -LiteralPath $peer)) {

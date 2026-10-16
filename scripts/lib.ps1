@@ -196,7 +196,16 @@ function Invoke-FactoryValidation {
         # after the initial snapshot. Keep the receipt clean only if both the
         # pre-run and post-run worktree are clean.
         $postRunStatus = @(& git -C $root status --porcelain 2>$null)
-        $receipt.worktreeClean = ($receipt.worktreeClean -and $LASTEXITCODE -eq 0 -and $postRunStatus.Count -eq 0)
+        $postRunStatusOk = ($LASTEXITCODE -eq 0)
+        $postRunHead = @(& git -C $root rev-parse HEAD 2>$null)
+        $headUnchanged = ($LASTEXITCODE -eq 0 -and $postRunHead.Count -gt 0 -and
+            ([string]$postRunHead[0]).Trim() -eq $receipt.headSha)
+        $receipt.worktreeClean = ($receipt.worktreeClean -and $postRunStatusOk -and
+            $postRunStatus.Count -eq 0 -and $headUnchanged)
+        if ($receipt.headSha -and -not $headUnchanged) {
+            $receipt.status = 'error'; $receipt.exitCode = 1
+            $receipt.message = 'Project HEAD changed during validation.'
+        }
         [IO.File]::WriteAllBytes($stdoutPath, $stdout)
         [IO.File]::WriteAllBytes($stderrPath, $stderr)
         $receipt.finishedAt = (Get-Date).ToUniversalTime().ToString('o')
