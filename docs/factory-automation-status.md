@@ -17,7 +17,7 @@ does not claim that an external service has run a workflow.
 | 9. Cezar dispatch | Deliberately disabled | Skill and reconciler are read-only. Operator: approve a low-risk project after dry-run/lease evidence; enable dispatch only through Cezar. |
 | 10. End-to-end provider pilot | External gate open | Operator: configure authenticated Codex/Claude OpenHands profiles and nominate one low-risk issue. |
 | 11. Shadow evaluation and promotion | Implemented; evidence collection open | `scripts/record-local-evaluation.ps1`, `scripts/evaluate-local-promotion.ps1`, and predeclared catalog thresholds. Operator: collect the required sample size. |
-| 12. Incremental automation enablement | Deliberately paused | Operator: enable one project with batch cap one only after items 6–11 have recorded evidence. |
+| 12. Automation enablement | Active testing authorized | Enable the requested project's relevant automations with their existing batch caps; provider-pilot evidence is not a prerequisite. |
 
 ## Selected pilot project: NeonPath
 
