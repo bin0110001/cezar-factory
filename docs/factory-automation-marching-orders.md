@@ -63,8 +63,9 @@ change GitHub state, retain a memory, merge a PR, or override a risk gate.
 5. Every automated action must be idempotent or have a durable lease/marker.
 6. Every action must have a bounded retry count, a recorded artifact, and a
    defined terminal outcome.
-7. Automations start paused and advance from fixture evidence to a narrowly
-   scoped live pilot before broader enablement.
+7. Automations may be registered paused for safe deployment. An operator may
+   enable them for active use without completing a separate evidence campaign;
+   keep batch limits, lifecycle gates, and human approvals for high-risk work.
 
 ## Phase 0 — Stabilize and establish the factual baseline
 

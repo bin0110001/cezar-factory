@@ -7,7 +7,8 @@
   "filters": {
     "changedLabels": ["factory:new"],
     "allLabels": ["factory:new"],
-    "excludeLabels": ["factory:blocked", "factory:needs-plan", "factory:working", "factory:needs-help"],
+    "excludeLabels": ["factory:blocked", "factory:needs-plan", "factory:working", "factory:needs-help", "factory:tracking", "epic"],
+    "lookbackDays": 30,
     "maxRecords": 1
   },
   "task": {
