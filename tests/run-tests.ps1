@@ -488,7 +488,7 @@ Assert 'route: failed execution records bounded failure evidence' ((Get-Content 
     Set-Gh @('factory:review')
     Assert 'route: review approval -> human-review' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
-    Assert 'route: low-risk approval -> done and auto-merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = 'https://x/pr/1' })) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged)
+    Assert 'route: low-risk approval -> done, close issue, and auto-merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = 'https://x/pr/1' })) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (Get-Gh).issueCloseRequested -and (Get-Gh).issueState -eq 'CLOSED')
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')

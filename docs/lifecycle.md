@@ -49,7 +49,7 @@ stateDiagram-v2
    - `factory:ready` → `factory:working`: Implementation automation
    - `factory:working` → `factory:review`: Implementation automation (after completion)
    - `factory:review` → `factory:changes-requested`: Review automation
-   - `factory:review` → `factory:done`: Review automation after successful validation and approval; requests auto-merge into `dev`
+   - `factory:review` → `factory:done`: Review automation after successful validation and approval; requests auto-merge into `dev` and explicitly closes the issue (GitHub closing references only auto-close on the default branch)
    - `factory:changes-requested` → `factory:working`: Fix automation
    - `factory:human-review` → `factory:done`: Human decision for an exceptional hold
 3. **Human-required transitions**:

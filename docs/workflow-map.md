@@ -38,7 +38,7 @@ executable state.
 | Approved non-low-risk implementation | `factory:human-review` | Complete human review, then set the chosen terminal/executable state |
 | Review limit reached | `factory:needs-help` | Decide whether to revise requirements or resume review/fix |
 | Investigation cannot safely retry | `factory:needs-help` | Resolve the external blocker and set the chosen executable state |
-| Accepted low-risk review | `factory:done` | None; auto-merge is requested |
+| Accepted low-risk review | `factory:done` | None; the issue is closed and auto-merge is requested |
 
 `factory:working` is an in-run state, not an inbound automation. The
 implementation or fix workflow sets it first, then emits `factory:review` or

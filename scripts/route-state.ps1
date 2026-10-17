@@ -242,6 +242,11 @@ switch ($Event) {
             if ($autoMerge) {
                 Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch | Out-Null
                 Add-Comment ($body + "`n`nValidated approval: auto-merge requested into dev for $($result.pr).")
+                # Closing references in a PR body only close issues when the PR
+                # reaches the repository default branch. Factory merges to dev,
+                # so close the issue explicitly once the validated approval has
+                # queued auto-merge.
+                Invoke-Gh issue close $Issue --comment 'Validated review approved; GitHub auto-merge was requested for the implementation PR.' | Out-Null
                 Set-State 'factory:done'; Done 'factory:done' 'validated auto-merge to dev requested'
             }
             Add-Comment $body; Set-State 'factory:human-review'; Done 'factory:human-review'
