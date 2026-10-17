@@ -31,12 +31,17 @@ function Get-LabelNames($Issue) {
     } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
-$excluded = @('factory:blocked', 'factory:needs-plan', 'factory:working', 'factory:needs-help')
+$excluded = @('factory:blocked', 'factory:needs-plan', 'factory:working', 'factory:needs-help', 'factory:tracking')
 $raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', 'is:open label:"factory:new"', '--limit', '1000', '--json', 'number,title,body,url,createdAt,labels')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
 $eligible = @($issues | Where-Object {
     $labels = @(Get-LabelNames $_)
-    ($labels -contains 'factory:new') -and @($excluded | Where-Object { $labels -contains $_ }).Count -eq 0
+    $types = @($labels | Where-Object { $_ -like 'type:*' })
+    $risks = @($labels | Where-Object { $_ -like 'risk:*' })
+    ($labels -contains 'factory:new') -and
+    ($labels -notcontains 'epic') -and
+    @($excluded | Where-Object { $labels -contains $_ }).Count -eq 0 -and
+    $types.Count -eq 1 -and $risks.Count -eq 1
 } | Sort-Object @{ Expression = { [DateTimeOffset]::Parse([string]$_.createdAt) } }, @{ Expression = { [int]$_.number } })
 
 $selected = if ($eligible.Count) {
