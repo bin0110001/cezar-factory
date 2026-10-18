@@ -82,7 +82,7 @@ Prefer a different agent/context from implementation.
 ### 9. Route the Issue
 
 - Set `approvalChangeRequestStatus` to `approval` only when no blocking findings remain; `change-request` requires `blockingFindings`.
-- Do **not** edit `factory:*` labels. Write the structured result to `.factory/review-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
+- Do **not** edit `factory:*` labels. Write the structured result to `.factory/review-result.json` (create the directory), including the issue number, exact PR URL, reviewed 40-character head SHA, and your reviewer identity (`runner/model`). The workflow validates it and routes the issue state.
 - The workflow posts your findings to the issue and routes approved, validated
   PRs to the bounded auto-merge path; rejected PRs go to
   `factory:changes-requested`. Never approve a PR with unresolved blocking
@@ -90,8 +90,10 @@ Prefer a different agent/context from implementation.
 
 ## Risk-Based Routing
 
-Include the PR URL in the optional `pr` field. Approved work at every risk
-level is eligible for the policy's bounded auto-merge path after validation.
+Include the exact PR URL, `reviewedHeadSha`, and `reviewerIdentity` in every
+result. Approved work at every risk level is eligible for the bounded
+auto-merge path only after live head, validation receipts, effective GitHub
+rules, status checks, approval, and review-thread state pass.
 Risk level alone never requires user plan approval. Independent review remains
 required; ask the user only when an unresolved major architectural decision
 materially changes compatibility, ownership, or the system contract.
@@ -113,7 +115,9 @@ Produce a review result conforming to `review-result.schema.json`:
   "acceptanceCriteriaVerification": "Each acceptance criterion is met.",
   "testAdequacy": "Focused regression and required validation passed.",
   "riskObservations": "No unresolved risks found.",
-  "pr": "https://github.com/example/project/pull/12"
+  "pr": "https://github.com/example/project/pull/12",
+  "reviewedHeadSha": "0123456789abcdef0123456789abcdef01234567",
+  "reviewerIdentity": "claude/sonnet"
 }
 ```
 

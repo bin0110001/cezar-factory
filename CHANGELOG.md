@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.53] - 2026-10-18
+
+- Gate Factory auto-merge on current-head review, clean workflow validation
+  receipts, effective GitHub rules, successful required checks, and resolved
+  review threads; only mark issues done after GitHub reports the PR merged.
+
 ## [0.3.50] - 2026-10-18
 
 - Continue eligible backlog issues without per-issue scheduling or user review
