@@ -83,15 +83,18 @@ Produce an investigation result conforming to `investigation-result.schema.json`
 ```json
 {
   "issue": 272,
-  "failureClassification": "implementation | test | flaky-test | environment | dependency | merge-conflict | requirements | architecture | unknown",
-  "evidence": "Summary of evidence collected",
-  "attemptsReviewed": "Description of previous attempts and outcomes",
-  "rootCauseHypothesis": "Best hypothesis for the root cause",
-  "confidence": "high | medium | low",
-  "recommendedAction": "Specific recommended next step",
-  "automaticRetryAppropriate": true | false
+  "failureClassification": "environment",
+  "evidence": "The configured test runner was unavailable.",
+  "attemptsReviewed": "One implementation attempt and its test artifact.",
+  "rootCauseHypothesis": "The project test dependency is missing.",
+  "confidence": "medium",
+  "recommendedAction": "Install the declared dependency, then rerun validation.",
+  "automaticRetryAppropriate": false
 }
 ```
+
+Select one documented classification and confidence value. Set
+`automaticRetryAppropriate` from the evidence, not from this example.
 
 ## Already-resolved issues
 
