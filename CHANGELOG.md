@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.51] - 2026-10-18
+
+- Validate every Factory workflow against Cezar's runtime schema and inspect
+  workflow PowerShell command contracts and startup coverage in CI.
+
 ## [0.3.50] - 2026-10-18
 
 - Continue eligible backlog issues without per-issue scheduling or user review
