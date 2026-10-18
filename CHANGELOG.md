@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.47] - 2026-10-16
+
+- Replaced heuristic Factory test discovery with configured project validation
+  adapters, bounded worktree-local receipts, and required full/verify workflow
+  stages. Added the Factory source checkout's own explicit validation adapter
+  configuration.
+
 ## [0.3.46] - 2026-10-16
 
 - Reject contradictory implementation success results and define versioned,
