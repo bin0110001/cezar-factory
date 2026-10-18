@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.46] - 2026-10-16
+
+- Reject contradictory implementation success results and define versioned,
+  head-bound workflow validation receipts separately from agent handoffs.
+
 ## [0.3.45] - 2026-10-16
 
 - Made plan, implementation, fix, review, and investigation result examples
