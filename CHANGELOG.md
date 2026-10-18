@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.49] - 2026-10-18
+
+- Publish bounded Factory failure evidence to one canonical issue per project
+  and normalized signature, with idempotent evidence appends, fail-closed
+  deduplication, human review for ambiguous legacy issues, and a versioned
+  publication receipt.
+
 ## [0.3.48] - 2026-10-16
 
 - Bounded and redacted local failure collection, removed bulk run enumeration
