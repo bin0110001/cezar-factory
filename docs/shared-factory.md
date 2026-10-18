@@ -16,7 +16,7 @@ dev work -> tests/run-tests.ps1 passes -> promote-stable.ps1 -> origin/stable
 | --- | --- |
 | `cezar` `CEZ_SHARED_WORKFLOWS_DIRS`, `CEZ_SHARED_SKILL_DIRS` | Extra read-only catalogs (path-delimited). Set in `integrations/bazzite/compose.yaml` to the mounted checkout's `workflows/` and `skills/`. A project's own `.ai/cezar/workflows` / `.ai/skills` entry with the same name wins, so a project can still override one. |
 | `scripts/release/promote-stable.ps1` | The deploy gate. Requires a clean checkout, a valid automation catalog and a passing full test suite, then fast-forwards `origin/stable`. No skip switch; a failure moves nothing. |
-| `scripts/deploy/factory-autodeploy.sh` + `integrations/bazzite/factory-autodeploy.{service,timer}` | Host side. Fast-forwards the mounted checkout to `origin/stable`, checks the container sees the same `VERSION`, then runs `scripts/sync-all-automations.ps1` inside Cezar. Never resets, stashes or overwrites: a dirty or diverged checkout stops it (exit 20/21). |
+| `scripts/deploy/factory-autodeploy.sh` + `integrations/bazzite/factory-autodeploy.{service,timer}` | Host side. Fast-forwards the mounted checkout to `origin/stable`, verifies the container sees the same Git SHA, `VERSION`, and content digest, then runs `scripts/sync-all-automations.ps1` inside Cezar on every healthy timer tick. Never resets, stashes or overwrites: a dirty or diverged checkout stops it (exit 20/21). |
 | `scripts/sync-all-automations.ps1` | Reconciles `[factory]` automations into every project in the host-local registry (`projectType` gates Godot-only automations). |
 | `scripts/migrate-to-shared.ps1` | Removes a project's installed Factory copy (everything in its manifest) so the shared one is used. Keeps the project-owned `factory.config.yaml`. |
 
@@ -35,7 +35,12 @@ systemctl --user daemon-reload && systemctl --user enable --now factory-autodepl
 ```
 
 The host checkout must live where `FACTORY_CONTROL_PLANE_FACTORY_DIR` points, stay clean, and have
-`config/factory-projects.json` (host-local, gitignored) so automations know their targets.
+`config/factory-projects.json` (host-local, gitignored) so automations know their targets. Each timer
+run writes an atomic `last-attempt.json` and preserves `last-success.json` in
+`FACTORY_AUTODEPLOY_STATE_DIR` (default: `$XDG_STATE_HOME/cezar-factory/autodeploy`, or
+`$HOME/.local/state/cezar-factory/autodeploy`). Failed parity or sync is retried on the next timer
+tick even when the source SHA is unchanged. `--force` remains accepted for compatibility; normal
+timer runs now perform the same parity and reconciliation checks.
 Redeploy the Cezar container once (`deploy-bazzite.sh`) so it gets the new environment variables.
 
 ## Moving a project over

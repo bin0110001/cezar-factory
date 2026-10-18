@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.52] - 2026-10-18
+
+- Retry shared Factory parity and automation reconciliation on every timer tick,
+  verify host/container source and content identity, and record atomic success
+  and failure receipts.
+
 ## [0.3.50] - 2026-10-18
 
 - Continue eligible backlog issues without per-issue scheduling or user review
