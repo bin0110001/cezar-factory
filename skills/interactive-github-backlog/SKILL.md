@@ -7,8 +7,10 @@ description: Manage a project's GitHub backlog interactively from a local coding
 
 Use this skill when the user asks to capture work in GitHub Issues, update an
 issue's backlog status, or turn a Markdown script/spec/plan into a set of
-reviewable issues. This is the local, human-directed companion to the Factory
-automations; it is not an implementation or dispatch skill.
+reviewable issues. This is the local companion to the Factory automations; it
+is not an implementation skill. A backlog-completion request is handled by
+`factory-work-backlog`, which advances eligible issues without per-issue
+scheduling or user-review approval.
 
 ## Operating boundary
 
@@ -57,20 +59,21 @@ last. If the helper is absent, use `gh issue edit` only for the same explicit
 human-directed transition, removing the old lifecycle label and adding the
 new one in separate operations; never leave conflicting `factory:*` labels.
 
-Human-directed status changes are limited to these cases:
+Operator-driven status changes are limited to these cases:
 
 - `factory:new` -> `factory:needs-plan` when the issue is classified and ready
   for the planner.
-- `factory:needs-help` -> `factory:needs-plan` after the user has answered the
-  blocking question.
-- `factory:blocked` -> `factory:ready` only after the user confirms the
-  external blocker is cleared and supplies the required complexity label.
+- `factory:needs-help` -> `factory:needs-plan` after a major architectural
+  decision is recorded. Resolve routine ambiguity with a documented
+  assumption.
+- `factory:blocked` -> the appropriate executable state after evidence confirms
+  the external blocker is cleared; do not wait for user confirmation.
 
 Do not use `factory:ready` to skip planning, and do not set
 `factory:working`, `factory:review`, or `factory:done` to make progress look
-complete. `factory:needs-help` and `factory:human-review` require an explicit
-human decision. If the requested update conflicts with these rules, explain
-the conflict and stop before editing labels.
+complete. `factory:needs-help` and `factory:human-review` are reserved for an
+unresolved major architectural decision. User review after delivery is not a
+gate; independent technical review remains part of the normal PR workflow.
 
 ## Ordinary issue intake
 
@@ -133,9 +136,9 @@ When the user asks to decompose a Markdown script/spec/plan:
    user must decide something; otherwise keep it at `factory:needs-plan` and
    state the assumption in its body.
 
-The parent is a tracking record, not work for the planner. Children are the
-executable units. A decomposition does not authorize implementation, issue
-claiming, or automatic dispatch.
+The parent is a tracking record. Creating it queues its children for autonomous
+planning and implementation in dependency order. Do not wait for the user to
+schedule child work.
 
 ## Suggested issue shapes
 

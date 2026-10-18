@@ -1,0 +1,20 @@
+# Factory source checkout's explicit project validation commands.
+factory:
+  source: "cezar-factory"
+  version: "0.3.48"
+
+workflows:
+  - implement
+  - review
+
+skills:
+  - factory-implement
+  - factory-review
+
+project:
+  type: powershell
+
+validation:
+  changed: "pwsh -NoProfile -File scripts/validate-automation-catalog.ps1"
+  full: "pwsh -NoProfile -File tests/run-tests.ps1"
+  verify: "pwsh -NoProfile -File scripts/release/validate-release.ps1 -SkipTests"

@@ -10,16 +10,29 @@ Workflows own scripts. Every Factory script runs from a `command:` step in
 `workflows/*.yaml`; skills and workflow `prompt:` text must never instruct the
 model to run a Factory script, extract an issue number for one (pass `-Task
 "{{task}}"`), or discover work the workflow already selected. An agent asked to
-run an automation queues it (`cez automation run <id>`), reports the task ID and
-stops; it does not inspect the worktree or create replacement tasks.
+run an automation queues it (`cez automation run <id>`) and reports the task ID;
+it does not inspect that automation's worktree or create replacement tasks.
 `tests/run-tests.ps1` enforces the script rule.
+
+When asked to complete outstanding issues, work the repository backlog
+autonomously. Select the next eligible issue from the existing queue using its
+readiness, dependencies, priority, and age; do not wait for the user to schedule
+each issue or approve routine assumptions. Decomposed children enter planning
+automatically and continue in dependency order. If one issue is waiting on CI,
+independent technical review, or release, continue with other eligible issues
+instead of pausing the whole backlog. Ask the user only to decide a major
+architectural choice that materially changes compatibility, ownership, or the
+system contract. Resolve routine ambiguity with the safest reversible
+assumption and record it. User review is post-delivery feedback; if the user
+later finds a defect, they will file a follow-up issue.
 
 When an update is finished, invoke the `factory-finish-release` skill. It
 orchestrates validation, configured-target synchronization, Bazzite checkout
 and Cezar runtime parity checks, and the reviewed `dev` PR auto-merge handoff.
 It must stop on failed validation, missing target configuration, dirty or
 mismatched remote checkouts, or missing review gates rather than overwriting
-state.
+state. A release stop applies only to that change; continue other eligible
+issues in an active backlog-completion task.
 
 Factory content reaches Cezar through the shared mount (`docs/shared-factory.md`): after a change
 is merged, run `scripts/release/promote-stable.ps1` (it runs the full test suite and only then
@@ -55,9 +68,10 @@ report that the release is ready but needs target configuration.
 
 After an update passes validation and independent review, the implementation PR
 must target `dev` and request GitHub auto-merge. This applies to every approved
-risk level; high-risk work still requires its human plan-approval and independent
-review gates before auto-merge can be requested. Do not merge a failed,
-unreviewed, or unresolved PR.
+risk level. High risk alone is not a reason to stop for user approval; request
+input only when the plan exposes a major architectural decision. Do not merge a
+failed, unreviewed, or unresolved PR. Independent technical review remains a
+required workflow gate; user review is not.
 
 When you finish making changes, commit them and push the branch to its remote
 before reporting the work as done. Never leave finished work only in the local

@@ -18,6 +18,10 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $f = $a[$a.IndexOf('--body-file') + 1]
     $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
 }
+elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
+    $state.issueCloseRequested = $true
+    $state.issueState = 'CLOSED'
+}
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
     @($state.issues | Where-Object { $_ }) | ConvertTo-Json -Depth 5 -Compress -AsArray
 }

@@ -29,8 +29,11 @@ source: skills/factory-implement/SKILL.md
   and environment metadata written by `prepare-implementation.ps1`.
 - Work only on the prepared issue. Treat the recorded issue and approved plan
   as authoritative. If the artifact is missing, stale, malformed, or names a
-  different issue than the workflow prompt, report the environment blocker and
-  stop. Do not repeat broad issue discovery.
+  different issue than the workflow prompt, report the environment blocker to
+  the outer workflow and do not edit this issue. A backlog-level task must
+  continue with another eligible issue while the workflow prepares or repairs
+  this handoff; do not ask the user to schedule it. Do not repeat broad issue
+  discovery inside a workflow-selected implementation run.
 - Do not use anonymous GitHub `curl` calls or guess repository owners; the
   preparation script already performed the authenticated issue read.
 - Review the plan's objective, acceptance criteria, and non-goals.
@@ -41,7 +44,9 @@ source: skills/factory-implement/SKILL.md
 
 - Treat acceptance criteria as the primary success measure.
 - Do not implement features or fixes beyond the stated criteria.
-- If acceptance criteria are unclear, stop and escalate rather than guessing.
+- Resolve routine ambiguity with the safest reversible assumption and document
+  it. Escalate only an unresolved major architectural decision that materially
+  changes compatibility, ownership, or the system contract.
 
 ### 3. Use Project-Specific Skills
 
@@ -56,9 +61,9 @@ source: skills/factory-implement/SKILL.md
 - Use the shell and tools provided by the runner. Do not switch to `/bin/sh`,
   invent container paths, or replace a failed command with one whose semantics
   are unknown.
-- Invoke Factory scripts from `$FACTORY_RUNTIME_ROOT/scripts/...` and project
-  scripts from the current worktree. Never hard-code `/projects/...` or another
-  machine-specific path.
+- Run the project's own development commands from the current worktree.
+  Workflow `command:` steps run Factory scripts; do not run them from this skill.
+  Never hard-code `/projects/...` or another machine-specific path.
 - Prefer the runner's structured file-edit tool for multiline files. Avoid shell
   heredocs and nested quoting when a structured edit is available; malformed
   quoting can create literal paths or partial files.
@@ -89,7 +94,7 @@ source: skills/factory-implement/SKILL.md
 ### 6. Run Targeted Validation
 
 - Run the project's own test commands while developing. The workflow runs `test-changed.ps1` and the full verification itself after you finish; do not run those Factory scripts.
-- If that script is unavailable, run the most relevant unit or integration tests manually.
+- If the project's test command is unavailable, run the most relevant unit or integration tests manually.
 - Do not skip validation; even targeted validation provides signal.
 - If the test script fails because the runtime command itself is unavailable,
   distinguish that infrastructure failure from a test failure; do not claim
@@ -110,17 +115,17 @@ source: skills/factory-implement/SKILL.md
   auto-merge into `dev`.
 - Link the PR to the issue.
 
-### 9. Factory-managed asset release gate
+### 9. Factory-managed asset handoff
 
 When the change touches a Factory-managed asset or its source equivalent
 (`skills/`, `workflows/`, `automations/`, `policies/`, `templates/`,
-`scripts/`, schemas, or Factory versioning), the implementation is not
-complete after the PR alone. Validate the Factory checkout, run the
-`factory-release` procedure, and synchronize every explicitly configured
-target from `config/factory-projects.json`. Do not discover targets by scanning
-drives. If the required Factory checkout or target registry is unavailable,
-report the implementation as blocked or incomplete rather than claiming
-success. Record the release output and any target that could not be updated.
+`scripts/`, schemas, or Factory versioning), identify those files in the
+implementation result. This implementation workflow runs its configured
+validation commands and routes the PR to review. The Factory release and
+configured-target synchronization are later gates handled by the reviewed
+finish-release process, after the PR is approved and merged. A successful
+implementation result means the code and PR are ready for review; do not claim
+the Factory update has been released or delivered to targets at this stage.
 
 ## Retry Behavior
 
@@ -136,18 +141,25 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ```json
 {
-  "status": "success | failure",
-  "summary": "Brief description of what was done",
-  "filesChanged": ["path/to/file1", "path/to/file2"],
-  "testsRun": ["test name or identifier"],
-  "testResult": "passed | failed | partial",
-  "acceptanceCriteriaStatus": "All criteria met | Partially met | Not met",
-  "documentationUpdated": true,
-  "knownConcerns": "Any concerns or caveats",
-  "followUpSuggestions": "Recommended follow-up work",
-  "durableKnowledgeCandidates": "Reusable knowledge discovered during implementation"
+  "issue": 272,
+  "status": "success",
+  "summary": "Implemented the planned change.",
+  "filesChanged": ["src/example.ps1"],
+  "testsRun": ["focused regression test"],
+  "testResult": "passed",
+  "acceptanceCriteriaStatus": "All criteria met",
+  "documentationUpdated": false,
+  "knownConcerns": "",
+  "followUpSuggestions": "",
+  "durableKnowledgeCandidates": "",
+  "pr": "https://github.com/example/project/pull/12"
 }
 ```
+
+This is a successful result example. Use `status: failure` with the observed
+blocker when implementation or validation cannot finish. Set
+`documentationUpdated` to `false` when the documentation review requires no
+change.
 
 ## Workflow Contract
 

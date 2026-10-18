@@ -19,7 +19,7 @@ source: skills/factory-plan/SKILL.md
 - Identify risks.
 - Estimate delivery complexity.
 - Decide whether decomposition is needed.
-- Update the issue with the plan.
+- Write the structured plan result for the workflow to post to the issue.
 - Route to:
   - `factory:ready`
   - `factory:needs-help`
@@ -50,9 +50,13 @@ source: skills/factory-plan/SKILL.md
 
 ### 3. Identify Ambiguities
 
-- List any unclear requirements or assumptions.
-- Note where the issue description is incomplete or contradictory.
-- Flag anything that requires human judgment or domain expertise.
+- Resolve routine ambiguity using the safest reversible assumption and record
+  it in the plan. Do not return `not-ready` merely because the issue could be
+  more detailed.
+- Ask the user only when an unresolved major architectural decision would
+  materially change compatibility, ownership, or the system contract. Other
+  missing context should be handled with a documented assumption or bounded
+  investigation.
 
 ### 4. Identify Likely Dependencies
 
@@ -93,7 +97,7 @@ source: skills/factory-plan/SKILL.md
 ### 9. Decide Whether Decomposition Is Needed
 
 - Decompose when the issue is too large to implement and review as one PR, or when the issue itself asks you to break a document, spec or epic into issues.
-  - Set `readyNotReadyStatus` to `decomposed` and list the sub-issues in `subIssues`. Do **not** create issues yourself; the workflow creates them from your list and queues them as `factory:needs-plan` for autonomous planning.
+  - Set `readyNotReadyStatus` to `decomposed` and list the sub-issues in `subIssues`. Do **not** create issues yourself; the workflow creates them from your list and queues them as `factory:needs-plan` for autonomous planning and implementation in dependency order. The parent closes as a tracking record; no human scheduling handoff is required.
 - Each sub-issue is `{ "title", "body", "type", "risk", "complexity", "dependsOn" }`:
   - `title`: short and unique, in the form a maintainer would file ("Phase 3: deterministic evaluation engine").
   - `body`: self-contained. State the objective, the concrete tasks, acceptance criteria, and a pointer to the source (document path and section). A planner reading only this issue must be able to plan it without the parent.
@@ -103,17 +107,18 @@ source: skills/factory-plan/SKILL.md
 - Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
 - In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
 
-### 10. Update the Issue with the Plan
+### 10. Record the Plan
 
-- Post the plan as a comment on the issue.
-- Use a structured format that includes all required fields from the plan schema.
-- Reference the plan schema fields explicitly.
+- Write the structured result to `.factory/plan-result.json`. The workflow
+  validates it, posts the plan comment, and updates the issue state.
+- Include all required fields from the plan schema. Do not post a separate
+  comment or edit lifecycle labels from this skill.
 
 ### 11. Route the Issue
 
-- Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise `not-ready` with the questions in `unresolvedQuestions`.
+- Set `readyNotReadyStatus` to `ready` when the plan meets the Definition of Ready. Use `not-ready` only when an unresolved major architectural decision materially changes compatibility, ownership, or the system contract; record that specific choice in `unresolvedQuestions`. Risk level alone never blocks implementation.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
-- The workflow posts the plan to the issue and routes to `factory:ready` or `factory:needs-help` (and holds `risk:high` issues for human plan approval). For `decomposed` it creates and queues the sub-issues, comments the list, and keeps the parent as a tracking review record.
+- The workflow posts the plan and routes ready work to `factory:ready`. Risk level alone never holds a plan for user approval. Use `factory:needs-help` only for an unresolved major architectural decision. For `decomposed`, the workflow creates and queues sub-issues, posts their dependency order, and closes the parent as a tracking record.
 
 ## Output Format
 
@@ -121,21 +126,23 @@ Produce a structured plan result conforming to `plan.schema.json`:
 
 ```json
 {
-  "objective": "Clear statement of what this task achieves",
-  "acceptanceCriteria": "Testable criteria for completion",
-  "nonGoals": "Explicitly stated out-of-scope items",
-  "risks": "Identified risks and mitigation strategies",
-  "dependencies": "Required dependencies and setup steps",
-  "suggestedWorkBreakdown": "Ordered list of implementation steps",
-  "requiredProjectSkills": ["skill-ids needed for this task"],
-  "unresolvedQuestions": "Questions requiring human input (empty if none)",
+  "issue": 272,
+  "objective": "Prevent an empty test suite from reporting success.",
+  "acceptanceCriteria": "An empty suite reports a non-passing result.",
+  "nonGoals": "Do not change the project's test cases.",
+  "risks": "Existing projects may rely on the old empty-suite behavior.",
+  "dependencies": "None.",
+  "suggestedWorkBreakdown": "Add a regression test, correct the result, then validate.",
+  "requiredProjectSkills": ["factory-implement"],
+  "unresolvedQuestions": "",
   "complexity": "complexity:medium",
-  "readyNotReadyStatus": "ready, not-ready or decomposed",
-  "subIssues": [{ "title": "...", "body": "...", "type": "type:feature", "risk": "risk:medium", "dependsOn": [0] }]
+  "readyNotReadyStatus": "ready"
 }
 ```
 
-`subIssues` is required only when `readyNotReadyStatus` is `decomposed`.
+Use `not-ready` with the blocking questions in `unresolvedQuestions` when
+the work cannot start. Use `decomposed` with schema-valid `subIssues` when the
+workflow needs to create smaller issues. Omit `subIssues` for a ready plan.
 
 ## Already-resolved issues
 

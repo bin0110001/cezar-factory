@@ -77,6 +77,8 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
+$intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
+Assert 'intake automation catches older backlog and excludes tracking parents' ($intakeAutomation.filters.lookbackDays -ge 30 -and $intakeAutomation.filters.excludeLabels -contains 'epic' -and $intakeAutomation.filters.excludeLabels -contains 'factory:tracking')
 Assert 'implementation and fix-review use the configured gateway model' ($catalog.automationProfiles.'factory-implement'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-fix-review'.model -eq 'factory-gateway/factory-code')
 Assert 'complexity routes small to gateway, medium to Luna, and large to premium implementation' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-luna' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.spendTier -eq 'premium-implementation' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
 Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automationProfiles.'factory-plan'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'sonnet')
@@ -126,6 +128,50 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+# Copyable result examples must remain valid JSON and satisfy their declared
+# schema. A missing required field is a real contract failure, not just prose
+# drift; #33 will extend this to the full workflow command inventory.
+$resultExamples = @(
+    @{ Skill = 'factory-plan'; Schema = 'plan.schema.json' },
+    @{ Skill = 'factory-implement'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-fix'; Schema = 'implementation-result.schema.json' },
+    @{ Skill = 'factory-review'; Schema = 'review-result.schema.json' },
+    @{ Skill = 'factory-investigate'; Schema = 'investigation-result.schema.json' }
+)
+foreach ($entry in $resultExamples) {
+    $skillPath = Join-Path $factory "skills/$($entry.Skill)/SKILL.md"
+    $example = [regex]::Match((Get-Content -Raw $skillPath), '(?ms)```json\s*(\{.*?\})\s*```')
+    Assert "$($entry.Skill) has a concrete JSON result example" $example.Success
+    if (-not $example.Success) { continue }
+    $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
+    $valid = $false
+    try { $valid = [bool](Test-Json -Json $example.Groups[1].Value -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+    Assert "$($entry.Skill) example satisfies $($entry.Schema)" $valid
+    if ($valid) {
+        $withoutIssue = $example.Groups[1].Value | ConvertFrom-Json -AsHashtable
+        $withoutIssue.Remove('issue')
+        $invalid = $false
+        try { $invalid = [bool](Test-Json -Json ($withoutIssue | ConvertTo-Json -Depth 10) -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+        Assert "$($entry.Skill) example contract rejects a missing issue" (-not $invalid)
+    }
+}
+
+function Missing-StartupScripts([string]$WorkflowText) {
+    $startup = [regex]::Match($WorkflowText, '(?m)^\s+command:.*factory-startup\.ps1.*-RequiredScripts\s+([^\s]+)')
+    if (-not $startup.Success) { return @('startup manifest missing') }
+    $required = @($startup.Groups[1].Value -split ',')
+    $called = @([regex]::Matches($WorkflowText, '(?m)^\s+command:.*?/scripts/([a-zA-Z0-9/_-]+\.ps1)') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Where-Object { $_ -ne 'factory-startup.ps1' })
+    @($called | Where-Object { $_ -notin $required } | Sort-Object -Unique)
+}
+foreach ($workflowName in @('intake', 'plan', 'investigate')) {
+    $workflowText = Get-Content -Raw (Join-Path $factory "workflows/$workflowName.yaml")
+    Assert "$workflowName startup lists every called script" (@(Missing-StartupScripts $workflowText).Count -eq 0)
+}
+$investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')) -replace ',route-state\.ps1(?=\r?\n)', ''
+Assert 'startup manifest check detects a missing route script' (@(Missing-StartupScripts $investigateWithoutRouter) -contains 'route-state.ps1')
+Assert 'plan startup includes its routing helper' ((Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')) -match 'RequiredScripts[^\r\n]*route-state\.ps1')
 Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
 Assert 'implement skill prevents speculative recovery'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
 Assert 'route-state tolerates pre-complexity installed layers' ($routeState -match 'Older installed Factory layers predate complexity labels' -and $routeState -match 'complexity:small.*complexity:medium.*complexity:large')
@@ -385,6 +431,12 @@ try {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
         $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null; $global:LASTEXITCODE
     }
+    function Validation-Errors($Obj) {
+        $f = Join-Path $tmp 'r-semantic.json'; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
+        $global:LASTEXITCODE = 0
+        $output = & pwsh -NoProfile -File $val -Kind implementation -Path $f | ConvertFrom-Json
+        @($output.errors)
+    }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments) } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
     $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
@@ -411,6 +463,21 @@ try {
     $intake = @{ issue = 7; type = 'type:bug'; risk = 'risk:low'; summary = 'clear bug'; unresolvedQuestions = '' }
     Assert 'validate: good intake passes' ((Test-Validate 'intake' $intake) -eq 0)
     Set-Gh @('factory:new')
+    $selectorState = @{
+        labels = @(); comments = @();
+        issues = @(
+            @{ number = 1; title = 'tracking epic'; body = ''; url = 'https://github.com/x/y/issues/1'; createdAt = '2026-01-01T00:00:00Z'; labels = @('factory:new', 'epic', 'type:feature', 'risk:medium') },
+            @{ number = 2; title = 'ambiguous labels'; body = ''; url = 'https://github.com/x/y/issues/2'; createdAt = '2026-01-02T00:00:00Z'; labels = @('factory:new', 'type:bug', 'type:feature', 'risk:low') },
+            @{ number = 3; title = 'eligible work'; body = ''; url = 'https://github.com/x/y/issues/3'; createdAt = '2026-01-03T00:00:00Z'; labels = @('factory:new', 'type:bug', 'risk:low') },
+            @{ number = 4; title = 'tracking label'; body = ''; url = 'https://github.com/x/y/issues/4'; createdAt = '2026-01-04T00:00:00Z'; labels = @('factory:new', 'factory:tracking', 'type:feature', 'risk:low') }
+        )
+    }
+    $selectorState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $selectorOutput = Join-Path $tmp 'intake-selection.json'
+    $selectorRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; OutputPath = $selectorOutput }
+    $selectedIntake = Get-Content -Raw $selectorOutput | ConvertFrom-Json
+    Assert 'intake selector skips epics, tracking parents, and ambiguous taxonomy' ($selectorRun.Code -eq 0 -and $selectedIntake.issue -eq 3)
+    Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')
     Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
@@ -421,11 +488,30 @@ try {
     $bad = $plan.Clone(); $bad.Remove('issue')
     Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
-    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('t'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://x/pr/1' }
+    $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
+    $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
-    Assert 'validate: implementation with no documentation change passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false })) -eq 0)
+    Assert 'validate: implementation with no documentation change and nonblocking concern passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false; knownConcerns = 'Minor follow-up suggested.' })) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
     Assert 'validate: success without PR fails' ((Test-Validate 'implementation' $noPr) -ne 0)
+    foreach ($badTests in @('failed', 'Not met', 'not-run', 'skipped', 'unknown')) {
+        Assert "validate: success with $badTests tests fails" ((Test-Validate 'implementation' (With $impl @{ testResult = $badTests })) -ne 0)
+    }
+    foreach ($badAcceptance in @('Not met', 'Partially met', 'TODO', 'Acceptance criteria status')) {
+        Assert "validate: success with $badAcceptance acceptance fails" ((Test-Validate 'implementation' (With $impl @{ acceptanceCriteriaStatus = $badAcceptance })) -ne 0)
+    }
+    Assert 'validate: success with empty testsRun fails' ((Test-Validate 'implementation' (With $impl @{ testsRun = @() })) -ne 0)
+    Assert 'validate: success with placeholder testsRun fails' ((Test-Validate 'implementation' (With $impl @{ testsRun = @('test name or identifier') })) -ne 0)
+    Assert 'validate: success with placeholder filesChanged fails' ((Test-Validate 'implementation' (With $impl @{ filesChanged = @('path/to/file1') })) -ne 0)
+    Assert 'validate: success with malformed PR fails' ((Test-Validate 'implementation' (With $impl @{ pr = 'https://github.com/example/project/issues/1' })) -ne 0)
+    Assert 'validate: legitimate failure result passes' ((Test-Validate 'implementation' (With $impl @{ status = 'failure'; testResult = 'failed'; acceptanceCriteriaStatus = 'Not met'; pr = '' })) -eq 0)
+    Assert 'validate: contradictory result names its field' ((Validation-Errors (With $impl @{ testResult = 'failed' })) -match 'testResult')
+    $receiptSchema = Join-Path $factory 'schemas/validation-receipt.schema.json'
+    $receipt = @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = 'https://github.com/example/project/pull/1'; headSha = ('a' * 40); stage = 'full'; status = 'passed'; exitCode = 0; artifactPaths = @('.factory/artifacts/validation/full/attempt/receipt.json') }
+    Assert 'receipt: valid head-bound workflow record satisfies v1 schema' (Test-Json -Json ($receipt | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema)
+    Assert 'receipt: legacy agent result cannot satisfy receipt schema' (-not (Test-Json -Json ($impl | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
+    Assert 'receipt: missing head cannot satisfy receipt schema' (-not (Test-Json -Json ((With $receipt @{ headSha = '' }) | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
+    Assert 'validation has no GitHub side effects' ((Get-Content -Raw $env:FAKE_GH_STATE) -eq $validationGhState)
     $rev = @{ issue = 7; approvalChangeRequestStatus = 'change-request'; blockingFindings = ''; nonBlockingFindings = ''; acceptanceCriteriaVerification = 'v'; testAdequacy = 't'; riskObservations = 'r' }
     Assert 'validate: change-request without findings fails' ((Test-Validate 'review' $rev) -ne 0)
     Assert 'validate: change-request with findings passes' ((Test-Validate 'review' (With $rev @{ blockingFindings = 'bug at x' })) -eq 0)
@@ -437,7 +523,7 @@ try {
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
     Set-Gh @('factory:needs-plan', 'risk:high')
-    Assert 'route: risk:high plan held for approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'route: risk:high plan proceeds without user approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-help')
     Set-Gh @('factory:needs-plan')
     Assert 'route: not-ready -> needs-help' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Set-Gh @('factory:review')
@@ -478,20 +564,24 @@ try {
     Set-Gh @('factory:working')
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
     Set-Gh @('factory:review')
-    Assert 'route: review approval -> human-review' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
+    Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
     Assert 'route: low-risk approval -> done and auto-merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = 'https://x/pr/1' })) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged)
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')
     Set-Gh @('factory:review') @('x <!-- factory:review-round -->', 'y <!-- factory:review-round -->')
-    Assert 'route: review round limit escalates to needs-help' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help' -and (@((Get-Gh).comments)[-1] -match 'Recommended human decision'))
+    Assert 'route: review round limit starts automatic investigation' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate' -and (@((Get-Gh).comments)[-1] -match 'continuing the work'))
     Set-Gh @('factory:investigate')
     Assert 'route: investigate retry -> ready' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:ready')
     Set-Gh @('factory:investigate') @('<!-- factory:investigate-retry -->')
-    Assert 'route: second investigation escalates' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'route: second investigation re-plans automatically' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:investigate')
-    Assert 'route: low-confidence investigation escalates' ((Invoke-Route 'investigate-result' (With $inv @{ confidence = 'low' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'route: low-confidence investigation re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ confidence = 'low' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
+    Set-Gh @('factory:investigate')
+    Assert 'route: major architecture investigation requests user input' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Set-Gh @('factory:investigate')
+    Assert 'route: external dependency investigation marks blocked' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'dependency'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:blocked')
     Set-Gh @('factory:ready', 'factory:working', 'type:bug')
     Assert 'route: conflicting state labels collapse to one' ((Invoke-Route 'implement-result' $impl) -eq 0 -and @((Get-Gh).labels | Where-Object { $_ -like 'factory:*' }).Count -eq 1)
 
@@ -507,7 +597,7 @@ try {
     Assert 'validate: bad dependsOn index fails' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @(@{ title = 't'; body = 'b'; type = 'type:bug'; risk = 'risk:low'; dependsOn = @(5) }) })) -ne 0)
     Assert 'validate: duplicate sub-issue titles fail' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @($subs[0], $subs[0]) })) -ne 0)
     Set-Gh @('factory:needs-plan')
-    Assert 'route: decomposed -> human-review' ((Invoke-Route 'plan-result' $dec) -eq 0 -and (Get-Gh).labels -contains 'factory:human-review')
+    Assert 'route: decomposed parent closes without scheduling handoff' ((Invoke-Route 'plan-result' $dec) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).issueCloseRequested -and (Get-Gh).issueState -eq 'CLOSED' -and (Get-Gh).labels -notcontains 'factory:human-review')
     $iss = @((Get-Gh).issues)
     Assert 'route: sub-issues queued for planning' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:needs-plan,type:feature,risk:medium,complexity:medium')
     Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
@@ -750,6 +840,16 @@ Write-Error "unsupported $($a -join ' ')"; exit 2
 finally { Pop-Location }
 }
 finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+
+Write-Host '== project validation adapters =='
+$adapterOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'validation-adapters.ps1') 2>&1 | Out-String
+Write-Host $adapterOutput
+Assert 'configured project validation adapters pass fixture cases' ($LASTEXITCODE -eq 0)
+
+Write-Host '== bounded failure audit =='
+$failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-bounds.ps1') 2>&1 | Out-String
+Write-Host $failureAuditOutput
+Assert 'failure collector obeys identity and read budgets' ($LASTEXITCODE -eq 0)
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
