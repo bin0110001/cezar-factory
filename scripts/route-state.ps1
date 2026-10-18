@@ -146,7 +146,7 @@ function Write-ExecutionRecord([string]$Status, $Result = $null) {
 }
 function Text($v) { if ($v -is [array]) { ($v | ForEach-Object { "- $_" }) -join "`n" } else { "$v" } }
 function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence, [string]$Hypothesis, [string]$Decision) {
-    "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended human decision**`n$Decision"
+    "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended next step / major architectural decision**`n$Decision"
 }
 function Done([string]$To, [string]$Note = '') {
     Write-Output (@{ status = 'ok'; event = $Event; issue = $Issue; state = $To; note = $Note } | ConvertTo-Json -Compress)
@@ -203,17 +203,15 @@ switch ($Event) {
                 $deps = if ($subs[$i].PSObject.Properties['dependsOn'] -and @($subs[$i].dependsOn).Count) { (@($subs[$i].dependsOn) | ForEach-Object { "#$($numbers[$_])" }) -join ', ' } else { '-' }
                 "| #$($numbers[$i]) | $($subs[$i].title) | $($subs[$i].type) | $($subs[$i].risk) | $deps |"
             }
-            $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues, all queued as ``factory:needs-plan`` for autonomous planning (planning runs one issue per poll).`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
+            $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues and queued them as ``factory:needs-plan`` for autonomous planning and implementation in dependency order. This parent is a tracking record and is closed after decomposition.`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
             Add-Comment ($plan + "`n`n" + $table)
-            Set-State 'factory:human-review'; Done 'factory:human-review' "decomposed into $($subs.Count) sub-issues"
+            Set-State 'factory:done'
+            Invoke-Gh issue close $Issue --comment "Decomposed into $($subs.Count) child issues, queued for autonomous planning and implementation in dependency order." | Out-Null
+            Done 'factory:done' "decomposed into $($subs.Count) queued sub-issues"
         }
         if ($result.readyNotReadyStatus -ne 'ready') {
             Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'
-        }
-        if ($labels -contains 'risk:high') {
-            Add-Comment ($plan + "`n`n**risk:high: human plan approval required.** Review the plan; if approved, relabel factory:ready.")
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'risk:high plan approval'
         }
         Add-Comment $plan; Set-State 'factory:ready'; Done 'factory:ready'
     }
@@ -238,12 +236,13 @@ switch ($Event) {
                 Add-Comment ($body + "`n`nValidated approval: auto-merge requested into dev for $($result.pr).")
                 Set-State 'factory:done'; Done 'factory:done' 'validated auto-merge to dev requested'
             }
-            Add-Comment $body; Set-State 'factory:human-review'; Done 'factory:human-review'
+            Add-Comment ($body + "`n`nNo PR URL was supplied. Return this issue to implementation to provide the PR link; do not wait for user review.")
+            Set-State 'factory:changes-requested'; Done 'factory:changes-requested' 'approved result is missing its PR URL'
         }
         $rounds = @($comments | Where-Object { $_ -match '<!-- factory:review-round -->' }).Count
         if ($rounds -ge $maxRounds) {
-            Add-Comment ($body + "`n`n" + (New-Escalation "Review still requests changes after $rounds fix round(s) (limit $maxRounds)." "$rounds review/fix rounds completed." '(see review findings above and the PR)' 'Findings are not converging; the plan or acceptance criteria may be wrong.' 'Decide: adjust the requirements, take over manually, or allow more rounds.'))
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'review round limit'
+            Add-Comment ($body + "`n`nIndependent review still requests changes after $rounds fix round(s). Automatically investigating the disagreement and continuing the work; this limit is not a user-approval gate.")
+            Set-State 'factory:investigate'; Done 'factory:investigate' 'review fix limit reached; automatic investigation'
         }
         Add-Comment ($body + "`n`n<!-- factory:review-round -->"); Set-State 'factory:changes-requested'; Done 'factory:changes-requested'
     }
@@ -255,7 +254,15 @@ switch ($Event) {
             Add-Comment "## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`nRetrying implementation.`n`n<!-- factory:investigate-retry -->"
             Set-State 'factory:ready'; Done 'factory:ready' 'retry'
         }
-        Add-Comment ("## Factory investigation`n`n$summary`n`n" + (New-Escalation "Repeated failure classified as $($result.failureClassification)." (Text $result.attemptsReviewed) (Text $result.evidence) (Text $result.rootCauseHypothesis) (Text $result.recommendedAction)))
-        Set-State 'factory:needs-help'; Done 'factory:needs-help' 'escalated'
+        Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)")
+        if ($result.failureClassification -eq 'architecture') {
+            Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
+            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
+        }
+        if ($result.failureClassification -in @('environment', 'dependency', 'merge-conflict')) {
+            Set-State 'factory:blocked'; Done 'factory:blocked' 'external dependency or environment blocker'
+        }
+        Add-Comment 'No major architectural decision or external blocker prevents progress. Returning the issue to planning with the investigation evidence so the next implementation attempt can use a revised approach.'
+        Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'automatic re-plan after investigation'
     }
 }

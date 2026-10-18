@@ -18,11 +18,12 @@ activity from which to advance its cursor.
 | Fix succeeds | `factory:review` | Review | `factory:review` |
 | Implementation fails | `factory:investigate` | Investigation | `factory:investigate` |
 | Investigation retry approved | `factory:ready` plus retained complexity | Implementation | `factory:ready` plus `complexity:*` |
-| Review approved with a PR URL | Auto-merge requested, then `factory:done` | GitHub auto-merge | All risk levels; high-risk work still requires human plan approval |
+| Review approved with a PR URL | Auto-merge requested, then `factory:done` | GitHub auto-merge | All risk levels after validation and independent review |
+| Plan decomposes into children | Parent closes as tracking work; children enter `factory:needs-plan` | Planning then implementation proceeds in dependency order |
 
 The current router marks `factory:done` when it requests auto-merge; that label
-does not prove the PR has merged. An approved review without a PR URL goes to
-`factory:human-review`. The merge-gate audit in
+does not prove the PR has merged. An approved review without a PR URL returns
+to implementation through `factory:changes-requested`. The merge-gate audit in
 [issue #20](https://github.com/bin0110001/cezar-factory/issues/20) tracks checks
 that must be enforced before this handoff can be treated as verified completion.
 
@@ -30,25 +31,25 @@ Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the
 filter envelope.
 
-## Manual-gate paths
+## Exceptional user-input gate
 
-These are intentional stops. Their label updates are durable evidence for a
-human, but do not start another automatic workflow until a human chooses a new
-executable state.
+Only a major architectural decision pauses work for the user. An external
+dependency may block one issue, but it does not pause the rest of the backlog.
 
 | Outcome | State | Human action to resume |
 |---|---|---|
-| Intake has an unanswered product/security/legal/operations question | `factory:needs-help` | Answer the question and set `factory:needs-plan` |
-| Plan is not ready | `factory:needs-help` | Resolve blockers and set `factory:needs-plan` |
-| High-risk plan | `factory:needs-help` | Approve the plan and set `factory:ready` with complexity |
-| Decomposition parent | `factory:human-review` | Review the decomposition; child issues independently enter planning |
-| Approved review without a PR URL | `factory:human-review` | Identify the PR and complete the validated review handoff |
-| Review limit reached | `factory:needs-help` | Decide whether to revise requirements or resume review/fix |
-| Investigation cannot safely retry | `factory:needs-help` | Resolve the external blocker and set the chosen executable state |
+| Unresolved major architectural decision | `factory:needs-help` or `factory:human-review` | Ask one focused question about compatibility, ownership, or the system contract; planning resumes automatically after the answer |
+| External blocker | `factory:blocked` | Record the dependency and continue other eligible issues; resume this issue when evidence shows it is clear |
+| Independent review finds issues | `factory:changes-requested` | Fix and re-review automatically; user review is not a gate |
 
 `factory:working` is an in-run state, not an inbound automation. The
 implementation or fix workflow sets it first, then emits `factory:review` or
 `factory:investigate` when its run completes.
+
+When a backlog-level request is active, continue to the next eligible issue
+while another issue waits for CI, independent review, or release. Do not wait
+for per-issue user scheduling; only a major architectural decision pauses for
+user input.
 
 The `[factory] maintenance` automation runs only fixed script steps plus the
 capped legacy-label audit: backlog-label audit, `refresh-stale-workable`, and

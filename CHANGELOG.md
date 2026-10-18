@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.50] - 2026-10-18
+
+- Continue eligible backlog issues without per-issue scheduling or user review
+  gates; reserve user input for major architectural decisions and automatically
+  queue decomposed child issues.
+
 ## [0.3.48] - 2026-10-16
 
 - Bounded and redacted local failure collection, removed bulk run enumeration

@@ -5,6 +5,7 @@ risk-levels:
   risk:low:
     description: Low risk changes (documentation, tests, minor UI, small isolated bug fixes)
     requires-human-review: false
+    requires-independent-review: true
     allows-auto-merge: true
     requires-human-plan-approval: false
     requires-human-merge: false
@@ -12,7 +13,8 @@ risk-levels:
     flow: implement -> test -> independent review -> auto-merge to dev
   risk:medium:
     description: Medium risk changes (feature work, refactoring, networking, persistence)
-    requires-human-review: true
+    requires-human-review: false
+    requires-independent-review: true
     allows-auto-merge: true
     requires-human-plan-approval: false
     requires-human-merge: false
@@ -20,12 +22,13 @@ risk-levels:
     flow: implement -> test -> independent review -> auto-merge to dev
   risk:high:
     description: High risk changes (authentication, security, data migration, billing, large architectural changes, deployment infrastructure)
-    requires-human-review: true
+    requires-human-review: false
+    requires-independent-review: true
     allows-auto-merge: true
-    requires-human-plan-approval: true
+    requires-human-plan-approval: false
     requires-human-merge: false
     requires-full-validation: true
-    flow: human plan approval -> implement -> full validation -> independent review -> auto-merge to dev
+    flow: implement -> full validation -> independent review -> auto-merge to dev; ask for user input only for an unresolved major architectural decision
 
 # Risk assessment guidelines
 assessment:
@@ -47,11 +50,11 @@ assessment:
 # Human gate triggers
 human-gates:
   plan-approval:
-    trigger: risk:high issues entering factory:ready
-    action: require human plan approval before implementation
+    trigger: an unresolved major architectural decision materially changes compatibility, ownership, or the system contract
+    action: ask the user one focused question; risk level alone never blocks planning or implementation
   review:
-    trigger: risk:medium or risk:high issues entering factory:review
-    action: require independent review
+    trigger: every implementation PR entering factory:review
+    action: run independent technical review; do not wait for user review
   merge:
     trigger: approved and validated PRs for any risk level
     action: request GitHub auto-merge into dev
