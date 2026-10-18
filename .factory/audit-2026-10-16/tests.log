@@ -1,0 +1,715 @@
+== static ==
+  ok   exists README.md
+  ok   exists VERSION
+  ok   exists CHANGELOG.md
+  ok   exists AGENTS.md
+  ok   exists policies/labels.yaml
+  ok   exists policies/retry.yaml
+  ok   exists policies/risk.yaml
+  ok   exists policies/definition-of-ready.md
+  ok   exists policies/definition-of-done.md
+  ok   exists policies/escalation.md
+  ok   exists templates/factory.config.yaml
+  ok   exists templates/gitignore.fragment
+  ok   exists docs/lifecycle.md
+  ok   exists docs/synchronization.md
+  ok   exists docs/project-integration.md
+  ok   exists routing/default.yaml
+  ok   exists integrations/deployment/README.md
+  ok   exists integrations/bazzite/compose.yaml
+  ok   exists integrations/bazzite/vault-config/vault.hcl
+  ok   exists docs/vault.md
+  ok   exists scripts/deploy/deploy-vault-bazzite.sh
+  ok   exists scripts/deploy/validate-vault-bazzite.sh
+  ok   exists docs/vault-live-evidence.md
+  ok   exists integrations/bazzite/litellm-config.yaml
+  ok   exists integrations/bazzite/prometheus.yml
+  ok   exists integrations/bazzite/prometheus-alerts.yml
+  ok   exists integrations/bazzite/grafana/dashboards/factory-overview.json
+  ok   exists integrations/bazzite/grafana/provisioning/datasources/prometheus.yaml
+  ok   exists integrations/bazzite/grafana/provisioning/dashboards/factory.yaml
+  ok   exists integrations/mac-mini/vllm/compose.yaml
+  ok   exists integrations/bazzite/openhands-compose.yaml
+  ok   exists docs/vllm-cluster-notes.md
+  ok   exists scripts/deploy/deploy-bazzite.sh
+  ok   exists scripts/release/validate-release.ps1
+  ok   exists integrations/hindsight/banks.yaml
+  ok   exists integrations/hindsight/mcp.json
+  ok   exists integrations/langfuse/README.md
+  ok   exists docs/context-optimization.md
+  ok   exists routing/local-jobs.yaml
+  ok   exists scripts/deploy/validate-remote.sh
+  ok   exists scripts/deploy/validate-openhands-workspace.sh
+  ok   exists scripts/deploy/validate-openhands-acp.sh
+  ok   exists scripts/deploy/Get-LiteLLMMasterKey.ps1
+  ok   exists scripts/local/run-local-job.ps1
+  ok   exists docs/openhands-integration.md
+  ok   exists docs/local-utility-jobs.md
+  ok   exists docs/openhands-live-evidence.md
+  ok   exists docs/vllm-live-evidence.md
+  ok   exists docs/litellm-live-evidence.md
+  ok   exists docs/hindsight-live-evidence.md
+  ok   exists docs/observability-live-evidence.md
+  ok   exists docs/local-utility-live-evidence.md
+  ok   exists docs/langfuse-live-evidence.md
+  ok   exists integrations/openhands/job-request.schema.json
+  ok   exists integrations/openhands/job-result.schema.json
+  ok   exists scripts/openhands/validate-job.ps1
+  ok   exists scripts/openhands/run-job.py
+  ok   exists tests/fixtures/openhands-job-request.json
+  ok   exists tests/fixtures/openhands-failure-request.json
+  ok   exists docs/operations-readiness.md
+  ok   exists docs/local-coding-tool-evaluation.md
+  ok   exists docs/routing-evaluation.md
+  ok   exists docs/pilot-loop-evidence.md
+  ok   exists docs/gpu-exporter-evaluation.md
+  ok   exists scripts/deploy/deploy-vllm-mac.sh
+  ok   exists scripts/deploy/validate-deployment.sh
+  ok   exists scripts/deploy/vllm-trusted-proxy.py
+  ok   exists scripts/deploy/deploy-vllm-trusted-proxy-mac.sh
+  ok   exists scripts/deploy/validate-vllm-trusted-proxy-mac.sh
+  ok   exists scripts/deploy/rotate-cezar-github-token.bat
+  ok   exists docs/credential-rotation.md
+  ok   exists routing/automation-catalog.json
+  ok   exists schemas/automation-catalog.schema.json
+  ok   exists schemas/memory-recall.schema.json
+  ok   exists schemas/memory-candidate.schema.json
+  ok   exists scripts/validate-automation-catalog.ps1
+  ok   exists scripts/reconcile-backlog.ps1
+  ok   exists scripts/lease.ps1
+  ok   exists scripts/hindsight/client.py
+  ok   exists scripts/hindsight/recall.ps1
+  ok   exists scripts/hindsight/retain.ps1
+  ok   exists scripts/record-local-evaluation.ps1
+  ok   exists scripts/evaluate-local-promotion.ps1
+  ok   exists scripts/audit-backlog-labels.ps1
+  ok   exists scripts/push-factory-updates.ps1
+  ok   exists scripts/onboard-project.ps1
+  ok   exists scripts/force-update.ps1
+  ok   exists scripts/update-github-lifecycle.ps1
+  ok   exists scripts/refresh-stale-workable.ps1
+  ok   exists scripts/maintain-repository.ps1
+  ok   exists config/factory-projects.json.example
+  ok   exists skills/factory-release/SKILL.md
+  ok   exists schemas/local-evaluation.schema.json
+  ok   exists docs/local-model-evaluation.md
+  ok   exists scripts/recover-audit-reservations.ps1
+  ok   exists scripts/validate-backlog-label-audit-input.ps1
+  ok   exists docs/execution-inventory.md
+  ok   exists docs/backlog-reconciler.md
+  ok   exists docs/factory-automation-status.md
+  ok   exists docs/workflow-map.md
+  ok   exists skills/factory-work-backlog/SKILL.md
+  ok   exists skills/factory-backlog-label-audit/SKILL.md
+  ok   exists workflows/maintenance.yaml
+  ok   exists automations/maintenance.json
+  ok   exists workflows/godot-upgrade.yaml
+  ok   exists automations/godot-upgrade.json
+  ok   exists skills/factory-godot-upgrade/SKILL.md
+  ok   exists scripts/godot-upgrade.ps1
+  ok   exists cezar/godot-install.sh
+  ok   exists cezar/godot-select.sh
+  ok   exists scripts/release/promote-stable.ps1
+  ok   exists scripts/sync-all-automations.ps1
+  ok   exists scripts/migrate-to-shared.ps1
+  ok   exists scripts/deploy/factory-autodeploy.sh
+  ok   exists integrations/bazzite/factory-autodeploy.service
+  ok   exists integrations/bazzite/factory-autodeploy.timer
+  ok   exists docs/shared-factory.md
+  ok   automation catalog validates
+  ok   implementation and fix-review use the configured gateway model
+  ok   complexity routes small to gateway, medium to Luna, and large to premium implementation
+  ok   planning routes every complexity tier to Claude Sonnet
+  ok   maintenance is pinned to the Factory gateway code model
+  ok   backlog audit requires the stable Cezar candidate script
+  ok   backlog audit rejects unlabeled skips
+  ok   isolated-worktree workflows use the registered Factory runtime
+  ok   investigation output example includes the required issue field
+  ok   implement workflow prepares context before implementation
+  ok   implement workflow enforces a PR closing reference after the LLM step
+  ok   implement workflow preserves a missing result as a structured failure
+  ok   implementation validation failure routes through a structured failure
+  ok   PR close guard edits the PR with a GitHub closing reference
+  ok   implementation preparation fetches issue and captures environment
+  ok   every workflow starts with shared startup preflight
+  ok   startup normalizes comma-delimited required scripts from workflow commands
+  ok   release records force-refresh requirement for blocked managed updates
+  ok   new-project onboarding creates dev from the default branch
+  ok   new-project onboarding is bounded and release-gated
+  ok   maintenance workflow does not select or route intake work
+  ok   maintenance workflow recovers audit reservations before collection
+  ok   maintenance validates the audit handoff before the model step
+  ok   audit handoff guard fails closed and prevents rediscovery
+  ok   workflows own scripts: no prompt or skill tells the model to run one ()
+  ok   implement and fix-review move the issue to working from a workflow step
+  ok   implement skill prevents speculative recovery
+  ok   route-state tolerates pre-complexity installed layers
+  ok   central route-state writes execution data to the current project
+  ok   deployment env examples do not contain real secrets
+  ok   Mac vLLM env includes installer inputs
+  ok   Mac vLLM deployment supports general profile
+  ok   Mac vLLM deployment supports bounded tool calling
+  ok   Mac vLLM trusted proxy is allowlisted and authenticated
+  ok   deployment scripts avoid unsafe unquoted remote paths
+  ok   credential rotation helper avoids token-status output
+  ok   remote validation reads named Podman connection from topology
+  ok   control-plane deployment targets named Podman connection
+  ok   control-plane validation supports topology health URL
+  ok   Bazzite validation uses LiteLLM master key for gateway health
+  ok   LiteLLM config mount is SELinux-safe
+  ok   Bazzite preflight rejects example registry
+  ok   Bazzite preflight requires OpenHands auth
+  ok   Bazzite composes a persistent loopback-only Vault service
+  ok   Vault uses integrated storage with an explicit mlock setting
+  ok   LiteLLM has persistent PostgreSQL backing
+  ok   OpenHands deployment uses Agent Canvas image
+  ok   OpenHands deployment persists auth and workspaces
+  ok   OpenHands provider adapter is bounded, event-backed, and observable
+  ok   deployment script strict mode configure-cezar-opencode.sh
+  ok   deployment script has usage/error path configure-cezar-opencode.sh
+  ok   deployment script strict mode deploy-bazzite.sh
+  ok   deployment script has usage/error path deploy-bazzite.sh
+  ok   deployment script strict mode deploy-control-plane.sh
+  ok   deployment script has usage/error path deploy-control-plane.sh
+  ok   deployment script strict mode deploy-model-host.sh
+  ok   deployment script has usage/error path deploy-model-host.sh
+  ok   deployment script strict mode deploy-vault-bazzite.sh
+  ok   deployment script has usage/error path deploy-vault-bazzite.sh
+  ok   deployment script strict mode deploy-vllm-mac.sh
+  ok   deployment script has usage/error path deploy-vllm-mac.sh
+  ok   deployment script strict mode deploy-vllm-trusted-proxy-mac.sh
+  ok   deployment script has usage/error path deploy-vllm-trusted-proxy-mac.sh
+  ok   deployment script strict mode enable-cezar-boot-start.sh
+  ok   deployment script has usage/error path enable-cezar-boot-start.sh
+  ok   deployment script strict mode expose-cezar-lan.sh
+  ok   deployment script has usage/error path expose-cezar-lan.sh
+  ok   deployment script strict mode factory-autodeploy.sh
+  ok   deployment script has usage/error path factory-autodeploy.sh
+  ok   deployment script strict mode lib-topology.sh
+  ok   deployment script has usage/error path lib-topology.sh
+  ok   deployment script strict mode validate-deployment.sh
+  ok   deployment script has usage/error path validate-deployment.sh
+  ok   deployment script strict mode validate-langfuse.sh
+  ok   deployment script has usage/error path validate-langfuse.sh
+  ok   deployment script strict mode validate-openhands-acp.sh
+  ok   deployment script has usage/error path validate-openhands-acp.sh
+  ok   deployment script strict mode validate-openhands-workspace.sh
+  ok   deployment script has usage/error path validate-openhands-workspace.sh
+  ok   deployment script strict mode validate-remote.sh
+  ok   deployment script has usage/error path validate-remote.sh
+  ok   deployment script strict mode validate-vault-bazzite.sh
+  ok   deployment script has usage/error path validate-vault-bazzite.sh
+  ok   deployment script strict mode validate-vllm-trusted-proxy-mac.sh
+  ok   deployment script has usage/error path validate-vllm-trusted-proxy-mac.sh
+  ok   Grafana dashboard JSON is valid
+  ok   VERSION is semver
+  ok   local utility docs define bounded advisory contract
+  ok   routing policy identifies bounded local and premium classes
+  ok   local routing live evidence exists
+  ok   LiteLLM health-aware fallback is configured
+  ok   LiteLLM uses Langfuse v4 OTEL callback
+  ok   LiteLLM logical models target live vLLM model
+  ok   LiteLLM live deployment evidence exists
+  ok   LiteLLM bypasses proxy for private vLLM hop from topology
+  ok   Hindsight deployment uses pinned official image and bounded retain budget
+  ok   Hindsight live deployment evidence exists
+  ok   Observability live deployment evidence exists
+  ok   Local utility live evidence exists
+  ok   Langfuse live deployment evidence exists
+  ok   OpenHands live evidence records tool-enabled repository read
+  ok   OpenHands live evidence records concurrent isolated worktrees
+  ok   OpenHands live evidence records failed-task recovery
+  ok   OpenHands live evidence records Cezar provider adapter success
+  ok   OpenHands live evidence records bounded provider retry
+  ok   vLLM live evidence records latency and throughput
+  ok   vLLM live evidence records topology without identifiers
+  ok   vLLM route uses configured control-plane-reachable address
+  ok   vLLM live evidence records coding capability
+  ok   vLLM live evidence records general model candidate
+  ok   vLLM live evidence records persistent general profile
+  ok   vLLM live evidence records unified-memory footprint
+  ok   vLLM live evidence records trusted proxy cutover
+  ok   valid JSON schemas/automation-catalog.schema.json
+  ok   valid JSON schemas/factory.config.schema.json
+  ok   valid JSON schemas/implementation-result.schema.json
+  ok   valid JSON schemas/intake-result.schema.json
+  ok   valid JSON schemas/investigation-result.schema.json
+  ok   valid JSON schemas/local-evaluation.schema.json
+  ok   valid JSON schemas/memory-candidate.schema.json
+  ok   valid JSON schemas/memory-recall.schema.json
+  ok   valid JSON schemas/plan.schema.json
+  ok   valid JSON schemas/review-result.schema.json
+  ok   yaml sane compose.yaml
+  ok   yaml sane factory.yaml
+  ok   yaml sane prometheus.yaml
+  ok   yaml sane compose.yaml
+  ok   yaml sane litellm-config.yaml
+  ok   yaml sane openhands-compose.yaml
+  ok   yaml sane banks.yaml
+  ok   yaml sane compose.yaml
+  ok   yaml sane provider.yaml
+  ok   yaml sane labels.yaml
+  ok   yaml sane retry.yaml
+  ok   yaml sane risk.yaml
+  ok   yaml sane default.yaml
+  ok   yaml sane local-jobs.yaml
+  ok   yaml sane factory.config.yaml
+  ok   yaml sane environment-analysis.yaml
+  ok   yaml sane failure-audit.yaml
+  ok   yaml sane fix-review.yaml
+  ok   yaml sane godot-upgrade.yaml
+  ok   yaml sane implement.yaml
+  ok   yaml sane intake.yaml
+  ok   yaml sane investigate.yaml
+  ok   yaml sane maintenance.yaml
+  ok   yaml sane plan.yaml
+  ok   yaml sane review.yaml
+  ok   skill factory-backlog-label-audit has SKILL.md
+  ok   skill factory-cezar-skill-operations has SKILL.md
+  ok   skill factory-environment-analysis has SKILL.md
+  ok   skill factory-failure-audit has SKILL.md
+  ok   skill factory-finish-release has SKILL.md
+  ok   skill factory-fix has SKILL.md
+  ok   skill factory-godot-upgrade has SKILL.md
+  ok   skill factory-implement has SKILL.md
+  ok   skill factory-implement-prepare has SKILL.md
+  ok   skill factory-intake has SKILL.md
+  ok   skill factory-investigate has SKILL.md
+  ok   skill factory-learn has SKILL.md
+  ok   skill factory-plan has SKILL.md
+  ok   skill factory-release has SKILL.md
+  ok   skill factory-review has SKILL.md
+  ok   skill factory-work-backlog has SKILL.md
+  ok   skill interactive-github-backlog has SKILL.md
+  ok   automation changes-requested.json name prefixed
+  ok   automation changes-requested.json workflow exists
+  ok   automation changes-requested.json placeholders allowed
+  ok   automation changes-requested.json poll keys
+  ok   automation changes-requested.json changedLabels
+  ok   automation failure-audit.json name prefixed
+  ok   automation failure-audit.json workflow exists
+  ok   automation failure-audit.json placeholders allowed
+  ok   automation failure-audit.json schedule
+  ok   automation godot-upgrade.json name prefixed
+  ok   automation godot-upgrade.json workflow exists
+  ok   automation godot-upgrade.json placeholders allowed
+  ok   automation godot-upgrade.json schedule
+  ok   automation intake.json name prefixed
+  ok   automation intake.json workflow exists
+  ok   automation intake.json placeholders allowed
+  ok   automation intake.json poll keys
+  ok   automation intake.json changedLabels
+  ok   automation investigate.json name prefixed
+  ok   automation investigate.json workflow exists
+  ok   automation investigate.json placeholders allowed
+  ok   automation investigate.json poll keys
+  ok   automation investigate.json changedLabels
+  ok   automation maintenance.json name prefixed
+  ok   automation maintenance.json workflow exists
+  ok   automation maintenance.json placeholders allowed
+  ok   automation maintenance.json schedule
+  ok   automation needs-plan-large.json name prefixed
+  ok   automation needs-plan-large.json workflow exists
+  ok   automation needs-plan-large.json placeholders allowed
+  ok   automation needs-plan-large.json poll keys
+  ok   automation needs-plan-large.json changedLabels
+  ok   automation needs-plan-medium.json name prefixed
+  ok   automation needs-plan-medium.json workflow exists
+  ok   automation needs-plan-medium.json placeholders allowed
+  ok   automation needs-plan-medium.json poll keys
+  ok   automation needs-plan-medium.json changedLabels
+  ok   automation needs-plan-small.json name prefixed
+  ok   automation needs-plan-small.json workflow exists
+  ok   automation needs-plan-small.json placeholders allowed
+  ok   automation needs-plan-small.json poll keys
+  ok   automation needs-plan-small.json changedLabels
+  ok   automation needs-plan.json name prefixed
+  ok   automation needs-plan.json workflow exists
+  ok   automation needs-plan.json placeholders allowed
+  ok   automation needs-plan.json poll keys
+  ok   automation needs-plan.json changedLabels
+  ok   automation ready-to-implement-large.json name prefixed
+  ok   automation ready-to-implement-large.json workflow exists
+  ok   automation ready-to-implement-large.json placeholders allowed
+  ok   automation ready-to-implement-large.json poll keys
+  ok   automation ready-to-implement-large.json changedLabels
+  ok   automation ready-to-implement-medium.json name prefixed
+  ok   automation ready-to-implement-medium.json workflow exists
+  ok   automation ready-to-implement-medium.json placeholders allowed
+  ok   automation ready-to-implement-medium.json poll keys
+  ok   automation ready-to-implement-medium.json changedLabels
+  ok   automation ready-to-implement-small.json name prefixed
+  ok   automation ready-to-implement-small.json workflow exists
+  ok   automation ready-to-implement-small.json placeholders allowed
+  ok   automation ready-to-implement-small.json poll keys
+  ok   automation ready-to-implement-small.json changedLabels
+  ok   automation ready-to-review.json name prefixed
+  ok   automation ready-to-review.json workflow exists
+  ok   automation ready-to-review.json placeholders allowed
+  ok   automation ready-to-review.json poll keys
+  ok   automation ready-to-review.json changedLabels
+  ok   workflow environment-analysis.yaml name factory-environment-analysis
+  ok   workflow environment-analysis.yaml has steps
+  ok   workflow environment-analysis.yaml steps agent XOR check
+  ok   workflow environment-analysis.yaml unique ids
+  ok   workflow environment-analysis.yaml retry targets earlier step
+  ok   workflow failure-audit.yaml name factory-failure-audit
+  ok   workflow failure-audit.yaml has steps
+  ok   workflow failure-audit.yaml steps agent XOR check
+  ok   workflow failure-audit.yaml unique ids
+  ok   workflow failure-audit.yaml retry targets earlier step
+  ok   workflow fix-review.yaml name factory-fix-review
+  ok   workflow fix-review.yaml has steps
+  ok   workflow fix-review.yaml steps agent XOR check
+  ok   workflow fix-review.yaml unique ids
+  ok   workflow fix-review.yaml retry targets earlier step
+  ok   workflow godot-upgrade.yaml name factory-godot-upgrade
+  ok   workflow godot-upgrade.yaml has steps
+  ok   workflow godot-upgrade.yaml steps agent XOR check
+  ok   workflow godot-upgrade.yaml unique ids
+  ok   workflow godot-upgrade.yaml retry targets earlier step
+  ok   workflow implement.yaml name factory-implement
+  ok   workflow implement.yaml has steps
+  ok   workflow implement.yaml steps agent XOR check
+  ok   workflow implement.yaml unique ids
+  ok   workflow implement.yaml retry targets earlier step
+  ok   workflow intake.yaml name factory-intake
+  ok   workflow intake.yaml has steps
+  ok   workflow intake.yaml steps agent XOR check
+  ok   workflow intake.yaml unique ids
+  ok   workflow intake.yaml retry targets earlier step
+  ok   workflow investigate.yaml name factory-investigate
+  ok   workflow investigate.yaml has steps
+  ok   workflow investigate.yaml steps agent XOR check
+  ok   workflow investigate.yaml unique ids
+  ok   workflow investigate.yaml retry targets earlier step
+  ok   workflow maintenance.yaml name factory-maintenance
+  ok   workflow maintenance.yaml has steps
+  ok   workflow maintenance.yaml steps agent XOR check
+  ok   workflow maintenance.yaml unique ids
+  ok   workflow maintenance.yaml retry targets earlier step
+  ok   workflow plan.yaml name factory-plan
+  ok   workflow plan.yaml has steps
+  ok   workflow plan.yaml steps agent XOR check
+  ok   workflow plan.yaml unique ids
+  ok   workflow plan.yaml retry targets earlier step
+  ok   workflow review.yaml name factory-review
+  ok   workflow review.yaml has steps
+  ok   workflow review.yaml steps agent XOR check
+  ok   workflow review.yaml unique ids
+  ok   workflow review.yaml retry targets earlier step
+  ok   no command-shadowing functions in audit-backlog-labels.ps1
+  ok   no command-shadowing functions in audit-factory-failures.ps1
+  ok   no command-shadowing functions in check-already-resolved.ps1
+  ok   no command-shadowing functions in classify-intake.ps1
+  ok   no command-shadowing functions in collect-environment-state.ps1
+  ok   no command-shadowing functions in create-labels.ps1
+  ok   no command-shadowing functions in diff.ps1
+  ok   no command-shadowing functions in ensure-implementation-result.ps1
+  ok   no command-shadowing functions in ensure-pr-closes-issue.ps1
+  ok   no command-shadowing functions in evaluate-local-promotion.ps1
+  ok   no command-shadowing functions in factory-preflight.ps1
+  ok   no command-shadowing functions in factory-startup.ps1
+  ok   no command-shadowing functions in force-update.ps1
+  ok   no command-shadowing functions in godot-upgrade.ps1
+  ok   no command-shadowing functions in install.ps1
+  ok   no command-shadowing functions in lease.ps1
+  ok   no command-shadowing functions in lib.ps1
+  ok   no command-shadowing functions in maintain-repository.ps1
+  ok   no command-shadowing functions in migrate-to-shared.ps1
+  ok   no command-shadowing functions in onboard-project.ps1
+  ok   no command-shadowing functions in prepare-implementation.ps1
+  ok   no command-shadowing functions in push-factory-updates.ps1
+  ok   no command-shadowing functions in reconcile-backlog.ps1
+  ok   no command-shadowing functions in record-local-evaluation.ps1
+  ok   no command-shadowing functions in recover-audit-reservations.ps1
+  ok   no command-shadowing functions in refresh-stale-workable.ps1
+  ok   no command-shadowing functions in route-intake-or-no-work.ps1
+  ok   no command-shadowing functions in route-plan-or-default.ps1
+  ok   no command-shadowing functions in route-state.ps1
+  ok   no command-shadowing functions in select-intake-issue.ps1
+  ok   no command-shadowing functions in sync-all-automations.ps1
+  ok   no command-shadowing functions in sync-automations.ps1
+  ok   no command-shadowing functions in update-github-lifecycle.ps1
+  ok   no command-shadowing functions in update.ps1
+  ok   no command-shadowing functions in validate-automation-catalog.ps1
+  ok   no command-shadowing functions in validate-backlog-label-audit-input.ps1
+  ok   no command-shadowing functions in validate-intake-or-no-work.ps1
+  ok   no command-shadowing functions in validate-result.ps1
+  ok   no command-shadowing functions in verify.ps1
+  ok   no command-shadowing functions in watchdog-automations.ps1
+== fixture dotnet-project ==
+  ok   install dry-run succeeds
+  ok   install dry-run writes nothing
+  ok   install succeeds
+  ok   managed marker on skill
+  ok   managed marker on workflow
+  ok   maintenance workflow not installed
+  ok   maintenance automation not installed
+  ok   combined maintenance automation not installed
+  ok   verify passes
+  ok   diff clean
+  ok   reinstall idempotent
+  ok   diff detects modified file
+  ok   update refuses modified managed file
+  ok   force update recovers modified managed file
+  ok   force update creates recovery backup
+  ok   force update restores clean managed layer
+  ok   diff detects missing file
+  ok   update restores missing file
+  ok   diff detects unmanaged file
+  ok   diff clean after cleanup
+  ok   verify rejects override of unknown component
+  ok   update refuses without pin change
+  ok   update dry-run succeeds
+  ok   update dry-run changes nothing
+  ok   update to 9.9.9 succeeds
+  ok   summary shows version transition
+  ok   new managed file added
+  ok   obsolete managed file removed
+  ok   changed skill updated
+  ok   project skill preserved
+  ok   project config preserved
+  ok   verify passes at 9.9.9
+  ok   rollback to pinned version succeeds
+  ok   rollback restores removed file
+  ok   rollback removes upgrade-only file
+  ok   diff clean after rollback
+  ok   install refuses ambiguous ownership
+== fixture generic-project ==
+  ok   install dry-run succeeds
+  ok   install dry-run writes nothing
+  ok   install succeeds
+  ok   managed marker on skill
+  ok   managed marker on workflow
+  ok   maintenance workflow not installed
+  ok   maintenance automation not installed
+  ok   combined maintenance automation not installed
+  ok   verify passes
+  ok   diff clean
+  ok   reinstall idempotent
+  ok   diff detects modified file
+  ok   update refuses modified managed file
+  ok   force update recovers modified managed file
+  ok   force update creates recovery backup
+  ok   force update restores clean managed layer
+  ok   diff detects missing file
+  ok   update restores missing file
+  ok   diff detects unmanaged file
+  ok   diff clean after cleanup
+  ok   verify rejects override of unknown component
+  ok   update refuses without pin change
+  ok   update dry-run succeeds
+  ok   update dry-run changes nothing
+  ok   update to 9.9.9 succeeds
+  ok   summary shows version transition
+  ok   new managed file added
+  ok   obsolete managed file removed
+  ok   changed skill updated
+  ok   project skill preserved
+  ok   project config preserved
+  ok   verify passes at 9.9.9
+  ok   rollback to pinned version succeeds
+  ok   rollback restores removed file
+  ok   rollback removes upgrade-only file
+  ok   diff clean after rollback
+  ok   install refuses ambiguous ownership
+== fixture godot-project ==
+  ok   install dry-run succeeds
+  ok   install dry-run writes nothing
+  ok   install succeeds
+  ok   managed marker on skill
+  ok   managed marker on workflow
+  ok   maintenance workflow not installed
+  ok   maintenance automation not installed
+  ok   combined maintenance automation not installed
+  ok   verify passes
+  ok   diff clean
+  ok   reinstall idempotent
+  ok   diff detects modified file
+  ok   update refuses modified managed file
+  ok   force update recovers modified managed file
+  ok   force update creates recovery backup
+  ok   force update restores clean managed layer
+  ok   diff detects missing file
+  ok   update restores missing file
+  ok   diff detects unmanaged file
+  ok   diff clean after cleanup
+  ok   verify rejects override of unknown component
+  ok   update refuses without pin change
+  ok   update dry-run succeeds
+  ok   update dry-run changes nothing
+  ok   update to 9.9.9 succeeds
+  ok   summary shows version transition
+  ok   new managed file added
+  ok   obsolete managed file removed
+  ok   changed skill updated
+  ok   project skill preserved
+  ok   project config preserved
+  ok   verify passes at 9.9.9
+  ok   rollback to pinned version succeeds
+  ok   rollback restores removed file
+  ok   rollback removes upgrade-only file
+  ok   diff clean after rollback
+  ok   install refuses ambiguous ownership
+== runtime scripts ==
+  ok   local utility runner installed
+  ok   OpenHands job validator installed
+  ok   Hindsight recall boundary installed
+  ok   backlog reconciler installed
+  ok   local evaluation scripts installed
+  ok   local utility runner rejects missing input
+  ok   local utility runner rejects unbounded limit
+  ok   reconciler: ordering and caps are deterministic
+  ok   reconciler: invalid, blocked, gated, and claimed work excluded
+  ok   reconciler: no candidate terminates cleanly
+  ok   lease: GitHub-visible claim created
+  ok   lease: same owner is idempotent
+  ok   lease: collision refused
+  ok   lease: release is idempotent
+  ok   validate: good intake passes
+  ok   route: intake -> needs-plan
+  ok   route: intake question -> needs-help
+  ok   validate: good plan passes
+  ok   validate: bounded memory recall passes
+  ok   validate: ready plan with open questions fails
+  ok   validate: missing issue fails
+  ok   validate: not-ready plan with questions passes
+  ok   validate: good implementation passes
+  ok   validate: implementation with no documentation change passes
+  ok   validate: success without PR fails
+  ok   validate: implementation failure routes as structured failure
+  ok   validate: change-request without findings fails
+  ok   validate: change-request with findings passes
+  ok   validate: good investigation passes
+  ok   validate: unknown classification fails
+  ok   route: plan ready -> factory:ready
+  ok   route: plan posted as comment
+  ok   route: risk:high plan held for approval
+  ok   route: not-ready -> needs-help
+  ok   route: plan-result from wrong state refused
+  ok   route: wrong-state refusal leaves labels alone
+  ok   route: start -> working
+  ok   route: selected worker recorded
+  ok   route: medium complexity cannot select local worker
+  ok   route: start is idempotent while working
+  ok   route: start from needs-plan refused
+  ok   resolved: open issue writes no marker
+  ok   resolved: closed issue writes marker and reconciles to factory:done
+  ok   resolved: validate-result skips when marker present
+  ok   resolved: route-state skips when marker present
+  ok   resolved: stale marker removed once issue is open
+  ok   route: implement success -> review
+  ok   route: execution completion recorded
+  ok   route: implement failure -> investigate
+  ok   route: failed execution records bounded failure evidence
+  ok   route: review approval -> human-review
+  ok   route: low-risk approval -> done and auto-merge
+  ok   route: review change-request -> changes-requested
+  ok   route: review round limit escalates to needs-help
+  ok   route: investigate retry -> ready
+  ok   route: second investigation escalates
+  ok   route: low-confidence investigation escalates
+  ok   route: conflicting state labels collapse to one
+  ok   validate: good decomposition passes
+  ok   validate: decomposed without subIssues fails
+  ok   validate: unknown sub-issue label fails
+  ok   validate: bad dependsOn index fails
+  ok   validate: duplicate sub-issue titles fail
+  ok   route: decomposed -> human-review
+  ok   route: sub-issues queued for planning
+  ok   route: sub-issue links back to parent
+  ok   route: parent comment lists children and dependencies
+  ok   route: re-running does not duplicate sub-issues
+  ok   labels: all factory-state labels created
+  ok   labels: tracking-parent classification created
+  ok   labels: type, risk and agent labels created
+  ok   labels: dry-run creates nothing
+  ok   backlog audit input: only unmarked issues are fetched for evaluation
+  ok   backlog audit input: static normalization is not bounded by the LLM limit
+  ok   backlog audit input: classification hints resolve test taxonomy
+  ok   backlog audit input: clear markers resolve without human escalation
+  ok   backlog audit input: blocked marker resolves to factory:blocked
+  ok   backlog audit input: only ambiguous work is returned to the LLM
+  ok   backlog audit input: candidate body is fetched before the LLM step
+  ok   backlog audit input: reservation marker is durable
+  ok   backlog audit input: label setup uses the installed sibling script
+  ok   audit recovery releases expired reservation
+  ok   audit recovery leaves an evidence comment
+  ok   override: update applies override
+  ok   override: diff clean with override
+  ok   override: verify passes
+  ok   override: policy override changes behavior (3 rounds allowed)
+  ok   override removal restores factory file
+== automation sync ==
+  ok   mock cockpit is up
+  ok   sync dry-run makes no writes
+  ok   sync creates factory automations
+  ok   sync leaves unmanaged automation untouched
+  ok   sync pauses obsolete factory automation
+  ok   sync does not create maintenance (feature off)
+  ok   sync creates paused by default
+  ok   second sync is a no-op
+  ok   prune deletes obsolete factory automation
+  ok   sync records factory version in description
+  ok   godot-upgrade automation is skipped for non-Godot remote targets
+  ok   godot-upgrade automation is synced to Godot remote targets
+  ok   source-only sync works without a project checkout
+  ok   release supports remote-only target registry entries
+== shared factory ==
+  ok   Cezar loads Factory workflows and skills from the mounted checkout
+  ok   autodeploy only fast-forwards, refuses dirty or diverged checkouts, and never resets
+  ok   autodeploy tracks the tested stable branch
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+warning: in the working copy of 'automations/changes-requested.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/failure-audit.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/godot-upgrade.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/intake.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/investigate.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/maintenance.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/needs-plan-large.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/needs-plan-medium.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/needs-plan-small.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/needs-plan.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/ready-to-implement-large.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/ready-to-implement-medium.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/ready-to-implement-small.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'automations/ready-to-review.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routing/automation-catalog.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routing/default.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'routing/local-jobs.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/validate-automation-catalog.ps1', LF will be replaced by CRLF the next time Git touches it
+  ok   promote: failing tests never create stable
+  ok   promote: passing tests push stable
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+  ok   promote: failing tests leave stable on the old commit
+  ok   promote: stable fast-forwards on a later pass
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+  ok   promote: refuses to move stable off its history
+  ok   promote: refuses an uncommitted tree
+  ok   sync-all refuses to run without a target registry
+  ok   migrate: fixture installs
+  ok   migrate: a locally edited managed file blocks and nothing is removed
+  ok   migrate: dry-run removes nothing
+  ok   migrate: removes installed workflows, skills and manifest but keeps project config
+== godot upgrade ==
+  ok   Cezar image maps GODOT_BIN to the version selector
+  ok   Godot versions live on a persistent volume in both compose files
+  ok   godot-upgrade automation is gated to Godot projects
+warning: unable to access 'C:\Users\bin01/.config/git/ignore': Permission denied
+warning: in the working copy of '.ai/factory/factory.config.yaml', LF will be replaced by CRLF the next time Git touches it
+  ok   godot check: same version is a no-op
+  ok   godot check: prerelease is ignored
+  ok   godot check: newer stable is an upgrade
+  ok   godot stage installs the target version
+  ok   godot apply pins the version on a pushed branch
+  ok   godot test passes with the project command
+  ok   godot test -AllowFailure records a failure without failing the step
+  ok   godot test fails the step when tests fail (drives the fix retry)
+  ok   godot publish refuses when tests failed
+  ok   godot publish opens a PR with auto-merge and commits the fixes
+  ok   godot check: an existing upgrade branch suppresses re-attempts
+ALL PASSED

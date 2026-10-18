@@ -1,0 +1,26 @@
+{
+  "merge-gates": {
+    "number": 20,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/20"
+  },
+  "deploy-retry": {
+    "number": 18,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/18"
+  },
+  "release": {
+    "number": 21,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/21"
+  },
+  "contracts": {
+    "number": 23,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/23"
+  },
+  "collector": {
+    "number": 22,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/22"
+  },
+  "validation": {
+    "number": 19,
+    "url": "https://github.com/bin0110001/cezar-factory/issues/19"
+  }
+}

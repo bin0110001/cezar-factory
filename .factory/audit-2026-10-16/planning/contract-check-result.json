@@ -1,0 +1,22 @@
+{
+  "issue": 33,
+  "objective": "Catch the audited contract drift with executable negative cases instead of heading/source-string assertions.",
+  "acceptanceCriteria": "Missing script/skill, unknown parameter, invalid retry edge, incomplete preflight and invalid concrete example each fail for the intended reason.\nEvery real workflow is checked against the bundled Cezar contract on Windows/Linux.\nThe harness never invokes deployment/lifecycle scripts or makes network changes as part of contract inspection.\nUnsupported syntax cannot silently pass and production workflows gain no new Node requirement.",
+  "nonGoals": "No Cezar engine modifications, new production parser, general shell interpreter or broad prose linter.",
+  "risks": "risk:medium: Use yaml parsing plus the bundled Cezar workflowFileSchema/normalization/stepsIssue through a test-only Node adapter; reuse existing yaml/zod dependencies and pin setup through cezar's lockfile. Do not copy the schema or import the full runtime dependency graph unnecessarily. For Factory pwsh commands, extract -File and script parameters using PowerShell AST/metadata. Validate script existence, declared parameters/common switches and preflight coverage without executing scripts. Explicitly identify command forms the checker supports and fail with actionable diagnostics for unsupported Factory command syntax; shell wrappers are not silently treated as verified. Associate concrete skill JSON examples with result schemas and validate them. Ownership guidance checks get small curated negative examples; do not claim arbitrary prose reasoning is fully machine-verifiable. Wire checks into the normal Windows/Linux CI test gate; add Node setup/test-only dependency install without making deployed PowerShell workflows require Node.",
+  "dependencies": "#32",
+  "suggestedWorkBreakdown": "Create a minimal test adapter around Cezar's schema functions and parse every Factory workflow, including maintenance/environment/upgrade.\nAdd PS AST command/preflight checks and skill-example/schema validation.\nAdd one deliberately broken fixture per contract class, asserting diagnostic file/step/parameter.\nRemove redundant weak assertions only after replacement coverage; document local/CI prerequisites.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "Awaiting prerequisite completion: #32",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

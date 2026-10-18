@@ -1,0 +1,5 @@
+Adds the three project-owned Factory validation commands named by the installed Cezar config. They invoke the canonical `tools/test.ps1` strict changed/full harness, require a fresh nonempty run summary for full/verify, run GDScript quality and requirements lint, and include selected harness Pester checks. No GDScript changes in the changed stage are reported as skipped explicitly.
+
+Closes the source implementation portion of #500. Deployment remains in #501, and shared timeout support remains in Factory #19.
+
+Validation: PowerShell parser 5/5; adapter fixtures 4/4; selected Pester checks 65/65; changed stage rejected the existing GameSession quality violation. A real Windows full stage ran 603 suites and 4,337 tests, then failed closed with 99 test failures, 90 errors, and the pre-existing GameSessionGrowth quality violation. The full run took 31 minutes, exceeding the current shared 20-minute cap. Linux runtime validation and guarded live rollout remain pending. This PR is draft until those gates and independent review can be addressed.

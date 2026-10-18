@@ -1,0 +1,36 @@
+{
+  "issue": 22,
+  "objective": "Bounded failure evidence and canonical publication",
+  "acceptanceCriteria": "Source reads/output are bounded and redacted; missing identity/coverage is explicit; dedupe/transport/auth failures cannot create speculative duplicates; canonical publication retains known evidence and existing #1 history.",
+  "nonGoals": "No API pagination expansion, speculative intake resolution, blanket run enumeration, dual-issue cross-repository creation or automatic restart from incomplete evidence.",
+  "risks": "risk:medium",
+  "dependencies": "#31 depends on #30. Both remain separate from the intake defect #1; historical run evidence in #1 comments must be preserved.",
+  "suggestedWorkBreakdown": "Implement side-effect-free bounded collection #30 first, then exact-dedupe canonical publication #31 against its versioned artifact.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:large",
+  "readyNotReadyStatus": "decomposed",
+  "subIssues": [
+    {
+      "title": "Produce bounded redacted failure evidence without bulk run enumeration",
+      "body": "Make failure collection read-only with enforceable read/output budgets and explicit registered identity. See fully planned child #30. Bounded-stream fake sources record bytes/requests; check 20/24h/8/12k limits, secrets and giant lines; full Factory suite on Windows/Linux.",
+      "type": "type:refactor",
+      "risk": "risk:medium",
+      "complexity": "complexity:medium",
+      "dependsOn": []
+    },
+    {
+      "title": "Publish one canonical Factory failure issue with fail-closed deduplication",
+      "body": "Publish actionable failure evidence idempotently without losing it on dedupe or partial API failure. See fully planned child #31. Fake-gh state/exit/error fixtures and publisher golden bodies; exact-marker mismatch and ambiguous-create tests; full Factory suite.",
+      "type": "type:bug",
+      "risk": "risk:medium",
+      "complexity": "complexity:medium",
+      "dependsOn": [
+        0
+      ]
+    }
+  ]
+}

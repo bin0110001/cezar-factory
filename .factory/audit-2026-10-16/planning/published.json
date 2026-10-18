@@ -1,0 +1,35 @@
+{
+  "semantic": {
+    "number": 25
+  },
+  "pr-gate": {
+    "number": 27
+  },
+  "collect-bounds": {
+    "number": 30
+  },
+  "orchestration": {
+    "number": 29
+  },
+  "publish-evidence": {
+    "number": 31
+  },
+  "promotion": {
+    "number": 28
+  },
+  "issue19": {
+    "number": 19
+  },
+  "issue18": {
+    "number": 18
+  },
+  "contract-check": {
+    "number": 33
+  },
+  "skill-fix": {
+    "number": 32
+  },
+  "repo-gates": {
+    "number": 26
+  }
+}

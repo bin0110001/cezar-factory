@@ -1,0 +1,18 @@
+{
+  "followUpSuggestions": "",
+  "durableKnowledgeCandidates": "",
+  "acceptanceCriteriaStatus": "Not met",
+  "filesChanged": [
+    "app.ps1"
+  ],
+  "testsRun": [
+    "failing test"
+  ],
+  "documentationUpdated": false,
+  "status": "success",
+  "summary": "audit negative case",
+  "issue": 999,
+  "pr": "https://github.com/bin0110001/cezar-factory/pull/999",
+  "testResult": "failed",
+  "knownConcerns": "Unresolved blocker"
+}

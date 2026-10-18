@@ -1,0 +1,10 @@
+{
+  "failed": 0,
+  "passed": 0,
+  "artifact": "D:\\Projects\\cezar-factory\\.factory\\audit-2026-10-16\\repro-runtime\\scripts\\artifacts\\test-full-20261016-161557.log",
+  "total": 0,
+  "status": "passed",
+  "message": "",
+  "stage": "test",
+  "failures": []
+}

@@ -1,0 +1,22 @@
+{
+  "issue": 30,
+  "objective": "Make failure collection read-only with enforceable read/output budgets and explicit registered identity.",
+  "acceptanceCriteria": "Oversized or adversarial inputs never exceed declared read/output caps and report truncation/coverage limitations.\nCollector writes only its local artifact; no gh mutations, restarts or bulk /runs requests occur.\nKnown selected run/step/command evidence survives redaction, and unavailable evidence is explicitly marked.\nMissing registered identity fails safely without guessing another project.",
+  "nonGoals": "No Cezar API pagination changes, project discovery, issue publication or automatic restart redesign.",
+  "risks": "risk:medium: Resolve projectId/apiUrl from workflow environment or explicit registered inputs; do not lowercase a folder name as project identity. Select at most 20 recent local run IDs in a default 24-hour window. Bound candidate metadata scanning too: if the declared discovery budget is exhausted, report limited coverage instead of claiming complete recency. Use bounded stream reads/tails, e.g. 64 KiB per handoff/event source, <=200 event lines, <=8 failure summaries and <=12,000 evidence characters; redact tokens before serialization. Make caps explicit testable constants/options with enforced ceilings. Do not GET bulk /runs: the bundled server.ts endpoint returns the entire list with no pagination. API enrichment may GET only a selected known run ID with response size/time limits; missing bounded evidence yields limited status. Separate collection from issue publishing and restart flags. Preserve restart compatibility behind a separate workflow command/explicit recovery step, disabled when bounded evidence is incomplete.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #31",
+  "suggestedWorkBreakdown": "Extract deterministic evidence normalization and a versioned artifact schema with project identity, window, run/step/command fields, fingerprints, budgets and limitations.\nImplement bounded local selection/read paths and optional per-ID API enrichment.\nKeep collection side-effect free; wire existing behavior through explicit downstream command ownership without broad run queries.\nAdd fixtures for huge single-line events, oversized handoffs, partial API response, missing directory, wrong project and budget exhaustion.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

@@ -1,0 +1,115 @@
+[
+  {
+    "key": "validation",
+    "title": "Replace heuristic test execution with explicit project validation adapters",
+    "risk": "risk:medium",
+    "type": "type:refactor",
+    "deps": [],
+    "evidence": "scripts/factory/test-full.ps1 and test-changed.ps1 derive artifacts from $PSScriptRoot, so all shared-mount runs write scripts/artifacts/*-results.json. test-full recursively executes source files instead of project test runners, repeats tests/Tests on case-insensitive filesystems, and reports passed/exit 0 for zero tests. Both outer catches can write status=failed without incrementing the counter controlling exit.",
+    "plan": "Define project-owned targeted/full commands in factory.config.yaml, resolve them from the current project/worktree, invoke child processes with bounded output, and put all results under worktree-local .factory/artifacts/<run-or-step>. Preserve an explicit no-tests/skipped outcome distinct from passed. Provide migration guidance for installed and shared projects.",
+    "accept": [
+      "An isolated empty project cannot be reported as a passing full suite; unsupported projects return an actionable skipped/error policy outcome.",
+      "Representative PowerShell, .NET, JS/TS and Godot projects invoke their configured runner once, including on Windows.",
+      "Any runner/setup exception or nonzero exit produces a nonzero wrapper exit and matching failure artifact.",
+      "Two concurrent worktrees never overwrite each other's artifacts or write into the shared runtime."
+    ],
+    "validation": "Add fixture-driven subprocess tests for configured runners, empty projects, setup exceptions, nonzero exits, missing commands, spaces in paths and concurrent artifact isolation. Run the Factory suite on Windows and Linux.",
+    "nonGoals": "Do not redesign GitHub merge routing or add automatic discovery of arbitrary project commands."
+  },
+  {
+    "key": "merge-gates",
+    "title": "Verify semantic results and current PR gates before requesting auto-merge",
+    "risk": "risk:high",
+    "type": "type:bug",
+    "deps": [
+      "validation"
+    ],
+    "evidence": "scripts/validate-result.ps1 accepts status=success with testResult=failed, acceptanceCriteriaStatus=Not met and knownConcerns=Unresolved blocker (reproduced, exit 0). scripts/route-state.ps1 review-result sends the supplied PR URL directly to gh pr merge --auto without reading the PR base, current head, required checks or independent review. Repository auto-merge is currently disabled; dev protection returns HTTP 404.",
+    "plan": "Define authoritative validation and review receipts bound to issue, repository, PR and head SHA. Reject contradictory success data, verify the current PR targets dev, verify required validation and independent review at that SHA, enforce high-risk plan approval, and fail closed before any merge request. Report queued auto-merge separately from observed merge completion. Document required GitHub settings without enabling them in this implementation task.",
+    "accept": [
+      "A success result with failed/not-run tests or unmet criteria fails validation; meaningful failure results remain representable.",
+      "Wrong-repository/base PRs, changed heads, failed/pending required checks, unresolved findings and missing independent review cannot request merge.",
+      "High-risk work without human plan approval cannot request merge.",
+      "Disabled auto-merge or missing configured review/check gates produces a concrete blocker and never a false success.",
+      "Completion receipts distinguish an auto-merge request from an observed merge."
+    ],
+    "validation": "Use fake GitHub subprocess/API fixtures to assert no merge command occurs for each rejected case; test one valid reviewed dev PR and a head-change race. Run the full Factory suite.",
+    "nonGoals": "No branch protection changes, no bypassing checks or reviews, and no production rollout until a human approves this high-risk plan."
+  },
+  {
+    "key": "release",
+    "title": "Make Factory release follow a reviewed merged-SHA state machine",
+    "risk": "risk:high",
+    "type": "type:refactor",
+    "deps": [
+      "merge-gates"
+    ],
+    "evidence": "skills/factory-release/SKILL.md shared procedure omits merge-to-dev and contains a broken scripts/release path. skills/factory-finish-release/SKILL.md places promotion/synchronization before its reviewed PR step. scripts/release/promote-stable.ps1 promotes arbitrary clean HEAD and exposes a public -TestScript replacement despite claiming no test bypass; tests/run-tests.ps1 uses that hook. It does not verify HEAD belongs to reviewed merged dev history.",
+    "plan": "Define one lifecycle: validate source -> reviewed dev PR -> observed merge -> resolve exact merged SHA -> full mandatory suite on that immutable tree -> stable promotion -> target synchronization -> runtime parity receipts. Keep test seams outside the production CLI, distinguish initial stable creation from fetch failures, and make shared/legacy target behavior explicit. Put operational scripts in workflow command steps and keep skills as artifact/gate guidance.",
+    "accept": [
+      "Unmerged feature commits and an unreviewed/mismatched SHA cannot advance stable.",
+      "The production entry point cannot replace/skip the mandatory full suite.",
+      "Authentication/network failures fetching stable fail closed rather than being treated as a missing ref.",
+      "Release and finish-release skills agree with AGENTS.md and docs/shared-factory.md, including command ownership.",
+      "Each explicit target gets a receipt for the same reviewed source SHA; absent registry or parity mismatch stops safely."
+    ],
+    "validation": "Test with temporary bare remotes: unmerged HEAD, failed suite, fetch error, absent stable, divergent stable, reviewed merged SHA, missing targets and parity mismatch. No external target writes in tests.",
+    "nonGoals": "Do not alter host files by hand, invent targets, or implement infrastructure deployment beyond the supported flow. Human plan approval is required."
+  },
+  {
+    "key": "deploy-retry",
+    "title": "Retry incomplete Factory reconciliation when the deployed SHA is unchanged",
+    "risk": "risk:high",
+    "type": "type:bug",
+    "deps": [
+      "release"
+    ],
+    "evidence": "scripts/deploy/factory-autodeploy.sh advances the checkout before checking container parity and reconciling automations. A failure there leaves HEAD at stable. The next timer run sees changed=0 and exits before either failed operation, so recovery requires --force or another commit. The current parity check compares VERSION only, which cannot distinguish same-version source drift.",
+    "plan": "Track last successfully reconciled SHA separately from checkout HEAD, retry incomplete parity/synchronization on unchanged SHA, and record success only after every configured target and runtime check passes. Include commit/content identity in runtime parity. Keep the existing lock and dirty/divergent refusal semantics.",
+    "accept": [
+      "Inject a one-time reconciliation failure after checkout advancement; the next ordinary timer invocation retries and succeeds without --force.",
+      "Container parity failure is retried until fixed and cannot write a successful receipt.",
+      "A fully successful unchanged SHA follows an explicitly documented health/drift reconciliation policy.",
+      "Dirty/divergent checkout and missing target config fail without overwriting state.",
+      "Parity detects stale same-VERSION runtime content."
+    ],
+    "validation": "Use a temporary Git remote and stub podman/sync commands to cover failure then retry, process interruption, concurrent lock, same-version drift, dirty and divergent trees. Validate shell syntax and run repository checks.",
+    "nonGoals": "No host checkout edits, reset/clean/stash operations, or unapproved service rollout. Human plan approval is required."
+  },
+  {
+    "key": "collector",
+    "title": "Make failure-audit evidence bounded, deduplicated and reciprocally linked",
+    "risk": "risk:medium",
+    "type": "type:bug",
+    "deps": [],
+    "evidence": "scripts/audit-factory-failures.ps1 creates project and Factory issues although factory-failure-audit skill promises at most one. $evidenceText is assigned only when creating a new project issue; a deduplicated project issue can leave the Factory issue without evidence. Existing issue #1 has blank affected-project/recovery fields and no run evidence. gh lookup failures are treated as no matches without checking LASTEXITCODE. /runs responses and handoff text are read before applying any bound; the limited status does not reflect all limitations.",
+    "plan": "Build a compact, redacted evidence object before any write; use explicit registry/API project identity rather than guessing from a folder name; bound source reads/pagination, time window and output size. Decide and document whether one canonical Factory issue or a reciprocal pair is the contract, and use stable fingerprints plus qualified URLs. Fail closed on lookup/auth failures and preserve available evidence on partial writes. Separate recovery side effects from read-only collection.",
+    "accept": [
+      "New-project, existing-project and same-repository cases all preserve run/step/command evidence with full cross-repository links.",
+      "A failed lookup creates no speculative duplicate; repeated audit runs deduplicate by stable fingerprint.",
+      "Large handoffs/API histories obey declared read/output bounds and report truncation/time-window limitations.",
+      "Partial cross-repository publication has an actionable receipt and can retry idempotently.",
+      "The skill, workflow switches and collector agree on read/write and issue-count behavior; existing #1 is linked for triage without inventing evidence."
+    ],
+    "validation": "Add fake-gh and fake-Cezar fixtures covering authentication failure, exact dedupe, existing project issue/new Factory issue, same repository, oversized evidence, missing runs and partial publication. Run the full suite.",
+    "nonGoals": "Do not close or claim to fix existing intake issue #1, broaden filesystem discovery, or restart production workflows during tests."
+  },
+  {
+    "key": "contracts",
+    "title": "Validate workflow command contracts and executable skill examples",
+    "risk": "risk:medium",
+    "type": "type:test",
+    "deps": [],
+    "evidence": "tests/run-tests.ps1 checks workflow shape with line regexes, skill existence/headings, and command-ownership phrases; it does not validate complete command contracts. plan/investigate startup RequiredScripts omit downstream validators/routers; intake omits downstream scripts. factory-fix JSON omits required issue and documentationUpdated; factory-review JSON omits required issue. factory-plan still instructs posting a comment although workflow routing owns it. docs/workflow-map.md describes a superseded risk-based human merge path.",
+    "plan": "Parse workflows with the same contract as the bundled Cezar runtime, validate skill references/retry targets/parameters and startup dependency coverage, and check copyable JSON examples against schemas. Separate schema-valid concrete examples from descriptive alternatives. Align skill responsibilities with workflow-owned routing and prepared artifacts; add negative mutations proving the checker catches drift. Cover all workflows, including scheduled and upgrade workflows.",
+    "accept": [
+      "Missing command script, unknown parameter, missing skill, invalid retry edge and incomplete startup dependency manifest fail checks with file/step diagnostics.",
+      "Concrete skill examples validate against their result schemas; required issue/documentation fields are present.",
+      "Skills cannot instruct duplicate issue discovery, routing/comments, or execution of workflow-owned scripts.",
+      "A negative fixture for each contract class fails for the intended reason on Windows/Linux.",
+      "Preserve the existing in-progress maintenance/backlog edits; reconcile rather than overwrite them."
+    ],
+    "validation": "Run schema/contract checks against the real workflow inventory and deliberately mutated fixtures, followed by the full suite. Avoid relying only on source-string presence assertions.",
+    "nonGoals": "Do not replace Cezar's engine, change model routing, or fold unrelated skill rewrites into this PR."
+  }
+]

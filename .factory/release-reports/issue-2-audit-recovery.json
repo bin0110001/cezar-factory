@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-10-11T13:27:45.3713558+00:00",
+  "cutoff": "2026-10-11T11:57:45.3713558+00:00",
+  "olderThanMinutes": 90,
+  "dryRun": false,
+  "activeRunCheck": true,
+  "recovered": [
+    {
+      "issue": 12,
+      "action": "released",
+      "reason": "stale-without-reservation-marker"
+    },
+    {
+      "issue": 11,
+      "action": "released",
+      "reason": "stale-without-reservation-marker"
+    },
+    {
+      "issue": 4,
+      "action": "released",
+      "reason": "stale-without-reservation-marker"
+    },
+    {
+      "issue": 3,
+      "action": "released",
+      "reason": "stale-without-reservation-marker"
+    },
+    {
+      "issue": 2,
+      "action": "released",
+      "reason": "stale-without-reservation-marker"
+    }
+  ],
+  "skipped": [
+    {
+      "issue": 7,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 6,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 5,
+      "reason": "competing-lifecycle-state"
+    }
+  ],
+  "terminalReason": "expired-reservations-released"
+}

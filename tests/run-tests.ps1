@@ -77,6 +77,8 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
+ $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
+Assert 'intake automation catches older backlog and excludes tracking parents' ($intakeAutomation.filters.lookbackDays -ge 30 -and $intakeAutomation.filters.excludeLabels -contains 'epic' -and $intakeAutomation.filters.excludeLabels -contains 'factory:tracking')
 Assert 'implementation and fix-review use the configured gateway model' ($catalog.automationProfiles.'factory-implement'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-fix-review'.model -eq 'factory-gateway/factory-code')
 Assert 'complexity routes small to gateway, medium to Luna, and large to premium implementation' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-luna' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.spendTier -eq 'premium-implementation' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
 Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automationProfiles.'factory-plan'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'sonnet')
@@ -415,6 +417,22 @@ try {
     $plan = @{ issue = 7; objective = 'o'; acceptanceCriteria = 'a'; nonGoals = 'n'; risks = 'r'; dependencies = 'd'; suggestedWorkBreakdown = '1. do'; requiredProjectSkills = @('s'); unresolvedQuestions = ''; complexity = 'complexity:medium'; readyNotReadyStatus = 'ready' }
     $intake = @{ issue = 7; type = 'type:bug'; risk = 'risk:low'; summary = 'clear bug'; unresolvedQuestions = '' }
     Assert 'validate: good intake passes' ((Test-Validate 'intake' $intake) -eq 0)
+    Set-Gh @('factory:new')
+    $selectorState = @{
+        labels = @(); comments = @();
+        issues = @(
+            @{ number = 1; title = 'tracking epic'; body = ''; url = 'https://github.com/x/y/issues/1'; createdAt = '2026-01-01T00:00:00Z'; labels = @('factory:new', 'epic', 'type:feature', 'risk:medium') },
+            @{ number = 2; title = 'ambiguous labels'; body = ''; url = 'https://github.com/x/y/issues/2'; createdAt = '2026-01-02T00:00:00Z'; labels = @('factory:new', 'type:bug', 'type:feature', 'risk:low') },
+            @{ number = 3; title = 'eligible work'; body = ''; url = 'https://github.com/x/y/issues/3'; createdAt = '2026-01-03T00:00:00Z'; labels = @('factory:new', 'type:bug', 'risk:low') },
+            @{ number = 4; title = 'tracking label'; body = ''; url = 'https://github.com/x/y/issues/4'; createdAt = '2026-01-04T00:00:00Z'; labels = @('factory:new', 'factory:tracking', 'type:feature', 'risk:low') }
+        )
+    }
+    $selectorState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $selectorOutput = Join-Path $tmp 'intake-selection.json'
+    $selectorScript = Join-Path $scripts 'select-intake-issue.ps1'
+    $selectorRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; OutputPath = $selectorOutput }
+    $selectedIntake = Get-Content -Raw $selectorOutput | ConvertFrom-Json
+    Assert 'intake selector skips epics, tracking parents, and ambiguous taxonomy' ($selectorRun.Code -eq 0 -and $selectedIntake.issue -eq 3)
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')

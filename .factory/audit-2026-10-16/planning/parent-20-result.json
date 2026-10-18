@@ -1,0 +1,45 @@
+{
+  "issue": 20,
+  "objective": "Verified result and merge gates",
+  "acceptanceCriteria": "Every inherited acceptance criterion is covered by #25/#26/#27; false success is rejected, effective repository gates exist after explicit approval, and merge eligibility/completion refer to the exact reviewed head.",
+  "nonGoals": "No unapproved settings changes, direct merge, review bypass, project-runner redesign or automatic approval.",
+  "risks": "risk:high",
+  "dependencies": "#27 depends on #19, #25 and #26. #25 and #26 have no hard prerequisite. Release promotion #28 consumes #27's verification contract.",
+  "suggestedWorkBreakdown": "Semantic validation #25 and repository policy #26 can advance independently. Current-head auto-merge #27 requires #19, #25 and verified policy #26; policy implementation can be tested with fakes before live gate availability.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:large",
+  "readyNotReadyStatus": "decomposed",
+  "subIssues": [
+    {
+      "title": "Reject contradictory implementation results and version validation receipts",
+      "body": "Make machine success mean passed validation and satisfied acceptance criteria without performing GitHub writes. See fully planned child #25. Factory suite on Windows/Linux; mutation fixtures for every contradictory and compatible case; schema checks of all updated producer examples.",
+      "type": "type:bug",
+      "risk": "risk:medium",
+      "complexity": "complexity:medium",
+      "dependsOn": []
+    },
+    {
+      "title": "Configure and verify the dev review and auto-merge policy",
+      "body": "Provide the explicit repository-side review/check policy required by safe auto-merge, with human-approved settings and a verified receipt. See fully planned child #26. Read-only effective policy inspection first; after human-approved application use a controlled test PR, confirm rejection/eligibility without merging unreviewed changes.",
+      "type": "type:maintenance",
+      "risk": "risk:high",
+      "complexity": "complexity:medium",
+      "dependsOn": []
+    },
+    {
+      "title": "Bind auto-merge eligibility to the current reviewed PR head and observe completion",
+      "body": "Request auto-merge only for the intended dev PR at the exact independently reviewed and validated head. See fully planned child #27. Fake-gh cases for all denials, required-check/ruleset fixtures, changed-head race, valid allow case, queued merge then observed merge; full Factory suite.",
+      "type": "type:bug",
+      "risk": "risk:high",
+      "complexity": "complexity:medium",
+      "dependsOn": [
+        0,
+        1
+      ]
+    }
+  ]
+}

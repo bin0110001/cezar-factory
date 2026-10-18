@@ -1,0 +1,36 @@
+{
+  "issue": 23,
+  "objective": "Skill/workflow contract remediation and enforcement",
+  "acceptanceCriteria": "Known instruction/example/preflight defects are fixed; missing script/skill, unknown parameter, invalid retry edge and bad example each fail a targeted negative contract fixture with an actionable diagnostic.",
+  "nonGoals": "No Cezar engine change, broad skill rewrite, model routing change, production Node prerequisite or redo of merged #24.",
+  "risks": "risk:medium",
+  "dependencies": "#33 depends on #32. #32 is independent of release-skill text, which is owned by #29.",
+  "suggestedWorkBreakdown": "Repair concrete examples, ownership instructions and preflight inventories in #32; then add an executable Cezar-schema/PowerShell-AST contract harness in #33.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:large",
+  "readyNotReadyStatus": "decomposed",
+  "subIssues": [
+    {
+      "title": "Repair concrete skill result examples and workflow ownership instructions",
+      "body": "Remove known prompt contradictions and make copyable result examples schema-valid without broad skill rewrites. See fully planned child #32. Schema-validation of actual fenced examples, focused ownership/manifest checks, diff review and full Factory suite.",
+      "type": "type:bug",
+      "risk": "risk:medium",
+      "complexity": "complexity:medium",
+      "dependsOn": []
+    },
+    {
+      "title": "Check workflow structure, PowerShell command contracts and skill examples in CI",
+      "body": "Catch the audited contract drift with executable negative cases instead of heading/source-string assertions. See fully planned child #33. Run positive inventory and negative mutation suite, clean CI dependency install, then full Factory suite in Windows/Linux matrix.",
+      "type": "type:test",
+      "risk": "risk:medium",
+      "complexity": "complexity:medium",
+      "dependsOn": [
+        0
+      ]
+    }
+  ]
+}

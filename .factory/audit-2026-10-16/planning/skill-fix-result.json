@@ -1,0 +1,22 @@
+{
+  "issue": 32,
+  "objective": "Remove known prompt contradictions and make copyable result examples schema-valid without broad skill rewrites.",
+  "acceptanceCriteria": "Concrete examples parse as JSON and include all required fields for their declared result kind.\nAffected skills instruct only artifact production and project-specific development, with no workflow-owned comments/scripts/label writes.\nEvery script called by the affected workflows is covered by preflight or an explicitly validated helper manifest.\nNo unrelated maintenance/backlog edits or completed #24 documentation work are replaced.",
+  "nonGoals": "No new general workflow parser, release-skill rewrite, model selection or project dispatch changes.",
+  "risks": "risk:medium: Use literal valid JSON examples with required issue/documentation fields; move enum alternatives and explanatory placeholders into prose. Planning/review/fix agents write structured artifacts; workflow commands own GitHub comments/routing and prepared issue selection. Replace factory-implement's generic instruction to invoke Factory scripts with current-worktree project-command guidance; retain its bounded command-error handling. Complete startup RequiredScripts from actual downstream command references (including route-plan-or-default), accounting for helper dependencies, without overwriting the current maintenance/backlog work. The workflow-map risk-based text was already repaired in merged PR #24; do not redo it. Release-skill operational text remains owned by #21's orchestration child.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #33",
+  "suggestedWorkBreakdown": "Enumerate concrete JSON blocks and fix only schema-required/example validity defects.\nRemove duplicate GitHub comment/script/discovery instructions in affected skills.\nComplete startup inventories for affected workflows and add focused negative fixtures.\nVerify rendered Markdown structure, schema validity and existing ownership checks.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

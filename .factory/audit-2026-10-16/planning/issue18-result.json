@@ -1,0 +1,24 @@
+{
+  "issue": 18,
+  "objective": "Retry failed parity/reconciliation independently of whether the checkout advanced, and record success only after full convergence.",
+  "acceptanceCriteria": "One-time failure after advancement recovers on the next ordinary tick without --force or another commit.\nAn unchanged successful SHA still reconciles current explicit registry/automation drift.\nSame VERSION but wrong content/mount cannot produce a success receipt.\nNo failed/partial attempt replaces a success receipt; no dirty/divergent checkout is overwritten.\nConcurrent timer invocations do not overlap writes or sync.",
+  "nonGoals": "No promotion changes, new target discovery, service restarts or manual Bazzite checkout edits.",
+  "risks": "risk:high: Remove unchanged-SHA success shortcut. On every timer invocation, retain flock and dirty/divergence checks, fetch the explicit deploy ref, and ensure fast-forward before parity/sync. Compare host SHA and container-visible SHA plus hashes of workflow-referenced scripts/catalog and VERSION, so equal VERSION or equal Git metadata alone cannot hide a wrong mount/stale files. Use only registered paths; do not discover a replacement checkout. Run idempotent sync-all on every healthy tick, including unchanged SHA; this is the explicit drift-reconciliation policy and avoids false success after registry changes or out-of-band automation edits. Write success receipt atomically only after all configured targets succeed, containing sourceSha, version, registryDigest, parity result and target receipts. Store it in an ignored host-local state path, not a tracked checkout file. A failed attempt keeps last successful receipt but emits a distinct failure receipt; next normal tick retries. --force stays backward compatible but is no longer required for recovery. Do not add reset/clean/stash.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #29",
+  "suggestedWorkBreakdown": "Build shell harness with temporary remote and fake podman/sync/clock commands; reproduce advance-then-fail followed by unchanged tick.\nRefactor reconciliation policy and same-version content parity, preserve documented blocked exit codes where possible and document any new code.\nEmit atomic success/failure receipts with registry snapshot digest; preserve global non-overlap lock.\nCover already-current/drift, missing registry, mixed target failure, container outage, process interruption, dirty/diverged checkout and lock contention.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review",
+    "factory-finish-release",
+    "homelab-ssh"
+  ],
+  "unresolvedQuestions": "Awaiting explicit human approval of the recorded high-risk plan.",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

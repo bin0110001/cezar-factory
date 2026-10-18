@@ -1,0 +1,103 @@
+[
+  {
+    "key": "issue19",
+    "deps": [],
+    "risk": "risk:medium",
+    "state": "factory:ready",
+    "parent": 17,
+    "number": 19
+  },
+  {
+    "key": "issue18",
+    "deps": [],
+    "risk": "risk:high",
+    "state": "factory:needs-help",
+    "parent": 17,
+    "number": 18
+  },
+  {
+    "key": "semantic",
+    "deps": [],
+    "risk": "risk:medium",
+    "state": "factory:ready",
+    "parent": 20,
+    "number": 25
+  },
+  {
+    "key": "repo-gates",
+    "deps": [],
+    "risk": "risk:high",
+    "state": "factory:needs-help",
+    "parent": 20,
+    "number": 26
+  },
+  {
+    "key": "pr-gate",
+    "deps": [
+      "issue19",
+      "semantic",
+      "repo-gates"
+    ],
+    "risk": "risk:high",
+    "state": "factory:needs-help",
+    "parent": 20,
+    "number": 27
+  },
+  {
+    "key": "promotion",
+    "deps": [
+      "pr-gate"
+    ],
+    "risk": "risk:high",
+    "state": "factory:needs-help",
+    "parent": 21,
+    "number": 28
+  },
+  {
+    "key": "orchestration",
+    "deps": [
+      "promotion",
+      "issue18"
+    ],
+    "risk": "risk:high",
+    "state": "factory:needs-help",
+    "parent": 21,
+    "number": 29
+  },
+  {
+    "key": "collect-bounds",
+    "deps": [],
+    "risk": "risk:medium",
+    "state": "factory:ready",
+    "parent": 22,
+    "number": 30
+  },
+  {
+    "key": "publish-evidence",
+    "deps": [
+      "collect-bounds"
+    ],
+    "risk": "risk:medium",
+    "state": "factory:blocked",
+    "parent": 22,
+    "number": 31
+  },
+  {
+    "key": "skill-fix",
+    "deps": [],
+    "risk": "risk:medium",
+    "state": "factory:ready",
+    "parent": 23,
+    "number": 32
+  },
+  {
+    "key": "contract-check",
+    "deps": [
+      "skill-fix"
+    ],
+    "risk": "risk:medium",
+    "state": "factory:blocked",
+    "parent": 23,
+    "number": 33
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "issue": 28,
+  "objective": "Make stable promotion prove the exact tested commit is a reviewed merged dev commit, with no public test replacement.",
+  "acceptanceCriteria": "An unmerged feature SHA, unreachable dev SHA, missing review evidence or dirty/mutated candidate cannot advance stable.\nNo production argument can substitute or skip the mandatory full suite.\nA failed suite, auth/network failure or divergent/concurrently advanced stable produces no unsafe push.\nA valid merged SHA promotes fast-forward and produces a receipt tied to that exact tested tree.",
+  "nonGoals": "No target synchronization, host deployment, repository-setting changes or hand edits to Bazzite.",
+  "risks": "risk:high: Resolve candidate SHA from a merged dev PR and verify current origin/dev reachability; merge, squash and rebase histories must be explicitly supported by evidence, never assume a single merge commit. Use an isolated clean candidate checkout and the committed catalog/full-suite paths. Remove public -TestScript substitution; test small internal pure functions with fixtures and stub executables on an isolated test PATH rather than adding production bypass flags. Always validate full suite and verify candidate identity/tree before pushing an explicit SHA to stable. Preserve fast-forward requirement and handle concurrent stable advancement as a refusal. Distinguish successful remote lookup with absent stable from failed auth/network lookup; only genuinely absent stable permits bootstrap. Write a versioned promotion receipt with candidate SHA, merged PR, dev SHA, old/new stable SHA, validation artifacts and outcome. Output/report paths stay outside candidate tracked content.",
+  "dependencies": "#27\n\nRequired by: #29",
+  "suggestedWorkBreakdown": "Refactor candidate selection and ancestry checks around the PR eligibility/evidence contract.\nRemove public test-script override and replace current happy/failing promotion test seams.\nRun catalog/full suite against the isolated immutable candidate, recheck identity and push explicit SHA.\nDocument bootstrap, fetch failure, concurrent promotion and rollback-via-revert behavior.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review",
+    "factory-finish-release"
+  ],
+  "unresolvedQuestions": "Awaiting explicit human approval of the recorded high-risk plan.",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

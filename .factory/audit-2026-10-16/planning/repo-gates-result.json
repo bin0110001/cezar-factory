@@ -1,0 +1,21 @@
+{
+  "issue": 26,
+  "objective": "Provide the explicit repository-side review/check policy required by safe auto-merge, with human-approved settings and a verified receipt.",
+  "acceptanceCriteria": "Approved dev policy requires effective CI, independent fresh review and resolved conversations, with no automatic bypass.\nAuto-merge is enabled only after explicit settings approval and verified review availability.\nA failing/unreviewed test PR cannot merge; a compliant PR is eligible for the normal merge path.\nBefore/after configuration and reviewer constraints are recorded without secrets.",
+  "nonGoals": "No source implementation, broad organization policies, direct merge, bypass grant or unapproved settings write.",
+  "risks": "risk:high: Proposed policy: enable repository auto-merge; protect dev using the repository's supported rule mechanism; require one independent approving review, dismiss stale approvals after code pushes, resolve conversations, require current ubuntu/windows Factory CI checks and prohibit agent/admin bypass. Resolve actual effective check contexts from a fresh CI run rather than assume names from display text. PR #24 passed test (ubuntu-latest) and test (windows-latest), but the configured names must be verified. A human repository administrator must approve the exact settings diff, reviewer availability and bypass policy before any write. This issue does not authorize applying settings. Record before/after effective policy and confirm checks apply to dev; a same-author agent cannot substitute for the required independent reviewer. If unavailable, leave merge blocked.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #27",
+  "suggestedWorkBreakdown": "Capture effective current rules/settings and propose the exact minimal configuration using observed required CI contexts.\nObtain explicit human plan approval covering repository settings and independent-review arrangement.\nApply only approved settings through the supported GitHub interface; verify effective enforcement using a non-production test PR without bypassing checks.\nRecord the gate-policy receipt and link it to the current-head merge-gate implementation.",
+  "requiredProjectSkills": [
+    "github-issues"
+  ],
+  "unresolvedQuestions": "Awaiting explicit human approval of the recorded high-risk plan.",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "runId": "c70e35be",
+  "state": "running",
+  "outcome": "running",
+  "startedAtUtc": "2026-10-16T23:57:32.9052893Z",
+  "finishedAtUtc": null,
+  "projectRoot": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack",
+  "godotExecutable": "D:\\Godot\\Godot_v4.7-stable_win64.exe\\Godot_v4.7-stable_win64.exe",
+  "batchSize": 1,
+  "timeoutSeconds": 300,
+  "totalSuites": 1,
+  "completedBatches": 0,
+  "totalBatches": 1,
+  "quarantine": {
+    "active": [
+      "res://test/scripts/gdscript/ConvertedCSharpTests.gd",
+      "res://test/scripts/gdscript/PieceStyleDefinitionTest.gd",
+      "res://test/scripts/gdscript/NavigationScreenSmokeTest.gd"
+    ],
+    "count": 3
+  },
+  "environment": {
+    "schemaVersion": 1,
+    "gitCommit": "30ae2991081bf18500342966e0cc54cc5e3139c0",
+    "gitBranch": "codex/issue-503-test-manifest",
+    "dirtyTree": false,
+    "gitDiffSha256": "",
+    "godotVersion": "",
+    "gdUnitVersion": "6.1.1",
+    "godotExecutable": "D:\\Godot\\Godot_v4.7-stable_win64.exe\\Godot_v4.7-stable_win64.exe",
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "machine": "ZEBRA",
+    "powershellVersion": "7.6.6",
+    "headless": true,
+    "arguments": [],
+    "renderingDriver": "vulkan",
+    "displayDriver": "headless",
+    "fixedFps": "60",
+    "checkLeaks": "True"
+  },
+  "currentBatch": 1,
+  "counters": {
+    "tests": 0,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "timedOutBatches": 0,
+    "failedBatches": 0
+  },
+  "batches": [
+    {
+      "batchNumber": 1,
+      "batchTotal": 1,
+      "status": "running",
+      "outcome": "queued",
+      "startedAtUtc": "2026-10-16T23:57:33.2495657Z",
+      "finishedAtUtc": null,
+      "timeoutSeconds": 300,
+      "suiteCount": 1,
+      "suiteResPaths": [
+        "res://test/scripts/gdscript/GameSessionEditorTabExpandedToolsTest.gd"
+      ],
+      "reportDirectory": "D:\\Projects\\cezar-factory\\.factory\\issue-430-test-reports\\run-c70e35be\\batch_001",
+      "resultXml": null,
+      "processExitCode": null,
+      "summary": null,
+      "timedOut": false,
+      "errorMessage": null
+    }
+  ]
+}

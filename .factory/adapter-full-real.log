@@ -1,0 +1,211 @@
+[test] capability 'full-assets' unavailable (not found: Assets/Maximo, Assets/Kenney, Assets/QuaterniusLowPolyCharacters, Assets/Synty_PolygonCyberCity); suites tagged requires:full-assets will be skipped.
+[test] skipped res://test/scripts/gdscript/PieceStyleDefinitionTest.gd (quarantined)
+[test] skipped 18 suite(s) (requires full-assets); run on a machine that has it, or list them with -List
+[test] 2 external job(s) for provider(s): bazzite
+[test] 603 suite(s) selected.
+[test] run 20261017T002126Z-9c2f09: 63 job(s) on up to 11 worker(s) (limited by cpu); retries on; output in D:\Projects\cezar-factory\.factory\target-blackjack\reports\test-runs\20261017T002126Z-9c2f09
+  [concurrency] workers 11 -> 5: 2 load signal(s) in the last 8 job(s) (threshold 2): missing-results x1, timeout x1
+  [concurrency] workers 5 -> 6: 2 clean window(s) of 8 job(s) without a load signal
+  [concurrency] workers 6 -> 3: 2 load signal(s) in the last 8 job(s) (threshold 2): missing-results x1, timeout x1
+  [concurrency] workers 3 -> 4: 2 clean window(s) of 8 job(s) without a load signal
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/CampaignSelectionGuidanceTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[1/109] 10 suites  CONCURRENCY_SENSITIVE  1 attempt(s)  0.1s
+  REAL_FAILURE  res://test/scripts/gdscript/EntityPackageConfigScreenRegressionTest.gd  attempts=3  6 failure(s), 0 error(s)
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionMissionLoadSmokeTest.gd  attempts=3  0 failure(s), 3 error(s)
+[2/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[3/109] 10 suites  PASS  1 attempt(s)  0.0s
+[4/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/PieceStylePreviewSmokeTest.gd  attempts=3  2 failure(s), 1 error(s)
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/Server/SessionGameEndpointCombatResultTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/Server/SessionGameEndpointConditionAoETest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[5/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/Server/SessionSoundboardEndpointTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[6/109] 10 suites  CONCURRENCY_SENSITIVE  1 attempt(s)  0.0s
+  TEST_INFRA_FAILURE  res://test/scripts/gdscript/SessionMissionEditorHostTest.gd  attempts=4  no results file (exit code -1); per-case-isolation: reran 20 test case(s) one per process after the suite kept failing to complete
+[7/109] 10 suites  TEST_INFRA_FAILURE  1 attempt(s)  0.0s
+[8/109] 10 suites  PASS  1 attempt(s)  0.0s
+[9/109] 10 suites  PASS  1 attempt(s)  0.0s
+[10/109] 10 suites  PASS  1 attempt(s)  0.0s
+[11/109] 10 suites  PASS  1 attempt(s)  0.0s
+[12/109] 10 suites  PASS  1 attempt(s)  0.0s
+[13/109] 10 suites  PASS  1 attempt(s)  0.0s
+[14/109] 10 suites  PASS  1 attempt(s)  0.0s
+[15/109] 10 suites  PASS  1 attempt(s)  0.0s
+[16/109] 10 suites  PASS  1 attempt(s)  0.0s
+[17/109] 10 suites  PASS  1 attempt(s)  0.0s
+[18/109] 10 suites  PASS  1 attempt(s)  0.0s
+[19/109] 10 suites  PASS  1 attempt(s)  0.0s
+  PASS  res://test/scripts/gdscript/Measurement/MeasurementServiceTest.gd  attempts=2  results complete and green; process crashed afterwards; post-report-teardown-crash
+[20/109] 10 suites  PASS  1 attempt(s)  0.0s
+[21/109] 10 suites  PASS  1 attempt(s)  0.0s
+[22/109] 10 suites  PASS  1 attempt(s)  0.0s
+[23/109] 10 suites  PASS  1 attempt(s)  0.0s
+[24/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/Plugins/Rules/Blackjack/BlackjackEquipmentAbilityAdapterTest.gd  attempts=3  3 failure(s), 0 error(s)
+[25/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[26/109] 10 suites  PASS  1 attempt(s)  0.0s
+[27/109] 10 suites  PASS  1 attempt(s)  0.0s
+[28/109] 10 suites  PASS  1 attempt(s)  0.0s
+[29/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/RigProfileGeneratorParityTest.gd  attempts=3  2 failure(s), 3 error(s)
+[30/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[31/109] 10 suites  PASS  1 attempt(s)  0.0s
+[32/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/SimpleTurnManagerTest.gd  attempts=3  1 failure(s), 0 error(s)
+  REAL_FAILURE  res://test/scripts/gdscript/SoundCatalogTest.gd  attempts=3  5 failure(s), 0 error(s)
+[33/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[34/109] 10 suites  PASS  1 attempt(s)  0.0s
+[35/109] 10 suites  PASS  1 attempt(s)  0.0s
+[36/109] 10 suites  PASS  1 attempt(s)  0.0s
+[37/109] 10 suites  PASS  1 attempt(s)  0.0s
+[38/109] 10 suites  PASS  1 attempt(s)  0.0s
+[39/109] 10 suites  PASS  1 attempt(s)  0.0s
+[40/109] 10 suites  PASS  1 attempt(s)  0.0s
+[41/109] 10 suites  PASS  1 attempt(s)  0.0s
+[42/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionCardDrawCommandTest.gd  attempts=3  0 failure(s), 1 error(s)
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionEditorRoomPieceScopeGatingTest.gd  attempts=3  12 failure(s), 0 error(s)
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/GameSessionEditorTabExpandedToolsTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[43/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionGizmoMovementSmokeTest.gd  attempts=3  3 failure(s), 1 error(s)
+[44/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionRoundTripSmokeTest.gd  attempts=3  1 failure(s), 1 error(s)
+  REAL_FAILURE  res://test/scripts/gdscript/GameSessionScreenSmokeTest.gd  attempts=3  8 failure(s), 3 error(s)
+[45/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[46/109] 10 suites  PASS  1 attempt(s)  0.0s
+[47/109] 10 suites  PASS  1 attempt(s)  0.0s
+[48/109] 10 suites  PASS  1 attempt(s)  0.0s
+[49/109] 10 suites  PASS  1 attempt(s)  0.0s
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/NetworkManagerSoundboardPuzzleCommandDispatchTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/NetworkManagerVersionCheckTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/NetworkManagerWeatherCommandDispatchTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[50/109] 10 suites  CONCURRENCY_SENSITIVE  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/PieceStyleConfigScreenTest.gd  attempts=3  3 failure(s), 0 error(s)
+[51/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[52/109] 10 suites  PASS  1 attempt(s)  0.0s
+  REAL_FAILURE  res://test/scripts/gdscript/Plugins/Minigames/ActionTowerDefense/ActionTowerDefenseRegressionTest.gd  attempts=3  2 failure(s), 0 error(s)
+[53/109] 10 suites  REAL_FAILURE  1 attempt(s)  0.0s
+[54/109] 10 suites  PASS  1 attempt(s)  0.0s
+[55/109] 10 suites  PASS  1 attempt(s)  0.0s
+[56/109] 10 suites  PASS  1 attempt(s)  0.0s
+[57/109] 10 suites  PASS  1 attempt(s)  0.0s
+  CONCURRENCY_SENSITIVE  res://test/scripts/gdscript/UI/Themes/ThemeSmokeTest.gd  attempts=2  failed 1 of 2 attempts, only when run concurrently
+[58/109] 10 suites  CONCURRENCY_SENSITIVE  1 attempt(s)  0.0s
+[59/109] 10 suites  PASS  1 attempt(s)  0.0s
+[60/109] 6 suites  PASS  1 attempt(s)  0.0s
+  PASS  res://test/scripts/gdscript/Assets/AssetManagerHttpTransferTest.gd  attempts=4  results complete and green; per-case-isolation: reran 20 test case(s) one per process after the suite kept failing to complete
+[61/109] 3 suites  PASS  1 attempt(s)  0.0s
+[62/109] 3 suites  PASS  1 attempt(s)  0.0s
+[63/109] 1 suites  PASS  1 attempt(s)  0.0s
+[64/109] 1 suites  PASS  1 attempt(s)  0.0s
+[65/109] 1 suites  PASS  2 attempt(s)  0.0s
+[66/109] 1 suites  PASS  2 attempt(s)  0.0s
+[67/109] 1 suites  PASS  2 attempt(s)  0.0s
+[68/109] 1 suites  PASS  2 attempt(s)  0.0s
+[69/109] 1 suites  PASS  2 attempt(s)  0.0s
+[70/109] 1 suites  PASS  2 attempt(s)  0.0s
+[71/109] 1 suites  PASS  2 attempt(s)  0.0s
+[72/109] 1 suites  PASS  1 attempt(s)  0.0s
+[73/109] 1 suites  PASS  1 attempt(s)  0.0s
+[74/109] 1 suites  PASS  2 attempt(s)  0.0s
+[75/109] 1 suites  PASS  2 attempt(s)  0.0s
+[76/109] 1 suites  PASS  2 attempt(s)  0.0s
+[77/109] 1 suites  PASS  1 attempt(s)  0.0s
+[78/109] 1 suites  PASS  2 attempt(s)  0.0s
+[79/109] 1 suites  PASS  2 attempt(s)  0.0s
+[80/109] 1 suites  PASS  1 attempt(s)  0.0s
+[81/109] 1 suites  PASS  1 attempt(s)  0.0s
+[82/109] 1 suites  PASS  1 attempt(s)  0.0s
+[83/109] 1 suites  PASS  2 attempt(s)  0.0s
+[84/109] 1 suites  PASS  1 attempt(s)  0.0s
+[85/109] 1 suites  PASS  3 attempt(s)  0.0s
+[86/109] 1 suites  PASS  1 attempt(s)  0.0s
+[87/109] 1 suites  PASS  1 attempt(s)  0.0s
+[88/109] 1 suites  PASS  2 attempt(s)  0.0s
+[89/109] 1 suites  PASS  3 attempt(s)  0.0s
+[90/109] 1 suites  PASS  1 attempt(s)  0.0s
+[91/109] 1 suites  PASS  1 attempt(s)  0.0s
+[92/109] 1 suites  PASS  1 attempt(s)  0.0s
+[93/109] 1 suites  PASS  1 attempt(s)  0.0s
+[94/109] 1 suites  PASS  1 attempt(s)  0.0s
+[95/109] 1 suites  PASS  1 attempt(s)  0.0s
+[96/109] 1 suites  PASS  1 attempt(s)  0.0s
+[97/109] 1 suites  PASS  1 attempt(s)  0.0s
+[98/109] 1 suites  PASS  1 attempt(s)  0.0s
+[99/109] 1 suites  PASS  1 attempt(s)  0.0s
+[100/109] 1 suites  PASS  1 attempt(s)  0.0s
+[101/109] 1 suites  PASS  1 attempt(s)  0.0s
+[102/109] 1 suites  PASS  1 attempt(s)  0.0s
+[103/109] 1 suites  PASS  1 attempt(s)  0.0s
+[104/109] 1 suites  PASS  1 attempt(s)  0.0s
+[105/109] 1 suites  PASS  1 attempt(s)  0.0s
+[106/109] 1 suites  PASS  1 attempt(s)  0.0s
+[107/109] 1 suites  PASS  1 attempt(s)  0.0s
+[108/109] 1 suites  PASS  1 attempt(s)  0.0s
+[109/109] 1 suites  PASS  1 attempt(s)  0.0s
+  [bazzite] EXTERNAL_INFRA_BLOCKED  res://test/scripts/gdscript/Remote/RemoteRetentionMulticlientTest.gd  (blocked by secrets)
+  [bazzite] EXTERNAL_INFRA_BLOCKED  res://test/scripts/gdscript/Remote/RemoteRetentionSingleTest.gd  (blocked by secrets)
+[test] REAL_FAILURE: 603 suite(s), 4337 test(s), 99 failure(s), 90 error(s), 0 skipped, 127 attempt(s) in 1,859s -> exit 1
+[test] verdicts: REAL_FAILURE=14, CONCURRENCY_SENSITIVE=9, TEST_INFRA_FAILURE=1, EXTERNAL_INFRA_BLOCKED=2, QUARANTINED=1
+  QUARANTINED  res://test/scripts/gdscript/PieceStyleDefinitionTest.gd  (age 34d, expires in 76d, issue room-style-definition-historical-failure)
+[gdscript-code-quality] Using project root: D:\Projects\cezar-factory\.factory\target-blackjack
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\Assets\Racing\RacingGame.gd(1830) - Legacy file exceeds its baseline limit of 1827 lines (current: 1830). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\AssetLoader.gd(1102) - Legacy file exceeds its baseline limit of 1061 lines (current: 1102). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\AnimationPackageConfigScreen.gd(2968) - Legacy file exceeds its baseline limit of 1712 lines (current: 2968). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Assets\AssetManager.gd(2248) - File exceeds maximum size limit of 1000 lines (current: 2248). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\CampaignData.gd(4251) - Legacy file exceeds its baseline limit of 1456 lines (current: 4251). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\CampaignSelection.gd(1027) - File exceeds maximum size limit of 1000 lines (current: 1027). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Characters\Player.gd(2676) - File exceeds maximum size limit of 1000 lines (current: 2676). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\EntityPackageConfigScreen.gd(2865) - Legacy file exceeds its baseline limit of 2035 lines (current: 2865). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\EquipmentEditor.gd(2564) - Legacy file exceeds its baseline limit of 1997 lines (current: 2564). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] GameSessionGrowth: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\GameSession.gd(16634) - GameSession.gd exceeds its ratcheted ceiling of 16047 lines (current: 16634). Extract the new behavior before merging; do not raise this ceiling.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\GameState.gd(2248) - Legacy file exceeds its baseline limit of 1677 lines (current: 2248). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\GMPermissionsAndFeaturesScreen.gd(1066) - File exceeds maximum size limit of 1000 lines (current: 1066). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\GMSoundboardScreen.gd(1561) - File exceeds maximum size limit of 1000 lines (current: 1561). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\JoinGame.gd(2218) - Legacy file exceeds its baseline limit of 1736 lines (current: 2218). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\MapEditorToolDispatch.gd(1107) - File exceeds maximum size limit of 1000 lines (current: 1107). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\MapEditService.gd(1103) - File exceeds maximum size limit of 1000 lines (current: 1103). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\MapStylePreviewBuilder.gd(2226) - Legacy file exceeds its baseline limit of 1318 lines (current: 2226). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\MinigameManager.gd(1979) - Legacy file exceeds its baseline limit of 1585 lines (current: 1979). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\NetworkManager.gd(11197) - Legacy file exceeds its baseline limit of 2802 lines (current: 11197). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\OptionsMenu.gd(1765) - Legacy file exceeds its baseline limit of 1584 lines (current: 1765). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PackageAssetBrowser.gd(1531) - File exceeds maximum size limit of 1000 lines (current: 1531). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PackageConfigRegistry.gd(1483) - File exceeds maximum size limit of 1000 lines (current: 1483). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PhysicsDiceRoller.gd(1459) - Legacy file exceeds its baseline limit of 1456 lines (current: 1459). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PieceStyleConfigScreen.gd(2548) - Legacy file exceeds its baseline limit of 2355 lines (current: 2548). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PlayerPreferences.gd(1029) - File exceeds maximum size limit of 1000 lines (current: 1029). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Minigames\ActionTowerDefense\ActionTowerDefenseGame.gd(1207) - File exceeds maximum size limit of 1000 lines (current: 1207). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Minigames\SurvivorTopDownGame\SurvivorTopDownGame.gd(1642) - Legacy file exceeds its baseline limit of 1050 lines (current: 1642). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Minigames\ThirdPersonSurvivor\ThirdPersonSurvivor.gd(2339) - File exceeds maximum size limit of 1000 lines (current: 2339). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Minigames\TowerDefense\TowerDefenseGame.gd(1156) - File exceeds maximum size limit of 1000 lines (current: 1156). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Packages\PackageWorkbenchScreen\PackageWorkbenchScreen.gd(1475) - File exceeds maximum size limit of 1000 lines (current: 1475). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Plugins\Puzzles\AudioSequencePuzzle\AudioSequencePuzzle.gd(1195) - File exceeds maximum size limit of 1000 lines (current: 1195). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PuzzleManager.gd(1239) - File exceeds maximum size limit of 1000 lines (current: 1239). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\PuzzlePackAuthoringScreen.gd(1588) - File exceeds maximum size limit of 1000 lines (current: 1588). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Server\SessionContext.gd(2120) - File exceeds maximum size limit of 1000 lines (current: 2120). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\Server\SessionRuntime.gd(1002) - File exceeds maximum size limit of 1000 lines (current: 1002). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\SoundboardManager.gd(2518) - File exceeds maximum size limit of 1000 lines (current: 2518). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\AvatarComposerControl.gd(2050) - File exceeds maximum size limit of 1000 lines (current: 2050). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\AvatarEditorControl.gd(3164) - Legacy file exceeds its baseline limit of 3047 lines (current: 3164). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\CharacterCreation.gd(4075) - Legacy file exceeds its baseline limit of 4061 lines (current: 4075). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\GMInventoryManagementScreen.gd(1128) - File exceeds maximum size limit of 1000 lines (current: 1128). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\SearchableAssetPicker.gd(1310) - Legacy file exceeds its baseline limit of 1015 lines (current: 1310). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UI\WorldLogicGraphBuilder.gd(2487) - File exceeds maximum size limit of 1000 lines (current: 2487). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\gdscript\UnifiedMapEditor.gd(4764) - Legacy file exceeds its baseline limit of 3153 lines (current: 4764). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\ObjectCombinerEditor.gd(2273) - Legacy file exceeds its baseline limit of 2269 lines (current: 2273). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\scripts\ObjectCombinerSystem.gd(4031) - Legacy file exceeds its baseline limit of 2326 lines (current: 4031). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\network\tableflux\data_retention_probe.gd(1326) - File exceeds maximum size limit of 1000 lines (current: 1326). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\ActivatedAbilities\ActivatedAbilityContractsTest.gd(1054) - File exceeds maximum size limit of 1000 lines (current: 1054). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\EntityPackageConfigScreenRegressionTest.gd(2222) - Legacy file exceeds its baseline limit of 1357 lines (current: 2222). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\ObjectCombinerSystemTest.gd(3010) - Legacy file exceeds its baseline limit of 2018 lines (current: 3010). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\PackageConfigRegistryTest.gd(1398) - File exceeds maximum size limit of 1000 lines (current: 1398). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING LegacyFileBloat: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\PackageConfigScreenTest.gd(3758) - Legacy file exceeds its baseline limit of 2657 lines (current: 3758). Refactor rather than adding code. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\PieceStyleConfigScreenTest.gd(1011) - File exceeds maximum size limit of 1000 lines (current: 1011). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\PuzzleSoundContractsTest.gd(3287) - File exceeds maximum size limit of 1000 lines (current: 3287). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] WARNING FileTooLarge: D:\Projects\cezar-factory\.factory\target-blackjack\test\scripts\gdscript\Server\SessionRuntimeTest.gd(1085) - File exceeds maximum size limit of 1000 lines (current: 1085). Keep GDScript files small and modular. LLM-driven refactors should still address this.
+[gdscript-code-quality] python not found on PATH; skipping gdlint-derived warnings. (install gdtoolkit in venv)
+[gdscript-code-quality] 53 warning(s) found (non-blocking).
+Write-Error: [gdscript-code-quality] Found 1 issue(s).
+[requirements-lint] Completed checks.
+ran
+{"status":"failed","stage":"full","headSha":"b3bb304d6127180cae20f81ad9c3133947b9455a","checks":[{"name":"gdunit","status":"failed","detail":"GdUnit harness failed with exit code 1."},{"name":"gdscript-quality","status":"failed","detail":"gdscript-quality failed with exit code 1."},{"name":"requirements-lint","status":"passed","detail":""},{"name":"pester","status":"passed","detail":"65 checks"}]}

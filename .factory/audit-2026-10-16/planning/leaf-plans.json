@@ -1,0 +1,341 @@
+[
+  {
+    "key": "semantic",
+    "parent": 20,
+    "title": "Reject contradictory implementation results and version validation receipts",
+    "risk": "risk:medium",
+    "type": "type:bug",
+    "deps": [],
+    "files": "scripts/validate-result.ps1; schemas/implementation-result.schema.json; schemas/review-result.schema.json; scripts/ensure-implementation-result.ps1; tests/run-tests.ps1; tests/fake-gh.ps1",
+    "objective": "Make machine success mean passed validation and satisfied acceptance criteria without performing GitHub writes.",
+    "decisions": [
+      "Keep schema required fields and legacy descriptive strings readable, but normalize explicitly supported success values into a versioned status vocabulary. Unknown, failed, skipped, not-run or unmet values cannot satisfy a success result.",
+      "Successful implementation requires nonempty testsRun/filesChanged, a qualified PR URL and substantive acceptance verification. Keep documentationUpdated=false legitimate; knownConcerns can contain explicitly nonblocking notes, so do not reject every nonempty concern mechanically.",
+      "Introduce versioned validation receipt fields (schemaVersion, issue, repository, pr, headSha, stage, status, exitCode, artifactPaths). Receipt provenance is the workflow command, never agent assertions. Optional legacy results remain parseable but cannot qualify as merge evidence.",
+      "Keep failure results representable and preserve the local RouteOnFailure work; do not fold failure routing changes into a semantic rewrite."
+    ],
+    "steps": [
+      "Add table-driven negative fixtures for the reproduced success/failed/Not met result, empty testsRun, placeholder acceptance and malformed PR URLs.",
+      "Implement pure normalization and semantic checks with concise field errors; update producers only where their outputs would become invalid.",
+      "Define receipt schema and distinguish legacy/agent-reported evidence from workflow-generated trusted evidence.",
+      "Exercise current valid/failure examples and install/update fixture compatibility."
+    ],
+    "criteria": [
+      "Given a success result with failed or not-run tests or unmet criteria, validation fails with the contradictory field named.",
+      "Given a legitimate failure result or a success with documentationUpdated=false and documented nonblocking concerns, validation handles it without inventing a blocker.",
+      "Given a legacy result without trusted head-bound evidence, it may be displayed but cannot authorize merging.",
+      "Validation tests perform no real GitHub writes."
+    ],
+    "tests": "Factory suite on Windows/Linux; mutation fixtures for every contradictory and compatible case; schema checks of all updated producer examples.",
+    "scope": "No PR merge command, repository-setting changes, new lifecycle labels or validation runner implementation.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  },
+  {
+    "key": "repo-gates",
+    "parent": 20,
+    "title": "Configure and verify the dev review and auto-merge policy",
+    "risk": "risk:high",
+    "type": "type:maintenance",
+    "deps": [],
+    "files": "GitHub repository settings/effective rules for bin0110001/cezar-factory dev; .github/workflows/ci.yml (read required check names); policies/risk.yaml; docs/shared-factory.md",
+    "objective": "Provide the explicit repository-side review/check policy required by safe auto-merge, with human-approved settings and a verified receipt.",
+    "decisions": [
+      "Proposed policy: enable repository auto-merge; protect dev using the repository's supported rule mechanism; require one independent approving review, dismiss stale approvals after code pushes, resolve conversations, require current ubuntu/windows Factory CI checks and prohibit agent/admin bypass.",
+      "Resolve actual effective check contexts from a fresh CI run rather than assume names from display text. PR #24 passed test (ubuntu-latest) and test (windows-latest), but the configured names must be verified.",
+      "A human repository administrator must approve the exact settings diff, reviewer availability and bypass policy before any write. This issue does not authorize applying settings.",
+      "Record before/after effective policy and confirm checks apply to dev; a same-author agent cannot substitute for the required independent reviewer. If unavailable, leave merge blocked."
+    ],
+    "steps": [
+      "Capture effective current rules/settings and propose the exact minimal configuration using observed required CI contexts.",
+      "Obtain explicit human plan approval covering repository settings and independent-review arrangement.",
+      "Apply only approved settings through the supported GitHub interface; verify effective enforcement using a non-production test PR without bypassing checks.",
+      "Record the gate-policy receipt and link it to the current-head merge-gate implementation."
+    ],
+    "criteria": [
+      "Approved dev policy requires effective CI, independent fresh review and resolved conversations, with no automatic bypass.",
+      "Auto-merge is enabled only after explicit settings approval and verified review availability.",
+      "A failing/unreviewed test PR cannot merge; a compliant PR is eligible for the normal merge path.",
+      "Before/after configuration and reviewer constraints are recorded without secrets."
+    ],
+    "tests": "Read-only effective policy inspection first; after human-approved application use a controlled test PR, confirm rejection/eligibility without merging unreviewed changes.",
+    "scope": "No source implementation, broad organization policies, direct merge, bypass grant or unapproved settings write.",
+    "gate": "Human approval of the exact high-risk repository settings and independent-review arrangement.",
+    "skills": [
+      "github-issues"
+    ]
+  },
+  {
+    "key": "pr-gate",
+    "parent": 20,
+    "title": "Bind auto-merge eligibility to the current reviewed PR head and observe completion",
+    "risk": "risk:high",
+    "type": "type:bug",
+    "deps": [
+      "issue19",
+      "semantic",
+      "repo-gates"
+    ],
+    "files": "scripts/route-state.ps1; scripts/validate-result.ps1; workflows/review.yaml; schemas/review-result.schema.json; tests/fake-gh.ps1; tests/run-tests.ps1; policies/definition-of-done.md",
+    "objective": "Request auto-merge only for the intended dev PR at the exact independently reviewed and validated head.",
+    "decisions": [
+      "Resolve repository/issue/PR association from prepared context plus GitHub; require base=dev, open non-draft PR, matching head SHA and head-bound validation receipts.",
+      "Read repository merge settings, effective branch/ruleset requirements, required check conclusions and PR review/thread state. Missing/unreadable gate policy fails closed; never use --admin or enable settings.",
+      "Require an independent review receipt bound to head and reviewer identity, distinct from implementation provenance; where repository policy demands GitHub approval, require GitHub approval as well. High-risk plan approval must name the approved plan revision and cannot be inferred from a ready label.",
+      "Pass the expected head to the merge request to reject head-change races. Keep issue in review while merge is queued; on a later bounded idempotent review/completion check, mark done only after GitHub reports merged. Do not add a blocking polling loop.",
+      "Keep required-check names policy-driven; tests use fake effective policy. Current missing production gates are a rollout blocker, not permission to synthesize passing evidence."
+    ],
+    "steps": [
+      "Build a read-only eligibility check with a structured allow/deny receipt listing evidence and exact SHA.",
+      "Wire it as a workflow command before merge routing, with no agent-owned GitHub state edits.",
+      "Make routing consume the receipt, request merge with head protection, and distinguish queued/merged/refused outcomes.",
+      "Add bounded completion reconciliation to the existing review path and preserve mutually exclusive lifecycle labels."
+    ],
+    "criteria": [
+      "Wrong repository/base/head, failed or pending checks, unresolved review threads, absent independent review or high-risk approval all produce zero merge writes.",
+      "A head change between check and request is rejected by the merge command.",
+      "Disabled auto-merge and absent effective gate policy leave an actionable blocker, never done.",
+      "Queued merge stays distinguishable from observed merged; repeated completion checks are idempotent."
+    ],
+    "tests": "Fake-gh cases for all denials, required-check/ruleset fixtures, changed-head race, valid allow case, queued merge then observed merge; full Factory suite.",
+    "scope": "Do not enable branch protection/auto-merge, merge unreviewed work or redesign project test execution.",
+    "gate": "Human approval of this high-risk plan; production rollout additionally requires configured effective review/check gates.",
+    "skills": [
+      "factory-implement",
+      "factory-review",
+      "factory-finish-release"
+    ]
+  },
+  {
+    "key": "promotion",
+    "parent": 21,
+    "title": "Promote only a verified merged dev SHA with an immutable full-test gate",
+    "risk": "risk:high",
+    "type": "type:bug",
+    "deps": [
+      "pr-gate"
+    ],
+    "files": "scripts/release/promote-stable.ps1; tests/run-tests.ps1; .github/workflows/ci.yml; docs/shared-factory.md",
+    "objective": "Make stable promotion prove the exact tested commit is a reviewed merged dev commit, with no public test replacement.",
+    "decisions": [
+      "Resolve candidate SHA from a merged dev PR and verify current origin/dev reachability; merge, squash and rebase histories must be explicitly supported by evidence, never assume a single merge commit.",
+      "Use an isolated clean candidate checkout and the committed catalog/full-suite paths. Remove public -TestScript substitution; test small internal pure functions with fixtures and stub executables on an isolated test PATH rather than adding production bypass flags.",
+      "Always validate full suite and verify candidate identity/tree before pushing an explicit SHA to stable. Preserve fast-forward requirement and handle concurrent stable advancement as a refusal.",
+      "Distinguish successful remote lookup with absent stable from failed auth/network lookup; only genuinely absent stable permits bootstrap.",
+      "Write a versioned promotion receipt with candidate SHA, merged PR, dev SHA, old/new stable SHA, validation artifacts and outcome. Output/report paths stay outside candidate tracked content."
+    ],
+    "steps": [
+      "Refactor candidate selection and ancestry checks around the PR eligibility/evidence contract.",
+      "Remove public test-script override and replace current happy/failing promotion test seams.",
+      "Run catalog/full suite against the isolated immutable candidate, recheck identity and push explicit SHA.",
+      "Document bootstrap, fetch failure, concurrent promotion and rollback-via-revert behavior."
+    ],
+    "criteria": [
+      "An unmerged feature SHA, unreachable dev SHA, missing review evidence or dirty/mutated candidate cannot advance stable.",
+      "No production argument can substitute or skip the mandatory full suite.",
+      "A failed suite, auth/network failure or divergent/concurrently advanced stable produces no unsafe push.",
+      "A valid merged SHA promotes fast-forward and produces a receipt tied to that exact tested tree."
+    ],
+    "tests": "Temporary bare remotes and fake GitHub evidence; absent stable versus failed fetch, merge/squash/rebase histories, failure/no public override, concurrent stable push and valid promotion; Windows/Linux Factory suite.",
+    "scope": "No target synchronization, host deployment, repository-setting changes or hand edits to Bazzite.",
+    "gate": "Human approval of this high-risk plan; reuse verified merged-PR evidence from the prerequisite.",
+    "skills": [
+      "factory-implement",
+      "factory-review",
+      "factory-finish-release"
+    ]
+  },
+  {
+    "key": "orchestration",
+    "parent": 21,
+    "title": "Orchestrate Factory release phases from reviewed merge through target receipts",
+    "risk": "risk:high",
+    "type": "type:refactor",
+    "deps": [
+      "promotion",
+      "issue18"
+    ],
+    "files": "workflows/ (dedicated Factory release workflow); skills/factory-release/SKILL.md; skills/factory-finish-release/SKILL.md; scripts/push-factory-updates.ps1; scripts/sync-all-automations.ps1; docs/shared-factory.md; docs/synchronization.md",
+    "objective": "Make operator and agent release instructions agree on one resumable release sequence and every configured target's result.",
+    "decisions": [
+      "Release workflow command steps own executable operations; skills describe inputs, artifact review and blockers. PR preparation/independent review happens before promotion and cannot be reordered by finish instructions.",
+      "Consume promotion SHA receipt, snapshot only the explicit target registry, classify shared versus legacy full-install entries, and validate absolute local projectPath before legacy writes.",
+      "Shared targets receive promoted mounted content and automation reconciliation; legacy targets get supported dry-run/full-install flows. Never sync unmerged working-tree automation definitions ahead of the promoted SHA.",
+      "Use per-phase and per-target receipts keyed by source SHA and registry snapshot digest. A retry reruns incomplete targets without hiding a failed target or skipping required reconciliation at unchanged VERSION.",
+      "Preserve the original contributor command-ownership and remote-checkout refusal rules; do not edit AGENTS.md to exempt release scripts."
+    ],
+    "steps": [
+      "Introduce/extend command-owned release workflow with validation, merged-SHA selection, promotion, sync and runtime parity steps.",
+      "Make push/sync procedures consume the promoted source checkout and emit target receipts; enforce dry-run for full-layer targets.",
+      "Rewrite both release skills around those artifacts, repair the malformed promotion path and eliminate duplicate/contradictory procedure text.",
+      "Test interrupted phases, partial-target failure, absent registry, shared/legacy entries and dirty/mismatched host receipts."
+    ],
+    "criteria": [
+      "All phases and target receipts identify the same reviewed source SHA; promotion cannot precede observed reviewed merge.",
+      "Missing/empty registry, failed target, unsafe local path or dirty/diverged/mismatched runtime stops with exact blocker and no overwrite.",
+      "Repeated release with matching VERSION still reconciles explicit targets using tested promoted source.",
+      "Every Factory operation has a workflow command owner; skill prompts contain no script-running instructions."
+    ],
+    "tests": "Mock target registry/API/host executors only; dry-run/partial-failure/retry fixtures; contract ownership checks and full Factory suite. Approved live verification uses homelab-ssh and supported host deployment only.",
+    "scope": "No host checkout hand edits, target discovery, service-specific infrastructure rollout or GitHub setting changes.",
+    "gate": "Human approval of this high-risk plan. Live rollout requires registry and clean matching Bazzite runtime; stop on absent prerequisites.",
+    "skills": [
+      "factory-implement",
+      "factory-review",
+      "factory-release",
+      "factory-finish-release",
+      "homelab-ssh"
+    ]
+  },
+  {
+    "key": "collect-bounds",
+    "parent": 22,
+    "title": "Produce bounded redacted failure evidence without bulk run enumeration",
+    "risk": "risk:medium",
+    "type": "type:refactor",
+    "deps": [],
+    "files": "scripts/audit-factory-failures.ps1; workflows/failure-audit.yaml; schemas/ (failure-audit input/receipt); tests/mock-cezar.ps1; tests/run-tests.ps1",
+    "objective": "Make failure collection read-only with enforceable read/output budgets and explicit registered identity.",
+    "decisions": [
+      "Resolve projectId/apiUrl from workflow environment or explicit registered inputs; do not lowercase a folder name as project identity.",
+      "Select at most 20 recent local run IDs in a default 24-hour window. Bound candidate metadata scanning too: if the declared discovery budget is exhausted, report limited coverage instead of claiming complete recency.",
+      "Use bounded stream reads/tails, e.g. 64 KiB per handoff/event source, <=200 event lines, <=8 failure summaries and <=12,000 evidence characters; redact tokens before serialization. Make caps explicit testable constants/options with enforced ceilings.",
+      "Do not GET bulk /runs: the bundled server.ts endpoint returns the entire list with no pagination. API enrichment may GET only a selected known run ID with response size/time limits; missing bounded evidence yields limited status.",
+      "Separate collection from issue publishing and restart flags. Preserve restart compatibility behind a separate workflow command/explicit recovery step, disabled when bounded evidence is incomplete."
+    ],
+    "steps": [
+      "Extract deterministic evidence normalization and a versioned artifact schema with project identity, window, run/step/command fields, fingerprints, budgets and limitations.",
+      "Implement bounded local selection/read paths and optional per-ID API enrichment.",
+      "Keep collection side-effect free; wire existing behavior through explicit downstream command ownership without broad run queries.",
+      "Add fixtures for huge single-line events, oversized handoffs, partial API response, missing directory, wrong project and budget exhaustion."
+    ],
+    "criteria": [
+      "Oversized or adversarial inputs never exceed declared read/output caps and report truncation/coverage limitations.",
+      "Collector writes only its local artifact; no gh mutations, restarts or bulk /runs requests occur.",
+      "Known selected run/step/command evidence survives redaction, and unavailable evidence is explicitly marked.",
+      "Missing registered identity fails safely without guessing another project."
+    ],
+    "tests": "Bounded-stream fake sources record bytes/requests; check 20/24h/8/12k limits, secrets and giant lines; full Factory suite on Windows/Linux.",
+    "scope": "No Cezar API pagination changes, project discovery, issue publication or automatic restart redesign.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  },
+  {
+    "key": "publish-evidence",
+    "parent": 22,
+    "title": "Publish one canonical Factory failure issue with fail-closed deduplication",
+    "risk": "risk:medium",
+    "type": "type:bug",
+    "deps": [
+      "collect-bounds"
+    ],
+    "files": "scripts/audit-factory-failures.ps1 (publisher separation); workflows/failure-audit.yaml; skills/factory-failure-audit/SKILL.md; tests/fake-gh.ps1; tests/run-tests.ps1",
+    "objective": "Publish actionable failure evidence idempotently without losing it on dedupe or partial API failure.",
+    "decisions": [
+      "Adopt one canonical issue in the configured Factory repository per project+normalized signature fingerprint. This supersedes the parent's unresolved one-versus-two issue choice: no second project issue is created by the audit.",
+      "Build evidence before GitHub access and dedupe by an exact HTML marker containing a stable fingerprint that excludes volatile run IDs/timestamps. Project/known issue references use fully qualified URLs.",
+      "Any lookup/auth/API failure aborts publication; it is never treated as an empty search. Existing exact marker means append/update bounded evidence only when new, with a receipt recording existing/created/failed.",
+      "Adopt existing legacy issues only with unambiguous repository/project/signature evidence; preserve human body/comments, and flag ambiguous matches for review. Link existing #1 and its historical evidence without claiming intake fixed.",
+      "Persist publication receipt before retry; after ambiguous create failure, requery marker before another write. No inferred close/resolve or restart."
+    ],
+    "steps": [
+      "Implement artifact-consuming publisher and exact marker matching, including checked gh exit codes.",
+      "Use one canonical Factory issue, render redacted source evidence and qualified existing-project links consistently.",
+      "Wire collector/publisher as separate workflow command steps and align the skill's read/write/issue-count contract.",
+      "Test retries, ambiguous transport outcome, lookup failure, same-repository target, legacy adoption and repeated evidence."
+    ],
+    "criteria": [
+      "Repeated identical evidence produces one issue and no duplicate comment; lookup failure produces no issue.",
+      "Dedupe against an existing issue never discards current evidence, and a transport retry cannot blindly create a duplicate.",
+      "All published references are repository-qualified; #1 history remains preserved.",
+      "Collector and publication receipts expose partial/limited results; issue count never exceeds one new canonical issue per run."
+    ],
+    "tests": "Fake-gh state/exit/error fixtures and publisher golden bodies; exact-marker mismatch and ambiguous-create tests; full Factory suite.",
+    "scope": "No cross-repository issue pair, intake defect resolution, lifecycle implementation routing or recovery-run dispatch.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  },
+  {
+    "key": "skill-fix",
+    "parent": 23,
+    "title": "Repair concrete skill result examples and workflow ownership instructions",
+    "risk": "risk:medium",
+    "type": "type:bug",
+    "deps": [],
+    "files": "skills/factory-fix/SKILL.md; skills/factory-review/SKILL.md; skills/factory-plan/SKILL.md; skills/factory-implement/SKILL.md; workflows/{plan,investigate,intake}.yaml; tests/run-tests.ps1",
+    "objective": "Remove known prompt contradictions and make copyable result examples schema-valid without broad skill rewrites.",
+    "decisions": [
+      "Use literal valid JSON examples with required issue/documentation fields; move enum alternatives and explanatory placeholders into prose.",
+      "Planning/review/fix agents write structured artifacts; workflow commands own GitHub comments/routing and prepared issue selection.",
+      "Replace factory-implement's generic instruction to invoke Factory scripts with current-worktree project-command guidance; retain its bounded command-error handling.",
+      "Complete startup RequiredScripts from actual downstream command references (including route-plan-or-default), accounting for helper dependencies, without overwriting the current maintenance/backlog work.",
+      "The workflow-map risk-based text was already repaired in merged PR #24; do not redo it. Release-skill operational text remains owned by #21's orchestration child."
+    ],
+    "steps": [
+      "Enumerate concrete JSON blocks and fix only schema-required/example validity defects.",
+      "Remove duplicate GitHub comment/script/discovery instructions in affected skills.",
+      "Complete startup inventories for affected workflows and add focused negative fixtures.",
+      "Verify rendered Markdown structure, schema validity and existing ownership checks."
+    ],
+    "criteria": [
+      "Concrete examples parse as JSON and include all required fields for their declared result kind.",
+      "Affected skills instruct only artifact production and project-specific development, with no workflow-owned comments/scripts/label writes.",
+      "Every script called by the affected workflows is covered by preflight or an explicitly validated helper manifest.",
+      "No unrelated maintenance/backlog edits or completed #24 documentation work are replaced."
+    ],
+    "tests": "Schema-validation of actual fenced examples, focused ownership/manifest checks, diff review and full Factory suite.",
+    "scope": "No new general workflow parser, release-skill rewrite, model selection or project dispatch changes.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  },
+  {
+    "key": "contract-check",
+    "parent": 23,
+    "title": "Check workflow structure, PowerShell command contracts and skill examples in CI",
+    "risk": "risk:medium",
+    "type": "type:test",
+    "deps": [
+      "skill-fix"
+    ],
+    "files": "tests/ (new workflow contract tests/harness); tests/run-tests.ps1; .github/workflows/ci.yml; cezar/packages/cezar/src/workflows/{types,load}.ts (read-only reference); schemas/; workflows/",
+    "objective": "Catch the audited contract drift with executable negative cases instead of heading/source-string assertions.",
+    "decisions": [
+      "Use yaml parsing plus the bundled Cezar workflowFileSchema/normalization/stepsIssue through a test-only Node adapter; reuse existing yaml/zod dependencies and pin setup through cezar's lockfile. Do not copy the schema or import the full runtime dependency graph unnecessarily.",
+      "For Factory pwsh commands, extract -File and script parameters using PowerShell AST/metadata. Validate script existence, declared parameters/common switches and preflight coverage without executing scripts.",
+      "Explicitly identify command forms the checker supports and fail with actionable diagnostics for unsupported Factory command syntax; shell wrappers are not silently treated as verified.",
+      "Associate concrete skill JSON examples with result schemas and validate them. Ownership guidance checks get small curated negative examples; do not claim arbitrary prose reasoning is fully machine-verifiable.",
+      "Wire checks into the normal Windows/Linux CI test gate; add Node setup/test-only dependency install without making deployed PowerShell workflows require Node."
+    ],
+    "steps": [
+      "Create a minimal test adapter around Cezar's schema functions and parse every Factory workflow, including maintenance/environment/upgrade.",
+      "Add PS AST command/preflight checks and skill-example/schema validation.",
+      "Add one deliberately broken fixture per contract class, asserting diagnostic file/step/parameter.",
+      "Remove redundant weak assertions only after replacement coverage; document local/CI prerequisites."
+    ],
+    "criteria": [
+      "Missing script/skill, unknown parameter, invalid retry edge, incomplete preflight and invalid concrete example each fail for the intended reason.",
+      "Every real workflow is checked against the bundled Cezar contract on Windows/Linux.",
+      "The harness never invokes deployment/lifecycle scripts or makes network changes as part of contract inspection.",
+      "Unsupported syntax cannot silently pass and production workflows gain no new Node requirement."
+    ],
+    "tests": "Run positive inventory and negative mutation suite, clean CI dependency install, then full Factory suite in Windows/Linux matrix.",
+    "scope": "No Cezar engine modifications, new production parser, general shell interpreter or broad prose linter.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  }
+]

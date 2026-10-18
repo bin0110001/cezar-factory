@@ -1,0 +1,334 @@
+{
+  "totalIssues": 1,
+  "issues": [
+    {
+      "message": "GameSession.gd exceeds its ratcheted ceiling of 16047 lines (current: 16634). Extract the new behavior before merging; do not raise this ceiling.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\GameSession.gd",
+      "kind": "GameSessionGrowth",
+      "line": 16634
+    }
+  ],
+  "warnings": [
+    {
+      "message": "Legacy file exceeds its baseline limit of 1827 lines (current: 1830). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\Assets\\Racing\\RacingGame.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1830
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1061 lines (current: 1102). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\AssetLoader.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1102
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1712 lines (current: 2968). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\AnimationPackageConfigScreen.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2968
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2248). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Assets\\AssetManager.gd",
+      "kind": "FileTooLarge",
+      "line": 2248
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1456 lines (current: 4251). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\CampaignData.gd",
+      "kind": "LegacyFileBloat",
+      "line": 4251
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1027). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\CampaignSelection.gd",
+      "kind": "FileTooLarge",
+      "line": 1027
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2676). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Characters\\Player.gd",
+      "kind": "FileTooLarge",
+      "line": 2676
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2035 lines (current: 2865). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\EntityPackageConfigScreen.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2865
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1997 lines (current: 2564). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\EquipmentEditor.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2564
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1677 lines (current: 2248). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\GameState.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2248
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1066). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\GMPermissionsAndFeaturesScreen.gd",
+      "kind": "FileTooLarge",
+      "line": 1066
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1561). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\GMSoundboardScreen.gd",
+      "kind": "FileTooLarge",
+      "line": 1561
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1736 lines (current: 2218). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\JoinGame.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2218
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1107). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\MapEditorToolDispatch.gd",
+      "kind": "FileTooLarge",
+      "line": 1107
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1103). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\MapEditService.gd",
+      "kind": "FileTooLarge",
+      "line": 1103
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1318 lines (current: 2226). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\MapStylePreviewBuilder.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2226
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1585 lines (current: 1979). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\MinigameManager.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1979
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2802 lines (current: 11197). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\NetworkManager.gd",
+      "kind": "LegacyFileBloat",
+      "line": 11197
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1584 lines (current: 1765). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\OptionsMenu.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1765
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1531). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PackageAssetBrowser.gd",
+      "kind": "FileTooLarge",
+      "line": 1531
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1483). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PackageConfigRegistry.gd",
+      "kind": "FileTooLarge",
+      "line": 1483
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1456 lines (current: 1459). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PhysicsDiceRoller.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1459
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2355 lines (current: 2548). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PieceStyleConfigScreen.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2548
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1029). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PlayerPreferences.gd",
+      "kind": "FileTooLarge",
+      "line": 1029
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1207). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Minigames\\ActionTowerDefense\\ActionTowerDefenseGame.gd",
+      "kind": "FileTooLarge",
+      "line": 1207
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1050 lines (current: 1642). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Minigames\\SurvivorTopDownGame\\SurvivorTopDownGame.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1642
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2339). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Minigames\\ThirdPersonSurvivor\\ThirdPersonSurvivor.gd",
+      "kind": "FileTooLarge",
+      "line": 2339
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1156). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Minigames\\TowerDefense\\TowerDefenseGame.gd",
+      "kind": "FileTooLarge",
+      "line": 1156
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1475). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Packages\\PackageWorkbenchScreen\\PackageWorkbenchScreen.gd",
+      "kind": "FileTooLarge",
+      "line": 1475
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1195). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Plugins\\Puzzles\\AudioSequencePuzzle\\AudioSequencePuzzle.gd",
+      "kind": "FileTooLarge",
+      "line": 1195
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1239). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PuzzleManager.gd",
+      "kind": "FileTooLarge",
+      "line": 1239
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1588). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\PuzzlePackAuthoringScreen.gd",
+      "kind": "FileTooLarge",
+      "line": 1588
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2120). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Server\\SessionContext.gd",
+      "kind": "FileTooLarge",
+      "line": 2120
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1002). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\Server\\SessionRuntime.gd",
+      "kind": "FileTooLarge",
+      "line": 1002
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2518). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\SoundboardManager.gd",
+      "kind": "FileTooLarge",
+      "line": 2518
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2050). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\AvatarComposerControl.gd",
+      "kind": "FileTooLarge",
+      "line": 2050
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 3047 lines (current: 3164). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\AvatarEditorControl.gd",
+      "kind": "LegacyFileBloat",
+      "line": 3164
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 4061 lines (current: 4075). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\CharacterCreation.gd",
+      "kind": "LegacyFileBloat",
+      "line": 4075
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1128). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\GMInventoryManagementScreen.gd",
+      "kind": "FileTooLarge",
+      "line": 1128
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1015 lines (current: 1310). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\SearchableAssetPicker.gd",
+      "kind": "LegacyFileBloat",
+      "line": 1310
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 2487). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UI\\WorldLogicGraphBuilder.gd",
+      "kind": "FileTooLarge",
+      "line": 2487
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 3153 lines (current: 4764). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\gdscript\\UnifiedMapEditor.gd",
+      "kind": "LegacyFileBloat",
+      "line": 4764
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2269 lines (current: 2273). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\ObjectCombinerEditor.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2273
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2326 lines (current: 4031). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\scripts\\ObjectCombinerSystem.gd",
+      "kind": "LegacyFileBloat",
+      "line": 4031
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1326). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\network\\tableflux\\data_retention_probe.gd",
+      "kind": "FileTooLarge",
+      "line": 1326
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1054). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\ActivatedAbilities\\ActivatedAbilityContractsTest.gd",
+      "kind": "FileTooLarge",
+      "line": 1054
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 1357 lines (current: 2222). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\EntityPackageConfigScreenRegressionTest.gd",
+      "kind": "LegacyFileBloat",
+      "line": 2222
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2018 lines (current: 3010). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\ObjectCombinerSystemTest.gd",
+      "kind": "LegacyFileBloat",
+      "line": 3010
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1398). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\PackageConfigRegistryTest.gd",
+      "kind": "FileTooLarge",
+      "line": 1398
+    },
+    {
+      "message": "Legacy file exceeds its baseline limit of 2657 lines (current: 3758). Refactor rather than adding code. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\PackageConfigScreenTest.gd",
+      "kind": "LegacyFileBloat",
+      "line": 3758
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1011). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\PieceStyleConfigScreenTest.gd",
+      "kind": "FileTooLarge",
+      "line": 1011
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 3287). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\PuzzleSoundContractsTest.gd",
+      "kind": "FileTooLarge",
+      "line": 3287
+    },
+    {
+      "message": "File exceeds maximum size limit of 1000 lines (current: 1085). Keep GDScript files small and modular. LLM-driven refactors should still address this.",
+      "file": "D:\\Projects\\cezar-factory\\.factory\\target-blackjack\\test\\scripts\\gdscript\\Server\\SessionRuntimeTest.gd",
+      "kind": "FileTooLarge",
+      "line": 1085
+    }
+  ],
+  "schemaVersion": 1,
+  "filesScanned": 1565,
+  "warningCount": 53
+}

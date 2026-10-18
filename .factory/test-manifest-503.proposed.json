@@ -1,0 +1,6105 @@
+{
+  "schemaVersion": 1,
+  "suites": {
+    "res://test/network/tableflux/TablefluxNetworkSnapshotAdapterTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "origin": "manual"
+    },
+    "res://test/network/tableflux/TablefluxPlayerLifecycleAndCharacterReplicationTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/account_linking_test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/build_config_test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/distribution_service_test.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/ActionEconomyDefinitionRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActionEconomyDefinitionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActionPipelinePhase1Test.gd": {
+      "tags": [
+        "smoke"
+      ],
+      "traits": [
+        "pure"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ActionPipelinePhase2Test.gd": {
+      "tags": [
+        "smoke"
+      ],
+      "traits": [
+        "pure"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ActionPipelinePhase3Test.gd": {
+      "tags": [
+        "smoke"
+      ],
+      "traits": [
+        "pure"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ActionPipelinePhase4Test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActionPipelinePhase6Test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilityActionPanelTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilityContractsTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilityNetworkRequestServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilityReactionWindowTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilitySpatialEffectServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/ActivatedAbilityUsageServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ActivatedAbilities/SharedAbilityEffectHandlerDeliveryPrimitivesTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/AdjacentRoomWallTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/AndroidPackageNavigationSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/AnimationConventionResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/AssetLoaderStartupRegressionTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/AssetPackageManifestScannerTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Assets/AssetManagerHttpTransferTest.gd": {
+      "traits": [
+        "autoload",
+        "network",
+        "scene-tree"
+      ],
+      "resources": [
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Assets/AssetManagerProgressiveLoadingTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Assets/AssetManagerTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Assets/AvatarTransferScenarioTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Assets/ImageHeaderDimensionReaderTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Assets/OggVorbisHeaderReaderTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/AssistEffectCalculatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/AudioBrowserDialogTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/AudioManagerUiVolumePersistenceTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/AvatarCacheProbeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "aeeb23edd2d3e6ea"
+    },
+    "res://test/scripts/gdscript/AvatarComposerControlSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/AvatarEditorShellSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "337aab9cb664d836"
+    },
+    "res://test/scripts/gdscript/BlackjackHandTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/BlackjackRulesEngineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/BoneGroupMeshSplitterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/BuildPreviewControllerTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/BuildPropPickerTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Camera/PlayerCameraFollowTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Camera/PlayerCameraRigTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/CampaignAutosaveControllerTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/CampaignDataTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/CampaignEditorAvatarEditorEntrySmokeTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "983e8d4c56ea28ac"
+    },
+    "res://test/scripts/gdscript/CampaignEditorHazardEditorSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/CampaignEditorItemLibrarySmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "496f01bfe66e5b7c"
+    },
+    "res://test/scripts/gdscript/CampaignEditorJournalEditorSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/CampaignEditorNpcEditorSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/CampaignEditorPackageFilterSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "496f01bfe66e5b7c"
+    },
+    "res://test/scripts/gdscript/CampaignEditorPlayerAccountsTabSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/CampaignEditorPlayerCharactersTabSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/CampaignEditorSessionTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "bf42fc103689ac64"
+    },
+    "res://test/scripts/gdscript/CampaignEditorWorldLogicLibrarySmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/CampaignImportNetworkSyncTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/CampaignImportServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CampaignMissionAuthoringAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CampaignMissionAuthoringHazardParticleEffectSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/CampaignMissionAuthoringSessionTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "viewport",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "025fa265dc016618"
+    },
+    "res://test/scripts/gdscript/CampaignPackServiceTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/CampaignRuntimeMissionEngineP1Test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CampaignRuntimeMissionEngineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CampaignSelectionGuidanceTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/CampaignSelectionNetworkedSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "network",
+        "writes-user-data"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port",
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/CampaignValidatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CampaignWorldLogicLibraryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterAttachmentDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterAvatarDefinitionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterCreationBalanceParityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterCreationD20SmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/CharacterCreationHostServerCrashRepro.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/CharacterCreationSkillDecrementTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/CharacterDataSkillSchemaParityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterDataTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/CharacterDisplayDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterLookupTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CharacterObjectTest.gd": {
+      "traits": [
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9cf0adf5ec39116a"
+    },
+    "res://test/scripts/gdscript/CharacterPermissionLiveRefreshTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/CharacterSheetExportServiceTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/CharacterSheetNotesBroadcastTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/ChatCommandServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ChatDiceExplosionRerollTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/ChatPanelServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ChatTargetResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ChromeWindowTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/ClueSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Combat/CombatStateMachineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Combat/HitVolumeComponentTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Combat/HurtboxStateTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Combat/LockOnTargetComponentTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Combat/LockOnTargetingTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Combat/PostureResourceComponentTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Combat/StaminaResourceComponentTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Command/CanonicalEventTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Command/CommandCatalogTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Command/CommandRequestTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Command/CommandResultTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Command/EventStreamTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Command/MinigameCommandsTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/CompendiumInterpretationServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CompositionSystemTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/ConflictDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ConflictManagerTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/ConflictResolutionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ContentModuleRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CredentialAuthenticationServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CredentialDialogsTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/CredentialPasswordChangeServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CredentialServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CurrencyWalletTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/CustomUpdateSourceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/CustomUpdateSourceTrustTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/D20HPRulesEngineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/D20RulesEngineIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/DefenseCalculatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/DependencyGraphSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Diagnostics/DiagnosticsInspectorTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Diagnostics/DiagnosticsStoreTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/DialSystemIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/DoorPlacementAxisDiagnosticTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/DummyTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EditorCommandHistoryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/EditorFloorDrawSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/EditorScreenSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke",
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/EncounterPanelServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EncounterRosterServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EntityDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EntityPackageConfigScreenRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "aeeb23edd2d3e6ea"
+    },
+    "res://test/scripts/gdscript/EquipmentDatabaseJSONTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EquipmentEditorUITest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a886ac30be1a90c3"
+    },
+    "res://test/scripts/gdscript/EquipmentSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/EventStream/SessionTimelineTest.gd": {
+      "traits": [
+        "filesystem"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9609151e99f1cea3"
+    },
+    "res://test/scripts/gdscript/FirstRunDetectorTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/FreeLookCameraMovementSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/GameplayOverlaySmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameplayWindowSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "337aab9cb664d836"
+    },
+    "res://test/scripts/gdscript/GameSessionActiveCameraProjectionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GameSessionCardDrawCommandSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionCardDrawCommandTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GameSessionCharacterCreationRoutingSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionCharacterDeleteMapCleanupTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionCharacterElevationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/GameSessionCharacterMarkerCacheTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionChatFocusCaptureTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionChatMessageDuplicationSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionChatServerSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionCombatSyncClientTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/GameSessionEditorRoomPieceScopeGatingTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionEditorTabExpandedToolsTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionEncounterAuthorityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionEncounterLayoutSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/GameSessionEndRoundWorldLogicTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionEntityDefeatedWorldLogicTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionGizmoMovementSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionHazardRuntimeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/GameSessionHelpHinderDicePersistenceTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionHiddenDiceRollCommandTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GameSessionLateJoinWorldReconstructionTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionLightingSyncTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionMinigameRemoteInputTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/GameSessionMissionLoadSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "9f263141bfe7a0a0"
+    },
+    "res://test/scripts/gdscript/GameSessionMissionRuntimeEffectsTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionMovementCommandSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionMovementGmAuthorityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionMovementTokenLockTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionNavigationHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/GameSessionNetworkedEndToEndSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "network",
+        "viewport"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionPlayersPanelLayoutSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionReconnectBannerSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionRemoteCharacterAnimationTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GameSessionRendererFreeEncounterSyncTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionRoundTripSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/GameSessionRuntimeLevelEditingSyncTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionSceneRunnerSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/GameSessionScreenSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/GameSessionScriptedEntityRuntimeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GameSessionSkillRollBroadcastTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionSoundCompletedWorldLogicTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionStartupRegressionTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionTurnActionAuthorityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameSessionUndoSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/GameSessionWorldLogicBuilderLaunchTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GameSessionWorldLogicTargetSelectorTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameStateAuthPasswordTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameStateAutomationLevelTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GameStateChatHistoryPersistenceTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/GameStateOfflineCacheTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "09d1dd2fe4420cb8"
+    },
+    "res://test/scripts/gdscript/GameStateSaveFailureNotificationTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/GameStateWeatherStateTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/GdUnitOrphanNodesMonitorDisabledTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/GizmoPropTransformNetworkSyncTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GMPermissionsAndFeaturesScreenPlayerRoleTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GMSoundboardScreenTargetedAudioTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GMSoundboardScreenTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/GuidanceBannerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/HazardDefinitionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/InitialBootstrapTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/EventStreamIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/IntegrationDispatcherTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/IntegrationGatewaySettingsTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/IntegrationRateLimiterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/IntegrationTokenStoreTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Integration/SessionDashboardIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/InteractableSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/InventoryAndInspectionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/InventoryPuzzleDoorFunctionalTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/InventoryRequirementServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/InventorySystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/InventoryWindowSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/JoinGameGuidanceTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/JoinGameNetworkSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "network",
+        "writes-user-data"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port",
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/JoinGameServerHistorySmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "0a321309f6fbf405"
+    },
+    "res://test/scripts/gdscript/JoinGameSteamIdentitySmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/LibraryRecordBrowserTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/LightingControlsSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/LiveSessionMissionAuthoringAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/LocalizationMigrationWaveTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/LocalizationPilotScreensTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/LocationMapAppearanceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/LockSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MainMenuInteractionSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/MainMenuOnboardingIndicatorsTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersControllerServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersOwnerOptionsTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersPanelTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersPlayerNamesServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersSelectionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageCharactersServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ManageOwnerSelectPlayerListTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/MapEditorAssetCatalogTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapEditorAssetPickerPerformanceTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "performance"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapEditorCameraPitchSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/MapEditorDocumentHistoryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MapEditorReturnNetworkSyncTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/MapEditorSurfaceHostParityTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/MapEditorSurfaceTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/MapEditorToolDispatchHistoryTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapEditorUIPreferencesTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapEditorUXContextTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapEditServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MapLoadCatalogTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MapStylePreviewBuilderAppearanceTest.gd": {
+      "traits": [
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9cf0adf5ec39116a"
+    },
+    "res://test/scripts/gdscript/MapStylePreviewBuilderPingMarkerTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/MapViewComponentSmokeTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "983e8d4c56ea28ac"
+    },
+    "res://test/scripts/gdscript/Measurement/MeasurementServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MinigameCanvasMaximizeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/MinigameLaunchPanelTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MinigameLaunchServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MinigameManagerRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "network",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/MinigameManagerTFBindingScopeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MinigamePerformanceSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/MissionAuthoringSessionContextTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/MissionEditorComponentTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/MissionEditorDraftControllerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MissionEditorHostContractTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MissionLoadServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MissionMapDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MobileSessionLayoutTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/MovementAuthorizationServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MovementContextBuilderTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/MovementResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/NavigationManagerBackBehaviorTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NavigationScreenLoadTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/NetworkManagerAnnouncementTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerAuthBootstrapRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/NetworkManagerBuildActionCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerCampaignAccessTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/NetworkManagerCampaignSettingCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerCharacterCommandDispatchTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerCharacterPersistenceTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerCharacterPlacementAuthorityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerChatDiceCommandDispatchTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerGmWorldCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerInventoryCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerItemPickupCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerMapLoadAuthorityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerObserverSettingsTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerPingTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerPlayerPasswordResetTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerPlayerRoleGrantTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerReconnectOwnershipTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/NetworkManagerRuntimeEditAuthorityTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerSessionWorkerIsolationTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "aeeb23edd2d3e6ea"
+    },
+    "res://test/scripts/gdscript/NetworkManagerSoundboardPuzzleCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/NetworkManagerVersionCheckTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerWeatherCommandDispatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NetworkManagerWhisperTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/NpcAssetMetadataThreeWayConvergenceTest.gd": {
+      "traits": [
+        "autoload",
+        "network"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ObjectCombinerEditorRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ObjectCombinerEditorSceneRunnerSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke",
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ObjectCombinerSystemBootstrapTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/ObjectCombinerSystemSubmodelPathRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/ObjectCombinerSystemTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ObservationSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/OnboardingChoiceDialogTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/OptionsMenuSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/PackageAssetBrowserTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageAssetIndexerTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageConfigCleanupServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PackageConfigRegistryMultiBlockTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageConfigRegistryTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageConfigScreenTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "viewport",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/PackageDictionaryColdScanPerformanceTest.gd": {
+      "traits": [
+        "filesystem"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9609151e99f1cea3"
+    },
+    "res://test/scripts/gdscript/PackageDictionaryMigrationCompatibilityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PackageDictionaryServiceTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageListPresenterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PackageQueryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PackageStringTableTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PackageWorkbenchScreenTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/ParticleEffect3DEditorSmokeTest.gd": {
+      "traits": [
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "5e6673d3b6eb9860"
+    },
+    "res://test/scripts/gdscript/PatchManagerAddonActivationTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/PatchManagerApplyTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/PatchManagerCachePolicyTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PatchManagerDownloadPlanTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PatchManagerManifestCompatibilityTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PatchManagerManifestTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PatchManagerRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/PatchManagerStartupRegressionTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PatchManagerTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/PCKResourcePackGuardTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/PermissionsTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PermissionSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PieceStyleConfigScreenTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a886ac30be1a90c3"
+    },
+    "res://test/scripts/gdscript/PieceStyleDefinitionRegistryTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/PieceStyleDefinitionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PieceStyleGeneratorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PieceStylePreviewSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "337aab9cb664d836"
+    },
+    "res://test/scripts/gdscript/PieceStyleUIHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PlayerActionsDiceModifierTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerAnimationMetadataTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/PlayerAssetRepositoryRevisionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PlayerAssetRepositoryTest.gd": {
+      "traits": [
+        "autoload",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "ed5ffb74b9fda66d"
+    },
+    "res://test/scripts/gdscript/PlayerBuildDragLevelMismatchTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerBuildModeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerBuildPermissionTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerBuildServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PlayerBuildStyleCyclingTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/PlayerBuildToolRoomPieceScopeGatingTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/PlayerPreferencesDisplaySizingTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PlayerPreferencesLocaleTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerPreferencesOnboardingTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PlayerPreferencesScopeKeyTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/PlayerPreferencesTextGenerationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/AoE/Shared/AoEDeclarationServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/AoE/Shared/AoERollAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/AoE/Shared/AoEShapeResolverTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "bf42fc103689ac64"
+    },
+    "res://test/scripts/gdscript/Plugins/AoE/Shared/AoETemplatePreviewOverlayTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/Auras/AuraDescriptorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Auras/TokenAuraProjectionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Auras/TokenAuraStateTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/CampaignDataImporters/CampaignDataImporterRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Cards/CardPresenterRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/CharacterGeneration/Shared/CharacterGenerationRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/CharacterSheets/CharacterSheetLayoutRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Dice/DiceRollerRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/EventPlugins/EventPluginContractsTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/MapRenderers/MapRenderer2DEntityDisplayColorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/MapRenderers/MapRenderer2DFogOfWarTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/MapRenderers/MapRenderer3DFogOfWarLayerTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/ActionTowerDefense/ActionTowerDefenseRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/AlienDefenseGame/AlienDefenseGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/BlockCrusherGame/BlockCrusherGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/FlappyGame/FlappyBirdGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/InfiniteRunner/InfiniteRunnerRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/LockpickingGame/LockpickingGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/MazeGame/Data/MazeGeneratorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/MazeGame/Data/MazeThemeResolverTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/MazeGame/MazeGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Racing/RacingGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/RhythmGame/RhythmGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/MinigameFallbackCameraTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/MinigameMovementSyncTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/MinigameRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/Survival/SurvivalConfigLoaderTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/Survival/SurvivalEnemySpawnerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/Shared/Survival/SurvivalUpgradeCatalogTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/ShellGame/ShellGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/SteadyHandGame/SteadyHandGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/SurvivorTopDownGame/SurvivorRoundsConfigTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/SurvivorTopDownGame/SurvivorTopDownGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/ThirdPersonSurvivor/ThirdPersonSurvivorCombatWiringTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/ThirdPersonSurvivor/ThirdPersonSurvivorLockOnWiringTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/ThirdPersonSurvivor/ThirdPersonSurvivorRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/WhacAMoleGame/WhacAMoleGameRegressionTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Plugins/Minigames/WhacAMoleGame/WhacAMoleGameSceneSmokeTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "983e8d4c56ea28ac"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/MovementCommandResolverWaypointTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/MovementCommandWaypointKindTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/Shared/ElevationChangeValidatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/Shared/MovementApprovalRequestQueueTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/Shared/TokenMovementAuthorizationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/WaypointDragControllerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Movement/WaypointRouteServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Ping/PingServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Ping/PingTypePickerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Ping/PingTypeRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Puzzles/PuzzleRegistryScanTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Blackjack/BlackjackEquipmentAbilityAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Blackjack/BlackjackOverlayBridgeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/ConflictResolverRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/D20ConflictResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/D20HPConditionRollTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/D20HPRulesEngineConflictDataTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/GameRulesEngineRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/PF2eActivatedAbilityAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/RollPipelineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/CharacterRulesRegistryTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/ConditionEngineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/ConditionHookDispatcherTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/ConditionInstanceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/JournalRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/RollTableRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/Shared/RulesPackageRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADECharacterSchemaTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADECharacterStateTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADEConflictAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADEConflictResolverTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADEPhase2IntegrationTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/Rules/SWADERulesEngineConflictDataTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Plugins/ScriptedEntities/Shared/ScriptedEntityEvaluatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/ScriptedEntities/Shared/ScriptedEntityRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/TableTalk/TableTalkAPITest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Plugins/TextGeneration/Shared/TextGenerationServiceRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/TextGeneration/UI/TextGenerationTestWindowSmokeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "b1ff2ab812045a0a"
+    },
+    "res://test/scripts/gdscript/Plugins/Themes/ThemeExporterTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/Plugins/Themes/ThemeSpecSkillDocParityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Themes/ThemeSpecTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/BarrierInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/ButtonInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/ChestInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DialInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorEditorConfigHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorInteractionGameSessionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorMigrationHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorSystemIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/DoorVisionHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/FogOverrideServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/HiddenMechanismInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/LeverInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/PlacedObjectStateHelperTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/PlatformInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/PressurePlateInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/PropInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/SwitchInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/VTT/TrapInteractionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Plugins/Weather/WeatherServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PresentationAssetRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PropCatalogTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleActivatedAbilityInteractableTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleEditorSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleManagerNoteAuthorityTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/PuzzlePackAuthoringScreenTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/PuzzleResolutionServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleSignalSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleSoundContractsTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "viewport",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/PuzzleTelemetrySystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/PuzzleVariableSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RadialToolPaletteTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Remote/RemoteRetentionMulticlientTest.gd": {
+      "traits": [
+        "external"
+      ],
+      "provider": "bazzite",
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Remote/RemoteRetentionSingleTest.gd": {
+      "traits": [
+        "external"
+      ],
+      "provider": "bazzite",
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/ResponsiveManagerTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/RiddleLibrarySystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RigCompatibilityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/RigProfileGeneratorParityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RigProfileTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/RigRegressionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RollProvenanceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RoomStyleAssetBrowserFilterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RoomStyleComparisonMapCanvasTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RoomStyleComparisonMapStyleSwitchTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RoomStylePreviewMapStoreTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/RulesetSwitchingTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/RulesPackageSchemaTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ScreenSmokeManifestTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SearchableAssetPickerCategoryTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/Server/AoECampaignRulesetSelectionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Server/repro/MinimalDiceViewportReproTest.gd": {
+      "traits": [
+        "autoload",
+        "network",
+        "scene-tree"
+      ],
+      "resources": [
+        "fixed-port",
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Server/SessionCharacterReplaySnapshotTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Server/SessionGameEndpointCombatResultTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/Server/SessionGameEndpointConditionAoETest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/Server/SessionGameEndpointTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "bf42fc103689ac64"
+    },
+    "res://test/scripts/gdscript/Server/SessionHostDashboardTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/Server/SessionManagerDashboardTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Server/SessionManagerServerAdminTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/Server/SessionManagerTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/Server/SessionMinigameEndpointTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "bf42fc103689ac64"
+    },
+    "res://test/scripts/gdscript/Server/SessionRoutingDispatchTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/Server/SessionRuntimeCombatResultTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/Server/SessionRuntimeEditReplayTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Server/SessionRuntimeManagerIntegrationTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/Server/SessionRuntimeReconnectOwnershipReproTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/Server/SessionRuntimeTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/Server/SessionSoundboardEndpointTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/Server/SessionWorkerLeaseTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Server/SessionWorkerRuntimeCampaignRestoreTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/Server/SessionWorkerSupervisorTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/Server/TwoSessionIsolationAcceptanceTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/SessionAssetDrawerTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionCharacterMarkerControllerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionEditAuthorityTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionEditorShellBinderTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionEditorShellTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionEditRecoverySnapshotTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionEditRevisionPolicyTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionEditValidatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionInputRouterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionInspectorHostTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionMissionEditorHostTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "070330c24d79bbb4"
+    },
+    "res://test/scripts/gdscript/SessionMissionEditorPersistenceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionPlacementStateTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionPlayerPreviewProjectionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionRuntimeEditHistoryCompactorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionSelectionModelTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionToolRegistryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SessionTriggerAuthoringTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionTriggerEventBridgeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionTriggerRuntimeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SessionTriggerValidationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ShopWindowTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SignalClosureIsolationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SimpleTurnManagerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SkeletalCharacterConfigScreenRegressionTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SkeletalCharacterScanScreenTest.gd": {
+      "traits": [
+        "filesystem"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SoundboardManagerRecipientTargetingTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/SoundboardManagerTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SoundCatalogTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SoundEffectResolverTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SoundEventAudienceServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SpatialPuzzleSystemTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/StoreAuthServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/StoreOAuthCallbackListenerTest.gd": {
+      "traits": [
+        "network",
+        "scene-tree"
+      ],
+      "resources": [
+        "network-port"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SurfaceRaycasterTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/SWADECharacterCreationRoutingTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/SWADERulesEngineTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SWADETraitRollerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SwitchInteractionGameSessionTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/SwitchSystemIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TableFluxPackageBundleValidatorTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/TableFluxPackageImportVerifierTest.gd": {
+      "traits": [
+        "writes-user-data"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/TableFluxPackageRuntimeTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/TableTalk/TableTalkAnnouncementTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TableTalk/TableTalkManagerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TerrainEditServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/TestMapPuzzleIntegration.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TexturePickerUIHelperTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/TFCapabilitiesTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TFCompatTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/TFDiceRollCompletedWorldLogicTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/TFHooksTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TFInitializationTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/TFLifecycleHooksTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/TFNewNamespacesTest.gd": {
+      "traits": [
+        "autoload",
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "2358a9a92b75fff0"
+    },
+    "res://test/scripts/gdscript/TFOverlaysTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/TFPackagesTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/TFRulesTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/ThemeBuilderScreenSmokeTest.gd": {
+      "traits": [
+        "filesystem",
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "2da15fc536a41acf"
+    },
+    "res://test/scripts/gdscript/TriggerSystemTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "requires:full-assets"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/TurnActionEffectServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TurnAndConflict/CombatActionResultPayloadTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TurnAndConflict/CombatStateLedgerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TurnAndConflictManagerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/TurnFocusCameraControllerRegressionTest.gd": {
+      "traits": [
+        "scene-tree",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "47d9c4136e47227e"
+    },
+    "res://test/scripts/gdscript/TurnOrderPanelActionEconomyTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/UI/ActivatedAbilityResourceManagerTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/UI/NetworkManagerUserNotificationRoutingTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeApplyDiagnosticTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeIntegrationTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeLoadingDebugTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeManagerMissionThemeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeManagerSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/UI/Themes/ThemeSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/UI/Themes/WindowThemeHelperTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "4834fdf0fed888af"
+    },
+    "res://test/scripts/gdscript/UI/UserNotificationServiceTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/UnifiedMapEditor3DToolsSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "viewport"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke",
+        "requires:full-assets"
+      ],
+      "origin": "scanner",
+      "scanHash": "db1442195756878c"
+    },
+    "res://test/scripts/gdscript/UnifiedMapEditorDocumentHistoryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/UnifiedMapEditorHazardParticleEffectSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/gdscript/UnifiedMapEditorResponsiveLayoutTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/UnifiedMapEditorRoomPieceScopeGatingTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/UpdateFlowSmokeTest.gd": {
+      "traits": [
+        "autoload",
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "6ee4d193ce982598"
+    },
+    "res://test/scripts/gdscript/UtilityBeltTest.gd": {
+      "traits": [
+        "scene-tree",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "d7ffd41e3e05d41c"
+    },
+    "res://test/scripts/gdscript/Vision/FogOverrideStateTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Vision/FogOverrideToolAndCoordinatorTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/Vision/FogRegionSelectorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "manual"
+    },
+    "res://test/scripts/gdscript/VisionCampaignSettingsTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/VisionLineOfSightTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/VTT01Phase3ComprehensiveIntegrationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/VttPackArchiveValidatorTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/VttPackCatalogServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/VttPackExporterTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/VttPackInstallerTest.gd": {
+      "traits": [
+        "filesystem",
+        "writes-user-data"
+      ],
+      "resources": [
+        "user-data"
+      ],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "a0e7c1959a2f06cd"
+    },
+    "res://test/scripts/gdscript/WorldAudioRouterTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "867293fc3963a7e2"
+    },
+    "res://test/scripts/gdscript/WorldLogicAcceptanceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicActivateAbilityValidatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicActivatedAbilityEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicBeamPropagationTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicCampaignEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicCharacterEffectAdapterTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicCharacterEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicDeploymentServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicEditServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicEntityEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicGraphAuthoringServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicGraphBuilderSmokeTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "983e8d4c56ea28ac"
+    },
+    "res://test/scripts/gdscript/WorldLogicHandoutEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicInstanceLookupServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicLensControllerTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicLensTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicMapReferenceResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicMessageEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicMissionStateEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicMonitorActionControllerTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/gdscript/WorldLogicMonitorSmokeTest.gd": {
+      "traits": [
+        "scene-tree"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "983e8d4c56ea28ac"
+    },
+    "res://test/scripts/gdscript/WorldLogicPresetLibraryTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicRollTableEffectApplierTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicRuntimeOverrideServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicRuntimeTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicSimulationServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicSmallEffectAppliersTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicTargetResolverTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldLogicValidatorTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldObjectProximityServiceTest.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/gdscript/WorldPickupMarkerSmokeTest.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [
+        "smoke"
+      ],
+      "origin": "scanner",
+      "scanHash": "f5cc0a66092242d3"
+    },
+    "res://test/scripts/player_account_test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/player_id_system_test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/player_identity_manager_test.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    },
+    "res://test/scripts/player_identity_provider_test.gd": {
+      "traits": [
+        "pure"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "f6e5750cb6fcc8b1"
+    },
+    "res://test/scripts/quick_verification_test.gd": {
+      "traits": [
+        "autoload"
+      ],
+      "resources": [],
+      "tags": [],
+      "origin": "scanner",
+      "scanHash": "9ce1b218c3ff40eb"
+    }
+  }
+}

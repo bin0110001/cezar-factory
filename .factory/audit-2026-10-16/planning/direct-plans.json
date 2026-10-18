@@ -1,0 +1,78 @@
+[
+  {
+    "key": "issue19",
+    "number": 19,
+    "risk": "risk:medium",
+    "type": "type:refactor",
+    "deps": [],
+    "title": "Replace heuristic test execution with explicit project validation adapters",
+    "files": "scripts/factory/{test-changed,test-full,verify}.ps1; scripts/lib.ps1; templates/factory.config.yaml; workflows/{implement,fix-review}.yaml; tests/fixtures/*/scripts/factory/; tests/run-tests.ps1; docs/project-integration.md",
+    "objective": "Execute the project's existing configured validation adapters exactly once and produce isolated, trustworthy receipts.",
+    "decisions": [
+      "Reuse validation.changed/full/verify scalars and Read-FactoryConfig; do not add a parallel config file or infer test runners by extension.",
+      "Resolve project root from the current worktree Git root; config is .ai/factory/factory.config.yaml. Execute the explicitly configured command through documented pwsh subprocess semantics from that root. Missing config/command, same-wrapper recursion or unsupported config are errors, not discovery fallbacks.",
+      "Replace shared wrappers with a common dispatcher plus thin stage entry points. Include verify in required full verification, and fix project-path handling in verify rather than checking the shared runtime for a project pin.",
+      "Store logs/receipt in worktree-local .factory/artifacts/validation/<stage>/<attempt-guid>/; a concise stable pointer can exist within that worktree only. Bind receipts to repository/head SHA, stage, command, start/end, exitCode, artifact paths and status; dirty-tree evidence cannot authorize head-only merge checks.",
+      "Missing/empty validation cannot count as passed. Explicitly unsupported optional targeted coverage may report skipped, but full/verify required stages fail closed. Preserve project adapter semantics; wrappers report command success, not invented test counts."
+    ],
+    "steps": [
+      "Add fixture commands and a shared dispatcher that loads existing config, validates stage and starts a child process with separate bounded stdout/stderr.",
+      "Replace test discovery loops and shared artifact paths; make exceptions/failed launch/nonzero exit agree with receipt and wrapper exit.",
+      "Wire existing workflow command steps to stage adapters and require full+verify for review, preserving already-resolved no-op behavior.",
+      "Update project integration/migration guidance and fixture adapters; cover supported PS/.NET/JS/Godot via stub command adapters instead of installing all runtimes in tests."
+    ],
+    "criteria": [
+      "Configured changed/full/verify commands run exactly once from the correct worktree; no source/test-file enumeration occurs.",
+      "Empty project, missing command, recursion, setup exception and nonzero child exit produce explicit non-passing evidence and nonzero required-stage exit.",
+      "Two parallel worktrees/attempts never share result paths or write to the mounted runtime.",
+      "Both full and verify requirements are enforced; already-resolved issues still no-op.",
+      "Paths with spaces and Windows/Linux command semantics are covered by subprocess tests."
+    ],
+    "tests": "Fixture subprocess tests with counters/exit injection, cwd assertions, dirty/head identity, concurrent attempts and bounded log output; full Factory suite on Windows/Linux.",
+    "scope": "No GitHub merge routing, model changes, automatic project discovery or package-specific test heuristics.",
+    "gate": "none",
+    "skills": [
+      "factory-implement",
+      "factory-review"
+    ]
+  },
+  {
+    "key": "issue18",
+    "number": 18,
+    "risk": "risk:high",
+    "type": "type:bug",
+    "deps": [],
+    "title": "Retry incomplete Factory reconciliation when the deployed SHA is unchanged",
+    "files": "scripts/deploy/factory-autodeploy.sh; scripts/sync-all-automations.ps1; integrations/bazzite/factory-autodeploy.{service,timer}; tests/ (stubbed autodeploy harness); docs/shared-factory.md",
+    "objective": "Retry failed parity/reconciliation independently of whether the checkout advanced, and record success only after full convergence.",
+    "decisions": [
+      "Remove unchanged-SHA success shortcut. On every timer invocation, retain flock and dirty/divergence checks, fetch the explicit deploy ref, and ensure fast-forward before parity/sync.",
+      "Compare host SHA and container-visible SHA plus hashes of workflow-referenced scripts/catalog and VERSION, so equal VERSION or equal Git metadata alone cannot hide a wrong mount/stale files. Use only registered paths; do not discover a replacement checkout.",
+      "Run idempotent sync-all on every healthy tick, including unchanged SHA; this is the explicit drift-reconciliation policy and avoids false success after registry changes or out-of-band automation edits.",
+      "Write success receipt atomically only after all configured targets succeed, containing sourceSha, version, registryDigest, parity result and target receipts. Store it in an ignored host-local state path, not a tracked checkout file.",
+      "A failed attempt keeps last successful receipt but emits a distinct failure receipt; next normal tick retries. --force stays backward compatible but is no longer required for recovery. Do not add reset/clean/stash."
+    ],
+    "steps": [
+      "Build shell harness with temporary remote and fake podman/sync/clock commands; reproduce advance-then-fail followed by unchanged tick.",
+      "Refactor reconciliation policy and same-version content parity, preserve documented blocked exit codes where possible and document any new code.",
+      "Emit atomic success/failure receipts with registry snapshot digest; preserve global non-overlap lock.",
+      "Cover already-current/drift, missing registry, mixed target failure, container outage, process interruption, dirty/diverged checkout and lock contention."
+    ],
+    "criteria": [
+      "One-time failure after advancement recovers on the next ordinary tick without --force or another commit.",
+      "An unchanged successful SHA still reconciles current explicit registry/automation drift.",
+      "Same VERSION but wrong content/mount cannot produce a success receipt.",
+      "No failed/partial attempt replaces a success receipt; no dirty/divergent checkout is overwritten.",
+      "Concurrent timer invocations do not overlap writes or sync."
+    ],
+    "tests": "Linux shell integration with disposable Git repos and stub podman; bash -n; Factory suite. Approved live validation uses homelab-ssh and the supported timer/deploy flow, never hand edits.",
+    "scope": "No promotion changes, new target discovery, service restarts or manual Bazzite checkout edits.",
+    "gate": "Human approval of this high-risk deployment plan. No hard dependency on #21: retry policy can be implemented and tested independently; release orchestration consumes its receipt later.",
+    "skills": [
+      "factory-implement",
+      "factory-review",
+      "factory-finish-release",
+      "homelab-ssh"
+    ]
+  }
+]

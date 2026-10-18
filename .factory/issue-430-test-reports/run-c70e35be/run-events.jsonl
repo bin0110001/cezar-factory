@@ -1,0 +1,2 @@
+{"timestampUtc":"2026-10-16T23:57:33.2435763Z","kind":"run_started","payload":{"runId":"c70e35be","totalSuites":1,"totalBatches":1,"timeoutSeconds":300}}
+{"timestampUtc":"2026-10-16T23:57:33.2511479Z","kind":"batch_started","payload":{"batchNumber":1,"batchTotal":1.0,"suiteCount":1,"reportDirectory":"D:\\Projects\\cezar-factory\\.factory\\issue-430-test-reports\\run-c70e35be\\batch_001"}}

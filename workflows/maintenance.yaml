@@ -5,13 +5,16 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
   - id: recover-audit-reservations
     name: Release expired backlog-label audit reservations
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -ApiUrl "$env:CEZAR_API_URL" -ProjectId "$env:CEZAR_PROJECT_ID" -OutputPath .factory/audit-reservation-recovery.json
   - id: backlog-label-audit-collect
     name: Collect bounded backlog-label audit input
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json
+  - id: backlog-label-audit-validate
+    name: Validate bounded backlog-label audit handoff
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-backlog-label-audit-input.ps1 -Path .factory/backlog-label-audit-input.json -MaxCandidates 3
   - id: backlog-label-audit
     name: Audit at most three legacy issues
     skill: factory-backlog-label-audit

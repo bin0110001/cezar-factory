@@ -1,0 +1,25 @@
+{
+  "issue": 29,
+  "objective": "Make operator and agent release instructions agree on one resumable release sequence and every configured target's result.",
+  "acceptanceCriteria": "All phases and target receipts identify the same reviewed source SHA; promotion cannot precede observed reviewed merge.\nMissing/empty registry, failed target, unsafe local path or dirty/diverged/mismatched runtime stops with exact blocker and no overwrite.\nRepeated release with matching VERSION still reconciles explicit targets using tested promoted source.\nEvery Factory operation has a workflow command owner; skill prompts contain no script-running instructions.",
+  "nonGoals": "No host checkout hand edits, target discovery, service-specific infrastructure rollout or GitHub setting changes.",
+  "risks": "risk:high: Release workflow command steps own executable operations; skills describe inputs, artifact review and blockers. PR preparation/independent review happens before promotion and cannot be reordered by finish instructions. Consume promotion SHA receipt, snapshot only the explicit target registry, classify shared versus legacy full-install entries, and validate absolute local projectPath before legacy writes. Shared targets receive promoted mounted content and automation reconciliation; legacy targets get supported dry-run/full-install flows. Never sync unmerged working-tree automation definitions ahead of the promoted SHA. Use per-phase and per-target receipts keyed by source SHA and registry snapshot digest. A retry reruns incomplete targets without hiding a failed target or skipping required reconciliation at unchanged VERSION. Preserve the original contributor command-ownership and remote-checkout refusal rules; do not edit AGENTS.md to exempt release scripts.",
+  "dependencies": "#28, #18",
+  "suggestedWorkBreakdown": "Introduce/extend command-owned release workflow with validation, merged-SHA selection, promotion, sync and runtime parity steps.\nMake push/sync procedures consume the promoted source checkout and emit target receipts; enforce dry-run for full-layer targets.\nRewrite both release skills around those artifacts, repair the malformed promotion path and eliminate duplicate/contradictory procedure text.\nTest interrupted phases, partial-target failure, absent registry, shared/legacy entries and dirty/mismatched host receipts.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review",
+    "factory-release",
+    "factory-finish-release",
+    "homelab-ssh"
+  ],
+  "unresolvedQuestions": "Awaiting explicit human approval of the recorded high-risk plan.",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

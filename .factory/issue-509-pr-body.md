@@ -1,0 +1,5 @@
+Extracts Manage Characters list, resource summary, owner option, and controller option presentation from `GameSession.gd` into the existing `ManageCharactersPanel.gd`, while retaining GameSession's authoritative save/network callbacks and scene-bound method names. Adds panel tests for the new presentation paths.
+
+Partial implementation of #509; contributes to parent #504. GameSession falls from 16,634 to 16,598 lines (36 net lines). The existing 16,047 ceiling remains unchanged because lowering it to 16,598 would raise the ratchet. This draft cannot pass the quality gate or satisfy #509's final acceptance until further extraction clears the pre-existing 587-line overage and then creates 100 lines of headroom. #510 remains sequenced after this boundary.
+
+Validation: `ManageCharactersPanelTest` 21/21, `ManageCharactersServiceTest` 21/21, and `CharacterPermissionLiveRefreshTest` 2/2. `GameSessionScreenSmokeTest` remains 22 tests with 8 failures and 3 errors; its seven failure cases exactly match the untouched `dev` full-run report, including the currency assertion. Independent review, full quality, and remaining extraction are pending.

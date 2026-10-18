@@ -1,0 +1,72 @@
+[test] capability 'full-assets' unavailable (not found: Assets/Maximo, Assets/Kenney, Assets/QuaterniusLowPolyCharacters, Assets/Synty_PolygonCyberCity); suites tagged requires:full-assets will be skipped.
+[test] skipped res://test/scripts/gdscript/PieceStyleDefinitionTest.gd (quarantined)
+[test] skipped 18 suite(s) (requires full-assets); run on a machine that has it, or list them with -List
+[test] 2 external job(s) for provider(s): bazzite
+[test] 603 suite(s) selected.
+workers: 11 (cores 12, free RAM ? MB, limited by cpu)
+job      profile        suites  predicted  locks
+job-001  exclusive          10        90s  -
+job-002  exclusive          10        90s  -
+job-003  exclusive          10        90s  -
+job-004  exclusive          10        90s  -
+job-005  exclusive          10        90s  -
+job-006  exclusive          10        90s  -
+job-007  exclusive          10        90s  -
+job-008  network            10        90s  fixed-port
+job-009  pure               10        90s  -
+job-010  pure               10        90s  -
+job-011  pure               10        90s  -
+job-012  pure               10        90s  -
+job-013  pure               10        90s  -
+job-014  pure               10        90s  -
+job-015  pure               10        90s  -
+job-016  pure               10        90s  -
+job-017  pure               10        90s  -
+job-018  pure               10        90s  -
+job-019  pure               10        90s  -
+job-020  pure               10        90s  -
+job-021  pure               10        90s  -
+job-022  pure               10        90s  -
+job-023  pure               10        90s  -
+job-024  pure               10        90s  -
+job-025  pure               10        90s  -
+job-026  pure               10        90s  -
+job-027  pure               10        90s  -
+job-028  pure               10        90s  -
+job-029  pure               10        90s  -
+job-030  pure               10        90s  -
+job-031  pure               10        90s  -
+job-032  pure               10        90s  -
+job-033  pure               10        90s  -
+job-034  pure               10        90s  -
+job-035  pure               10        90s  -
+job-036  pure               10        90s  -
+job-037  pure               10        90s  -
+job-038  pure               10        90s  -
+job-039  scene              10        90s  -
+job-040  scene              10        90s  -
+job-041  scene              10        90s  -
+job-042  scene              10        90s  -
+job-043  scene              10        90s  -
+job-044  scene              10        90s  -
+job-045  scene              10        90s  -
+job-046  scene              10        90s  -
+job-047  scene              10        90s  -
+job-048  scene              10        90s  -
+job-049  scene              10        90s  -
+job-050  scene              10        90s  -
+job-051  scene              10        90s  -
+job-052  scene              10        90s  -
+job-053  scene              10        90s  -
+job-054  scene              10        90s  -
+job-055  scene              10        90s  -
+job-056  scene              10        90s  -
+job-057  scene              10        90s  -
+job-058  scene              10        90s  -
+job-059  scene              10        90s  -
+job-060  scene               6        54s  -
+job-061  network             3        27s  -
+job-062  network             3        27s  fixed-port
+job-063  pure                1         9s  -
+63 job(s), 603 suite(s), 5427s predicted serial time
+[test] plan written to D:\Projects\cezar-factory\.factory\target-blackjack\reports\test-runs\plan-20261017T001138Z-e34cdd\plan.json

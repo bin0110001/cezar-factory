@@ -1,0 +1,10 @@
+Full Test Suite Results
+======================
+Status:     passed
+Duration:   0s
+Total Tests:0
+Passed:     0
+Failed:     0
+
+Log file:   D:\Projects\cezar-factory\.factory\audit-2026-10-16\repro-runtime\scripts\artifacts\test-full-20261016-161557.log
+Result file:D:\Projects\cezar-factory\.factory\audit-2026-10-16\repro-runtime\scripts\artifacts\test-full-results.json

@@ -1,0 +1,6 @@
+[test] capability 'full-assets' unavailable (not found: Assets/Maximo, Assets/Kenney, Assets/QuaterniusLowPolyCharacters, Assets/Synty_PolygonCyberCity); suites tagged requires:full-assets will be skipped.
+[test] 1 suite(s) selected.
+Reclaimed stale lock 'targeted-slot-1' (run=20261016T145214Z-ad80c4, pid=54264 no longer running, acquired 2026-10-16T14:52:15.0234439Z)
+[test] run 20261017T001326Z-c76814: 1 batch(es) of up to 10 suite(s); retries on; output in D:\Projects\cezar-factory\.factory\target-blackjack\reports\test-runs\20261017T001326Z-c76814
+[1/1] 1 suites  PASS  1 attempt(s)  5.2s
+[test] PASS: 1 suite(s), 3 test(s), 0 failure(s), 0 error(s), 0 skipped, 1 attempt(s) in 5s -> exit 0

@@ -32,6 +32,10 @@ if cross-repository tracking is required.
   result. Do not run the candidate source, list issues again, create a
   temporary audit script, or retry with a different shell command. If the
   pre-LLM source command fails, stop and report the failure.
+- The workflow validates the handoff before this skill starts. If reading the
+  validated artifact fails for any reason, make one concise failure report and
+  stop immediately. Do not try another path, shell, tool, or equivalent
+  existence check.
 - If neither registered script path exists or the selected command fails, stop the run as failed. Do not search the filesystem, call `gh issue list`, switch shells, call MCP/resource discovery, install tools, or reconstruct the candidate list manually.
 - Do not read, print, parse, lint, or judge the script source. A displayed or serialized script body is not an audit result; only its exit status and the emitted input artifact are valid evidence. Never replace it because it appears incomplete.
 - `create-labels.ps1` is an internal sibling of the audit script; never run it.

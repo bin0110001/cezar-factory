@@ -1,0 +1,22 @@
+{
+  "issue": 31,
+  "objective": "Publish actionable failure evidence idempotently without losing it on dedupe or partial API failure.",
+  "acceptanceCriteria": "Repeated identical evidence produces one issue and no duplicate comment; lookup failure produces no issue.\nDedupe against an existing issue never discards current evidence, and a transport retry cannot blindly create a duplicate.\nAll published references are repository-qualified; #1 history remains preserved.\nCollector and publication receipts expose partial/limited results; issue count never exceeds one new canonical issue per run.",
+  "nonGoals": "No cross-repository issue pair, intake defect resolution, lifecycle implementation routing or recovery-run dispatch.",
+  "risks": "risk:medium: Adopt one canonical issue in the configured Factory repository per project+normalized signature fingerprint. This supersedes the parent's unresolved one-versus-two issue choice: no second project issue is created by the audit. Build evidence before GitHub access and dedupe by an exact HTML marker containing a stable fingerprint that excludes volatile run IDs/timestamps. Project/known issue references use fully qualified URLs. Any lookup/auth/API failure aborts publication; it is never treated as an empty search. Existing exact marker means append/update bounded evidence only when new, with a receipt recording existing/created/failed. Adopt existing legacy issues only with unambiguous repository/project/signature evidence; preserve human body/comments, and flag ambiguous matches for review. Link existing #1 and its historical evidence without claiming intake fixed. Persist publication receipt before retry; after ambiguous create failure, requery marker before another write. No inferred close/resolve or restart.",
+  "dependencies": "#30",
+  "suggestedWorkBreakdown": "Implement artifact-consuming publisher and exact marker matching, including checked gh exit codes.\nUse one canonical Factory issue, render redacted source evidence and qualified existing-project links consistently.\nWire collector/publisher as separate workflow command steps and align the skill's read/write/issue-count contract.\nTest retries, ambiguous transport outcome, lookup failure, same-repository target, legacy adoption and repeated evidence.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "Awaiting prerequisite completion: #30",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

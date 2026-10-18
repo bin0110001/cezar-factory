@@ -1,0 +1,36 @@
+{
+  "issue": 21,
+  "objective": "Reviewed merged-SHA release",
+  "acceptanceCriteria": "Unmerged/unreviewed/mutated source cannot promote; mandatory full tests precede stable movement; every target result names the same promoted SHA and partial failure remains resumable and visible.",
+  "nonGoals": "No manual remote checkout updates, inferred deployment targets, untested source synchronization or service-specific rollout.",
+  "risks": "risk:high",
+  "dependencies": "#28 depends on #27. #29 depends on #28 and #18. This replaces the provisional dependency on all of #20; #18 no longer waits for this whole parent.",
+  "suggestedWorkBreakdown": "Implement immutable reviewed-SHA promotion #28 after merge-evidence #27; implement end-to-end release orchestration #29 after #28 and the independent retry/receipt work #18.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:large",
+  "readyNotReadyStatus": "decomposed",
+  "subIssues": [
+    {
+      "title": "Promote only a verified merged dev SHA with an immutable full-test gate",
+      "body": "Make stable promotion prove the exact tested commit is a reviewed merged dev commit, with no public test replacement. See fully planned child #28. Temporary bare remotes and fake GitHub evidence; absent stable versus failed fetch, merge/squash/rebase histories, failure/no public override, concurrent stable push and valid promotion; Windows/Linux Factory suite.",
+      "type": "type:bug",
+      "risk": "risk:high",
+      "complexity": "complexity:medium",
+      "dependsOn": []
+    },
+    {
+      "title": "Orchestrate Factory release phases from reviewed merge through target receipts",
+      "body": "Make operator and agent release instructions agree on one resumable release sequence and every configured target's result. See fully planned child #29. Mock target registry/API/host executors only; dry-run/partial-failure/retry fixtures; contract ownership checks and full Factory suite. Approved live verification uses homelab-ssh and supported host deployment only.",
+      "type": "type:refactor",
+      "risk": "risk:high",
+      "complexity": "complexity:medium",
+      "dependsOn": [
+        0
+      ]
+    }
+  ]
+}

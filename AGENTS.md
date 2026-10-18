@@ -64,3 +64,8 @@ before reporting the work as done. Never leave finished work only in the local
 checkout. Stage only the files that belong to the change (leave unrelated
 untracked files such as `.factory/release-reports/` alone), and push only after
 validation has passed.
+
+Run authenticated GitHub CLI commands (`gh`) outside the sandbox so they can
+use the host's existing GitHub credential from the Windows keyring. Do not run
+`gh auth login` or replace credentials unless the host credential is actually
+invalid.

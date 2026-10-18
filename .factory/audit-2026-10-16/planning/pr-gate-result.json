@@ -1,0 +1,23 @@
+{
+  "issue": 27,
+  "objective": "Request auto-merge only for the intended dev PR at the exact independently reviewed and validated head.",
+  "acceptanceCriteria": "Wrong repository/base/head, failed or pending checks, unresolved review threads, absent independent review or high-risk approval all produce zero merge writes.\nA head change between check and request is rejected by the merge command.\nDisabled auto-merge and absent effective gate policy leave an actionable blocker, never done.\nQueued merge stays distinguishable from observed merged; repeated completion checks are idempotent.",
+  "nonGoals": "Do not enable branch protection/auto-merge, merge unreviewed work or redesign project test execution.",
+  "risks": "risk:high: Resolve repository/issue/PR association from prepared context plus GitHub; require base=dev, open non-draft PR, matching head SHA and head-bound validation receipts. Read repository merge settings, effective branch/ruleset requirements, required check conclusions and PR review/thread state. Missing/unreadable gate policy fails closed; never use --admin or enable settings. Require an independent review receipt bound to head and reviewer identity, distinct from implementation provenance; where repository policy demands GitHub approval, require GitHub approval as well. High-risk plan approval must name the approved plan revision and cannot be inferred from a ready label. Pass the expected head to the merge request to reject head-change races. Keep issue in review while merge is queued; on a later bounded idempotent review/completion check, mark done only after GitHub reports merged. Do not add a blocking polling loop. Keep required-check names policy-driven; tests use fake effective policy. Current missing production gates are a rollout blocker, not permission to synthesize passing evidence.",
+  "dependencies": "#19, #25, #26\n\nRequired by: #28",
+  "suggestedWorkBreakdown": "Build a read-only eligibility check with a structured allow/deny receipt listing evidence and exact SHA.\nWire it as a workflow command before merge routing, with no agent-owned GitHub state edits.\nMake routing consume the receipt, request merge with head protection, and distinguish queued/merged/refused outcomes.\nAdd bounded completion reconciliation to the existing review path and preserve mutually exclusive lifecycle labels.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review",
+    "factory-finish-release"
+  ],
+  "unresolvedQuestions": "Awaiting explicit human approval of the recorded high-risk plan.",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "not-ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

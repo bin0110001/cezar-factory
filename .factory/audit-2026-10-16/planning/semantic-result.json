@@ -1,0 +1,22 @@
+{
+  "issue": 25,
+  "objective": "Make machine success mean passed validation and satisfied acceptance criteria without performing GitHub writes.",
+  "acceptanceCriteria": "Given a success result with failed or not-run tests or unmet criteria, validation fails with the contradictory field named.\nGiven a legitimate failure result or a success with documentationUpdated=false and documented nonblocking concerns, validation handles it without inventing a blocker.\nGiven a legacy result without trusted head-bound evidence, it may be displayed but cannot authorize merging.\nValidation tests perform no real GitHub writes.",
+  "nonGoals": "No PR merge command, repository-setting changes, new lifecycle labels or validation runner implementation.",
+  "risks": "risk:medium: Keep schema required fields and legacy descriptive strings readable, but normalize explicitly supported success values into a versioned status vocabulary. Unknown, failed, skipped, not-run or unmet values cannot satisfy a success result. Successful implementation requires nonempty testsRun/filesChanged, a qualified PR URL and substantive acceptance verification. Keep documentationUpdated=false legitimate; knownConcerns can contain explicitly nonblocking notes, so do not reject every nonempty concern mechanically. Introduce versioned validation receipt fields (schemaVersion, issue, repository, pr, headSha, stage, status, exitCode, artifactPaths). Receipt provenance is the workflow command, never agent assertions. Optional legacy results remain parseable but cannot qualify as merge evidence. Keep failure results representable and preserve the local RouteOnFailure work; do not fold failure routing changes into a semantic rewrite.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #27",
+  "suggestedWorkBreakdown": "Add table-driven negative fixtures for the reproduced success/failed/Not met result, empty testsRun, placeholder acceptance and malformed PR URLs.\nImplement pure normalization and semantic checks with concise field errors; update producers only where their outputs would become invalid.\nDefine receipt schema and distinguish legacy/agent-reported evidence from workflow-generated trusted evidence.\nExercise current valid/failure examples and install/update fixture compatibility.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}

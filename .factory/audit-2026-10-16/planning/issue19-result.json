@@ -1,0 +1,22 @@
+{
+  "issue": 19,
+  "objective": "Execute the project's existing configured validation adapters exactly once and produce isolated, trustworthy receipts.",
+  "acceptanceCriteria": "Configured changed/full/verify commands run exactly once from the correct worktree; no source/test-file enumeration occurs.\nEmpty project, missing command, recursion, setup exception and nonzero child exit produce explicit non-passing evidence and nonzero required-stage exit.\nTwo parallel worktrees/attempts never share result paths or write to the mounted runtime.\nBoth full and verify requirements are enforced; already-resolved issues still no-op.\nPaths with spaces and Windows/Linux command semantics are covered by subprocess tests.",
+  "nonGoals": "No GitHub merge routing, model changes, automatic project discovery or package-specific test heuristics.",
+  "risks": "risk:medium: Reuse validation.changed/full/verify scalars and Read-FactoryConfig; do not add a parallel config file or infer test runners by extension. Resolve project root from the current worktree Git root; config is .ai/factory/factory.config.yaml. Execute the explicitly configured command through documented pwsh subprocess semantics from that root. Missing config/command, same-wrapper recursion or unsupported config are errors, not discovery fallbacks. Replace shared wrappers with a common dispatcher plus thin stage entry points. Include verify in required full verification, and fix project-path handling in verify rather than checking the shared runtime for a project pin. Store logs/receipt in worktree-local .factory/artifacts/validation/<stage>/<attempt-guid>/; a concise stable pointer can exist within that worktree only. Bind receipts to repository/head SHA, stage, command, start/end, exitCode, artifact paths and status; dirty-tree evidence cannot authorize head-only merge checks. Missing/empty validation cannot count as passed. Explicitly unsupported optional targeted coverage may report skipped, but full/verify required stages fail closed. Preserve project adapter semantics; wrappers report command success, not invented test counts.",
+  "dependencies": "None; independently implementable.\n\nRequired by: #27",
+  "suggestedWorkBreakdown": "Add fixture commands and a shared dispatcher that loads existing config, validates stage and starts a child process with separate bounded stdout/stderr.\nReplace test discovery loops and shared artifact paths; make exceptions/failed launch/nonzero exit agree with receipt and wrapper exit.\nWire existing workflow command steps to stage adapters and require full+verify for review, preserving already-resolved no-op behavior.\nUpdate project integration/migration guidance and fixture adapters; cover supported PS/.NET/JS/Godot via stub command adapters instead of installing all runtimes in tests.",
+  "requiredProjectSkills": [
+    "factory-implement",
+    "factory-review"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "memoryCount": 0,
+    "contextChars": 0,
+    "banksQueried": [],
+    "memoryIds": []
+  }
+}
