@@ -1,7 +1,7 @@
 # Factory source checkout's explicit project validation commands.
 factory:
   source: "cezar-factory"
-  version: "0.3.47"
+  version: "0.3.48"
 
 workflows:
   - implement

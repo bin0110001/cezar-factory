@@ -12,9 +12,10 @@ skill, workflow, automation, schema, policy, or runtime contract.
 
 - This is a read-only audit. Do not modify source code, skills, workflows,
   automations, labels, or runtime state.
-- The workflow runs `audit-factory-failures.ps1` directly; never run it
-  yourself. Inspect only the compact artifact it emits. The script fetches and filters at most 20
-  recent run records; do not fetch or parse raw run logs in the agent.
+- The workflow command runs the collector. Inspect only its compact,
+  redacted artifact. It selects at most 20 local runs from the last 24 hours
+  within a declared candidate and byte budget; do not fetch or parse raw run
+  logs in the agent.
 - Do not run directory listings, recursive searches, filesystem discovery, or
   commands that dump run logs.
 - The audit runs in an isolated worktree. Do not search for an alternate
@@ -39,23 +40,14 @@ Classify each distinct failure as one of:
 
 ## Required action
 
-The workflow runs the collector before the agent step. Read only
+If asked to classify a collected artifact, read only
 `.factory/failure-audit-input.json`; do not run shell commands or inspect raw
-logs. If the artifact reports `limited`, report the limitation and stop.
+logs. If it reports `limited`, report the limitation and stop. The collector
+does not create issues or restart runs. Publication is a separate workflow
+command tracked in #31 and must not treat incomplete evidence as complete.
 
-If at least one recognized Factory runtime/workflow signature is found, the
-collector creates at most one GitHub issue in the current project with labels
-`factory:new`, `type:maintenance`, and `risk:medium`, deduplicated against open
-issues with the same audit title. The agent must not create a second issue.
-The issue must include the affected project, run IDs, exact failing step and
-command, relevant artifact paths, the Factory asset suspected, and a clear
-acceptance criterion. State explicitly that the eventual implementation must
-be made in the `cezar-factory` source checkout and released to every target in
-`config/factory-projects.json` before closure.
-
-For `project-defect`, `environment`, or `unknown`, do not create an issue
-unless the evidence supports a concrete next action; summarize it in the
-audit report instead. Never create more than one issue per audit run.
+For `project-defect`, `environment`, or `unknown`, summarize the evidence and
+limitations in the audit report. Do not create an issue from this skill.
 
 End with a compact report containing the time window, runs inspected, failure
 signatures, classifications, issue number if created, and any limitations.
