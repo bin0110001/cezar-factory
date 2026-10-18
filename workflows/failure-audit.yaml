@@ -3,7 +3,10 @@ description: Daily bounded, read-only collection of recent Cezar failures
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-failure-audit -Step collect -RequiredScripts audit-factory-failures.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-failure-audit -Step collect -RequireGh -RequiredScripts audit-factory-failures.ps1,publish-failure-audit.ps1
   - id: collect
     name: Collect bounded failure evidence
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-factory-failures.ps1 -ProjectId "$env:CEZAR_PROJECT_ID" -ApiUrl "$env:CEZAR_API_URL" -OutputPath .factory/failure-audit-input.json
+  - id: publish
+    name: Publish canonical Factory failure evidence
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/publish-failure-audit.ps1 -InputPath .factory/failure-audit-input.json -ReceiptPath .factory/failure-audit-publication.json -FactoryRepo bin0110001/cezar-factory

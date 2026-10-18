@@ -14,8 +14,14 @@ no longer claim complete recency. Oversized and missing sources are likewise
 reported as limitations. Evidence is redacted before the version 1 artifact
 is serialized. The schema is `schemas/failure-audit-result.schema.json`.
 
-Collection no longer publishes issues or restarts intake. Those are separate
-operations and cannot be inferred from a `ready` collection receipt. The
-idempotent publisher is tracked in #31; until it is implemented, the daily
-workflow only collects evidence. Recovery must be an explicit later command
-and must stay disabled when coverage is limited.
+Collection no longer publishes issues or restarts intake. After collection,
+the workflow's separate publisher consumes the versioned artifact and writes
+`.factory/failure-audit-publication.json`. It creates one canonical Factory
+issue per registered project and normalized signature, appends only new run
+evidence, and records created, adopted, existing, skipped, pending,
+needs-review, or failed outcomes. Search and post-write confirmation errors fail closed;
+ambiguous legacy matches are reported for human review. The publisher never
+creates a second issue for the same project and normalized signature set,
+closes an issue, or restarts intake. It does not publish when collection status
+is `limited`. Recovery remains a separate
+explicit workflow action and must stay disabled when coverage is limited.
