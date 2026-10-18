@@ -32,8 +32,10 @@ a label-bootstrap result.
 `factory:auditing` is the temporary audit reservation. It excludes a candidate
 from another audit run without incorrectly escalating it to a human.
 
-- Use `factory:needs-help` only for a real human decision, conflicting
-  requirement, or missing external input.
+- Use `factory:needs-help` only for a major architectural decision that
+  materially changes compatibility, ownership, or the system contract. Use
+  `factory:blocked` for missing external input and document reversible
+  assumptions for routine conflicts.
 - Route decomposition-needed work to `factory:needs-plan` with a defensible
   `type:*`, `risk:*`, and `complexity:large`, so the large planning automation
   can decompose it autonomously.

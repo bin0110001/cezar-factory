@@ -20,7 +20,7 @@ source: skills/factory-investigate/SKILL.md
   - Requirements.
   - Architecture.
   - Unknown.
-- Recommend next action.
+- Recommend the next automatic action.
 - Route back to implementation only when justified.
 - Otherwise escalate.
 
@@ -58,14 +58,20 @@ Use the following classification framework:
 - Based on the classification, recommend one of:
   - Retry implementation (only for implementation failures with clear fixes).
   - Investigate further (for environment, dependency, or unknown causes).
-  - Escalate to human (for requirements, architecture, or unknown causes).
+  - Request a user decision only for a major architectural choice.
+  - Return external environment or dependency blockers to `factory:blocked`.
+  - Re-plan and continue automatically for other failures.
 
 After a confirmed resolution, include a concise durable-knowledge candidate so
 the workflow can retain the lesson through Hindsight after normal review.
 
 ### 5. Route Appropriately
 
-- Set `automaticRetryAppropriate` and `confidence` honestly: the workflow retries (`factory:ready`) only when it is true, confidence is not `low`, and no earlier investigation retry was made; otherwise it escalates with `factory:needs-help`.
+- Set `automaticRetryAppropriate` and `confidence` honestly. A clear retry
+  returns to `factory:ready`; an unclear implementation path returns to
+  `factory:needs-plan` for an automatic revised plan. Only a major architectural
+  choice may route to `factory:needs-help`; environment, dependency, and merge
+  blockers route to `factory:blocked`.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/investigate-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
 - Use these exact `failureClassification` values: implementation, test, flaky-test, environment, dependency, merge-conflict, requirements, architecture, unknown.
 - The escalation summary posted by the workflow is built from your result. Make these fields complete:
@@ -74,7 +80,7 @@ the workflow can retain the lesson through Hindsight after normal review.
     - Attempts made.
     - Relevant logs/artifacts.
     - Current hypothesis.
-    - Recommended human decision.
+    - Recommended next automatic action (or the specific major architectural choice needed from the user).
 
 ## Output Format
 

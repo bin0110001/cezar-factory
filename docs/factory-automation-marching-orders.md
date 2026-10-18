@@ -58,14 +58,17 @@ change GitHub state, retain a memory, merge a PR, or override a risk gate.
    independently checkable result.
 3. Escalate to a premium agent for non-mechanical coding, material ambiguity,
    architecture, conflicting evidence, or a local result that fails validation.
-4. Escalate to a human for product decisions, security/privacy decisions,
-   high-risk plan approval, merge, and any unresolved requirement conflict.
+4. Ask the user only for a major architectural decision that changes
+   compatibility, ownership, or the system contract. Resolve routine product
+   and requirement ambiguity with documented assumptions; use policy and
+   independent review for security/privacy work; let validated PRs follow the
+   automatic merge path.
 5. Every automated action must be idempotent or have a durable lease/marker.
 6. Every action must have a bounded retry count, a recorded artifact, and a
    defined terminal outcome.
 7. Automations may be registered paused for safe deployment. An operator may
    enable them for active use without completing a separate evidence campaign;
-   keep batch limits, lifecycle gates, and human approvals for high-risk work.
+   keep batch limits, lifecycle gates, full validation, and independent review.
 
 ## Phase 0 — Stabilize and establish the factual baseline
 
@@ -127,13 +130,14 @@ cannot bypass risk, validation, or state-transition policies.
 | --- | --- | --- | --- |
 | State transitions, validation, labels, Git operations | Tool | Human on refusal | Exit code and structured artifact |
 | Test/build/lint/package execution | Tool | Investigate on failure | Native report plus compact summary |
-| Issue classification, risk suggestion, extraction | Local | Premium or human | JSON schema and deterministic policy checks |
+| Issue classification, risk suggestion, extraction | Local | Premium | JSON schema, deterministic policy checks, and documented assumptions |
 | Log/diff/test-result compression | Local | Premium | References and exact failure excerpts retained |
 | Memory-candidate extraction | Local | Human review | Candidate schema and retention filter |
 | Mechanical documentation or narrow tests | Local pilot | Premium | Diff plus normal validation/review |
-| Planning with requirements ambiguity | Premium | Human | Definition of Ready and risk gate |
-| Non-trivial implementation, architecture, conflict resolution | Premium | Human | Validation and independent review |
-| Product, legal, security, privacy, merge decisions | Human | None | GitHub approval/record |
+| Planning with routine requirements ambiguity | Premium | Documented assumption | Definition of Ready and risk policy |
+| Major architectural choice that changes compatibility, ownership, or system contract | Premium | User | Record the decision, then resume planning automatically |
+| Non-trivial implementation, architecture, conflict resolution | Premium | Independent technical review | Validation and independent review |
+| Product, legal, security, privacy, merge decisions | Policy and automated review | Independent technical review | Follow documented controls and the validated auto-merge path |
 
 ### Exit criteria
 

@@ -29,8 +29,11 @@ source: skills/factory-implement/SKILL.md
   and environment metadata written by `prepare-implementation.ps1`.
 - Work only on the prepared issue. Treat the recorded issue and approved plan
   as authoritative. If the artifact is missing, stale, malformed, or names a
-  different issue than the workflow prompt, report the environment blocker and
-  stop. Do not repeat broad issue discovery.
+  different issue than the workflow prompt, report the environment blocker to
+  the outer workflow and do not edit this issue. A backlog-level task must
+  continue with another eligible issue while the workflow prepares or repairs
+  this handoff; do not ask the user to schedule it. Do not repeat broad issue
+  discovery inside a workflow-selected implementation run.
 - Do not use anonymous GitHub `curl` calls or guess repository owners; the
   preparation script already performed the authenticated issue read.
 - Review the plan's objective, acceptance criteria, and non-goals.
@@ -41,7 +44,9 @@ source: skills/factory-implement/SKILL.md
 
 - Treat acceptance criteria as the primary success measure.
 - Do not implement features or fixes beyond the stated criteria.
-- If acceptance criteria are unclear, stop and escalate rather than guessing.
+- Resolve routine ambiguity with the safest reversible assumption and document
+  it. Escalate only an unresolved major architectural decision that materially
+  changes compatibility, ownership, or the system contract.
 
 ### 3. Use Project-Specific Skills
 

@@ -8,6 +8,8 @@ source: skills/factory-review/SKILL.md
 ## Responsibilities
 
 - Independently review the implementation.
+- Treat this as technical review, not a request for user approval. A passing
+  review proceeds to the normal auto-merge handoff without waiting for the user.
 - Compare changes against issue acceptance criteria.
 - Check for missed edge cases.
 - Check architecture/conventions.
@@ -17,7 +19,7 @@ source: skills/factory-review/SKILL.md
 - Produce actionable findings.
 - Route to:
   - `factory:changes-requested`
-  - `factory:human-review`
+  - `factory:human-review` only when review exposes a major architectural decision
 
 ## Note
 
@@ -90,12 +92,13 @@ Prefer a different agent/context from implementation.
 
 Include the PR URL in the optional `pr` field. Approved work at every risk
 level is eligible for the policy's bounded auto-merge path after validation.
-High-risk work still requires human plan approval before implementation and
-independent review before merge is requested.
+Risk level alone never requires user plan approval. Independent review remains
+required; ask the user only when an unresolved major architectural decision
+materially changes compatibility, ownership, or the system contract.
 
 - **Low risk** (docs, tests, minor UI, small bug fixes): Approved review may request auto-merge to `dev`.
 - **Medium risk** (features, refactoring, networking, persistence): Approved review may request auto-merge to `dev`.
-- **High risk** (auth, security, data migration, billing, architecture): Requires human plan approval and independent review before auto-merge to `dev`.
+- **High risk** (auth, security, data migration, billing, architecture): Requires full validation and independent review before auto-merge to `dev`; user input is required only for an unresolved major architectural decision.
 
 ## Output Format
 
