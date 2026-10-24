@@ -43,6 +43,7 @@ export const workflowStepSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    verificationSuite: z.string().trim().min(1).max(128).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -57,8 +58,8 @@ export const workflowStepSchema = z
       })
       .optional(),
   })
-  .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
-    message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
+    message: 'a step is either an agent step, a command check, or a verification suite',
   });
 
 /**
@@ -140,7 +141,7 @@ export function skillStackOf(steps: WorkflowStepDef[]): string[] | null {
 }
 
 export function stepKind(step: WorkflowStepDef): 'agent' | 'check' {
-  return step.command ? 'check' : 'agent';
+  return step.command || step.verificationSuite ? 'check' : 'agent';
 }
 
 /**
