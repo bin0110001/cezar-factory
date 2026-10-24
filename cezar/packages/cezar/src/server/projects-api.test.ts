@@ -828,6 +828,26 @@ describe('workspace projects API', () => {
       expect(listed.projects.find((p) => p.id === other.id)?.tags).toEqual(['api', 'Storefront']);
     });
 
+    it('sets a per-project Factory channel without changing tags or concurrency', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { tags: ['storefront'], maxParallel: 3 });
+      const { status, body } = await patch(other.id, { factoryChannel: 'dev' });
+      expect(status).toBe(200);
+      expect(body.project.factoryChannel).toBe('dev');
+      expect(body.project.tags).toEqual(['storefront']);
+      expect(body.project.maxParallel).toBe(3);
+      expect((await getProjects()).projects.find((p) => p.id === other.id)?.factoryChannel).toBe('dev');
+    });
+
+    it('clears a channel override and rejects unknown channels', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { factoryChannel: 'dev' });
+      const cleared = await patch(other.id, { factoryChannel: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.project.factoryChannel).toBeUndefined();
+      expect((await patch(other.id, { factoryChannel: 'canary' })).status).toBe(400);
+    });
+
     it('clears tags on null and on [], storing no key at all', async () => {
       const other = await registerProject(otherRoot);
       await patch(other.id, { tags: ['api'] });

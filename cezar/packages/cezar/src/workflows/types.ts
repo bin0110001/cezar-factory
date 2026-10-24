@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
+import { factoryReleaseProvenanceSchema } from '@open-mercato/cezar-contract';
 
 /**
  * A workflow is an ordered list of steps. Two step kinds:
@@ -93,6 +94,7 @@ export const workflowDefSchema = z.object({
   steps: z.array(workflowStepSchema),
   source: z.enum(['built-in', 'file']),
   path: z.string().optional(),
+  factoryRelease: factoryReleaseProvenanceSchema.optional(),
 });
 
 export type WorkflowDef = z.infer<typeof workflowDefSchema>;
