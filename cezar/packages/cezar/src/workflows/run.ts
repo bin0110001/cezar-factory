@@ -1,9 +1,9 @@
 import type { TrackerAssociation } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative as relativePath } from 'node:path';
 import {
   parseAskMarker,
   parseAskMarkerResult,
@@ -114,6 +114,7 @@ import {
   type WorkflowStepDef,
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
+import { executeVerification } from '../verification/executor.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -4296,8 +4297,9 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode } = await this.runCheckStep(state, step, input.task, emit);
+      const { ok, output, exitCode } = await this.runCheckStep(runId, state, step, input.task, emit);
       if (state.cancelled) break;
+      const checkLabel = step.command ?? `verification suite "${step.verificationSuite}"`;
       if (ok) {
         this.finishStep(runId, step.id, 'done', undefined, emit);
         i++;
@@ -4314,7 +4316,7 @@ export class RunManager {
           stepId: step.id,
           message: `check exited ${exitCode} — not retried (onFail.retryOn: ${codes})`,
         });
-        this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited ${exitCode}`, emit);
+        this.finishStep(runId, step.id, 'failed', `\`${checkLabel}\` exited ${exitCode}`, emit);
         runError = `check "${step.id}" exited ${exitCode}, which onFail.retryOn (${codes}) does not retry`;
         break;
       }
@@ -4339,7 +4341,7 @@ export class RunManager {
         continue;
       }
 
-      this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited non-zero`, emit);
+      this.finishStep(runId, step.id, 'failed', `\`${checkLabel}\` exited non-zero`, emit);
       runError = `check "${step.id}" failed${step.onFail ? ` after ${used + 1} attempts` : ''}`;
       break;
     }
@@ -5638,12 +5640,37 @@ export class RunManager {
     }
   }
 
-  private runCheckStep(
+  private async runCheckStep(
+    runId: string,
     state: ActiveRun,
     step: WorkflowStepDef,
     task: string,
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
+    if (step.verificationSuite) {
+      const snapshot = await autosaveCommit(state.cwd, 'periodic');
+      if (snapshot === 'refused' || snapshot === 'failed') {
+        const message = `verification could not snapshot worktree (${snapshot})`;
+        emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
+        return Promise.resolve({ ok: false, output: message, exitCode: 3 });
+      }
+      return executeVerification({
+        worktreePath: state.cwd,
+        cezarRunId: runId,
+        projectId: createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'),
+        suite: step.verificationSuite,
+        cancelled: () => state.cancelled,
+        onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),
+      }).then(({ run, artifactPath, output }) => {
+        const exitCode = run.semanticExitCode;
+        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), coverage: run.coverage, exitCode });
+        return { ok: run.status === 'passed', output: output || `verification status: ${run.status}`, exitCode };
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
+        return { ok: false, output: message, exitCode: 3 };
+      });
+    }
     // `{{task}}` in a command expands through an env var, never by pasting the
     // task text into the shell line, so task content cannot inject commands.
     const command = (step.command as string).replaceAll('{{task}}', '${CEZAR_TASK}');

@@ -33,6 +33,8 @@ export const workflowStepDefSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Run a named suite from the project's versioned verification manifest. */
+    verificationSuite: z.string().trim().min(1).max(128).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -42,8 +44,8 @@ export const workflowStepDefSchema = z
       })
       .optional(),
   })
-  .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
-    message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
+    message: 'a step is either an agent step, a command check, or a verification suite',
   });
 export type WorkflowStepDef = z.infer<typeof workflowStepDefSchema>;
 
