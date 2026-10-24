@@ -18,6 +18,7 @@ does not claim that an external service has run a workflow.
 | 10. End-to-end provider pilot | External gate open | Operator: configure authenticated Codex/Claude OpenHands profiles and nominate one low-risk issue. |
 | 11. Shadow evaluation and promotion | Implemented; evidence collection open | `scripts/record-local-evaluation.ps1`, `scripts/evaluate-local-promotion.ps1`, and predeclared catalog thresholds. Operator: collect the required sample size. |
 | 12. Automation enablement | Active testing authorized | Enable the requested project's relevant automations with their existing batch caps; provider-pilot evidence is not a prerequisite. |
+| Host-local release artifact controller (#63) | Implemented; not activated | `scripts/release/factory_release_controller.py` stages and verifies immutable channel artifacts with local checkpoints, safe rollback, and retention references. The Bazzite user timer is provided but not installed; Cezar still reads the existing mount until the separate channel resolver work in #64. |
 
 ## Selected pilot project: NeonPath
 

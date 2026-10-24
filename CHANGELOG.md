@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.53] - 2026-10-24
+
+- Added a host-local Factory release controller that stages immutable archives,
+  verifies manifests and file digests, checkpoints progress in SQLite, and
+  supports offline rollback and reference-aware retention.
+
 ## [0.3.52] - 2026-10-23
 
 - Defined immutable Factory release manifests, controller state, deployment
