@@ -2,10 +2,25 @@
 
 The Bazzite user service polls one explicitly configured Git branch, stages its
 commit as an immutable archive, verifies the manifest, artifact, archive paths,
-file digests and verification evidence, then atomically writes the channel
-pointer. It never runs prompts or project code, calls Cezar, resets a checkout,
-or writes to the source working tree. `stable` remains the default channel and
-must be advanced through the tested stable promotion procedure.
+file digests and verification evidence, then runs the recoverable activation
+coordinator. `stable` remains the default channel and must be advanced through
+the tested stable promotion procedure. The coordinator uses only targets in
+`config/factory-projects.json`; it does not discover projects or mutate the
+host's Cezar checkout.
+
+Before moving the pointer, activation snapshots each registered project's
+Factory automation definitions and enabled state. It swaps the channel pointer,
+reconciles desired definitions, and checks Cezar's release diagnostic, workflow
+discovery, and automation readback. Each project receives a JSON receipt under
+`receipts/`. A failed check restores the saved automation state and pointer,
+records a failed or rolled back receipt, and quarantines the candidate SHA.
+Incomplete journals are compensated before a later activation can start. A
+quarantined artifact must pass explicit `revalidate` before retrying.
+
+The configured registry must exist on the Bazzite checkout and contain explicit
+API URLs and project IDs. A missing registry or unavailable target stops
+activation before the channel pointer moves. This host-local configuration is
+not committed to the Factory repository.
 
 ## Store layout
 
@@ -56,7 +71,10 @@ python3 ~/cezar-factory/scripts/release/factory_release_controller.py rollback \
 
 ## Bazzite user timer
 
-Install the service and timer under the account that owns the Factory checkout:
+Install the service and timer under the account that owns the Factory checkout.
+The service runs `factory_activation.py activate`; the legacy autodeploy entry
+point also invokes this coordinator after its clean fast-forward, so it cannot
+reconcile automations outside the activation journal:
 
 ```bash
 mkdir -p ~/.config/systemd/user
