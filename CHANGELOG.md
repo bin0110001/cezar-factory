@@ -1,21 +1,9 @@
 # Changelog
 
-## [0.3.53] - 2026-10-24
+## [0.3.51] - 2026-10-18
 
-- Added a host-local Factory release controller that stages immutable archives,
-  verifies manifests and file digests, checkpoints progress in SQLite, and
-  supports offline rollback and reference-aware retention.
-
-## [0.3.52] - 2026-10-23
-
-- Defined immutable Factory release manifests, controller state, deployment
-  receipts, and task leases with shared schemas and Cezar contract fixtures.
-  Added fail-closed digest verification and explicit incompatible-target results.
-
-## [0.3.51] - 2026-10-23
-
-- Added workflow-owned read-only GitHub backlog snapshot collection and bounded
-  reconciliation, including on-demand automation and feature-gated installation.
+- Validate every Factory workflow against Cezar's runtime schema and inspect
+  workflow PowerShell command contracts and startup coverage in CI.
 
 ## [0.3.50] - 2026-10-18
 
