@@ -37,6 +37,7 @@ describe('verification change impact selection', () => {
     expect(workflowStepSchema.safeParse({ id: 'bad', verificationSuite: 'full', verificationMode: 'explicit' }).success).toBe(false);
     expect(workflowStepSchema.safeParse({ id: 'bad', verificationSuite: 'full', verificationMode: 'component' }).success).toBe(false);
     expect(workflowStepSchema.safeParse({ id: 'bad', command: 'true', verificationGate: 'release' }).success).toBe(false);
+    expect(workflowStepSchema.safeParse({ id: 'bad', command: 'true', onFail: { retry: 'first', max: 6 } }).success).toBe(false);
   });
 
   it('selects RoomBuilder, map, parse and related performance checks without unrelated audio', async () => {

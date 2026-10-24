@@ -117,6 +117,8 @@ import { freshContinuationContext } from './continuation-context.ts';
 import { executeVerification } from '../verification/executor.ts';
 import { FindingLedger, strategyForVerificationCheck } from '../verification/finding-ledger.ts';
 import { compareVerification, VerificationBaselineStore } from '../verification/baseline.ts';
+import { historicalVerificationRetryCheckIds, verificationTriage, verificationRetryCheckIds } from '../verification/triage.ts';
+import { VerificationIntegrityGuard } from '../verification/integrity.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -419,6 +421,10 @@ interface ActiveRun {
   /** Registry snapshot used to expand `/skill` follow-ups before a backend can
    *  mistake them for its own slash commands (#676). */
   skills?: Skill[];
+  /** Failed check IDs from the last verification iteration, scoped to the next repair rerun. */
+  verificationRetryCheckIds?: Map<string, string[]>;
+  /** Trusted in-memory integrity snapshot for policy, baseline, and ledger files. */
+  verificationIntegrityGuard?: VerificationIntegrityGuard;
   /**
    * The dispatch prompt this session runs under (spec 2026-09-10-dispatch), resolved by
    * `prepareDispatchSession` — which BOTH construction sites call, because `ActiveRun` is built in
@@ -4175,6 +4181,9 @@ export class RunManager {
       if (this.requeueWhileHeld(runId, workflow, input, taskBackend, state)) return;
     }
 
+    // Snapshot policy and history before any agent can touch this task's worktree.
+    state.verificationIntegrityGuard = new VerificationIntegrityGuard(state.cwd, this.dataDir);
+
     // Handoff journal (spec 007) — seeded after the worktree exists so the
     // header can name the branch. Idempotent: an existing file stays as-is.
     const seeded = this.store.getRun(runId);
@@ -4270,6 +4279,13 @@ export class RunManager {
         startImages = undefined;
         startAttachments = [];
         checkFailure = null;
+        const protectedChanges = state.verificationIntegrityGuard?.changes() ?? [];
+        if (protectedChanges.length) {
+          const error = `verification policy or historical evidence changed by an agent (${protectedChanges.join(', ')}); an authorized owner must review and promote the change`;
+          this.finishStep(runId, step.id, 'failed', error, emit);
+          runError = error;
+          break;
+        }
         if (state.cancelled) break;
         if (failure) {
           this.finishStep(runId, step.id, 'failed', failure, emit);
@@ -4311,19 +4327,24 @@ export class RunManager {
       // A failure the check itself says is not about the diff (`onFail.retryOn`)
       // ends the run here: looping back would spend a full agent attempt on a
       // cause that is not in the worktree, twice over.
-      if (step.onFail && !retryableExit(step.onFail.retryOn, exitCode)) {
+      const retryIdsAvailable = !step.verificationSuite || (state.verificationRetryCheckIds?.get(step.id)?.length ?? 0) > 0;
+      const retryAllowed = step.verificationSuite
+        ? exitCode === 1 && retryableExit(step.onFail?.retryOn, exitCode)
+        : retryableExit(step.onFail?.retryOn, exitCode);
+      if (step.onFail && (!retryAllowed || !retryIdsAvailable)) {
         const codes = (step.onFail.retryOn ?? []).join(', ');
+        const reason = !retryIdsAvailable ? 'no impacted failed checks were identified for a scoped repair rerun' : `check exited ${exitCode} — not retried (onFail.retryOn: ${codes})`;
         emit({
           type: 'note',
           stepId: step.id,
-          message: `check exited ${exitCode} — not retried (onFail.retryOn: ${codes})`,
+          message: reason,
         });
         this.finishStep(runId, step.id, 'failed', `\`${checkLabel}\` exited ${exitCode}`, emit);
-        runError = `check "${step.id}" exited ${exitCode}, which onFail.retryOn (${codes}) does not retry`;
+        runError = !retryIdsAvailable ? `check "${step.id}" failed but no scoped repair checks were identified` : `check "${step.id}" exited ${exitCode}, which onFail.retryOn (${codes}) does not retry`;
         break;
       }
 
-      const used = retriesUsed.get(step.id) ?? 0;
+      const used = Math.max(retriesUsed.get(step.id) ?? 0, Math.max(0, iteration - 1));
       if (step.onFail && used < step.onFail.max) {
         retriesUsed.set(step.id, used + 1);
         checkFailure = output;
@@ -4509,7 +4530,7 @@ export class RunManager {
     const treeBlocks = [treeReports, treeInbox].filter((block): block is string => Boolean(block));
     if (treeBlocks.length) userPrompt = `${treeBlocks.join('\n\n')}\n\n---\n\n${userPrompt}`;
     if (checkFailure) {
-      userPrompt += `\n\nA verification command failed after the previous attempt. Fix the cause. Failing output:\n\n${checkFailure}`;
+      userPrompt += `\n\nA prior check did not pass. Address the failure shown below. For verification results, repair only the named impacted checks. Do not weaken verification policy, change mandatory check selection, baseline approvals, or historical evidence. Details are linked below.\n\n${checkFailure}`;
     }
     if (images?.length) {
       emit({
@@ -5650,15 +5671,34 @@ export class RunManager {
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
     if (step.verificationSuite) {
+      const changedProtectedFiles = state.verificationIntegrityGuard?.changes() ?? [];
+      if (changedProtectedFiles.length) {
+        const message = `verification policy or historical evidence changed outside the scheduler (${changedProtectedFiles.join(', ')})`;
+        emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
+        return { ok: false, output: message, exitCode: 3 };
+      }
       const snapshot = await autosaveCommit(state.cwd, 'periodic');
       if (snapshot === 'refused' || snapshot === 'failed') {
         const message = `verification could not snapshot worktree (${snapshot})`;
         emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
         return Promise.resolve({ ok: false, output: message, exitCode: 3 });
       }
-      const mode = step.verificationMode ?? 'all';
+      const stepIteration = this.store.getRun(runId)?.steps.find((item) => item.id === step.id)?.iterations ?? 1;
+      let retryIds = step.onFail && stepIteration > 1 ? state.verificationRetryCheckIds?.get(step.id) : undefined;
+      if (step.onFail && stepIteration > 1 && !retryIds?.length) {
+        try {
+          const ledger = FindingLedger.open(join(this.repoRoot, '.ai/cezar'), createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'));
+          const [occurrences, findings] = await Promise.all([ledger.occurrences(), ledger.findings()]);
+          retryIds = historicalVerificationRetryCheckIds(runId, occurrences, findings);
+          if (retryIds.length) {
+            state.verificationRetryCheckIds ??= new Map();
+            state.verificationRetryCheckIds.set(step.id, retryIds);
+          }
+        } catch { retryIds = undefined; }
+      }
+      const mode = retryIds?.length ? 'explicit' : step.verificationMode ?? 'all';
       let lastFailedCheckIds: string[] | undefined;
-      if (mode === 'last-failed') {
+      if (mode === 'last-failed' && !retryIds?.length) {
         try {
           const ledger = await FindingLedger.open(join(this.repoRoot, '.ai/cezar'), createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'));
           lastFailedCheckIds = [...new Set((await ledger.findings()).filter((finding) => finding.status === 'open' && !finding.canonicalId).map((finding) => finding.checkId))];
@@ -5675,7 +5715,7 @@ export class RunManager {
         selection: {
           mode,
           ...(step.verificationBase || this.store.getRun(runId)?.baseBranch ? { baseRef: step.verificationBase ?? this.store.getRun(runId)?.baseBranch } : {}),
-          ...(step.verificationChecks ? { checkIds: step.verificationChecks } : {}),
+          ...(retryIds?.length ? { checkIds: retryIds } : step.verificationChecks ? { checkIds: step.verificationChecks } : {}),
           ...(step.verificationComponents ? { componentTags: step.verificationComponents } : {}),
           ...(lastFailedCheckIds ? { lastFailedCheckIds } : {}),
         },
@@ -5685,25 +5725,38 @@ export class RunManager {
         let exitCode = run.semanticExitCode;
         let gateReport: ReturnType<typeof compareVerification> | undefined;
         let comparisonPath: string | undefined;
+        let integrityUpdateSucceeded = false;
+        let triage = '';
         try {
           const strategies = Object.fromEntries(run.checks.map((check) => [check.checkId, strategyForVerificationCheck(check.checkId, check.diagnostics[0]?.code)]));
           const projectId = createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex');
           const ledger = FindingLedger.open(join(this.repoRoot, '.ai/cezar'), projectId);
           await ledger.ingestRun(run, strategies);
+          const ledgerOccurrences = await ledger.occurrences();
+          const ledgerFindings = await ledger.findings();
           if (step.verificationGate) {
             const baselineStore = new VerificationBaselineStore(join(this.repoRoot, '.ai/cezar'), projectId, async () => false);
             const baseline = await baselineStore.current();
             if (!baseline) throw new Error('verification gate requires an owner-reviewed baseline');
-            gateReport = compareVerification({ run, selection, baseline, occurrences: await ledger.occurrences(), mode: step.verificationGate });
+            gateReport = compareVerification({ run, selection, baseline, occurrences: ledgerOccurrences, mode: step.verificationGate });
             comparisonPath = await baselineStore.recordComparison(gateReport);
             exitCode = (step.verificationGate === 'development' ? gateReport.developmentProgressAllowed : gateReport.releaseReady) ? 0 : 1;
           }
+          const retryCheckIds = verificationRetryCheckIds(run, gateReport);
+          if (step.onFail && exitCode === 1 && retryCheckIds.length) {
+            state.verificationRetryCheckIds ??= new Map();
+            state.verificationRetryCheckIds.set(step.id, retryCheckIds);
+          } else state.verificationRetryCheckIds?.delete(step.id);
+          triage = verificationTriage({ run, selection, occurrences: ledgerOccurrences, findings: ledgerFindings, ...(gateReport ? { comparison: gateReport } : {}), resultPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), root: state.cwd });
+          integrityUpdateSucceeded = true;
         } catch (error) {
           emit({ type: 'note', stepId: step.id, message: `verification ${step.verificationGate ? 'gate evaluation' : 'finding ledger update'} failed: ${error instanceof Error ? error.message : String(error)}` });
-          if (step.verificationGate) exitCode = 3;
+          state.verificationRetryCheckIds?.delete(step.id);
+          exitCode = 3;
         }
+        if (integrityUpdateSucceeded) state.verificationIntegrityGuard?.refresh();
         emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), selection: run.artifacts[0]?.path, coverage: run.coverage, ...(gateReport ? { baselineComparison: { path: comparisonPath, counts: gateReport.counts, developmentProgressAllowed: gateReport.developmentProgressAllowed, verificationGreen: gateReport.verificationGreen, releaseReady: gateReport.releaseReady, baselineRevision: gateReport.baselineRevision } } : {}), exitCode });
-        return { ok: exitCode === 0, output: output || `verification status: ${run.status}`, exitCode };
+        return { ok: exitCode === 0, output: triage || output || `verification status: ${run.status}`, exitCode };
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
