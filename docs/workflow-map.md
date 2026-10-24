@@ -18,14 +18,15 @@ activity from which to advance its cursor.
 | Fix succeeds | `factory:review` | Review | `factory:review` |
 | Implementation fails | `factory:investigate` | Investigation | `factory:investigate` |
 | Investigation retry approved | `factory:ready` plus retained complexity | Implementation | `factory:ready` plus `complexity:*` |
-| Review approved with a PR URL | Auto-merge requested, then `factory:done` | GitHub auto-merge | All risk levels after validation and independent review |
+| Review approved with a PR URL | Verify current-head eligibility, request auto-merge with the expected head, and mark done only after GitHub reports merge | GitHub auto-merge | All risk levels after validation and independent review |
 | Plan decomposes into children | Parent closes as tracking work; children enter `factory:needs-plan` | Planning then implementation proceeds in dependency order |
 
-The current router marks `factory:done` when it requests auto-merge; that label
-does not prove the PR has merged. An approved review without a PR URL returns
-to implementation through `factory:changes-requested`. The merge-gate audit in
-[issue #20](https://github.com/bin0110001/cezar-factory/issues/20) tracks checks
-that must be enforced before this handoff can be treated as verified completion.
+The merge eligibility check reads the current PR head, clean full/verify
+receipts, required checks, effective `dev` rules, independent approval, and
+review-thread state. Missing policy or unreadable evidence denies the merge
+request. If GitHub queues auto-merge but has not reported completion, the issue
+stays in `factory:review`; an approved review without a PR URL returns to
+implementation through `factory:changes-requested`.
 
 Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the

@@ -129,6 +129,9 @@ if (-not $errors.Count) {
         'review' {
             if ($result.approvalChangeRequestStatus -eq 'change-request' -and (Blank $result.blockingFindings)) { $errors.Add('change-request requires blockingFindings') }
             if ($result.approvalChangeRequestStatus -eq 'approval' -and -not (Blank $result.blockingFindings)) { $errors.Add('approval must not carry blockingFindings') }
+            if (-not (Qualified-PrUrl $result.pr)) { $errors.Add('review result requires a qualified GitHub PR URL') }
+            if ([string]$result.reviewedHeadSha -notmatch '^[0-9a-fA-F]{40}$') { $errors.Add('reviewedHeadSha must be the 40-character PR head SHA') }
+            if (Blank $result.reviewerIdentity) { $errors.Add('reviewerIdentity must identify the independent reviewer') }
         }
         'investigation' {
             $allowed = 'implementation', 'test', 'flaky-test', 'environment', 'dependency', 'merge-conflict', 'requirements', 'architecture', 'unknown'
