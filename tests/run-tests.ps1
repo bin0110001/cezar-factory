@@ -75,7 +75,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/recover-audit-reservations.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
-'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
+'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
@@ -785,6 +785,20 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
+$pythonRunner = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { $null }
+if ($pythonRunner) {
+    $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') }
+    Push-Location $factory
+    try {
+        $pythonOutput = & $pythonRunner @pythonArgs *>&1 | Out-String
+        $pythonCode = $LASTEXITCODE
+        Write-Host $pythonOutput
+        Assert 'release controller unit tests pass' ($pythonCode -eq 0)
+    }
+    finally { Pop-Location }
+} else {
+    Assert 'Python 3 is available for release controller tests' $false
+}
 $bazzCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
 Assert 'Cezar loads Factory workflows and skills from the mounted checkout' ($bazzCompose -match 'CEZ_SHARED_WORKFLOWS_DIRS:.*/workflows' -and $bazzCompose -match 'CEZ_SHARED_SKILL_DIRS:.*/skills')
 $autodeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/factory-autodeploy.sh')
