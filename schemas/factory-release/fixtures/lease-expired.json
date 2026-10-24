@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "factory-release-lease/v1",
+  "runId": "run-fixture-expired",
+  "projectId": "tableflux-animation-pipeline",
+  "channel": "stable",
+  "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+  "state": "expired",
+  "acquiredAt": "2026-10-22T18:03:00Z",
+  "heartbeatAt": "2026-10-22T18:04:00Z",
+  "expiresAt": "2026-10-22T18:09:00Z"
+}
