@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { runnerSchema } from './health.ts';
+import { factoryReleaseProvenanceSchema } from './releases.ts';
 
 /**
  * The WORKFLOWS family: the chain catalog, the save/parse routes, and the planner.
@@ -55,6 +56,8 @@ export const workflowDefSchema = z.object({
   source: z.enum(['built-in', 'file']),
   /** Absent on built-ins — which is exactly what makes them undeletable. */
   path: z.string().optional(),
+  /** Version of shared Factory content selected when this task was created. */
+  factoryRelease: factoryReleaseProvenanceSchema.optional(),
 });
 export type WorkflowDef = z.infer<typeof workflowDefSchema>;
 

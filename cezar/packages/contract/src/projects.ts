@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { trackerKindSchema } from './tracker.ts';
 
+export const factoryChannelSchema = z.enum(['dev', 'stable']);
+export type FactoryChannel = z.infer<typeof factoryChannelSchema>;
+
 /**
  * The project-registry family: `GET/POST/PATCH/DELETE /api/v1/projects`, the folder picker
  * (`GET /api/v1/fs/browse`) that feeds it, and the launch-key read.
@@ -69,6 +72,8 @@ export const projectListEntrySchema = z.object({
    * directly.
    */
   tags: z.array(z.string()).optional(),
+  /** Factory release channel selected for new tasks; absent means stable. */
+  factoryChannel: factoryChannelSchema.optional(),
 });
 export type ProjectListEntry = z.infer<typeof projectListEntrySchema>;
 
@@ -147,10 +152,11 @@ export const updateProjectInputSchema = z
       .max(PROJECT_TAGS_MAX)
       .nullable()
       .optional(),
+    factoryChannel: factoryChannelSchema.nullable().optional(),
   })
   .refine(
-    (body) => body.maxParallel !== undefined || body.tags !== undefined,
-    'specify maxParallel or tags',
+    (body) => body.maxParallel !== undefined || body.tags !== undefined || body.factoryChannel !== undefined,
+    'specify maxParallel, tags, or factoryChannel',
   );
 export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
 

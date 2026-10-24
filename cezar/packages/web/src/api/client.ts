@@ -458,7 +458,7 @@ export async function getProviderStatus(
 /** The bookmarklet auto-start secret (spec 011). Fetched to compare against `/new?key=` —
  *  never rendered, never logged, never put back into a URL. */
 export async function getLaunchKey(opts?: ReadOptions): Promise<LaunchKeyResponse> {
-  return unwrap(
+  return await unwrap(
     await cez.api.v1.p[':projectId']['launch-key'].$get(
       { param: { projectId: queryScope() } },
       init(opts),
@@ -607,6 +607,21 @@ export async function getWorkflows(opts?: ReadOptions): Promise<WorkflowsRespons
     ),
     '/workflows',
   )
+}
+
+export type FactoryReleaseStatus =
+  | { status: 'resolved'; projectId: string; channel: 'dev' | 'stable'; sourceSha: string; manifestDigest: string }
+  | { status: 'legacy'; projectId: string; channel: 'stable' }
+  | { status: 'error'; projectId: string; error: string }
+
+export async function getFactoryRelease(opts?: ReadOptions): Promise<FactoryReleaseStatus> {
+  return (await unwrap(
+    await cez.api.v1.p[':projectId']['factory-release'].$get(
+      { param: { projectId: queryScope() } },
+      init(opts),
+    ),
+    '/factory-release',
+  )) as unknown as FactoryReleaseStatus
 }
 
 export async function getSkills(opts?: ReadOptions): Promise<Skill[]> {

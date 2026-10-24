@@ -70,5 +70,19 @@ Inspect the most recent result with `systemctl --user status
 factory-release-controller.service` and `journalctl --user -u
 factory-release-controller.service`. The unit runs as the checkout owner, uses a
 private temporary directory, has no privilege escalation, and locks locally.
-The artifact store is not yet the Cezar mount; project-specific runtime
-resolution is a separate integration step.
+The release store is mounted read-write into Cezar because it must update the
+controller SQLite lease table when runs start and finish; Cezar itself only
+uses the release directories for reads. It is mounted at
+`/var/lib/cezar-factory/release-store`. To enable channel-pinned reads, set
+`FACTORY_RELEASE_STORE_HOST_DIR` to the host store and
+`CEZ_FACTORY_RELEASE_STORE=/var/lib/cezar-factory/release-store` in the Bazzite
+environment, then restart Cezar. Leave the Cezar variable unset until both
+`dev` and `stable` pointers have verified manifests. Existing projects default
+to `stable`; `PATCH /api/v1/projects/<id>` can select `dev` for new tasks.
+
+Cezar resolves one full SHA when a task starts, records its channel, SHA and
+manifest digest in run provenance, reads workflow and skill content from that
+immutable release, and exports its path as `FACTORY_RUNTIME_ROOT` to check
+commands and agents. Queued and resumed runs revalidate the recorded SHA rather
+than following a moved channel pointer. Active runs protect their release with
+the controller's retention reference and release that reference at completion.
