@@ -33,8 +33,10 @@ describe('verification change impact selection', () => {
   it('validates scheduler-owned selection modes on verification workflow steps', () => {
     const step = workflowStepSchema.parse({ id: 'verify-room', verificationSuite: 'full', verificationMode: 'component', verificationComponents: ['room'] });
     expect(stepKind(step)).toBe('check');
+    expect(workflowStepSchema.parse({ id: 'verify-gated', verificationSuite: 'full', verificationGate: 'development' }).verificationGate).toBe('development');
     expect(workflowStepSchema.safeParse({ id: 'bad', verificationSuite: 'full', verificationMode: 'explicit' }).success).toBe(false);
     expect(workflowStepSchema.safeParse({ id: 'bad', verificationSuite: 'full', verificationMode: 'component' }).success).toBe(false);
+    expect(workflowStepSchema.safeParse({ id: 'bad', command: 'true', verificationGate: 'release' }).success).toBe(false);
   });
 
   it('selects RoomBuilder, map, parse and related performance checks without unrelated audio', async () => {
