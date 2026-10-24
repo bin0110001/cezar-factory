@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.45] - 2026-10-23
+
+- Added an on-demand, workflow-owned backlog reconciliation path that collects
+  GitHub state and reports a bounded dry-run proposal without claiming or
+  dispatching issues.
+
 ## [0.3.44] - 2026-10-11
 
 - Added expiring, Cezar-aware recovery for abandoned `factory:auditing`
