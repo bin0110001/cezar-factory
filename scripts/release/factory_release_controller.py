@@ -591,6 +591,21 @@ class ReleaseController:
             self._finish(attempt_id, "failed", reason=str(exc)[:2000], sha=sha, retries=retries)
             raise
 
+    def stage_sha(self, sha: str) -> dict[str, Any]:
+        """Stage one already selected commit without following a moving branch ref."""
+        if not SHA_RE.fullmatch(sha):
+            raise ControllerError("stage requires a full lowercase commit SHA")
+        attempt_id = self._attempt()
+        try:
+            run_git(self.repo, "cat-file", "-e", f"{sha}^{{commit}}")
+            artifact = self._build(sha, attempt_id)
+            result = {"status": "staged", **artifact, "channel": self.channel, "retryCount": 0}
+            self._finish(attempt_id, "staged", sha=sha)
+            return result
+        except Exception as exc:
+            self._finish(attempt_id, "failed", reason=str(exc)[:2000], sha=sha)
+            raise
+
     def recover_interrupted_attempts(self) -> int:
         now = utc_now()
         with self._db() as db:

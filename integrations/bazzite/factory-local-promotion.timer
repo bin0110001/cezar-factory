@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll merged Factory dev changes for local validation
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=factory-local-promotion.service
+
+[Install]
+WantedBy=timers.target
