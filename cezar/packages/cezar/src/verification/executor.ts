@@ -9,6 +9,7 @@ import {
   type VerificationCheckRun, type VerificationManifest, type VerificationRun,
 } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
+import { selectVerificationChecks, type SelectionRequest, type VerificationSelection } from './selection.ts';
 
 const execFileAsync = promisify(execFile);
 const MANIFEST_PATH = '.ai/factory/factory.config.yaml';
@@ -22,6 +23,7 @@ export interface VerificationExecutionInput {
   suite: string;
   availableCapabilities?: string[];
   adapter?: VerificationAdapter;
+  selection?: SelectionRequest;
   cancelled?: () => boolean;
   onOutput?: (text: string) => void;
 }
@@ -47,6 +49,7 @@ export interface VerificationExecutionResult {
   run: VerificationRun;
   artifactPath: string;
   output: string;
+  selection: VerificationSelection;
 }
 
 async function withResources<T>(keys: string[], cancelled: () => boolean, fn: () => Promise<T>): Promise<T> {
@@ -83,6 +86,7 @@ function aggregate(checks: VerificationCheckRun[]): VerificationRun['status'] {
   if (checks.some((c) => c.status === 'infrastructure-error')) return 'infrastructure-error';
   if (checks.some((c) => c.status === 'failed')) return 'failed';
   if (checks.some((c) => c.status === 'unknown')) return 'unknown';
+  if (checks.length > 0 && checks.every((c) => c.status === 'not-selected')) return 'not-selected';
   if (checks.some((c) => c.status === 'no-tests') || checks.length === 0) return 'no-tests';
   if (checks.some((c) => c.required && c.status === 'skipped')) return 'skipped';
   return 'passed';
@@ -105,12 +109,26 @@ async function writeResult(root: string, id: string, run: VerificationRun): Prom
   const realBase = await realpath(base);
   if (!inside(root, realBase)) throw new Error('verification artifact directory escapes worktree');
   const runDir = join(realBase, id);
-  await mkdir(runDir, { recursive: false });
+  await mkdir(runDir, { recursive: true });
   const realRunDir = await realpath(runDir);
   if (!inside(realBase, realRunDir)) throw new Error('verification run artifact directory escapes its root');
   const artifactPath = join(realRunDir, 'result.json');
   await writeFile(artifactPath, `${JSON.stringify(run, null, 2)}\n`, { flag: 'wx' });
   return artifactPath;
+}
+
+async function writeArtifact(root: string, id: string, name: string, bytes: Buffer): Promise<string> {
+  const base = join(root, ARTIFACT_ROOT);
+  await mkdir(base, { recursive: true });
+  const realBase = await realpath(base);
+  if (!inside(root, realBase)) throw new Error('verification artifact directory escapes worktree');
+  const runDir = join(realBase, id);
+  await mkdir(runDir, { recursive: true });
+  const realRunDir = await realpath(runDir);
+  if (!inside(realBase, realRunDir)) throw new Error('verification run artifact directory escapes its root');
+  const path = join(realRunDir, name);
+  await writeFile(path, bytes, { flag: 'wx' });
+  return path;
 }
 
 async function killTree(child: ReturnType<typeof spawn>): Promise<void> {
@@ -184,7 +202,7 @@ async function incompleteRun(input: VerificationExecutionInput, root: string, ra
     coverage: { selected: 1, passed: 0, failed: 0, skipped: 0, unknown: 1 }, checks: [check], artifacts: [],
   });
   const artifactPath = await writeResult(root, id, run);
-  return { run, artifactPath, output: safeMessage };
+  return { run, artifactPath, output: safeMessage, selection: { version: 1, mode: input.selection?.mode ?? 'all', suite: input.suite, changedPaths: [], fallbackUsed: true, checks: [] } };
 }
 
 /** Execute an explicitly selected project suite; shell parsing and host secrets are excluded. */
@@ -204,6 +222,10 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
   const manifest = parsed.data;
   const selected = manifest.suites[input.suite];
   if (!selected) return incompleteRun(input, root, raw, `unknown verification suite: ${input.suite}`);
+  const selectionRequest = input.selection ?? { mode: 'all' as const };
+  let selectionResult;
+  try { selectionResult = await selectVerificationChecks(root, manifest, input.suite, selectionRequest); }
+  catch (error) { return incompleteRun(input, root, raw, `verification selection failed: ${error instanceof Error ? error.message : String(error)}`); }
   let discovered: string[] = [];
   try { discovered = (await input.adapter?.discover?.(root)) ?? []; }
   catch { /* discovery is optional; an undeclared requirement remains unknown/skipped */ }
@@ -214,7 +236,8 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
   const checkRuns: VerificationCheckRun[] = [];
   let combined = '';
 
-  for (const checkId of selected) {
+  const selectedSet = new Set(selectionResult.selectedIds);
+  for (const checkId of selectionResult.selectedIds) {
     const check = manifest.checks[checkId]!;
     const required = !check.optional;
     const checkStarted = Date.now();
@@ -269,9 +292,18 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter cleanup failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
     checkRuns.push(checkRun);
   }
+  for (const checkId of selected) {
+    if (selectedSet.has(checkId)) continue;
+    checkRuns.push({ checkId, required: !manifest.checks[checkId]!.optional, attempt: 1, status: 'not-selected', rawExitCode: null, semanticExitCode: 2, durationMs: 0, outputPreview: '', outputTruncated: false, diagnostics: [], metrics: [], coverage: { selected: 0, passed: 0, skipped: 0 }, artifacts: [] });
+  }
+  checkRuns.sort((a, b) => selected.indexOf(a.checkId) - selected.indexOf(b.checkId));
   const status = aggregate(checkRuns);
   const headSha = await (await import('../server/git.ts')).getHeadCommit(root);
   if (!headSha) throw new Error('verification worktree has no readable HEAD commit');
+  const selectionBytes = Buffer.from(`${JSON.stringify(selectionResult.selection, null, 2)}\n`, 'utf8');
+  await writeArtifact(root, id, 'selection.json', selectionBytes);
+  const selectionPath = `${ARTIFACT_ROOT}/${id}/selection.json`;
+  const selectionArtifact = { path: selectionPath, mediaType: 'application/json', bytes: selectionBytes.length, sha256: createHash('sha256').update(selectionBytes).digest('hex') };
   const run: VerificationRun = verificationRunSchema.parse({
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
@@ -279,9 +311,9 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt, finishedAt: new Date().toISOString(),
     toolVersions: { node: process.versions.node, ...Object.fromEntries(Object.entries(manifest.checks).map(([key, value]) => [key, `unreported (${value.executable})`])) },
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
-    coverage: { selected: checkRuns.length, passed: checkRuns.filter((c) => c.status === 'passed').length, failed: checkRuns.filter((c) => c.status === 'failed').length, skipped: checkRuns.filter((c) => c.status === 'skipped').length, unknown: checkRuns.filter((c) => ['unknown', 'infrastructure-error', 'cancelled', 'no-tests'].includes(c.status)).length },
-    checks: checkRuns, artifacts: [],
+    coverage: { selected: checkRuns.reduce((n, c) => n + c.coverage.selected, 0), passed: checkRuns.filter((c) => c.status === 'passed').length, failed: checkRuns.filter((c) => c.status === 'failed').length, skipped: checkRuns.filter((c) => c.status === 'skipped').length, unknown: checkRuns.filter((c) => ['unknown', 'infrastructure-error', 'cancelled', 'no-tests'].includes(c.status)).length },
+    checks: checkRuns, artifacts: [selectionArtifact],
   });
   const artifactPath = await writeResult(root, id, run);
-  return { run, artifactPath, output: sanitizeOutput(combined, root, secretValues) };
+  return { run, artifactPath, output: sanitizeOutput(combined, root, secretValues), selection: selectionResult.selection };
 }

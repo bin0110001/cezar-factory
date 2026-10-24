@@ -1,0 +1,49 @@
+{
+  "resultVersion": 1,
+  "verificationId": "v-partial-selection",
+  "cezarRunId": "r-partial-selection",
+  "projectId": "p-1",
+  "worktreeId": "w-1",
+  "commitSha": "0123456789012345678901234567890123456789",
+  "manifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "startedAt": "2026-10-23T12:00:00Z",
+  "finishedAt": "2026-10-23T12:00:01Z",
+  "toolVersions": {},
+  "environment": {},
+  "status": "passed",
+  "semanticExitCode": 0,
+  "coverage": { "selected": 1, "passed": 1, "failed": 0, "skipped": 0, "unknown": 0 },
+  "checks": [
+    {
+      "checkId": "parse",
+      "required": true,
+      "attempt": 1,
+      "status": "passed",
+      "rawExitCode": 0,
+      "semanticExitCode": 0,
+      "durationMs": 100,
+      "outputPreview": "ok",
+      "outputTruncated": false,
+      "diagnostics": [],
+      "metrics": [],
+      "coverage": { "selected": 1, "passed": 1, "skipped": 0 },
+      "artifacts": []
+    },
+    {
+      "checkId": "audio",
+      "required": true,
+      "attempt": 1,
+      "status": "not-selected",
+      "rawExitCode": null,
+      "semanticExitCode": 2,
+      "durationMs": 0,
+      "outputPreview": "",
+      "outputTruncated": false,
+      "diagnostics": [],
+      "metrics": [],
+      "coverage": { "selected": 0, "passed": 0, "skipped": 0 },
+      "artifacts": []
+    }
+  ],
+  "artifacts": []
+}

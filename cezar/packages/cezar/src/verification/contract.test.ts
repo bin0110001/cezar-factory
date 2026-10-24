@@ -21,7 +21,7 @@ describe('versioned verification contracts', () => {
   });
 
   it('accepts conclusive results and fails closed for incomplete evidence', async () => {
-    for (const name of ['passing-result.json', 'optional-skip-result.json', 'truncated-result.json', 'failed-result.json', 'required-skip-result.json', 'no-tests-result.json', 'parser-error-result.json', 'infrastructure-error-result.json', 'cancelled-result.json']) {
+    for (const name of ['passing-result.json', 'optional-skip-result.json', 'truncated-result.json', 'failed-result.json', 'required-skip-result.json', 'no-tests-result.json', 'parser-error-result.json', 'infrastructure-error-result.json', 'cancelled-result.json', 'not-selected-result.json', 'partial-selection-passing-result.json']) {
       const result = await read(name);
       expect(verificationRunSchema.safeParse(result).success, name).toBe(true);
     }
@@ -43,6 +43,6 @@ describe('versioned verification contracts', () => {
   it('validates fixtures with an independent Node-only consumer', async () => {
     const consumer = fileURLToPath(new URL('./fixture-consumer.mjs', import.meta.url));
     const output = execFileSync(process.execPath, [consumer, fileURLToPath(fixtures)], { encoding: 'utf8' });
-    expect(output).toContain('Verification fixtures passed (19,');
+    expect(output).toContain('Verification fixtures passed (21,');
   });
 });
