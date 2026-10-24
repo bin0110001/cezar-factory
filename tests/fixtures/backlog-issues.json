@@ -1,0 +1,46 @@
+[
+  {
+    "number": 1,
+    "state": "CLOSED",
+    "labels": [],
+    "createdAt": "2026-01-01T00:00:00Z",
+    "body": "",
+    "comments": []
+  },
+  {
+    "number": 2,
+    "state": "OPEN",
+    "labels": [
+      { "name": "factory:ready" }
+    ],
+    "createdAt": "2026-01-02T00:00:00Z",
+    "body": "",
+    "comments": []
+  },
+  {
+    "number": 3,
+    "state": "OPEN",
+    "labels": [
+      { "name": "factory:ready" },
+      { "name": "priority:8" }
+    ],
+    "createdAt": "2026-01-03T00:00:00Z",
+    "body": "Depends on #2",
+    "comments": [
+      { "body": "<!-- factory-lease:3 -->\n{\"issue\":3,\"owner\":\"worker\",\"createdAt\":\"2026-10-23T00:00:00Z\",\"expiresAt\":\"2099-10-23T00:30:00Z\",\"releasedAt\":null}" }
+    ]
+  },
+  {
+    "number": 4,
+    "state": "OPEN",
+    "labels": [
+      { "name": "factory:ready" },
+      { "name": "priority:5" }
+    ],
+    "createdAt": "2026-01-04T00:00:00Z",
+    "body": "Depends on #1",
+    "comments": [
+      { "body": "<!-- factory-lease:4 -->\n{\"issue\":4,\"owner\":\"worker\",\"createdAt\":\"2026-10-23T00:00:00Z\",\"expiresAt\":\"2099-10-23T00:30:00Z\",\"releasedAt\":\"2026-10-23T00:10:00Z\"}" }
+    ]
+  }
+]
