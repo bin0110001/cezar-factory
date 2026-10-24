@@ -115,6 +115,7 @@ import {
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
 import { executeVerification } from '../verification/executor.ts';
+import { FindingLedger, strategyForVerificationCheck } from '../verification/finding-ledger.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -5661,8 +5662,14 @@ export class RunManager {
         suite: step.verificationSuite,
         cancelled: () => state.cancelled,
         onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),
-      }).then(({ run, artifactPath, output }) => {
+      }).then(async ({ run, artifactPath, output }) => {
         const exitCode = run.semanticExitCode;
+        try {
+          const strategies = Object.fromEntries(run.checks.map((check) => [check.checkId, strategyForVerificationCheck(check.checkId, check.diagnostics[0]?.code)]));
+          await FindingLedger.open(join(this.repoRoot, '.ai/cezar'), createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex')).ingestRun(run, strategies);
+        } catch (error) {
+          emit({ type: 'note', stepId: step.id, message: `verification finding ledger update failed: ${error instanceof Error ? error.message : String(error)}` });
+        }
         emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), coverage: run.coverage, exitCode });
         return { ok: run.status === 'passed', output: output || `verification status: ${run.status}`, exitCode };
       }).catch((error: unknown) => {
