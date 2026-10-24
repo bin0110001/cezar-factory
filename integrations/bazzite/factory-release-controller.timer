@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll the protected Factory release channel every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=factory-release-controller.service
+
+[Install]
+WantedBy=timers.target

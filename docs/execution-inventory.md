@@ -12,7 +12,9 @@ It is deliberately an index, not a second policy source; `routing/automation-cat
 | Local advisory jobs | LiteLLM + vLLM | `scripts/local/run-local-job.ps1`, `routing/local-jobs.yaml` |
 | Automation selection | Factory catalog | `routing/automation-catalog.json`, `scripts/validate-automation-catalog.ps1` |
 | Bounded recall and retention | Hindsight | `scripts/hindsight/*`, `integrations/hindsight/*` |
-| Backlog selection and leases | Factory reconciler / GitHub | `scripts/reconcile-backlog.ps1`, `scripts/lease.ps1` |
+| Backlog selection and leases | Factory reconciliation workflow / GitHub | `workflows/backlog-reconciliation.yaml`, `scripts/collect-backlog-snapshot.ps1`, `scripts/reconcile-backlog.ps1`, `scripts/lease.ps1` |
+| Immutable release identity and target receipts | Shared Factory/Cezar contract | `schemas/factory-release/`, `cezar/packages/contract/src/releases.ts`, shared fixtures under `schemas/factory-release/fixtures/` |
+| Host-local immutable release staging | Bazzite user systemd timer / Factory controller | `scripts/release/factory_release_controller.py`, `integrations/bazzite/factory-release-controller.*`, `docs/factory-release-controller.md` |
 | Telemetry | Langfuse, Prometheus, Grafana | `integrations/langfuse`, `integrations/bazzite/grafana` |
 
 Hindsight is deployed and the NeonPath planning pilot consumed a bounded recall
