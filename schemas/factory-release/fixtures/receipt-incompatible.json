@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "factory-deployment-receipt/v1",
+  "receiptId": "receipt-fixture-incompatible",
+  "targetId": "cezar-factory",
+  "channel": "dev",
+  "desiredSha": "0123456789abcdef0123456789abcdef01234567",
+  "actualSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "observedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "idempotencyKey": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "activationGeneration": 5,
+  "attempt": 1,
+  "state": "incompatible",
+  "compatibility": { "status": "incompatible", "cezarVersion": "0.14.0", "capabilities": [], "reasonCode": "missing-required-capability" },
+  "requestedAt": "2026-10-23T19:00:00Z",
+  "reasonCode": "missing-required-capability",
+  "message": "Target does not expose a required runtime capability."
+}

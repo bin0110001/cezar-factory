@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "factory-deployment-receipt/v1",
+  "receiptId": "receipt-fixture-staged",
+  "targetId": "cezar-factory",
+  "channel": "dev",
+  "desiredSha": "0123456789abcdef0123456789abcdef01234567",
+  "actualSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "observedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "idempotencyKey": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "activationGeneration": 6,
+  "attempt": 2,
+  "state": "staged",
+  "requestedAt": "2026-10-23T20:00:00Z",
+  "stagedAt": "2026-10-23T20:01:00Z",
+  "reasonCode": "activation-interrupted"
+}
