@@ -4,6 +4,7 @@ import {
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
+import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -2661,7 +2662,7 @@ export function createApp(deps: ServerDeps) {
       const parsed = { data: c.req.valid('json') };
       // `default` is the boot alias the cockpit is allowed to use everywhere else.
       const id = raw === 'default' ? await resolveBootProject() : raw;
-      const { maxParallel, tags } = parsed.data;
+      const { maxParallel, tags, factoryChannel } = parsed.data;
 
       // Read-first (mirroring DELETE, server.ts:1252-1258): a well-formed but
       // unknown id must 404 WITHOUT rewriting the config — otherwise it would both
@@ -2697,6 +2698,10 @@ export function createApp(deps: ServerDeps) {
             const normalized = normalizeProjectTags(tags);
             if (normalized === undefined) delete entry.tags;
             else entry.tags = normalized;
+          }
+          if (factoryChannel !== undefined) {
+            if (factoryChannel === null) delete entry.factoryChannel;
+            else entry.factoryChannel = factoryChannel;
           }
           updated = entry;
         });
@@ -3292,12 +3297,16 @@ export function createApp(deps: ServerDeps) {
   // ---- chained family: skills (project-scoped) ----
   const skillsRoutes = new Hono<ProjectApiEnv>()
     .get('/skills', queryZodValidator(waitQuery), async (c) => {
-      const repoRoot = c.get('project').root;
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       // The default read stays fast and starts the team load in the background.
       // The cockpit follows it with `wait=1`, off the render path, so a cold
       // cache converges without polling or a manual reload (spec 005 / #555).
       if (c.req.valid('query').wait === '1') await waitForTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     })
 
     // The opt-in catalog for the "Import skills" panel: every skill a default
@@ -3327,9 +3336,13 @@ export function createApp(deps: ServerDeps) {
     // then return the merged catalog. Degrades quietly — offline just means the
     // team entries stay as they were (or absent).
     .post('/skills/refresh', async (c) => {
-      const { root: repoRoot } = c.get('project');
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       await refreshTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     });
 
   // ---- chained family: GUI prefs / ui-state (project-scoped) ----
@@ -3360,7 +3373,26 @@ export function createApp(deps: ServerDeps) {
   // table and the versioned `v1` one — see `healthRoutes` for why the chain
   // shape (not the statement shape) is what carries the types.
   const workflowsRoutes = new Hono<ProjectApiEnv>()
-    .get('/workflows', async (c) => c.json(await loadWorkflows(c.get('project').root)))
+    .get('/factory-release', async (c) => {
+      const project = c.get('project');
+      try {
+        const release = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(release
+          ? { status: 'resolved', projectId: project.id, channel: release.channel, sourceSha: release.sourceSha, manifestDigest: release.manifestDigest }
+          : { status: 'legacy', projectId: project.id, channel: 'stable' });
+      } catch (error) {
+        return c.json({ status: 'error', projectId: project.id, error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
+    .get('/workflows', async (c) => {
+      const project = c.get('project');
+      try {
+        const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(await loadWorkflows(project.root, { factoryRelease }));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
 
     // Save an approved plan as a reusable chain (spec 008): YAML in
     // `.ai/cezar/workflows/<slug>.yaml` — from then on it's in the dropdown
@@ -4108,11 +4140,15 @@ export function createApp(deps: ServerDeps) {
     })
 
     .post('/runs', jsonZodValidator(startRunSchema), async (c) => {
-      const { root: repoRoot, dataDir, manager } = c.get('project');
+      const project = c.get('project');
+      const { root: repoRoot, dataDir, manager } = project;
       const parsed = { data: c.req.valid('json') };
       if (agentModelsLocked(repoRoot) && parsed.data.model?.trim()) {
         return c.json({ error: AGENT_MODELS_LOCKED_ERROR }, 409);
       }
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       let workflow: WorkflowDef | undefined;
       if (parsed.data.steps) {
         // Inline chain (spec 008): an approved plan runs as an ad-hoc workflow.
@@ -4122,9 +4158,10 @@ export function createApp(deps: ServerDeps) {
           name: '(planned)',
           source: 'built-in',
           steps: parsed.data.steps,
+          ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
         };
       } else {
-        const { workflows } = await loadWorkflows(repoRoot);
+        const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
         workflow = workflows.find((w) => w.name === parsed.data.workflow);
         if (!workflow) return c.json({ error: `unknown workflow: ${parsed.data.workflow}` }, 404);
       }
@@ -5217,7 +5254,11 @@ export function createApp(deps: ServerDeps) {
       todoMustExist,
       jsonZodValidator(startTodoSchema, { absent: undefined, malformed: null }),
       async (c) => {
-        const { root: repoRoot, dataDir, manager } = c.get('project');
+        const project = c.get('project');
+        const { root: repoRoot, dataDir, manager } = project;
+        let factoryRelease;
+        try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
         const id = c.req.param('id');
         const todo = c.get('todo');
         const parsed = { data: c.req.valid('json') };
@@ -5231,7 +5272,7 @@ export function createApp(deps: ServerDeps) {
 
         let workflow: WorkflowDef | undefined;
         if (todo.suggestedSkill) {
-          const skills = await discoverSkills(repoRoot);
+          const skills = await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot });
           if (skills.some((s) => s.name === todo.suggestedSkill)) {
             workflow = {
               name: '(inbox)',
@@ -5245,11 +5286,12 @@ export function createApp(deps: ServerDeps) {
                   prompt: '{{task}}',
                 },
               ],
+              ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
             };
           }
         }
         if (!workflow) {
-          const { workflows } = await loadWorkflows(repoRoot);
+          const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
           workflow = workflows.find((w) => w.name === 'quick-task') ?? QUICK_TASK_WORKFLOW;
         }
 

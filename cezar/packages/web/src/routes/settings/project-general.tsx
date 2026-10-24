@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 
-import { useProjects, useWorkspaceConfig } from '@/api/queries'
+import { useFactoryRelease, useProjects, useUpdateProject, useWorkspaceConfig } from '@/api/queries'
 import type { Capabilities, ProjectListEntry } from '@open-mercato/cezar-api-client'
 import { Button } from '@/components/ui/button'
 import { useActiveProjectId } from '@/lib/project-router'
@@ -51,6 +51,8 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
   const projectId = useActiveProjectId()
   const projects = useProjects()
   const config = useWorkspaceConfig()
+  const factoryRelease = useFactoryRelease()
+  const updateProject = useUpdateProject()
 
   if (projects.isPending) {
     return (
@@ -96,6 +98,34 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
       ) : null}
       {managesRegistry ? (
         <>
+          <SettingsField
+            title="Factory channel"
+            hint="New tasks resolve this channel to one verified Factory version and keep that version for retries and resumes. Existing tasks keep their saved version."
+          >
+            {factoryRelease.data?.status === 'resolved' ? (
+              <div className="flex flex-col items-start gap-2">
+                <select
+                  aria-label="Factory channel"
+                  data-slot="factory-channel"
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={project.factoryChannel ?? factoryRelease.data.channel}
+                  disabled={updateProject.isPending}
+                  onChange={(event) => updateProject.mutate({ id: project.id, factoryChannel: event.target.value as 'dev' | 'stable' })}
+                >
+                  <option value="stable">stable</option>
+                  <option value="dev">dev</option>
+                </select>
+                <span className="text-[11px] text-soft-foreground">Current version: {factoryRelease.data.sourceSha.slice(0, 12)}</span>
+              </div>
+            ) : factoryRelease.data?.status === 'legacy' ? (
+              <p className="text-[13px] text-soft-foreground">Channel releases are not configured for this Cezar instance.</p>
+            ) : factoryRelease.isError || factoryRelease.data?.status === 'error' ? (
+              <p className="text-[13px] text-danger">Factory release unavailable: {factoryRelease.data?.status === 'error' ? factoryRelease.data.error : factoryRelease.error?.message ?? 'request failed'}</p>
+            ) : (
+              <p className="text-[13px] text-soft-foreground">Loading Factory release status…</p>
+            )}
+            {updateProject.isError ? <p role="alert" className="text-[13px] text-danger">{updateProject.error.message}</p> : null}
+          </SettingsField>
           <SettingsField
             title="Max parallel tasks"
             hint={
