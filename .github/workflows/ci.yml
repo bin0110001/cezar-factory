@@ -13,6 +13,18 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Independent verification fixture consumer
+        run: node ./cezar/packages/cezar/src/verification/fixture-consumer.mjs
+      - name: Verification contract tests and typechecks
+        working-directory: ./cezar
+        run: |
+          npm ci
+          npm run test -w @open-mercato/cezar -- src/verification/contract.test.ts
+          npm run typecheck:contract
+          npm run typecheck -w @open-mercato/cezar
       - name: Factory self-test (static checks, install/update/diff/verify on fixtures)
         shell: pwsh
         run: ./tests/run-tests.ps1
