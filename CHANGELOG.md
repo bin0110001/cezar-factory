@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.51] - 2026-10-23
+
+- Added workflow-owned read-only GitHub backlog snapshot collection and bounded
+  reconciliation, including on-demand automation and feature-gated installation.
+
 ## [0.3.50] - 2026-10-18
 
 - Continue eligible backlog issues without per-issue scheduling or user review

@@ -62,6 +62,7 @@ skills:
 features:
   knowledge_extraction: false
   maintenance: false
+  backlog_reconciliation: false
 
 project:
   type: your-project-type   # e.g., godot, dotnet, web
@@ -156,7 +157,7 @@ Policies are plain factory files, so a policy override is a file override:
 | Risk classification and human gates | `overrides/policies/risk.yaml` |
 | Definition of Ready / Done, escalation format | `overrides/policies/*.md` |
 | Label set | `overrides/policies/labels.yaml` (`route-state.ps1` reads the factory-state list) |
-| Enabled features | `features:` in `factory.config.yaml` (project-owned; `maintenance`, `knowledge_extraction`) |
+| Enabled features | `features:` in `factory.config.yaml` (project-owned; `maintenance`, `knowledge_extraction`, `backlog_reconciliation`) |
 | Validation commands | `validation:` in `factory.config.yaml` |
 
 Workflow `onFail.max` retry counts live in the workflow files; change them with a workflow override.

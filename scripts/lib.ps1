@@ -274,7 +274,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.
@@ -306,9 +306,11 @@ function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [stri
     if ($godotUpgrade -and $workflows -notcontains 'godot-upgrade') { $selected.Add('workflows/godot-upgrade.yaml') }
     if ($godotUpgrade -and $skills -notcontains 'factory-godot-upgrade') { $selected.Add('skills/factory-godot-upgrade/SKILL.md') }
     if ((Get-FeatureOn $Config 'knowledge_extraction') -and $skills -notcontains 'factory-learn') { $selected.Add('skills/factory-learn/SKILL.md') }
-    if ((Get-FeatureOn $Config 'backlog_reconciliation') -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
+    $backlogReconciliation = Get-FeatureOn $Config 'backlog_reconciliation'
+    if ($backlogReconciliation -and $workflows -notcontains 'backlog-reconciliation') { $selected.Add('workflows/backlog-reconciliation.yaml') }
+    if ($backlogReconciliation -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
     # Automations: only those whose workflow is installed (maintenance only with the feature on).
-    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' }) + $(if ($godotUpgrade) { 'godot-upgrade' })
+    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' }) + $(if ($godotUpgrade) { 'godot-upgrade' }) + $(if ($backlogReconciliation) { 'backlog-reconciliation' })
     foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.json) {
         $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
         if ($f.BaseName -eq 'maintenance' -and -not $combinedMaintenance) { continue }

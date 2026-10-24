@@ -68,10 +68,10 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/deploy/vllm-trusted-proxy.py', 'scripts/deploy/deploy-vllm-trusted-proxy-mac.sh', 'scripts/deploy/validate-vllm-trusted-proxy-mac.sh',
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
-'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
+'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/recover-audit-reservations.ps1',
-'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
+'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
@@ -83,6 +83,7 @@ Assert 'implementation and fix-review use the configured gateway model' ($catalo
 Assert 'complexity routes small to gateway, medium to Luna, and large to premium implementation' ($catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:small'.model -eq 'factory-gateway/factory-code' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.model -eq 'gpt-5.6-luna' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:medium'.spendTier -eq 'premium-implementation' -and $catalog.automationProfiles.'factory-implement'.complexityVariants.'complexity:large'.model -eq 'gpt-6.1-sol')
 Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automationProfiles.'factory-plan'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'sonnet')
 Assert 'maintenance is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-maintenance'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-maintenance'.model -eq 'factory-gateway/factory-code')
+Assert 'backlog reconciliation is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-backlog-reconciliation'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-backlog-reconciliation'.model -eq 'factory-gateway/factory-code')
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
 Assert 'backlog audit requires the stable Cezar candidate script' ($backlogAuditSkill -match 'installed audit script' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
 Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
@@ -103,7 +104,9 @@ Assert 'implement workflow enforces a PR closing reference after the LLM step' (
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
 Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
-Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
+Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('backlog-reconciliation','failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
+$backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
+Assert 'backlog workflow owns snapshot and dry-run script calls' ($backlogWorkflow -match 'collect-backlog-snapshot\.ps1' -and $backlogWorkflow -match 'reconcile-backlog\.ps1 .* -DryRun' -and $backlogWorkflow -match 'BatchCap 1 -ProjectConcurrencyCap 1')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
@@ -293,6 +296,51 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'
+    Copy-Item (Join-Path $PSScriptRoot 'fixtures/generic-project') $backlogFeatureProject -Recurse
+    $backlogFeatureConfig = Join-Path $backlogFeatureProject '.ai/factory/factory.config.yaml'
+    $backlogFeatureText = [IO.File]::ReadAllText($backlogFeatureConfig)
+    $backlogFeatureText = [regex]::Replace($backlogFeatureText, '(?m)^(\s*version:\s*)"\d+\.\d+\.\d+"', "`${1}`"$curVer`"")
+    $backlogFeatureText = $backlogFeatureText -replace '(?m)^(\s*maintenance:\s*)false\s*$', "`${1}false`n  backlog_reconciliation: true"
+    [IO.File]::WriteAllText($backlogFeatureConfig, $backlogFeatureText, [Text.UTF8Encoding]::new($false))
+    $backlogFeatureInstall = Run 'install.ps1' @{ ProjectPath = $backlogFeatureProject; FactoryPath = $factory }
+    Assert 'backlog feature installs its workflow, skill, and automation together' ($backlogFeatureInstall.Code -eq 0 -and (Test-Path (Join-Path $backlogFeatureProject '.ai/cezar/workflows/factory-backlog-reconciliation.yaml')) -and (Test-Path (Join-Path $backlogFeatureProject '.ai/skills/factory-work-backlog/SKILL.md')) -and (Test-Path (Join-Path $backlogFeatureProject '.ai/factory/automations/backlog-reconciliation.json')))
+
+    $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
+    $backlogInput = Join-Path $tmp 'github-issues.json'
+    $backlogOutput = Join-Path $tmp 'backlog-reconciliation.json'
+    $fakeBacklogGh = Join-Path $PSScriptRoot 'fake-backlog-gh.ps1'
+    $collectBacklog = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $backlogInput }
+    Assert 'backlog collector writes compact open issue snapshot' ($collectBacklog.Code -eq 0 -and (Test-Path $backlogInput))
+    if (Test-Path $backlogInput) {
+        $collected = Get-Content -Raw $backlogInput | ConvertFrom-Json
+        $blockedByDependency = @($collected.issues | Where-Object { $_.number -eq 3 })[0]
+        $releasedLease = @($collected.issues | Where-Object { $_.number -eq 4 })[0]
+        Assert 'backlog collector treats open dependencies as not ready' (-not $blockedByDependency.dependenciesReady)
+        Assert 'backlog collector preserves released lease marker' ($releasedLease.lease.releasedAt -and $releasedLease.dependenciesReady)
+        $malformedLeases = @(Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/backlog-issues.json') | ConvertFrom-Json)
+        (@($malformedLeases | Where-Object { $_.number -eq 4 })[0]).comments[0].body = '<!-- factory-lease:4 -->`nnot-json'
+        $malformedPath = Join-Path $tmp 'backlog-malformed-lease.json'
+        $malformedLeases | ConvertTo-Json -Depth 8 | Set-Content $malformedPath
+        $env:FAKE_BACKLOG_ISSUES = $malformedPath
+        $malformedOutput = Join-Path $tmp 'malformed-backlog-snapshot.json'
+        $malformedRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $malformedOutput }
+        Assert 'backlog collector rejects malformed lease markers' ($malformedRun.Code -ne 0 -and -not (Test-Path $malformedOutput))
+        $atCap = @(); for ($i = 1; $i -le 1000; $i++) { $atCap += @{ number = $i; state = 'OPEN'; labels = @(); createdAt = '2026-01-01T00:00:00Z'; body = ''; comments = @() } }
+        $atCapPath = Join-Path $tmp 'backlog-at-cap.json'
+        $atCap | ConvertTo-Json -Depth 4 | Set-Content $atCapPath
+        $env:FAKE_BACKLOG_ISSUES = $atCapPath
+        $atCapOutput = Join-Path $tmp 'at-cap-backlog-snapshot.json'
+        $atCapRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $atCapOutput }
+        Assert 'backlog collector rejects potentially truncated GitHub snapshots' ($atCapRun.Code -ne 0 -and -not (Test-Path $atCapOutput))
+        $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
+        $reconciled = Run 'reconcile-backlog.ps1' @{ InputPath = $backlogInput; OutputPath = $backlogOutput; BatchCap = 10; ProjectConcurrencyCap = 10; DryRun = $true }
+        Assert 'backlog reconciler ignores released leases and excludes active leases' ($reconciled.Code -eq 0 -and (Test-Path $backlogOutput))
+        if (Test-Path $backlogOutput) {
+            $proposal = Get-Content -Raw $backlogOutput | ConvertFrom-Json
+            Assert 'backlog proposal orders ready work and reports lease exclusion' (@($proposal.actions).Count -eq 2 -and $proposal.actions[0].issue -eq 4 -and @($proposal.excludedIssues | Where-Object { $_.issue -eq 3 -and $_.reason -eq 'active-lease' }).Count -eq 1)
+        }
+    }
     foreach ($fx in Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory) {
         Write-Host "== fixture $($fx.Name) =="
         $proj = Join-Path $tmp $fx.Name
@@ -317,6 +365,7 @@ try {
         Assert 'maintenance workflow not installed' (-not (Test-Path (Join-Path $proj '.ai/cezar/workflows/factory-maintenance.yaml')))
         Assert 'maintenance automation not installed' (-not (Test-Path (Join-Path $fdir 'automations/maintenance.json')))
         Assert 'combined maintenance automation not installed' (-not (Test-Path (Join-Path $fdir 'automations/maintenance.json')))
+        Assert 'backlog reconciliation is opt-in' (-not (Test-Path (Join-Path $proj '.ai/cezar/workflows/factory-backlog-reconciliation.yaml')) -and -not (Test-Path (Join-Path $fdir 'automations/backlog-reconciliation.json')))
         Assert 'verify passes' ((Run 'verify.ps1' $a).Code -eq 0)
         Assert 'diff clean' ((Run 'diff.ps1' $a).Code -eq 0)
         Assert 'reinstall idempotent' ((Run 'install.ps1' $a).Code -eq 0)
@@ -402,6 +451,7 @@ try {
     Assert 'OpenHands job validator installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/openhands/validate-job.ps1'))
     Assert 'Hindsight recall boundary installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/hindsight/recall.ps1'))
     Assert 'backlog reconciler installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/reconcile-backlog.ps1'))
+    Assert 'backlog snapshot collector installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/collect-backlog-snapshot.ps1'))
     Assert 'local evaluation scripts installed' ((Test-Path (Join-Path $rp '.ai/factory/scripts/record-local-evaluation.ps1')) -and (Test-Path (Join-Path $rp '.ai/factory/scripts/evaluate-local-promotion.ps1')))
     $missingInput = Run 'local/run-local-job.ps1' @{ Job = 'summarize-issue'; InputPath = (Join-Path $tmp 'does-not-exist.txt') }
     Assert 'local utility runner rejects missing input' ($missingInput.Code -ne 0)
