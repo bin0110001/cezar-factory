@@ -25,6 +25,7 @@ const verificationCheckSchema = z.object({
   timeoutSeconds: z.number().int().min(1).max(3_600),
   tags: z.array(z.string().min(1).max(64)).max(64).optional(),
   owns: z.array(z.string().min(1).max(256)).max(128).optional(),
+  dependsOn: z.array(z.string().trim().min(1).max(128)).max(128).optional(),
   requires: z.array(z.string().min(1).max(128)).max(128).optional(),
   optional: z.boolean().default(false),
   resources: z.array(z.string().min(1).max(128)).max(64).optional(),
@@ -43,6 +44,23 @@ export const verificationManifestSchema = z.object({
       if (seen.has(id)) ctx.addIssue({ code: 'custom', path: ['suites', suite], message: `duplicate check ${id}` });
       seen.add(id);
       if (!(id in manifest.checks)) ctx.addIssue({ code: 'custom', path: ['suites', suite], message: `unknown check ${id}` });
+    }
+  }
+  for (const [id, check] of Object.entries(manifest.checks)) {
+    const seen = new Set<string>();
+    for (const dependency of check.dependsOn ?? []) {
+      if (dependency === id || seen.has(dependency)) ctx.addIssue({ code: 'custom', path: ['checks', id, 'dependsOn'], message: `invalid duplicate/self dependency ${dependency}` });
+      if (!(dependency in manifest.checks)) ctx.addIssue({ code: 'custom', path: ['checks', id, 'dependsOn'], message: `unknown dependency ${dependency}` });
+      seen.add(dependency);
+    }
+  }
+  for (const [suite, ids] of Object.entries(manifest.suites)) {
+    const included = new Set(ids);
+    for (const id of ids) {
+      for (const dependency of manifest.checks[id]?.dependsOn ?? []) {
+        if (!(dependency in manifest.checks)) continue;
+        if (!included.has(dependency)) ctx.addIssue({ code: 'custom', path: ['suites', suite], message: `suite omits dependency ${dependency} required by ${id}` });
+      }
     }
   }
 });
@@ -137,7 +155,7 @@ export const verificationRunSchema = z.object({
     if (check.status === 'unknown' && check.semanticExitCode !== 2) ctx.addIssue({ code: 'custom', path: ['checks'], message: `unknown check ${check.checkId} must have semantic exit 2` });
     if (check.status === 'infrastructure-error' && check.semanticExitCode !== 3) ctx.addIssue({ code: 'custom', path: ['checks'], message: `infrastructure error ${check.checkId} must have semantic exit 3` });
     if (check.status === 'cancelled' && check.semanticExitCode !== 4) ctx.addIssue({ code: 'custom', path: ['checks'], message: `cancelled check ${check.checkId} must have semantic exit 4` });
-    const expectedCheckCoverage = check.status === 'passed' ? [1, 1, 0] : check.status === 'skipped' ? [1, 0, 1] : [1, 0, 0];
+    const expectedCheckCoverage = check.status === 'passed' ? [1, 1, 0] : check.status === 'skipped' ? [1, 0, 1] : check.status === 'not-selected' ? [0, 0, 0] : [1, 0, 0];
     if (check.coverage.selected !== expectedCheckCoverage[0] || check.coverage.passed !== expectedCheckCoverage[1] || check.coverage.skipped !== expectedCheckCoverage[2]) {
       ctx.addIssue({ code: 'custom', path: ['checks'], message: `check ${check.checkId} coverage does not match its status` });
     }
@@ -157,16 +175,16 @@ export const verificationRunSchema = z.object({
     : checkStatuses.includes('infrastructure-error') ? 'infrastructure-error'
       : checkStatuses.includes('failed') ? 'failed'
         : checkStatuses.includes('unknown') ? 'unknown'
-          : checkStatuses.includes('no-tests') || checkStatuses.length === 0 ? 'no-tests'
+          : checkStatuses.every((status) => status === 'not-selected') && checkStatuses.length > 0 ? 'not-selected'
+            : checkStatuses.includes('no-tests') || checkStatuses.length === 0 ? 'no-tests'
             : run.checks.some((check) => check.required && check.status === 'skipped') ? 'skipped'
-              : checkStatuses.every((status) => status === 'not-selected') ? 'not-selected'
                 : 'passed';
   if (run.status !== expectedStatus) ctx.addIssue({ code: 'custom', path: ['status'], message: `run status must aggregate to ${expectedStatus}` });
   if (run.status === 'passed' && (run.coverage.failed > 0 || run.coverage.unknown > 0 || run.coverage.selected !== run.coverage.passed + run.coverage.skipped)) {
     ctx.addIssue({ code: 'custom', path: ['status'], message: 'passed requires conclusive required-check coverage' });
   }
-  if (run.status === 'passed' && run.checks.some((check) => check.required && check.status !== 'passed')) {
-    ctx.addIssue({ code: 'custom', path: ['status'], message: 'passed requires every required check to pass' });
+  if (run.status === 'passed' && run.checks.some((check) => check.required && check.status !== 'passed' && check.status !== 'not-selected')) {
+    ctx.addIssue({ code: 'custom', path: ['status'], message: 'passed requires every selected required check to pass' });
   }
 });
 export type VerificationRun = z.infer<typeof verificationRunSchema>;

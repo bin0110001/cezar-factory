@@ -32,12 +32,14 @@ export async function consumeVerificationFixtures(directory) {
     'infrastructure-error-result.json': 'infrastructure-error',
     'cancelled-result.json': 'cancelled',
     'truncated-result.json': 'unknown',
+    'not-selected-result.json': 'not-selected',
+    'partial-selection-passing-result.json': 'passed',
   };
   for (const [file, status] of Object.entries(expectedStatuses)) {
     const result = await read(file);
-    if (result.status !== status || result.semanticExitCode === 0) throw new Error(`unexpected result semantics: ${file}`);
+    if (result.status !== status || (status !== 'passed' && result.semanticExitCode === 0)) throw new Error(`unexpected result semantics: ${file}`);
   }
-  return { platform: process.platform, fixtures: 19 };
+  return { platform: process.platform, fixtures: 21 };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

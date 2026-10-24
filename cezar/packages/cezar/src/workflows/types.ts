@@ -44,6 +44,10 @@ export const workflowStepSchema = z
     // check step
     command: z.string().optional(),
     verificationSuite: z.string().trim().min(1).max(128).optional(),
+    verificationMode: z.enum(['all', 'impacted', 'last-failed', 'component', 'explicit']).optional(),
+    verificationChecks: z.array(z.string().trim().min(1).max(128)).max(256).optional(),
+    verificationComponents: z.array(z.string().trim().min(1).max(64)).max(64).optional(),
+    verificationBase: z.string().trim().min(1).max(256).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -60,6 +64,15 @@ export const workflowStepSchema = z
   })
   .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
     message: 'a step is either an agent step, a command check, or a verification suite',
+  })
+  .refine((s) => Boolean(s.verificationSuite) || (!s.verificationMode && !s.verificationChecks && !s.verificationComponents && !s.verificationBase), {
+    message: 'verification selection options require verificationSuite',
+  })
+  .refine((s) => s.verificationMode !== 'explicit' || Boolean(s.verificationChecks?.length), {
+    message: 'explicit verification mode requires verificationChecks',
+  })
+  .refine((s) => s.verificationMode !== 'component' || Boolean(s.verificationComponents?.length), {
+    message: 'component verification mode requires verificationComponents',
   });
 
 /**

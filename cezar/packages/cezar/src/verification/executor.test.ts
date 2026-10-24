@@ -53,6 +53,17 @@ describe('generic verification executor', () => {
     expect(JSON.parse(await readFile(result.artifactPath, 'utf8')).semanticExitCode).toBe(2);
   });
 
+  it('records a non-green all-deferred outcome and a selection artifact when nothing is selected', async () => {
+    const root = await fixture('not-selected');
+    const result = await executeVerification({ worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick', selection: { mode: 'last-failed', lastFailedCheckIds: [] } });
+    expect(result.run.status).toBe('not-selected');
+    expect(result.run.semanticExitCode).toBe(2);
+    expect(result.run.coverage.selected).toBe(0);
+    expect(result.run.checks[0]?.status).toBe('not-selected');
+    expect(result.selection.checks[0]?.status).toBe('deferred');
+    expect(result.run.artifacts[0]?.path).toContain('selection.json');
+  });
+
   it('records malformed manifests as unknown result artifacts instead of hiding the failure', async () => {
     const root = await fixture('malformed');
     const config = join(root, '.ai/factory/factory.config.yaml');

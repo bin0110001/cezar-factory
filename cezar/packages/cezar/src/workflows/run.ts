@@ -5655,11 +5655,29 @@ export class RunManager {
         emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
         return Promise.resolve({ ok: false, output: message, exitCode: 3 });
       }
+      const mode = step.verificationMode ?? 'all';
+      let lastFailedCheckIds: string[] | undefined;
+      if (mode === 'last-failed') {
+        try {
+          const ledger = await FindingLedger.open(join(this.repoRoot, '.ai/cezar'), createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'));
+          lastFailedCheckIds = [...new Set((await ledger.findings()).filter((finding) => finding.status === 'open' && !finding.canonicalId).map((finding) => finding.checkId))];
+        } catch (error) {
+          emit({ type: 'note', stepId: step.id, message: `could not load prior verification findings: ${error instanceof Error ? error.message : String(error)}` });
+          lastFailedCheckIds = [];
+        }
+      }
       return executeVerification({
         worktreePath: state.cwd,
         cezarRunId: runId,
         projectId: createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'),
         suite: step.verificationSuite,
+        selection: {
+          mode,
+          ...(step.verificationBase || this.store.getRun(runId)?.baseBranch ? { baseRef: step.verificationBase ?? this.store.getRun(runId)?.baseBranch } : {}),
+          ...(step.verificationChecks ? { checkIds: step.verificationChecks } : {}),
+          ...(step.verificationComponents ? { componentTags: step.verificationComponents } : {}),
+          ...(lastFailedCheckIds ? { lastFailedCheckIds } : {}),
+        },
         cancelled: () => state.cancelled,
         onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),
       }).then(async ({ run, artifactPath, output }) => {
@@ -5670,7 +5688,7 @@ export class RunManager {
         } catch (error) {
           emit({ type: 'note', stepId: step.id, message: `verification finding ledger update failed: ${error instanceof Error ? error.message : String(error)}` });
         }
-        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), coverage: run.coverage, exitCode });
+        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), selection: run.artifacts[0]?.path, coverage: run.coverage, exitCode });
         return { ok: run.status === 'passed', output: output || `verification status: ${run.status}`, exitCode };
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
