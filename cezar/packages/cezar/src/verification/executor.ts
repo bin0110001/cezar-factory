@@ -103,6 +103,11 @@ function sanitizeOutput(text: string, root: string, secretValues: readonly strin
   return redactSecrets(withoutRoot, secretValues);
 }
 
+/** Apply the same root and secret redaction before verification details enter prompts or ledgers. */
+export function sanitizeVerificationText(text: string, root: string): string {
+  return sanitizeOutput(text, root, collectSecretValues());
+}
+
 async function writeResult(root: string, id: string, run: VerificationRun): Promise<string> {
   const base = join(root, ARTIFACT_ROOT);
   await mkdir(base, { recursive: true });
@@ -284,10 +289,15 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     };
     try { if (input.adapter?.collect) checkRun = await input.adapter.collect(context, checkRun); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter collect failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
-    const validCheck = verificationCheckRunSchema.safeParse(checkRun);
+    const redactedCheck: VerificationCheckRun = {
+      ...checkRun,
+      outputPreview: sanitizeOutput(checkRun.outputPreview, root, secretValues),
+      diagnostics: checkRun.diagnostics.map((item) => ({ ...item, code: sanitizeOutput(item.code, root, secretValues), message: sanitizeOutput(item.message, root, secretValues), ...(item.file ? { file: sanitizeOutput(item.file, root, secretValues).replaceAll('\\', '/').replace(/^\.\//, '') } : {}) })),
+    };
+    const validCheck = verificationCheckRunSchema.safeParse(redactedCheck);
     if (!validCheck.success) {
       checkRun = { ...checkRun, checkId, required, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter returned an invalid check result: ${validCheck.error.issues.map((issue) => issue.message).join('; ')}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
-    } else checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
+    } else checkRun = validCheck.data;
     try { await input.adapter?.cleanup?.(context); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter cleanup failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
     checkRuns.push(checkRun);

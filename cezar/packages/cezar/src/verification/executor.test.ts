@@ -179,4 +179,21 @@ describe('generic verification executor', () => {
       else process.env.OPENAI_API_KEY = old;
     }
   }, 15_000);
+
+  it('redacts adapter diagnostics before they enter result artifacts and the finding ledger', async () => {
+    const root = await fixture('diagnostic-redaction');
+    const old = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-secret-value-long-enough';
+    try {
+      const result = await executeVerification({
+        worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+        adapter: { collect: async (_context, check) => ({ ...check, diagnostics: [{ code: 'secret-diagnostic', severity: 'error', message: `failure contained test-secret-value-long-enough` }] }) },
+      });
+      expect(result.run.checks[0]?.diagnostics[0]?.message).not.toContain('test-secret-value-long-enough');
+      expect(await readFile(result.artifactPath, 'utf8')).not.toContain('test-secret-value-long-enough');
+    } finally {
+      if (old === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = old;
+    }
+  });
 });

@@ -53,7 +53,7 @@ export const workflowStepSchema = z
     onFail: z
       .object({
         retry: z.string().min(1),
-        max: z.number().int().positive().default(2),
+        max: z.number().int().positive().max(5).default(2),
         /** Exit codes that loop back. Omitted (or empty — same thing, so a GUI that
          *  serializes "no selection" as `[]` doesn't accidentally mean "never retry"):
          *  any non-zero code does, which is what every workflow written before this

@@ -238,7 +238,7 @@ export class VerificationBaselineStore {
   private async read(): Promise<BaselineFile> {
     mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
     const release = await lockfile.lock(this.filePath, { realpath: false, stale: 10_000, update: 1_000, retries: { retries: 10, minTimeout: 20, maxTimeout: 200 } });
-    try { const state = this.readSync(); atomicWriteJsonSync(this.filePath, state); return state; }
+    try { return this.readSync(); }
     finally { await release(); }
   }
 
