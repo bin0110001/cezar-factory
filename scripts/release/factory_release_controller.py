@@ -576,6 +576,21 @@ class ReleaseController:
             self._finish(attempt_id, "failed", reason=str(exc)[:2000], sha=sha, retries=retries)
             raise
 
+    def stage_current(self) -> dict[str, Any]:
+        """Fetch and verify the configured ref without changing its channel pointer."""
+        attempt_id = self._attempt()
+        retries = 0
+        sha: str | None = None
+        try:
+            sha, retries = self.fetch_sha(attempt_id)
+            artifact = self._build(sha, attempt_id)
+            result = {"status": "staged", **artifact, "channel": self.channel, "retryCount": retries}
+            self._finish(attempt_id, "staged", sha=sha, retries=retries)
+            return result
+        except Exception as exc:
+            self._finish(attempt_id, "failed", reason=str(exc)[:2000], sha=sha, retries=retries)
+            raise
+
     def recover_interrupted_attempts(self) -> int:
         now = utc_now()
         with self._db() as db:
@@ -613,7 +628,7 @@ class ReleaseController:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=("sync", "rollback", "verify", "protect", "unprotect"))
+    p.add_argument("command", choices=("sync", "stage", "rollback", "verify", "protect", "unprotect"))
     p.add_argument("--repo", default=os.environ.get("FACTORY_CONTROLLER_REPO", "~/cezar-factory"))
     p.add_argument("--store", default=os.environ.get("FACTORY_RELEASE_STORE", "~/.local/share/cezar-factory/release-store"))
     p.add_argument("--remote", default=os.environ.get("FACTORY_CONTROLLER_REMOTE", "origin"))
@@ -636,6 +651,10 @@ def main(argv: list[str] | None = None) -> int:
             with exclusive_lock(controller.store / "controller.lock"):
                 controller.recover_interrupted_attempts()
                 result = controller.sync()
+        elif args.command == "stage":
+            with exclusive_lock(controller.store / "controller.lock"):
+                controller.recover_interrupted_attempts()
+                result = controller.stage_current()
         elif args.command == "verify":
             if not args.sha: raise ControllerError(f"{args.command} requires --sha")
             result = controller.verify_release(controller.releases / args.sha, expected_sha=args.sha)

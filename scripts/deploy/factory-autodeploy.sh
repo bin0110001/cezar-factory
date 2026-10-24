@@ -56,5 +56,8 @@ if [[ "$host_version" != "$container_version" ]]; then
   exit 22
 fi
 
-podman exec "$CONTAINER" pwsh -NoProfile -File "$RUNTIME_ROOT/scripts/sync-all-automations.ps1"
-log "deployed Factory $host_version (${remote_sha:0:9}); workflows, skills and scripts come from the mount, automations reconciled"
+STORE="${FACTORY_RELEASE_STORE_HOST_DIR:-$HOME/.local/share/cezar-factory/release-store}"
+REGISTRY="${FACTORY_PROJECTS_REGISTRY:-$FACTORY_DIR/config/factory-projects.json}"
+python3 "$FACTORY_DIR/scripts/release/factory_activation.py" activate \
+  --repo "$FACTORY_DIR" --store "$STORE" --registry "$REGISTRY" --channel "$BRANCH"
+log "activated Factory $host_version (${remote_sha:0:9}) with per-project receipts and rollback protection"

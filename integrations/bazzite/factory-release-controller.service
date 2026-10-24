@@ -1,5 +1,5 @@
 [Unit]
-Description=Fetch and stage a verified immutable Factory release
+Description=Stage and safely activate a verified Factory release
 After=network-online.target
 Wants=network-online.target
 
@@ -8,5 +8,5 @@ Type=oneshot
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
-ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/factory_release_controller.py sync --repo %h/cezar-factory --store %h/.local/share/cezar-factory/release-store --channel stable
+ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/factory_activation.py activate --repo %h/cezar-factory --store %h/.local/share/cezar-factory/release-store --registry %h/cezar-factory/config/factory-projects.json --channel stable
 TimeoutStartSec=20min
