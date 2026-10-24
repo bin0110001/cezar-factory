@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "factory-deployment-receipt/v1",
+  "receiptId": "receipt-fixture-active",
+  "targetId": "cezar-factory",
+  "channel": "dev",
+  "desiredSha": "0123456789abcdef0123456789abcdef01234567",
+  "actualSha": "0123456789abcdef0123456789abcdef01234567",
+  "observedSha": "0123456789abcdef0123456789abcdef01234567",
+  "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "idempotencyKey": "sha256:788c6c39127cc6318987ecdf81708e18625dea21ed46259fffad7f69b7c60df2",
+  "activationGeneration": 4,
+  "attempt": 1,
+  "state": "active",
+  "compatibility": {
+    "status": "compatible",
+    "cezarVersion": "1.4.0",
+    "capabilities": [
+      "shared-factory-runtime-v1"
+    ]
+  },
+  "requestedAt": "2026-10-23T18:00:00Z",
+  "stagedAt": "2026-10-23T18:01:00Z",
+  "activatedAt": "2026-10-23T18:02:00Z",
+  "observedAt": "2026-10-23T18:02:10Z"
+}

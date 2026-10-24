@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.52] - 2026-10-23
+
+- Defined immutable Factory release manifests, controller state, deployment
+  receipts, and task leases with shared schemas and Cezar contract fixtures.
+  Added fail-closed digest verification and explicit incompatible-target results.
+
 ## [0.3.51] - 2026-10-23
 
 - Added workflow-owned read-only GitHub backlog snapshot collection and bounded

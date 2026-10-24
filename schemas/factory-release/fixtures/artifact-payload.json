@@ -1,0 +1,8 @@
+{
+  "bundleText": "factory-release-fixture-v1",
+  "verificationEvidencePath": "verification/0123456789abcdef0123456789abcdef01234567.json",
+  "files": {
+    "VERSION": "0.3.52\n",
+    "workflows/factory-startup.yaml": "name: fixture\n"
+  }
+}
