@@ -48,6 +48,8 @@ export const workflowStepSchema = z
     verificationChecks: z.array(z.string().trim().min(1).max(128)).max(256).optional(),
     verificationComponents: z.array(z.string().trim().min(1).max(64)).max(64).optional(),
     verificationBase: z.string().trim().min(1).max(256).optional(),
+    /** Apply an owner-reviewed baseline policy to this verification result. */
+    verificationGate: z.enum(['development', 'release']).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -65,7 +67,7 @@ export const workflowStepSchema = z
   .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
     message: 'a step is either an agent step, a command check, or a verification suite',
   })
-  .refine((s) => Boolean(s.verificationSuite) || (!s.verificationMode && !s.verificationChecks && !s.verificationComponents && !s.verificationBase), {
+  .refine((s) => Boolean(s.verificationSuite) || (!s.verificationMode && !s.verificationChecks && !s.verificationComponents && !s.verificationBase && !s.verificationGate), {
     message: 'verification selection options require verificationSuite',
   })
   .refine((s) => s.verificationMode !== 'explicit' || Boolean(s.verificationChecks?.length), {

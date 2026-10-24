@@ -116,6 +116,7 @@ import {
 import { freshContinuationContext } from './continuation-context.ts';
 import { executeVerification } from '../verification/executor.ts';
 import { FindingLedger, strategyForVerificationCheck } from '../verification/finding-ledger.ts';
+import { compareVerification, VerificationBaselineStore } from '../verification/baseline.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -5680,16 +5681,29 @@ export class RunManager {
         },
         cancelled: () => state.cancelled,
         onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),
-      }).then(async ({ run, artifactPath, output }) => {
-        const exitCode = run.semanticExitCode;
+      }).then(async ({ run, artifactPath, output, selection }) => {
+        let exitCode = run.semanticExitCode;
+        let gateReport: ReturnType<typeof compareVerification> | undefined;
+        let comparisonPath: string | undefined;
         try {
           const strategies = Object.fromEntries(run.checks.map((check) => [check.checkId, strategyForVerificationCheck(check.checkId, check.diagnostics[0]?.code)]));
-          await FindingLedger.open(join(this.repoRoot, '.ai/cezar'), createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex')).ingestRun(run, strategies);
+          const projectId = createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex');
+          const ledger = FindingLedger.open(join(this.repoRoot, '.ai/cezar'), projectId);
+          await ledger.ingestRun(run, strategies);
+          if (step.verificationGate) {
+            const baselineStore = new VerificationBaselineStore(join(this.repoRoot, '.ai/cezar'), projectId, async () => false);
+            const baseline = await baselineStore.current();
+            if (!baseline) throw new Error('verification gate requires an owner-reviewed baseline');
+            gateReport = compareVerification({ run, selection, baseline, occurrences: await ledger.occurrences(), mode: step.verificationGate });
+            comparisonPath = await baselineStore.recordComparison(gateReport);
+            exitCode = (step.verificationGate === 'development' ? gateReport.developmentProgressAllowed : gateReport.releaseReady) ? 0 : 1;
+          }
         } catch (error) {
-          emit({ type: 'note', stepId: step.id, message: `verification finding ledger update failed: ${error instanceof Error ? error.message : String(error)}` });
+          emit({ type: 'note', stepId: step.id, message: `verification ${step.verificationGate ? 'gate evaluation' : 'finding ledger update'} failed: ${error instanceof Error ? error.message : String(error)}` });
+          if (step.verificationGate) exitCode = 3;
         }
-        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), selection: run.artifacts[0]?.path, coverage: run.coverage, exitCode });
-        return { ok: run.status === 'passed', output: output || `verification status: ${run.status}`, exitCode };
+        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), selection: run.artifacts[0]?.path, coverage: run.coverage, ...(gateReport ? { baselineComparison: { path: comparisonPath, counts: gateReport.counts, developmentProgressAllowed: gateReport.developmentProgressAllowed, verificationGreen: gateReport.verificationGreen, releaseReady: gateReport.releaseReady, baselineRevision: gateReport.baselineRevision } } : {}), exitCode });
+        return { ok: exitCode === 0, output: output || `verification status: ${run.status}`, exitCode };
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });

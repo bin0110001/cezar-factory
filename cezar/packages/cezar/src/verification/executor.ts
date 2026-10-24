@@ -308,6 +308,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
     commitSha: headSha,
+    ...(selectionResult.selection.baseSha ? { baseSha: selectionResult.selection.baseSha } : {}),
     manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt, finishedAt: new Date().toISOString(),
     toolVersions: { node: process.versions.node, ...Object.fromEntries(Object.entries(manifest.checks).map(([key, value]) => [key, `unreported (${value.executable})`])) },
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
