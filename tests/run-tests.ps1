@@ -78,6 +78,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh',
 'scripts/publish-failure-audit.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
+'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
@@ -275,6 +276,7 @@ $stagedReceipt = Get-Content -Raw (Join-Path $releaseFixtures 'receipt-staged.js
 $verifiedState = Get-Content -Raw (Join-Path $releaseFixtures 'state-verified.json')
 $activeLease = Get-Content -Raw (Join-Path $releaseFixtures 'lease-active.json')
 $expiredLease = Get-Content -Raw (Join-Path $releaseFixtures 'lease-expired.json')
+$healthyPromotion = Get-Content -Raw (Join-Path $releaseFixtures 'promotion-healthy.json')
 Assert 'release contracts: valid immutable manifest fixture satisfies JSON Schema' (Test-Json -Json $manifestFixture -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json'))
 Assert 'release contracts: unknown manifest schema fixture is rejected by v1 schema' (-not (Test-Json -Json $manifestUnknown -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
 Assert 'release contracts: active target receipt fixture satisfies JSON Schema' (Test-Json -Json $activeReceipt -SchemaFile (Join-Path $releaseSchemas 'receipt.schema.json'))
@@ -282,6 +284,7 @@ Assert 'release contracts: incompatible target is distinct from a failed release
 Assert 'release contracts: interrupted activation remains a recoverable staged receipt' (Test-Json -Json $stagedReceipt -SchemaFile (Join-Path $releaseSchemas 'receipt.schema.json'))
 Assert 'release contracts: verified release requires passing evidence' (Test-Json -Json $verifiedState -SchemaFile (Join-Path $releaseSchemas 'state.schema.json'))
 Assert 'release contracts: active and expired task pins satisfy lease shape' ((Test-Json -Json $activeLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')) -and (Test-Json -Json $expiredLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')))
+Assert 'release contracts: local promotion evidence fixture satisfies its versioned schema' (Test-Json -Json $healthyPromotion -SchemaFile (Join-Path $releaseSchemas 'promotion-record.schema.json'))
 $unsafeManifest = (Get-Content -Raw (Join-Path $releaseFixtures 'manifest-valid.json') | ConvertFrom-Json -AsHashtable); $unsafeManifest.files[0].path = '../VERSION'
 Assert 'release contracts: path traversal is rejected' (-not (Test-Json -Json ($unsafeManifest | ConvertTo-Json -Depth 20) -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
 foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
@@ -889,6 +892,11 @@ Assert 'autodeploy only fast-forwards, refuses dirty or diverged checkouts, and 
 Assert 'autodeploy tracks the tested stable branch' ($autodeploy -match 'FACTORY_DEPLOY_BRANCH:-stable')
 Assert 'autodeploy uses the journaled activation coordinator' ($autodeploy -match 'factory_activation.py' -and $autodeploy -notmatch 'sync-all-automations')
 Assert 'autodeploy detects same-version container content drift before activation' ($autodeploy -match 'container_content_digest' -and $autodeploy -match 'host_content_digest' -and $autodeploy -match 'source_sha.*container_sha')
+$localPromotion = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_local_scheduler.py')
+$promotionUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/factory-local-promotion.service')
+Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' ($localPromotion -match 'reviewDecision' -and $localPromotion -match 'APPROVED' -and $localPromotion -notmatch 'gh run|workflow_dispatch|actions/')
+Assert 'local promotion is single-flight and hardware bounded' ($promotionUnit -match 'CPUQuota=200%' -and $promotionUnit -match 'MemoryMax=8G' -and $promotionUnit -match 'FACTORY_GPU_SLOTS=0' -and $promotionUnit -match 'branch dev')
+Assert 'local promotion service uses exact-SHA scheduler' ($promotionUnit -match 'factory_local_scheduler.py run')
 
 $sg = Join-Path $tmp 'shared'
 New-Item -ItemType Directory $sg | Out-Null
