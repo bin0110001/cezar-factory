@@ -639,13 +639,17 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "verify":
             if not args.sha: raise ControllerError(f"{args.command} requires --sha")
             result = controller.verify_release(controller.releases / args.sha, expected_sha=args.sha)
+        elif args.command == "rollback":
+            if not args.sha: raise ControllerError("rollback requires --sha")
+            with exclusive_lock(controller.store / "controller.lock"):
+                controller.recover_interrupted_attempts()
+                result = controller.rollback(args.sha)
         else:
             if not (args.sha and args.reference_kind and args.reference_id):
                 raise ControllerError(f"{args.command} requires --sha, --reference-kind, and --reference-id")
             with exclusive_lock(controller.store / "controller.lock"):
                 controller.recover_interrupted_attempts()
-                if args.command == "rollback": result = controller.rollback(args.sha)
-                elif args.command == "protect": result = controller.protect(args.sha, args.reference_kind, args.reference_id, args.expires_at)
+                if args.command == "protect": result = controller.protect(args.sha, args.reference_kind, args.reference_id, args.expires_at)
                 else: result = controller.unprotect(args.sha, args.reference_kind, args.reference_id)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0

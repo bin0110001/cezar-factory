@@ -1,14 +1,14 @@
-import io
 import json
 import os
 import pathlib
 import stat
 import subprocess
-import tarfile
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
-from scripts.release.factory_release_controller import ControllerError, ReleaseController, canonical_json, check_relative_member, exclusive_lock
+from scripts.release.factory_release_controller import ControllerError, ReleaseController, canonical_json, check_relative_member, exclusive_lock, main
 
 
 def git(path: pathlib.Path, *args: str) -> str:
@@ -74,8 +74,11 @@ class ReleaseControllerTests(unittest.TestCase):
 
     def test_rollback_uses_verified_local_artifact_without_remote_access(self) -> None:
         self.controller.sync()
-        self.controller.remote = "offline-remote"
-        result = self.controller.rollback(self.sha)
+        output = StringIO()
+        with redirect_stdout(output):
+            code = main(["rollback", "--repo", str(self.repo), "--store", str(self.store), "--remote", "offline-remote", "--channel", "stable", "--sha", self.sha])
+        self.assertEqual(code, 0)
+        result = json.loads(output.getvalue())
         self.assertEqual(result["status"], "rolled-back")
         self.assertEqual(result["sourceSha"], self.sha)
 
