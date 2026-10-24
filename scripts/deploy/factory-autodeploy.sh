@@ -144,8 +144,11 @@ if [[ ! -f "$registry_path" ]]; then
   exit 23
 fi
 
-if ! sync_output="$(podman exec "$CONTAINER" pwsh -NoProfile -File "$RUNTIME_ROOT/scripts/sync-all-automations.ps1" 2>&1)"; then
-  failure="automation reconciliation failed: $sync_output"
+STORE="${FACTORY_RELEASE_STORE_HOST_DIR:-$HOME/.local/share/cezar-factory/release-store}"
+REGISTRY="${FACTORY_PROJECTS_REGISTRY:-$registry_path}"
+if ! sync_output="$(python3 "$FACTORY_DIR/scripts/release/factory_activation.py" activate \
+  --repo "$FACTORY_DIR" --store "$STORE" --registry "$REGISTRY" --channel "$BRANCH" 2>&1)"; then
+  failure="Factory activation failed: $sync_output"
   log "FAILED: $failure" >&2
   exit 24
 fi
@@ -153,4 +156,4 @@ fi
 write_receipt "$STATE_DIR/last-success.json" success ""
 write_receipt "$STATE_DIR/last-attempt.json" success ""
 trap - EXIT
-log "reconciled Factory $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}"
+log "activated Factory $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}; $sync_output"
