@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "code": "READY",
+  "workflow": "factory-maintenance",
+  "step": "housekeeping",
+  "preparedAt": "2026-10-25T02:33:52.6120235Z",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/1575a89e-150a-4ae9-984b-67166afaba7a",
+  "repositoryRoot": "/projects/cezar-factory/.ai/cezar/worktrees/1575a89e-150a-4ae9-984b-67166afaba7a",
+  "gitBranch": "cez/1575a89e",
+  "factoryRuntimeRoot": "/projects/cezar-factory",
+  "requiredScripts": [
+    "recover-audit-reservations.ps1",
+    "audit-backlog-labels.ps1",
+    "refresh-stale-workable.ps1",
+    "maintain-repository.ps1"
+  ],
+  "tools": {
+    "pwsh": true,
+    "git": true,
+    "gh": true
+  }
+}
