@@ -1,0 +1,18 @@
+{
+  "considered": [47, 49, 50],
+  "changed": [
+    {
+      "issue": 47,
+      "added": ["factory:tracking"]
+    },
+    {
+      "issue": 49,
+      "added": ["factory:new", "type:maintenance", "risk:low"]
+    },
+    {
+      "issue": 50,
+      "added": ["factory:new", "type:maintenance", "risk:low"]
+    }
+  ],
+  "skipped": []
+}
