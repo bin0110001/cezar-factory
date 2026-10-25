@@ -3,7 +3,7 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,route-state.ps1,lib.ps1,factory/test-full.ps1,factory/verify.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/test-full.ps1,factory/verify.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -24,7 +24,8 @@ steps:
       line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Do not modify code. Write the structured review result as JSON to .factory/review-result.json
-      (create the directory) with the issue number in "issue". Do not run Factory scripts or edit factory:* labels; the
+      (create the directory) with the issue number in "issue", the exact PR URL, the 40-character PR head SHA you
+      reviewed as "reviewedHeadSha", and your reviewer identity (runner/model) as "reviewerIdentity". Do not run Factory scripts or edit factory:* labels; the
       workflow posts findings and routes state.
   - id: validate
     name: Validate review result
@@ -32,9 +33,15 @@ steps:
     onFail:
       retry: review
       max: 1
+  - id: merge-eligibility
+    name: Verify live PR, review, validation and repository gates
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verify-merge-eligibility.ps1 -ReviewPath .factory/review-result.json -OutputPath .factory/merge-eligibility.json
+    onFail:
+      retry: validate
+      max: 1
   - id: route
     name: Post findings and set factory state
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json -GatePath .factory/merge-eligibility.json
     onFail:
       retry: validate
       max: 1

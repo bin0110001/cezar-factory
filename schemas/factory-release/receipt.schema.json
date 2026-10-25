@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryDeploymentReceiptV1",
+  "description": "Append-only target observation for one idempotent activation attempt.",
+  "$comment": "Draft-07 cannot express cross-property SHA equality. Consumers must run the shared semantic contract after structural JSON Schema validation: active requires desiredSha = actualSha = observedSha, compatible evidence, and ordered event timestamps. The Cezar Zod contract enforces these rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "factory-deployment-receipt/v1" },
+    "receiptId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "targetId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "channel": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "desiredSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "actualSha": { "oneOf": [{ "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }, { "type": "null" }] },
+    "observedSha": { "oneOf": [{ "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }, { "type": "null" }] },
+    "artifactDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "idempotencyKey": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "activationGeneration": { "type": "integer", "minimum": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "state": { "type": "string", "enum": ["pending", "staged", "activating", "active", "incompatible", "failed", "rolled_back"] },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
+    "requestedAt": { "type": "string", "format": "date-time" },
+    "stagedAt": { "type": "string", "format": "date-time" },
+    "activatedAt": { "type": "string", "format": "date-time" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "supersedesReceiptId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "message": { "type": "string", "maxLength": 2000 },
+    "logRef": { "type": "string", "minLength": 1, "maxLength": 256 }
+  },
+  "required": ["schemaVersion", "receiptId", "targetId", "channel", "desiredSha", "actualSha", "observedSha", "artifactDigest", "idempotencyKey", "activationGeneration", "attempt", "state", "requestedAt"],
+  "allOf": [
+    { "if": { "properties": { "state": { "enum": ["active", "incompatible"] } }, "required": ["state"] }, "then": { "required": ["compatibility"] } },
+    { "if": { "properties": { "state": { "const": "incompatible" } }, "required": ["state"] }, "then": { "properties": { "compatibility": { "properties": { "status": { "const": "incompatible" } } } } } },
+    { "if": { "properties": { "state": { "const": "active" } }, "required": ["state"] }, "then": { "properties": { "compatibility": { "properties": { "status": { "const": "compatible" } } }, "actualSha": { "type": "string" }, "observedSha": { "type": "string" } }, "required": ["stagedAt", "activatedAt", "observedAt"] } },
+    { "if": { "required": ["activatedAt"] }, "then": { "required": ["stagedAt"] } },
+    { "if": { "required": ["observedAt"] }, "then": { "required": ["activatedAt"] } }
+  ],
+  "$defs": {
+    "compatibility": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["compatible", "incompatible"] },
+        "cezarVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "capabilities": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["status", "capabilities"],
+      "allOf": [{ "if": { "properties": { "status": { "const": "incompatible" } }, "required": ["status"] }, "then": { "required": ["reasonCode"] } }]
+    }
+  }
+}

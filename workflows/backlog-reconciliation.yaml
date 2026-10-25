@@ -1,0 +1,21 @@
+name: factory-backlog-reconciliation
+description: Collect the current GitHub backlog and report a deterministic, read-only work proposal
+steps:
+  - id: startup
+    name: Prepare workflow environment
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-backlog-reconciliation -Step collect -RequireGh -RequiredScripts collect-backlog-snapshot.ps1,reconcile-backlog.ps1
+  - id: collect
+    name: Collect the open GitHub issue snapshot
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-backlog-snapshot.ps1 -OutputPath .factory/github-issues.json
+  - id: reconcile
+    name: Propose bounded legal actions without claiming or dispatching issues
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/reconcile-backlog.ps1 -InputPath .factory/github-issues.json -OutputPath .factory/backlog-reconciliation.json -BatchCap 1 -ProjectConcurrencyCap 1 -DryRun
+  - id: report
+    name: Report the deterministic proposal
+    prompt: |
+      {{task}}
+
+      The workflow collected GitHub state and ran the backlog reconciler in dry-run mode.
+      Read only `.factory/backlog-reconciliation.json`. Report its proposed legal actions,
+      invalid states, exclusions, and both caps. Do not inspect issues or the worktree,
+      choose a different issue, create a lease, dispatch Cezar, edit labels, or implement work.

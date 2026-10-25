@@ -1,10 +1,16 @@
 # Changelog
 
-## [0.3.52] - 2026-10-18
+## [0.3.56] - 2026-10-18
 
 - Retry shared Factory parity and automation reconciliation on every timer tick,
   verify host/container source and content identity, and record atomic success
   and failure receipts.
+
+## [0.3.53] - 2026-10-18
+
+- Gate Factory auto-merge on current-head review, clean workflow validation
+  receipts, effective GitHub rules, successful required checks, and resolved
+  review threads; only mark issues done after GitHub reports the PR merged.
 
 ## [0.3.50] - 2026-10-18
 

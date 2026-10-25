@@ -13,6 +13,7 @@ review/fix rounds and investigation retries per policies/retry.yaml, and posts e
 param(
     [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result', 'already-resolved')][string]$Event,
     [string]$Path,
+    [string]$GatePath,
     [int]$Issue,
     [string]$Task,
     [string]$GhCommand = 'gh',
@@ -232,9 +233,25 @@ switch ($Event) {
         if ($result.approvalChangeRequestStatus -eq 'approval') {
             $autoMerge = [string]$result.pr
             if ($autoMerge) {
-                Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch | Out-Null
-                Add-Comment ($body + "`n`nValidated approval: auto-merge requested into dev for $($result.pr).")
-                Set-State 'factory:done'; Done 'factory:done' 'validated auto-merge to dev requested'
+                if (-not $GatePath -or -not (Test-Path -LiteralPath $GatePath)) {
+                    Add-Comment ($body + "`n`nMerge was not requested: the workflow did not produce a merge-eligibility receipt. The issue remains in review.")
+                    Done 'factory:review' 'missing merge-eligibility receipt'
+                }
+                try { $gate = Get-Content -Raw -LiteralPath $GatePath | ConvertFrom-Json } catch { Fail "invalid merge-eligibility receipt: $($_.Exception.Message)" }
+                if ($gate.decision -ne 'allowed' -or [string]$gate.pr -ne $autoMerge -or [string]$gate.headSha -ne [string]$result.reviewedHeadSha) {
+                    $blockers = @($gate.blockers | ForEach-Object { "- $_" }) -join "`n"
+                    Add-Comment ($body + "`n`nMerge was not requested. The live eligibility gate denied this PR at the reviewed head. The issue remains in review.`n`n$blockers")
+                    Done 'factory:review' 'merge eligibility denied; no GitHub write made'
+                }
+                Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch --match-head-commit ([string]$gate.headSha) | Out-Null
+                $mergeState = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid' | ConvertFrom-Json
+                if ([string]$mergeState.headRefOid -ne [string]$gate.headSha) { Fail 'PR head changed while requesting merge; issue remains open for fresh review' }
+                if ([string]$mergeState.state -eq 'MERGED') {
+                    Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head and GitHub reports the PR merged.")
+                    Set-State 'factory:done'; Done 'factory:done' 'approved, validated PR observed merged'
+                }
+                Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head. GitHub has not reported the PR merged yet; the issue remains in review for a later completion check.")
+                Done 'factory:review' 'auto-merge requested; completion not yet observed'
             }
             Add-Comment ($body + "`n`nNo PR URL was supplied. Return this issue to implementation to provide the PR link; do not wait for user review.")
             Set-State 'factory:changes-requested'; Done 'factory:changes-requested' 'approved result is missing its PR URL'
