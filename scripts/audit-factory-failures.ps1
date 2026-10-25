@@ -8,7 +8,7 @@ param(
     [int]$WindowHours = 24,
     [int]$MaxCandidates = 200,
     [string]$ProjectId = $env:CEZAR_PROJECT_ID,
-    [string]$ApiUrl = $env:CEZAR_API_URL,
+    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } else { 'http://127.0.0.1:4321' }),
     [switch]$CreateIssue,
     [switch]$RestartFailedIntake
 )
@@ -17,12 +17,15 @@ if ($MaxRuns -lt 1 -or $MaxRuns -gt 20) { throw 'MaxRuns must be between 1 and 2
 if ($WindowHours -lt 1 -or $WindowHours -gt 168) { throw 'WindowHours must be between 1 and 168.' }
 if ($MaxCandidates -lt 1 -or $MaxCandidates -gt 200) { throw 'MaxCandidates must be between 1 and 200.' }
 if ($CreateIssue -or $RestartFailedIntake) { throw 'Failure collection is read-only; publication and recovery require separate workflow commands.' }
-if (-not $ProjectId -or -not $ApiUrl) { throw 'Registered ProjectId and ApiUrl are required; folder names are not project identity.' }
-if ($ApiUrl -notmatch '^https?://') { throw 'ApiUrl must be an http(s) URL.' }
+$cwd = (Get-Location).Path
+if ($cwd -match '^(?<root>.+)[\\/]\.ai[\\/]cezar[\\/]worktrees[\\/][^\\/]+$') {
+    if (-not $ProjectPath) { $ProjectPath = $Matches.root }
+    if (-not $ProjectId) { $ProjectId = (Split-Path $Matches.root -Leaf).ToLowerInvariant() }
+}
+if (-not $ProjectId) { throw 'ProjectId is required unless the current directory is a Cezar isolated worktree.' }
+if (-not $ApiUrl -or $ApiUrl -notmatch '^https?://') { throw 'ApiUrl must be an http(s) URL.' }
 if (-not $ProjectPath) {
-    $cwd = (Get-Location).Path
-    if ($cwd -match '^(?<root>.+)[\/].ai[\/]cezar[\/]worktrees[\/][^\/]+$') { $ProjectPath = $Matches.root }
-    else { throw 'ProjectPath is required outside a Cezar isolated worktree.' }
+    throw 'ProjectPath is required outside a Cezar isolated worktree.'
 }
 $project = [IO.Path]::GetFullPath($ProjectPath)
 $runDir = Join-Path $project '.ai/cezar/runs'

@@ -118,7 +118,11 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
-Assert 'maintenance passes Cezar environment variables through the workflow shell' ($maintenanceWorkflow -match '\-ApiUrl "\$CEZAR_API_URL"' -and $maintenanceWorkflow -match '\-ProjectId "\$CEZAR_PROJECT_ID"' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_')
+$recoveryScript = Get-Content -Raw (Join-Path $factory 'scripts/recover-audit-reservations.ps1')
+Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_')
+$failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')
+$failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
+Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.

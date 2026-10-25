@@ -2,9 +2,12 @@
 
 The `factory-failure-audit` workflow reads recent local Cezar run handoffs and
 event tails and writes `.factory/failure-audit-input.json` in its worktree.
-The collector is read-only apart from that artifact. It requires the
-registered `CEZAR_PROJECT_ID` and `CEZAR_API_URL`; it never guesses project
-identity from a folder name or requests the bulk `/runs` API.
+The collector is read-only apart from that artifact. Cezar check steps inherit
+the service environment, which does not include a per-project ID. When a
+`CEZAR_PROJECT_ID` override is absent, the collector takes the Cezar project
+slug from the current isolated worktree's registered project root. Its API
+URL defaults to Cezar's loopback endpoint (`http://127.0.0.1:4321`) and may be
+overridden with `CEZAR_API_URL`. It never requests the bulk `/runs` API.
 
 Default limits are a 24-hour window, 20 selected runs, 200 candidate
 handoffs, 64 KiB from each handoff and event source, 200 event lines, eight

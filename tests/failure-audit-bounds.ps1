@@ -1,7 +1,8 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$project = Join-Path ([IO.Path]::GetTempPath()) "failure audit $([guid]::NewGuid().ToString('N').Substring(0, 8))"
+$project = Join-Path ([IO.Path]::GetTempPath()) "registered-project-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+$worktree = Join-Path $project '.ai/cezar/worktrees/test-run'
 $runs = Join-Path $project '.ai/cezar/runs'
 $output = Join-Path $project '.factory/failure-audit-input.json'
 $failures = 0
@@ -10,15 +11,17 @@ function Check([string]$name, [bool]$condition) {
     else { Write-Host "  FAIL $name"; $script:failures++ }
 }
 function Collect($extra = @()) {
-    $arguments = @('-NoProfile', '-File', (Join-Path $factory 'scripts/audit-factory-failures.ps1'), '-ProjectPath', $project, '-OutputPath', $output, '-ProjectId', 'registered-project', '-ApiUrl', 'http://127.0.0.1:1') + @($extra)
+    $arguments = @('-NoProfile', '-File', (Join-Path $factory 'scripts/audit-factory-failures.ps1'), '-ProjectPath', $project, '-OutputPath', $output) + @($extra)
     $old = $ErrorActionPreference
+    Push-Location $worktree
     try { $ErrorActionPreference = 'Continue'; $text = & pwsh @arguments 2>&1 | Out-String }
-    finally { $ErrorActionPreference = $old }
+    finally { $code = $LASTEXITCODE; Pop-Location; $ErrorActionPreference = $old }
     $record = if (Test-Path $output) { Get-Content -Raw $output | ConvertFrom-Json } else { $null }
-    [pscustomobject]@{ code = $LASTEXITCODE; text = $text; record = $record }
+    [pscustomobject]@{ code = $code; text = $text; record = $record }
 }
 try {
     New-Item -ItemType Directory -Path $runs -Force | Out-Null
+    New-Item -ItemType Directory -Path $worktree -Force | Out-Null
     $token = 'ghp_abcdefghijklmnopqrstuvwxyz123456'
     Set-Content (Join-Path $runs 'run-one.handoff.md') "error Authorization: Bearer $token`nstep=collect command=test"
     Set-Content (Join-Path $runs 'run-one.ndjson') ('{"stepId":"collect","command":"echo token=' + $token + '","message":"error ' + ('x' * 130000) + '"}')
@@ -27,7 +30,7 @@ try {
     (Get-Item $oldFile).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-3)
     $run = Collect
     if ($run.code -ne 0) { Write-Host $run.text }
-    Check 'registered project identity is preserved' ($run.code -eq 0 -and $run.record.projectId -eq 'registered-project')
+    Check 'registered project identity derives from the Cezar worktree root' ($run.code -eq 0 -and $run.record.projectId -eq (Split-Path $project -Leaf))
     Check '24-hour window excludes old handoff' ($run.record.runsInspected -eq 1)
     Check 'oversized source limits coverage explicitly' ($run.record.status -eq 'limited' -and (@($run.record.limitations) -join ' ') -match 'truncated')
     Check 'collector never publishes or restarts' (-not $run.record.issueCreated -and -not $run.record.restarted)
@@ -56,11 +59,13 @@ try {
 
     Remove-Item $output
     $oldPreference = $ErrorActionPreference
+    Push-Location $project
     try {
         $ErrorActionPreference = 'Continue'
-        $text = & pwsh -NoProfile -File (Join-Path $factory 'scripts/audit-factory-failures.ps1') -ProjectPath $project -OutputPath $output -ApiUrl 'http://127.0.0.1:1' 2>&1 | Out-String
-    } finally { $ErrorActionPreference = $oldPreference }
-    Check 'missing registered identity fails without guessing folder name' ($LASTEXITCODE -ne 0 -and -not (Test-Path $output))
+        $text = & pwsh -NoProfile -File (Join-Path $factory 'scripts/audit-factory-failures.ps1') -ProjectPath $project -OutputPath $output 2>&1 | Out-String
+        $missingIdentityCode = $LASTEXITCODE
+    } finally { Pop-Location; $ErrorActionPreference = $oldPreference }
+    Check 'project identity is not guessed outside a Cezar worktree' ($missingIdentityCode -ne 0 -and -not (Test-Path $output))
     $run = Collect @('-CreateIssue')
     Check 'collector rejects legacy mutation flags' ($run.code -ne 0 -and -not (Test-Path $output))
 
