@@ -49,7 +49,7 @@ stateDiagram-v2
    - `factory:ready` → `factory:working`: Implementation automation
    - `factory:working` → `factory:review`: Implementation automation (after completion)
    - `factory:review` → `factory:changes-requested`: Review automation
-   - `factory:review` → `factory:done`: Independent review automation after successful validation; requests auto-merge into `dev`
+   - `factory:review` → `factory:done`: Independent review, current-head eligibility and required checks pass, auto-merge is requested for that exact head, and GitHub reports the PR merged; otherwise remain in review
    - A decomposed tracking parent closes after creating and queueing its child issues; children plan and implement autonomously in dependency order.
    - `factory:changes-requested` → `factory:working`: Fix automation
    - `factory:human-review` → `factory:needs-plan`: User resolves a major architectural decision; planning resumes automatically
@@ -79,7 +79,7 @@ implementation automation.
 | start | ready, changes-requested, blocked (no-op if working) | working |
 | plan-result | needs-plan, new | ready when criteria are met; needs-help only for an unresolved major architectural decision; decomposed parent closes after children are created and queued as `factory:needs-plan` |
 | implement-result | working | review; investigate if the agent reports failure |
-| review-result | review | done with auto-merge requested on approval; changes-requested for fixes; investigate after repeated review disagreement |
+| review-result | review | done only after GitHub reports the approved PR merged; a denied eligibility gate or queued auto-merge remains in review; changes-requested for fixes; investigate after repeated review disagreement |
 | investigate-result | investigate, working | ready for a clear retry; needs-plan for an automatic re-plan; needs-help only for a major architectural decision; blocked for an external dependency |
 
 Users decide only unresolved major architectural choices. A cleared external

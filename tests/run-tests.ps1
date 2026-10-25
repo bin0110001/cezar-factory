@@ -77,6 +77,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
+Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
@@ -117,6 +118,11 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
+$recoveryScript = Get-Content -Raw (Join-Path $factory 'scripts/recover-audit-reservations.ps1')
+Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_')
+$failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')
+$failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
+Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -265,9 +271,10 @@ Assert 'release contracts: verified release requires passing evidence' (Test-Jso
 Assert 'release contracts: active and expired task pins satisfy lease shape' ((Test-Json -Json $activeLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')) -and (Test-Json -Json $expiredLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')))
 $unsafeManifest = (Get-Content -Raw (Join-Path $releaseFixtures 'manifest-valid.json') | ConvertFrom-Json -AsHashtable); $unsafeManifest.files[0].path = '../VERSION'
 Assert 'release contracts: path traversal is rejected' (-not (Test-Json -Json ($unsafeManifest | ConvertTo-Json -Depth 20) -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
-foreach ($f in Get-ChildItem $factory -Recurse -Include *.yaml -File | Where-Object { $_.FullName -notmatch 'tests|node_modules' }) {
-    $t = Get-Content -Raw $f.FullName
-    Assert "yaml sane $($f.Name)" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
+foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
+    $file = Join-Path $factory $path
+    $t = Get-Content -Raw $file
+    Assert "yaml sane $path" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
 }
 foreach ($d in Get-ChildItem (Join-Path $factory 'skills') -Directory) {
     $p = Join-Path $d.FullName 'SKILL.md'
@@ -508,7 +515,7 @@ try {
         $output = & pwsh -NoProfile -File $val -Kind implementation -Path $f | ConvertFrom-Json
         @($output.errors)
     }
-    function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments) } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
+    function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments); prMerged = $false; prs = @() } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
     $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
     function Invoke-Lease([string]$Action, [string]$Owner = '') {
@@ -522,11 +529,12 @@ try {
     Assert 'lease: same owner is idempotent' ((Invoke-Lease 'create' 'worker-a') -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-lease:7' }).Count -eq 1)
     Assert 'lease: collision refused' ((Invoke-Lease 'create' 'worker-b') -ne 0)
     Assert 'lease: release is idempotent' ((Invoke-Lease 'release') -eq 0 -and (Invoke-Lease 'release') -eq 0)
-    function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0) {
+    function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0, [string]$GatePath = '') {
         $f = Join-Path $tmp 'route-result.json'; if ($Obj) { ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f }
         $global:LASTEXITCODE = 0
         $a = @{ Event = $Event; GhCommand = $gh; ProjectPath = $rp }
         if ($Obj) { $a.Path = $f } else { $a.Issue = $Issue }
+        if ($GatePath) { $a.GatePath = $GatePath }
         try { & pwsh -NoProfile -File $route @a *>&1 | Out-Null } catch { $global:LASTEXITCODE = 1 }
         $global:LASTEXITCODE
     }
@@ -583,9 +591,60 @@ try {
     Assert 'receipt: legacy agent result cannot satisfy receipt schema' (-not (Test-Json -Json ($impl | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
     Assert 'receipt: missing head cannot satisfy receipt schema' (-not (Test-Json -Json ((With $receipt @{ headSha = '' }) | ConvertTo-Json -Depth 5) -SchemaFile $receiptSchema -ErrorAction SilentlyContinue))
     Assert 'validation has no GitHub side effects' ((Get-Content -Raw $env:FAKE_GH_STATE) -eq $validationGhState)
-    $rev = @{ issue = 7; approvalChangeRequestStatus = 'change-request'; blockingFindings = ''; nonBlockingFindings = ''; acceptanceCriteriaVerification = 'v'; testAdequacy = 't'; riskObservations = 'r' }
+    $rev = @{ issue = 7; approvalChangeRequestStatus = 'change-request'; blockingFindings = ''; nonBlockingFindings = ''; acceptanceCriteriaVerification = 'v'; testAdequacy = 't'; riskObservations = 'r'; pr = 'https://github.com/example/project/pull/1'; reviewedHeadSha = ('a' * 40); reviewerIdentity = 'independent-reviewer/model' }
     Assert 'validate: change-request without findings fails' ((Test-Validate 'review' $rev) -ne 0)
     Assert 'validate: change-request with findings passes' ((Test-Validate 'review' (With $rev @{ blockingFindings = 'bug at x' })) -eq 0)
+    Assert 'validate: review approval requires current head and reviewer identity' ((Test-Validate 'review' (With $rev @{ approvalChangeRequestStatus = 'approval'; reviewedHeadSha = 'head'; reviewerIdentity = '' })) -ne 0)
+    # The eligibility command consumes live GitHub evidence and clean, head-bound workflow receipts.
+    $eligibilityScript = Join-Path $scripts 'verify-merge-eligibility.ps1'
+    $eligibilityRoot = Join-Path $tmp 'eligibility-receipts'
+    foreach ($stage in @('full','verify')) {
+        $dir = Join-Path $eligibilityRoot "$stage/attempt"
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = $stage; status = 'passed'; exitCode = 0; artifactPaths = @(".factory/artifacts/validation/$stage/receipt.json"); worktreeClean = $true } | ConvertTo-Json | Set-Content (Join-Path $dir 'receipt.json')
+    }
+    $eligibilityState = @{
+        labels = @('factory:review'); comments = @(); prHeadSha = ('a' * 40)
+        prDetails = @{ number = 1; url = $rev.pr; body = 'Closes #7'; state = 'OPEN'; isDraft = $false; baseRefName = 'dev'; headRefOid = ('a' * 40); author = @{ login = 'implementer' }; reviewDecision = 'APPROVED'; statusCheckRollup = @(@{ name = 'Factory CI'; conclusion = 'SUCCESS' }); reviews = @(@{ state = 'APPROVED'; commit = @{ oid = ('a' * 40) }; author = @{ login = 'independent-reviewer' } }); closingIssuesReferences = @(@{ number = 7 }) }
+        repoSettings = @{ allow_auto_merge = $true }
+        rules = @(
+            @{ type = 'pull_request'; parameters = @{ required_approving_review_count = 1; dismiss_stale_reviews_on_push = $true; require_last_push_approval = $true } },
+            @{ type = 'required_review_thread_resolution'; parameters = @{} },
+            @{ type = 'required_status_checks'; parameters = @{ required_status_checks = @(@{ context = 'Factory CI' }) } }
+        )
+        graphql = @{ data = @{ repository = @{ pullRequest = @{ reviewThreads = @{ nodes = @(@{ isResolved = $true }); pageInfo = @{ hasNextPage = $false } } } } } }
+    }
+    $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    function Test-Eligibility($Review, [string]$Name) {
+        $reviewFile = Join-Path $tmp "eligibility-$Name-review.json"; $outputFile = Join-Path $tmp "eligibility-$Name-output.json"
+        $Review | ConvertTo-Json -Depth 5 | Set-Content $reviewFile
+        $null = & pwsh -NoProfile -File $eligibilityScript -ReviewPath $reviewFile -OutputPath $outputFile -GhCommand $gh -ReceiptRoot $eligibilityRoot 2>&1
+        [pscustomobject]@{ Code = $LASTEXITCODE; Output = if (Test-Path $outputFile) { Get-Content -Raw $outputFile | ConvertFrom-Json } else { $null } }
+    }
+    $approvedReview = With $rev @{ approvalChangeRequestStatus = 'approval'; blockingFindings = '' }
+    $eligible = Test-Eligibility $approvedReview 'valid'
+    Assert 'merge gate allows current reviewed head with clean receipts and effective rules' ($eligible.Code -eq 0 -and $eligible.Output.decision -eq 'allowed')
+    $failedReceiptPath = Join-Path $eligibilityRoot 'full/newer/receipt.json'; New-Item -ItemType Directory -Force (Split-Path $failedReceiptPath) | Out-Null
+    @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = 'full'; status = 'failed'; exitCode = 1; artifactPaths = @('.factory/artifacts/validation/full/newer/receipt.json'); worktreeClean = $true } | ConvertTo-Json | Set-Content $failedReceiptPath
+    (Get-Item $failedReceiptPath).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(2)
+    $latestFailure = Test-Eligibility $approvedReview 'newer-failure'
+    Assert 'merge gate denies when a newer same-head validation attempt failed' ($latestFailure.Output.decision -eq 'denied' -and (@($latestFailure.Output.blockers) -match 'full'))
+    Remove-Item -LiteralPath (Split-Path $failedReceiptPath -Parent) -Recurse -Force
+    $wrongHead = Test-Eligibility (With $approvedReview @{ reviewedHeadSha = ('b' * 40) }) 'wrong-head'
+    Assert 'merge gate denies stale reviewer head' ($wrongHead.Output.decision -eq 'denied' -and (@($wrongHead.Output.blockers) -match 'reviewed head'))
+    $eligibilityState.prHeadSha = ('b' * 40); $eligibilityState.prDetails.headRefOid = ('b' * 40); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $liveChanged = Test-Eligibility $approvedReview 'live-head-changed'
+    Assert 'merge gate denies a PR head race before merge' ($liveChanged.Output.decision -eq 'denied' -and (@($liveChanged.Output.blockers) -match 'reviewed head'))
+    $eligibilityState.prHeadSha = ('a' * 40); $eligibilityState.prDetails.headRefOid = ('a' * 40); $eligibilityState.rules = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $noRules = Test-Eligibility $approvedReview 'no-rules'
+    Assert 'merge gate denies missing effective repository rules' ($noRules.Output.decision -ne 'allowed')
+    $eligibilityState.rules = @(
+        @{ type = 'pull_request'; parameters = @{ required_approving_review_count = 1; dismiss_stale_reviews_on_push = $true; require_last_push_approval = $true } },
+        @{ type = 'required_review_thread_resolution'; parameters = @{} },
+        @{ type = 'required_status_checks'; parameters = @{ required_status_checks = @(@{ context = 'Factory CI' }) } }
+    ); $eligibilityState.prDetails.statusCheckRollup[0].conclusion = 'FAILURE'; $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $failedCheck = Test-Eligibility $approvedReview 'failed-check'
+    Assert 'merge gate denies failed required check' ($failedCheck.Output.decision -eq 'denied' -and (@($failedCheck.Output.blockers) -match 'Factory CI'))
     $inv = @{ issue = 7; failureClassification = 'flaky-test'; evidence = 'e'; attemptsReviewed = 'a'; rootCauseHypothesis = 'h'; confidence = 'high'; recommendedAction = 'retry'; automaticRetryAppropriate = $true }
     Assert 'validate: good investigation passes' ((Test-Validate 'investigation' $inv) -eq 0)
     Assert 'validate: unknown classification fails' ((Test-Validate 'investigation' (With $inv @{ failureClassification = 'gremlins' })) -ne 0)
@@ -635,9 +694,13 @@ try {
     Set-Gh @('factory:working')
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
     Set-Gh @('factory:review')
-    Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
+    Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = '' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
-    Assert 'route: low-risk approval -> done and auto-merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = 'https://x/pr/1' })) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged)
+    Assert 'route: approval without eligibility receipt cannot merge or mark done' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and -not (Get-Gh).prMerged)
+    $gatePath = Join-Path $tmp 'merge-eligibility.json'
+    @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
+    $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')

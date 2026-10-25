@@ -1,9 +1,15 @@
 # Changelog
 
-## [0.3.51] - 2026-10-18
+## [0.3.55] - 2026-10-18
 
 - Validate every Factory workflow against Cezar's runtime schema and inspect
   workflow PowerShell command contracts and startup coverage in CI.
+
+## [0.3.53] - 2026-10-18
+
+- Gate Factory auto-merge on current-head review, clean workflow validation
+  receipts, effective GitHub rules, successful required checks, and resolved
+  review threads; only mark issues done after GitHub reports the PR merged.
 
 ## [0.3.50] - 2026-10-18
 

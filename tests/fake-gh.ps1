@@ -32,10 +32,14 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
     "https://github.com/x/y/issues/$n"
 }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
-elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { $state.prMerged = $true }
+elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { $state.prMerged = $true; $state.prMergeArgs = @($a) }
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'view') {
-    $pr = @($state.prs | Where-Object { $_.url -eq [string]$a[2] -or $_.number -eq [int]$a[2] }) | Select-Object -First 1
-    @{ body = [string]$pr.body } | ConvertTo-Json -Depth 5 -Compress
+    $pr = @($state.prs | Where-Object { [string]$_.url -eq [string]$a[2] -or [string]$_.number -eq [string]$a[2] }) | Select-Object -First 1
+    if ($state.prDetails) { $pr = $state.prDetails }
+    if (-not $pr) { $pr = @{} }
+    $pr.state = if ($state.prMerged) { 'MERGED' } else { $(if ($pr.state) { $pr.state } else { 'OPEN' }) }
+    $pr.headRefOid = if ($state.prHeadSha) { $state.prHeadSha } else { $pr.headRefOid }
+    $pr | ConvertTo-Json -Depth 8 -Compress
 }
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'edit') {
     $pr = @($state.prs | Where-Object { $_.url -eq [string]$a[2] -or $_.number -eq [int]$a[2] }) | Select-Object -First 1
@@ -43,6 +47,9 @@ elseif ($a[0] -eq 'pr' -and $a[1] -eq 'edit') {
     $pr.body = $body
     $state.prs = @($state.prs)
 }
+elseif ($a[0] -eq 'api' -and $a[1] -eq 'repos/example/project') { $state.repoSettings | ConvertTo-Json -Depth 8 -Compress }
+elseif ($a[0] -eq 'api' -and $a[1] -eq 'repos/example/project/rules/branches/dev') { @($state.rules) | ConvertTo-Json -Depth 8 -Compress -AsArray }
+elseif ($a[0] -eq 'api' -and $a[1] -eq 'graphql') { $state.graphql | ConvertTo-Json -Depth 8 -Compress }
 else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
-$state | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
+$state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
 exit 0
