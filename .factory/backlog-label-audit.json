@@ -1,11 +1,21 @@
-
 {
-  "considered": [47, 49, 50],
-  "changed": [
-    {"issue": 49, "added": ["factory:new", "type:maintenance", "risk:low"]},
-    {"issue": 50, "added": ["factory:new", "type:maintenance", "risk:low"]}
-  ],
+  "considered": [71, 72, 73],
+  "changed": [],
   "skipped": [
-    {"issue": 47, "reason": "epic/tracking parent", "added": ["factory:tracking"]}
+    {
+      "issue": 71,
+      "reason": "ambiguous - no type hint available for classification",
+      "added": ["factory:auditing"]
+    },
+    {
+      "issue": 72,
+      "reason": "ambiguous - no type hint available for classification",
+      "added": ["factory:auditing"]
+    },
+    {
+      "issue": 73,
+      "reason": "ambiguous - no type hint available for classification",
+      "added": ["factory:auditing"]
+    }
   ]
 }
