@@ -1,11 +1,9 @@
-
 {
-  "considered": [47, 49, 50],
+  "considered": [65, 66, 67],
   "changed": [
-    {"issue": 49, "added": ["factory:new", "type:maintenance", "risk:low"]},
-    {"issue": 50, "added": ["factory:new", "type:maintenance", "risk:low"]}
+    {"issue": 65, "added": ["factory:new", "type:feature", "risk:medium"]},
+    {"issue": 66, "added": ["factory:new", "type:maintenance", "risk:medium"]},
+    {"issue": 67, "added": ["factory:new", "type:feature", "risk:medium"]}
   ],
-  "skipped": [
-    {"issue": 47, "reason": "epic/tracking parent", "added": ["factory:tracking"]}
-  ]
+  "skipped": []
 }
