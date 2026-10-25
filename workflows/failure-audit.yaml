@@ -6,4 +6,4 @@ steps:
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-failure-audit -Step collect -RequiredScripts audit-factory-failures.ps1
   - id: collect
     name: Collect bounded failure evidence
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-factory-failures.ps1 -ProjectId "$env:CEZAR_PROJECT_ID" -ApiUrl "$env:CEZAR_API_URL" -OutputPath .factory/failure-audit-input.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-factory-failures.ps1 -OutputPath .factory/failure-audit-input.json
