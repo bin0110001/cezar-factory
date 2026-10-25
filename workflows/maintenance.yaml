@@ -8,7 +8,7 @@ steps:
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
   - id: recover-audit-reservations
     name: Release expired backlog-label audit reservations
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -ApiUrl "$CEZAR_API_URL" -ProjectId "$CEZAR_PROJECT_ID" -OutputPath .factory/audit-reservation-recovery.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -OutputPath .factory/audit-reservation-recovery.json
   - id: backlog-label-audit-collect
     name: Collect bounded backlog-label audit input
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json

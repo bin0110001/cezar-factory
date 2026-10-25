@@ -14,7 +14,7 @@ param(
     [ValidateRange(15, 1440)][int]$OlderThanMinutes = 90,
     [string]$GhCommand = 'gh',
     [string]$Repo = '',
-    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } else { '' }),
+    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } else { 'http://127.0.0.1:4321' }),
     [string]$ProjectId = $env:CEZAR_PROJECT_ID,
     [string]$OutputPath = '.factory/audit-reservation-recovery.json',
     [switch]$DryRun,
@@ -23,6 +23,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $ProjectId -and (Get-Location).Path -match '^(?<root>.+)[\\/]\.ai[\\/]cezar[\\/]worktrees[\\/][^\\/]+$') {
+    # Cezar's registered project root is the parent of its isolated worktree.
+    # Its leaf is the Cezar project slug; check steps do not receive a project ID env var.
+    $ProjectId = (Split-Path $Matches.root -Leaf).ToLowerInvariant()
+}
 $now = [DateTimeOffset]::UtcNow
 $cutoff = $now.AddMinutes(-$OlderThanMinutes)
 $lifecycle = @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate')
