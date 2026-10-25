@@ -25,6 +25,10 @@ jobs:
           npm run test -w @open-mercato/cezar -- src/verification/contract.test.ts
           npm run typecheck:contract
           npm run typecheck -w @open-mercato/cezar
+      - name: Install test-only Cezar workflow parser dependencies
+        run: npm ci --prefix cezar --ignore-scripts --workspace @open-mercato/cezar --include-workspace-root=false
+      - name: Validate Factory workflow contracts
+        run: node ./tests/workflow-contracts.mjs
       - name: Factory self-test (static checks, install/update/diff/verify on fixtures)
         shell: pwsh
         run: ./tests/run-tests.ps1
