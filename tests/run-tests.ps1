@@ -118,6 +118,7 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
+Assert 'maintenance passes Cezar environment variables through the workflow shell' ($maintenanceWorkflow -match '\-ApiUrl "\$CEZAR_API_URL"' -and $maintenanceWorkflow -match '\-ProjectId "\$CEZAR_PROJECT_ID"' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -266,9 +267,10 @@ Assert 'release contracts: verified release requires passing evidence' (Test-Jso
 Assert 'release contracts: active and expired task pins satisfy lease shape' ((Test-Json -Json $activeLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')) -and (Test-Json -Json $expiredLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')))
 $unsafeManifest = (Get-Content -Raw (Join-Path $releaseFixtures 'manifest-valid.json') | ConvertFrom-Json -AsHashtable); $unsafeManifest.files[0].path = '../VERSION'
 Assert 'release contracts: path traversal is rejected' (-not (Test-Json -Json ($unsafeManifest | ConvertTo-Json -Depth 20) -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
-foreach ($f in Get-ChildItem $factory -Recurse -Include *.yaml -File | Where-Object { $_.FullName -notmatch 'tests|node_modules' }) {
-    $t = Get-Content -Raw $f.FullName
-    Assert "yaml sane $($f.Name)" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
+foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
+    $file = Join-Path $factory $path
+    $t = Get-Content -Raw $file
+    Assert "yaml sane $path" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
 }
 foreach ($d in Get-ChildItem (Join-Path $factory 'skills') -Directory) {
     $p = Join-Path $d.FullName 'SKILL.md'
