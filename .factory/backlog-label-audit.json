@@ -1,1 +1,11 @@
-{"considered":[47,49,50],"changed":[{"issue":47,"added":["factory:tracking"]}],"skipped":[]}
+
+{
+  "considered": [47, 49, 50],
+  "changed": [
+    {"issue": 49, "added": ["factory:new", "type:maintenance", "risk:low"]},
+    {"issue": 50, "added": ["factory:new", "type:maintenance", "risk:low"]}
+  ],
+  "skipped": [
+    {"issue": 47, "reason": "epic/tracking parent", "added": ["factory:tracking"]}
+  ]
+}
