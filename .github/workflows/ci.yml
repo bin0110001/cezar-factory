@@ -34,3 +34,7 @@ jobs:
       - name: Release metadata validation
         shell: pwsh
         run: ./scripts/release/validate-release.ps1 -SkipTests
+      - name: Autodeploy retry and parity integration tests
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: bash ./tests/test-factory-autodeploy.sh
