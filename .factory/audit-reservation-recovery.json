@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-10-25T02:33:52.9775995+00:00",
+  "cutoff": "2026-10-25T01:03:52.9775995+00:00",
+  "olderThanMinutes": 90,
+  "dryRun": false,
+  "activeRunCheck": true,
+  "recovered": [],
+  "skipped": [],
+  "terminalReason": "no-expired-reservations"
+}
