@@ -1,21 +1,9 @@
 {
-  "considered": [71, 72, 73],
-  "changed": [],
-  "skipped": [
-    {
-      "issue": 71,
-      "reason": "ambiguous - no type hint available for classification",
-      "added": ["factory:auditing"]
-    },
-    {
-      "issue": 72,
-      "reason": "ambiguous - no type hint available for classification",
-      "added": ["factory:auditing"]
-    },
-    {
-      "issue": 73,
-      "reason": "ambiguous - no type hint available for classification",
-      "added": ["factory:auditing"]
-    }
-  ]
+  "considered": [68, 69, 70],
+  "changed": [
+    {"issue": 68, "added": ["factory:new", "type:feature", "risk:medium"]},
+    {"issue": 69, "added": ["factory:new", "type:refactor", "risk:medium"]},
+    {"issue": 70, "added": ["factory:new", "type:feature", "risk:medium"]}
+  ],
+  "skipped": []
 }
