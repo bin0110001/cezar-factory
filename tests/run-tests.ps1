@@ -1053,13 +1053,29 @@ try {
     $fakePr = Join-Path $gd 'fake-gh-pr.ps1'
     Set-Content $fakePr @'
 $a = @($args)
-if ($a[0] -eq 'pr' -and $a[1] -eq 'create') { 'https://github.com/x/y/pull/7'; exit 0 }
-if ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { exit 0 }
+if ($a[0] -eq 'pr' -and $a[1] -eq 'list') {
+    if (Test-Path $env:FAKE_PR_STATE) { '[{"url":"https://github.com/x/y/pull/7","headRefName":"factory/godot-4.8","baseRefName":"main"}]' }
+    else { '[]' }
+    exit 0
+}
+if ($a[0] -eq 'pr' -and $a[1] -eq 'create') {
+    Add-Content $env:FAKE_PR_STATE 'created'
+    'https://github.com/x/y/pull/7'
+    if ($env:FAKE_PR_AMBIGUOUS -eq '1') { exit 1 }
+    exit 0
+}
+if ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { Add-Content $env:FAKE_PR_STATE 'merged'; exit 0 }
 Write-Error "unsupported $($a -join ' ')"; exit 2
 '@
+    $env:FAKE_PR_STATE = Join-Path $gd 'fake-pr-state.txt'
+    $env:FAKE_PR_AMBIGUOUS = '1'
     $r = GodotStep publish @('-GhCommand', $fakePr)
     $published = Get-Content -Raw .factory/godot-upgrade-result.json | ConvertFrom-Json
-    Assert 'godot publish opens a PR with auto-merge and commits the fixes' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
+    Assert 'godot publish reconciles a lost PR-create response and requests auto-merge' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
+    $r = GodotStep publish @('-GhCommand', $fakePr)
+    $effects = @(Get-Content $env:FAKE_PR_STATE)
+    Assert "godot publish replay reuses the open PR without creating a duplicate (exit=$($r.Code); effects=$($effects -join ','); output=$($r.Out.Trim()))" ($r.Code -eq 0 -and @($effects | Where-Object { $_ -eq 'created' }).Count -eq 1 -and @($effects | Where-Object { $_ -eq 'merged' }).Count -eq 2)
+    Remove-Item Env:FAKE_PR_STATE, Env:FAKE_PR_AMBIGUOUS -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_GH_STATE -ErrorAction SilentlyContinue
     $r = GodotStep check @('-LatestTag', '4.8-stable')
     Assert 'godot check: an existing upgrade branch suppresses re-attempts' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')

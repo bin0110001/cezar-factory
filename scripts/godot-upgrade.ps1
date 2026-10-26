@@ -55,6 +55,16 @@ function Invoke-Git([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed ($LASTEXITCODE): $($output -join "`n")" }
     $output
 }
+function Find-OpenUpgradePr([string]$Head, [string]$Base) {
+    $json = & $GhCommand pr list --head $Head --base $Base --state open --json url,headRefName,baseRefName 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "gh pr list failed ($LASTEXITCODE): $($json -join "`n")" }
+    try { $prs = @($json -join "`n" | ConvertFrom-Json) }
+    catch { throw "gh pr list returned invalid JSON: $($_.Exception.Message)" }
+    $matches = @($prs | Where-Object { $_.headRefName -eq $Head -and $_.baseRefName -eq $Base -and -not [string]::IsNullOrWhiteSpace([string]$_.url) })
+    if ($matches.Count -gt 1) { throw "Multiple open PRs found for $Head -> $Base; reconcile before continuing." }
+    if ($matches.Count -eq 1) { return [string]$matches[0].url }
+    return $null
+}
 # '4.7-stable' / '4.7.1-stable' / '4.8-rc1' -> numeric version and channel.
 function ConvertFrom-GodotTag([string]$Tag) {
     if ($Tag -notmatch '^(?<v>\d+\.\d+(\.\d+)?)-(?<c>[a-z0-9.]+)$') { throw "Unrecognized Godot version tag '$Tag'." }
@@ -185,7 +195,10 @@ switch ($Step) {
             throw 'Refusing to publish: the latest Godot test run did not pass.'
         }
         Invoke-Git @('add', '-A', '--', '.', ':!.factory') | Out-Null
-        if (Invoke-Git @('status', '--porcelain')) {
+        & $GitCommand diff --cached --quiet
+        $stagedChanges = $LASTEXITCODE
+        if ($stagedChanges -gt 1) { throw "git diff --cached --quiet failed ($stagedChanges)" }
+        if ($stagedChanges -eq 1) {
             Invoke-Git @('commit', '-m', "Adapt to Godot $($state.to)") | Out-Null
         }
         Invoke-Git @('push', 'origin', $state.branch) | Out-Null
@@ -197,12 +210,20 @@ switch ($Step) {
         $bodyFile = Join-Path ([IO.Path]::GetTempPath()) "godot-upgrade-$([guid]::NewGuid().ToString('N')).md"
         Set-Content -LiteralPath $bodyFile -Value $body -Encoding utf8
         try {
-            $url = (& $GhCommand pr create --base $state.base --head $state.branch --title "Upgrade Godot to $($state.to)" --body-file $bodyFile 2>&1) -join "`n"
-            if ($LASTEXITCODE -ne 0) { throw "gh pr create failed ($LASTEXITCODE): $url" }
+            # The remote PR is the durable receipt. Reuse it on replay, and
+            # reconcile a lost response before deciding whether creation failed.
+            $url = Find-OpenUpgradePr $state.branch $state.base
+            if (-not $url) {
+                $createOutput = (& $GhCommand pr create --base $state.base --head $state.branch --title "Upgrade Godot to $($state.to)" --body-file $bodyFile 2>&1) -join "`n"
+                if ($LASTEXITCODE -eq 0) { $url = ($createOutput -split "`n" | Select-Object -Last 1).Trim() }
+                else {
+                    $url = Find-OpenUpgradePr $state.branch $state.base
+                    if (-not $url) { throw "gh pr create failed ($LASTEXITCODE): $createOutput" }
+                }
+            }
+            if ($url -notmatch '^https://[^/]+/.+/pull/\d+$') { throw "gh pr create returned an invalid PR URL: $url" }
         }
         finally { Remove-Item -LiteralPath $bodyFile -Force -ErrorAction SilentlyContinue }
-        $url = ($url -split "`n" | Select-Object -Last 1).Trim()
-
         $merge = (& $GhCommand pr merge $url --auto --squash 2>&1) -join "`n"
         $autoMerge = ($LASTEXITCODE -eq 0)
         $result = [ordered]@{ pr = $url; autoMerge = $autoMerge; from = $state.from; to = $state.to }
