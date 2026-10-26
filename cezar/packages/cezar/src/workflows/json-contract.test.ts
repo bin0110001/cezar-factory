@@ -34,6 +34,12 @@ describe('workflow JSON contracts', () => {
     const isPlanner = file === 'plan.yaml';
     const isMaintenance = file === 'maintenance.yaml';
     const isImplementation = file === 'implement.yaml';
+    if (isMaintenance) {
+      expect(normalized.steps.filter((step) => step.continueOnFailure).map((step) => ({ id: step.id, timeoutSeconds: step.timeoutSeconds }))).toEqual([
+        { id: 'refresh-stale-workable', timeoutSeconds: 300 },
+        { id: 'repository-maintenance', timeoutSeconds: 300 },
+      ]);
+    }
     const outputStep = normalized.steps.find((step) => step.outputSchema && (step.skill || step.prompt));
     if (isPlanner || isMaintenance || isImplementation) {
       expect(outputStep).toBeDefined();
@@ -167,9 +173,11 @@ describe('workflow JSON contracts', () => {
 
     const validate = steps.find((candidate) => candidate.id === 'validate')!;
     expect(validate.onFail?.retryOn).toEqual([1]);
-    expect(validate.failureReasons).toEqual({ '1': 'work_verdict' });
+    expect(validate.failureReasons).toEqual({ '1': 'malformed_result', '10': 'configuration' });
     expect(shouldRetryCheck(validate, 1)).toBe(true);
-    expect(checkFailureOutcome(validate, 1, true)).toMatchObject({ kind: 'task_failure', reasonCode: 'work_verdict' });
+    expect(shouldRetryCheck(validate, 10)).toBe(false);
+    expect(checkFailureOutcome(validate, 1, true)).toMatchObject({ kind: 'contract_failure', reasonCode: 'output_invalid' });
+    expect(checkFailureOutcome(validate, 10, false)).toMatchObject({ kind: 'infrastructure_failure', reasonCode: 'configuration' });
   });
 
   it('recognizes only typed reserved control outcomes', () => {

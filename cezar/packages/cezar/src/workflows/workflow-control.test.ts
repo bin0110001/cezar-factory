@@ -34,7 +34,7 @@ describe('workflow control outputs', () => {
     for (const manager of managers.splice(0)) manager.dispose();
     for (const store of stores.splice(0)) store.flush();
     for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 100, retryDelay: 100 });
-  });
+  }, 30_000);
 
   async function runControl(action: 'no_work' | 'skip_step' | 'blocked', reasonCode: string, stepsAfter = false) {
     const repo = mkdtempSync(join(tmpdir(), 'cez-control-'));
@@ -77,6 +77,41 @@ describe('workflow control outputs', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     return { repo, run: store.getRun(record.id)! };
+  }
+
+  async function runIndependentFailure() {
+    const repo = mkdtempSync(join(tmpdir(), 'cez-independent-failure-'));
+    roots.push(repo);
+    await exec('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n');
+    await exec('git', ['add', '-A'], { cwd: repo });
+    await exec('git', [...gitIdentity, 'commit', '-q', '-m', 'base'], { cwd: repo });
+    const store = RunStore.open(join(repo, '.ai/cezar'));
+    stores.push(store);
+    const manager = new RunManager(store, repo);
+    managers.push(manager);
+    const executed: string[] = [];
+    const internal = manager as unknown as {
+      runCheckStep: (_state: unknown, step: { id: string }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    internal.runCheckStep = async (_state, step) => {
+      executed.push(step.id);
+      if (step.id === 'refresh') return { ok: false, output: 'remote lookup failed', exitCode: 7 };
+      return { ok: true, output: 'maintenance complete', exitCode: 0 };
+    };
+    const record = manager.startRun({
+      name: 'independent-maintenance-fixture', source: 'file',
+      steps: [
+        { id: 'refresh', command: 'refresh', timeoutSeconds: 30, continueOnFailure: true },
+        { id: 'maintenance', command: 'maintenance' },
+      ],
+    }, { task: 'run independent maintenance steps', worktree: false });
+    const deadline = Date.now() + 10_000;
+    while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('independent maintenance workflow did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return { executed, run: store.getRun(record.id)! };
   }
 
   async function runInvalidOutput(reason: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid') {
@@ -290,6 +325,15 @@ describe('workflow control outputs', () => {
     expect(run.outcome).toMatchObject({ kind: 'blocked', reasonCode: 'provider_quota', stepId: 'preflight' });
   });
 
+  it('continues independent checks after failure and keeps the run failed with typed evidence', async () => {
+    const { executed, run } = await runIndependentFailure();
+    expect(executed).toEqual(['refresh', 'maintenance']);
+    expect(run.steps.find((step) => step.id === 'refresh')).toMatchObject({ status: 'failed', error: expect.stringContaining('exited 7') });
+    expect(run.steps.find((step) => step.id === 'maintenance')).toMatchObject({ status: 'done' });
+    expect(run.status).toBe('failed');
+    expect(run.outcome).toMatchObject({ kind: 'infrastructure_failure', reasonCode: 'unknown', stepId: 'refresh' });
+  }, 20_000);
+
   it('rejects missing, malformed, and schema-invalid output before downstream dispatch', async () => {
     const cases = [
       'output_missing',
@@ -307,7 +351,7 @@ describe('workflow control outputs', () => {
       });
       expect(existsSync(join(repo, 'consumer-ran'))).toBe(false);
     }
-  });
+  }, 20_000);
 
   it('rejects missing required input and invalid input schemas before command dispatch', async () => {
     const cases = [

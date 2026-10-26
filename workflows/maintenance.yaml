@@ -11,9 +11,13 @@ steps:
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
+    timeoutSeconds: 300
+    continueOnFailure: true
   - id: repository-maintenance
     name: Run deterministic repository maintenance
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json
+    timeoutSeconds: 300
+    continueOnFailure: true
   - id: recover-audit-reservations
     name: Release expired backlog-label audit reservations
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -ApiUrl "$CEZAR_API_URL" -ProjectId "$CEZAR_PROJECT_ID" -OutputPath .factory/audit-reservation-recovery.json

@@ -67,5 +67,9 @@ describe('typed check failure outcomes', () => {
     expect(workflowStepSchema.safeParse({ id: 'verify', command: 'check', failureReasons: { '2': 'gremlins' } }).success).toBe(false);
     expect(workflowStepSchema.safeParse({ id: 'verify', prompt: 'do work', failureReasons: { '1': 'test_regression' } }).success).toBe(false);
     expect(workflowStepSchema.safeParse({ id: 'verify', command: 'check', failureReasons: { launch: 'configuration' } }).success).toBe(false);
+    expect(workflowStepSchema.safeParse({ id: 'housekeeping', command: 'run', timeoutSeconds: 30, continueOnFailure: true }).success).toBe(true);
+    expect(workflowStepSchema.safeParse({ id: 'unbounded', command: 'run', continueOnFailure: true }).success).toBe(false);
+    expect(workflowStepSchema.safeParse({ id: 'agent', skill: 'plan', continueOnFailure: true }).success).toBe(false);
+    expect(workflowStepSchema.safeParse({ id: 'repair', command: 'run', continueOnFailure: true, onFail: { retry: 'agent' } }).success).toBe(false);
   });
 });

@@ -4568,6 +4568,15 @@ export class RunManager {
       if (state.cancelled) break;
       if (contractError) {
         this.finishStep(runId, step.id, 'failed', output, emit);
+        if (step.continueOnFailure) {
+          if (!runError) {
+            runError = `check "${step.id}" output contract failed; continuing after independent step failure`;
+            terminalOutcome = { kind: 'contract_failure', reasonCode: contractFailureReason ?? 'output_invalid', stepId: step.id };
+          }
+          emit({ type: 'note', stepId: step.id, message: 'independent check failed its output contract — continuing to later steps' });
+          i++;
+          continue;
+        }
         runError = `check "${step.id}" output contract failed`;
         terminalOutcome = { kind: 'contract_failure', reasonCode: contractFailureReason ?? 'output_invalid', stepId: step.id };
         break;
@@ -4575,6 +4584,15 @@ export class RunManager {
       if (timedOut || exitCode === 124 || output.startsWith('check timed out after ')) {
         const message = `check "${step.id}" timed out after ${step.timeoutSeconds}s`;
         this.finishStep(runId, step.id, 'failed', message, emit);
+        if (step.continueOnFailure) {
+          if (!runError) {
+            runError = `${message}; continuing after independent step failure`;
+            terminalOutcome = { kind: 'timeout', reasonCode: 'check_timeout', stepId: step.id };
+          }
+          emit({ type: 'note', stepId: step.id, message: 'independent check timed out — continuing to later steps' });
+          i++;
+          continue;
+        }
         runError = message;
         terminalOutcome = { kind: 'timeout', reasonCode: 'check_timeout', stepId: step.id };
         break;
@@ -4582,7 +4600,7 @@ export class RunManager {
       if (ok) {
         if (control?.action === 'no_work') {
           this.finishStep(runId, step.id, 'done', undefined, emit);
-          terminalOutcome = { kind: 'no_work', reasonCode: 'no_work', stepId: step.id };
+          if (!runError) terminalOutcome = { kind: 'no_work', reasonCode: 'no_work', stepId: step.id };
           for (const skipped of workflow.steps.slice(i + 1).filter((later) => !later.finalizer)) {
             this.store.updateStep(runId, skipped.id, { status: 'skipped', skipReason: 'no_work', finishedAt: new Date().toISOString() });
             emit({ type: 'step-end', stepId: skipped.id, status: 'skipped', reason: 'workflow reported no work' });
@@ -4680,6 +4698,19 @@ export class RunManager {
         runError = message;
         terminalOutcome = { kind: 'blocked', reasonCode: 'attempt_budget_exhausted', stepId: step.id };
         break;
+      }
+
+      if (step.continueOnFailure) {
+        const error = `check "${step.id}" exited ${exitCode}; continuing after independent step failure`;
+        this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited ${exitCode}`, emit);
+        if (!runError) {
+          runError = error;
+          terminalOutcome = checkFailureOutcome(step, exitCode, true)
+            ?? { kind: 'infrastructure_failure', reasonCode: 'unknown', stepId: step.id };
+        }
+        emit({ type: 'note', stepId: step.id, message: 'independent check failed — continuing to later steps' });
+        i++;
+        continue;
       }
 
       this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited non-zero`, emit);

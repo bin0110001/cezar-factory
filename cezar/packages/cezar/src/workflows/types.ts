@@ -58,6 +58,8 @@ export const workflowStepSchema = z
     when: z.record(z.string(), z.any()).optional(),
     /** Normalized nonzero check exit classification, keyed by exit code string. */
     failureReasons: z.record(z.string(), checkFailureCategorySchema).optional(),
+    /** Record a command failure and continue only for independent check steps. */
+    continueOnFailure: z.boolean().optional(),
     /** Cleanup command run after the ordinary workflow reaches any terminal path. */
     finalizer: z.boolean().optional(),
     /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
@@ -86,6 +88,9 @@ export const workflowStepSchema = z
   })
   .refine((s) => !s.timeoutSeconds || Boolean(s.command), {
     message: 'timeoutSeconds can only be declared on a check step',
+  })
+  .refine((s) => !s.continueOnFailure || (Boolean(s.command) && s.timeoutSeconds !== undefined && !s.onFail && !s.finalizer && !s.inputSchema && !s.outputSchema), {
+    message: 'continueOnFailure requires a bounded independent check step without contracts, retries, or finalizer behavior',
   })
   .refine((s) => !s.finalizer || (Boolean(s.command) && s.timeoutSeconds !== undefined && s.idempotent === true && !s.onFail && !s.when && !s.inputSchema && !s.outputSchema && !s.failureReasons), {
     message: 'a finalizer must be bounded and explicitly idempotent, and cannot have conditions, contracts, failure maps, or retries',
