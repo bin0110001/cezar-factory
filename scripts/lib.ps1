@@ -280,7 +280,9 @@ function Invoke-FactoryValidation {
                 if ($baseSha -match '^[0-9a-fA-F]{40}$') {
                     & git -C $root cat-file -e "$baseSha^{commit}" 2>$null
                     $baseExists = ($LASTEXITCODE -eq 0)
-                    if ($baseExists) {
+                    & git -C $root merge-base --is-ancestor $baseSha HEAD 2>$null
+                    $baseIsAncestor = ($LASTEXITCODE -eq 0)
+                    if ($baseExists -and $baseIsAncestor) {
                         $commitFiles = @(& git -C $root diff --name-only "$baseSha..HEAD" 2>$null); $commitOk = ($LASTEXITCODE -eq 0)
                         $stagedFiles = @(& git -C $root diff --cached --name-only 2>$null); $stagedOk = ($LASTEXITCODE -eq 0)
                         $workingFiles = @(& git -C $root diff --name-only 2>$null); $workingOk = ($LASTEXITCODE -eq 0)
@@ -364,6 +366,7 @@ function Invoke-FactoryValidation {
         $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
         $start.Environment['FACTORY_VALIDATION_RESULT_FORMAT'] = $resultFormat
         $start.Environment['FACTORY_VALIDATION_CHANGED_FILES'] = ConvertTo-Json -InputObject @($changedFiles) -Compress
+        $start.Environment['FACTORY_VALIDATION_CHANGED_FILES_KNOWN'] = [string]$changeSetKnown
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture

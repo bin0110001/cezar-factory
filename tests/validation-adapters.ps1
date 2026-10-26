@@ -33,7 +33,7 @@ if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
 if ($env:ADAPTER_EXPECT_CHANGED_FILE) {
     $changedFiles = @((ConvertFrom-Json -InputObject $env:FACTORY_VALIDATION_CHANGED_FILES))
-    if ($changedFiles -notcontains $env:ADAPTER_EXPECT_CHANGED_FILE) { Write-Error 'Changed-file evidence was not passed to the project verifier.'; exit 9 }
+    if ($env:FACTORY_VALIDATION_CHANGED_FILES_KNOWN -ne 'True' -or $changedFiles -notcontains $env:ADAPTER_EXPECT_CHANGED_FILE) { Write-Error 'Changed-file evidence was not passed to the project verifier.'; exit 9 }
 }
 if ($env:ADAPTER_COMMIT) {
     Set-Content ./adapter-commit.txt changed
