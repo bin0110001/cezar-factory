@@ -25,10 +25,10 @@ risk-levels:
     requires-human-review: false
     requires-independent-review: true
     allows-auto-merge: true
-    requires-human-plan-approval: false
+    requires-human-plan-approval: true
     requires-human-merge: false
     requires-full-validation: true
-    flow: implement -> full validation -> independent review -> auto-merge to dev; ask for user input only for an unresolved major architectural decision
+    flow: human plan approval -> implement -> full validation -> independent review -> auto-merge to dev; ask for focused input on an unresolved major architectural decision
 
 # Risk assessment guidelines
 assessment:
@@ -50,8 +50,8 @@ assessment:
 # Human gate triggers
 human-gates:
   plan-approval:
-    trigger: an unresolved major architectural decision materially changes compatibility, ownership, or the system contract
-    action: ask the user one focused question; risk level alone never blocks planning or implementation
+    trigger: a risk:high plan, or an unresolved major architectural decision that materially changes compatibility, ownership, or the system contract
+    action: hold risk:high work before implementation until a human explicitly approves its plan; ask one focused question when a major architectural decision is unresolved
   review:
     trigger: every implementation PR entering factory:review
     action: run independent technical review; do not wait for user review
