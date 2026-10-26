@@ -62,24 +62,29 @@ function Write-Result($Result) {
 }
 
 $cutoff = [DateTimeOffset]::UtcNow.AddHours(-$OlderThanHours)
-$raw = Invoke-Gh @('issue','list','--state','open','--limit','1000','--json','number,title,createdAt,labels,url')
+$raw = Invoke-Gh @('issue','list','--state','open','--limit','1000','--json','number,title,createdAt,updatedAt,labels,url')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
 $candidates = @()
 $excluded = @()
+$recentlyUpdatedCount = 0
 
 foreach ($issue in $issues) {
     $labels = @(Get-LabelNames $issue)
     $states = @($labels | Where-Object { $_ -like 'factory:*' -and $_ -in ($workableStates + $manualOrTerminalStates) })
-    $created = [DateTimeOffset]::Parse([string]$issue.createdAt)
+    $lastUpdated = $null
+    try { $lastUpdated = [DateTimeOffset]::Parse([string]$issue.updatedAt) } catch { }
     $reason = $null
-    if ($created -gt $cutoff) { $reason = 'younger-than-cutoff' }
+    if ($null -eq $lastUpdated) { $reason = 'missing-or-invalid-updated-at' }
+    elseif ($lastUpdated -gt $cutoff) { $reason = 'recently-updated' }
     elseif ($states.Count -ne 1) { $reason = if ($states.Count -eq 0) { 'no-single-lifecycle-state' } else { 'multiple-lifecycle-states' } }
     elseif ($manualOrTerminalStates -contains $states[0]) { $reason = 'manual-or-terminal-state' }
     elseif ($labels -contains 'factory:auditing' -or $labels -contains 'factory:tracking') { $reason = 'audit-or-tracking-marker' }
     elseif ($states[0] -eq 'factory:ready' -and @($labels | Where-Object { $complexityLabels -contains $_ }).Count -ne 1) { $reason = 'ready-without-one-complexity-label' }
 
     if ($reason) {
-        if ($reason -notin @('younger-than-cutoff')) {
+        if ($reason -eq 'recently-updated') {
+            $recentlyUpdatedCount++
+        } else {
             $excluded += [ordered]@{ issue = [int]$issue.number; state = if ($states.Count) { $states -join ',' } else { $null }; reason = $reason }
         }
         continue
@@ -90,17 +95,26 @@ foreach ($issue in $issues) {
         url = [string]$issue.url
         state = [string]$states[0]
         createdAt = [string]$issue.createdAt
-        ageHours = [Math]::Round(([DateTimeOffset]::UtcNow - $created).TotalHours, 1)
+        updatedAt = $lastUpdated.ToUniversalTime().ToString('o')
+        ageHours = [Math]::Round(([DateTimeOffset]::UtcNow - $lastUpdated).TotalHours, 1)
         labels = $labels
     }
 }
 
-$selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.createdAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
+$selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.updatedAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
 $refreshed = @()
 $failures = @()
 foreach ($candidate in $selected) {
     try {
         if (-not $DryRun) {
+            $liveRaw = Invoke-Gh @('issue', 'view', [string]$candidate.issue, '--json', 'number,state,updatedAt,labels')
+            $live = ($liveRaw -join "`n") | ConvertFrom-Json
+            $liveLabels = @(Get-LabelNames $live | Sort-Object -Unique)
+            $expectedLabels = @($candidate.labels | Sort-Object -Unique)
+            $liveRevision = [DateTimeOffset]::Parse([string]$live.updatedAt).ToUniversalTime().ToString('o')
+            if ([string]$live.state -ne 'OPEN' -or $liveRevision -ne $candidate.updatedAt -or ($liveLabels -join "`n") -ne ($expectedLabels -join "`n")) {
+                throw 'issue state, updatedAt revision, or labels changed since stale-workable selection; refusing refresh'
+            }
             Invoke-Gh @('issue','edit',[string]$candidate.issue,'--remove-label',$candidate.state) | Out-Null
             Invoke-Gh @('issue','edit',[string]$candidate.issue,'--add-label',$candidate.state) | Out-Null
         }
@@ -120,6 +134,7 @@ $result = [ordered]@{
     dryRun = [bool]$DryRun
     considered = @($issues).Count
     eligible = @($candidates).Count
+    recentlyUpdated = $recentlyUpdatedCount
     refreshed = $refreshed
     excluded = $excluded
     failures = $failures

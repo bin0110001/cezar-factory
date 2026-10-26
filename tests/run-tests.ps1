@@ -131,6 +131,7 @@ $intakeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/intake.yaml')
 $intakeSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-intake/SKILL.md')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
+$staleWorkableScript = Get-Content -Raw (Join-Path $factory 'scripts/refresh-stale-workable.ps1')
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
 $investigateSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-investigate/SKILL.md')
@@ -174,6 +175,7 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance housekeeping continues the second independent check after a first-step failure' ($maintenanceWorkflow -match '(?s)id: refresh-stale-workable\s+name:.*?timeoutSeconds: 300\s+continueOnFailure: true.*?id: repository-maintenance\s+name:.*?timeoutSeconds: 300\s+continueOnFailure: true' -and $maintenanceWorkflow -match '(?s)id: repository-maintenance.*?continueOnFailure: true.*?id: recover-audit-reservations')
+Assert 'stale-workable uses issue activity revision for cooldown and checks revision before refresh' ($staleWorkableScript -match "updatedAt,labels,url" -and $staleWorkableScript -match 'recently-updated' -and $staleWorkableScript -match "state,updatedAt,labels" -and $staleWorkableScript -match 'issue state, updatedAt revision, or labels changed')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
 $maintenanceAutomations = @(Get-ChildItem (Join-Path $factory 'automations') -Filter '*.json' | ForEach-Object { Get-Content -Raw $_.FullName | ConvertFrom-Json } | Where-Object { $_.task.workflow -eq 'factory-maintenance' })
 Assert 'one configured automation owns the unchanged hourly maintenance schedule' ($maintenanceAutomations.Count -eq 1 -and $maintenanceAutomations[0].schedule.type -eq 'hours' -and $maintenanceAutomations[0].schedule.every -eq 1)
@@ -645,6 +647,31 @@ try {
     }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments); updatedAt = '2026-10-25T00:00:00.0000000Z'; prMerged = $false; prs = @() } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
+    $staleRefreshPath = Join-Path $tmp 'stale-workable-refresh.json'
+    $staleRefreshState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0
+        issues = @(
+            @{ number = 11; title = 'Old issue touched today'; url = 'https://github.com/x/y/issues/11'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = [DateTimeOffset]::UtcNow.ToString('o'); labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) },
+            @{ number = 12; title = 'Untouched workable issue'; url = 'https://github.com/x/y/issues/12'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) },
+            @{ number = 13; title = 'Blocked old issue'; url = 'https://github.com/x/y/issues/13'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:blocked' }) }
+        )
+    }
+    $staleRefreshState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleRefreshFirst = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+    $staleRefreshFirstResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+    $staleRefreshAfterFirst = Get-Gh
+    Assert 'stale-workable refresh uses last update and reports recently touched old issues' ($staleRefreshFirst.Code -eq 0 -and @($staleRefreshFirstResult.refreshed).Count -eq 1 -and $staleRefreshFirstResult.refreshed[0].issue -eq 12 -and $staleRefreshFirstResult.recentlyUpdated -eq 1 -and $staleRefreshAfterFirst.issueEditCount -eq 2)
+    $staleRefreshSecond = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+    $staleRefreshSecondResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+    Assert 'stale-workable replay observes activity revision and does not repeat the trigger' ($staleRefreshSecond.Code -eq 0 -and @($staleRefreshSecondResult.refreshed).Count -eq 0 -and $staleRefreshSecondResult.recentlyUpdated -eq 2 -and (Get-Gh).issueEditCount -eq 2)
+    $staleRaceState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0; changeIssueAfterList = 14
+        issues = @(@{ number = 14; title = 'Issue changed after listing'; url = 'https://github.com/x/y/issues/14'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) })
+    }
+    $staleRaceState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleRaceRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+    $staleRaceResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+    Assert 'stale-workable refuses to refresh after the selected issue revision changes' ($staleRaceRun.Code -ne 0 -and @($staleRaceResult.failures).Count -eq 1 -and (Get-Gh).issueEditCount -eq 0 -and @((Get-Gh).issues[0].labels | Where-Object { $_.name -eq 'factory:ready' }).Count -eq 1)
     $closingPrUrl = 'https://github.com/x/y/pull/99'
     $closingResultPath = Join-Path $tmp 'closing-reference-result.json'
     @{ issue = 7; status = 'success'; pr = $closingPrUrl } | ConvertTo-Json | Set-Content $closingResultPath

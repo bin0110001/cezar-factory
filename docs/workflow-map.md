@@ -68,12 +68,15 @@ also runs `refresh-stale-workable` and `maintain-repository.ps1` before the
 agent step so agent failure cannot suppress those tasks. It does not select or classify issues for intake;
 `[factory] intake` is the only intake path. `refresh-stale-workable` is a
 repair loop, not a new lifecycle state. It selects at most two open
-issues older than 24 hours in `factory:new`, `factory:needs-plan`,
+issues with no updates in the previous 24 hours in `factory:new`, `factory:needs-plan`,
 `factory:ready`, `factory:review`, `factory:changes-requested`, or
 `factory:investigate`. It skips manual/terminal states, multiple or missing
 lifecycle labels, audit/tracking markers, and `factory:ready` issues without
 exactly one complexity label. It removes and re-adds only the selected state
 label, causing the existing downstream automation to receive a fresh event.
+The refresh consumer rechecks the live issue state, `updatedAt` revision, and
+labels before changing anything. A successful refresh advances `updatedAt`, so
+the hourly schedule does not select the same issue again during its cooldown.
 
 ## Update contract
 

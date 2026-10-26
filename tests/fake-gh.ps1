@@ -7,7 +7,8 @@ if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
     if ($issue -and -not $issue.updatedAt) { $issue.updatedAt = '2026-10-25T00:00:00.0000000Z' }
     $labels = if ($issue) { @($issue.labels | ForEach-Object { if ($_ -is [string]) { [string]$_ } else { [string]$_.name } }) } else { @($state.labels) }
-    @{ number = [int]$issue.number; state = $(if ($state.issueState) { [string]$state.issueState } else { 'OPEN' }); body = [string]$issue.body; updatedAt = if ($issue) { [string]$issue.updatedAt } else { [string]$state.updatedAt }; labels = @($labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
+    $body = if ($issue -and $issue.ContainsKey('body')) { [string]$issue.body } else { '' }
+    @{ number = [int]$issue.number; state = $(if ($state.issueState) { [string]$state.issueState } else { 'OPEN' }); body = $body; updatedAt = if ($issue) { [string]$issue.updatedAt } else { [string]$state.updatedAt }; labels = @($labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
@@ -16,6 +17,9 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
         $vals = "$($a[$i + 1])" -split ','
         if ($a[$i] -eq '--add-label') { $issueLabels = @($issueLabels) + $vals; $state.labels = @($state.labels) + $vals }
         if ($a[$i] -eq '--remove-label') { $issueLabels = @($issueLabels | Where-Object { $vals -notcontains $_ }); $state.labels = @($state.labels | Where-Object { $vals -notcontains $_ }) }
+    }
+    if ($state.ContainsKey('trackIssueEditCount') -and $state.trackIssueEditCount) {
+        $state.issueEditCount = [int]$state.issueEditCount + 1
     }
     if ($issue) { $issue.labels = @($issueLabels | Sort-Object -Unique) }
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
@@ -45,7 +49,13 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
     foreach ($issue in @($state.issues | Where-Object { $_ })) { if (-not $issue.updatedAt) { $issue.updatedAt = '2026-10-25T00:00:00.0000000Z' } }
-    @($state.issues | Where-Object { $_ }) | ConvertTo-Json -Depth 5 -Compress -AsArray
+    $listedIssues = @($state.issues | Where-Object { $_ })
+    $listJson = $listedIssues | ConvertTo-Json -Depth 5 -Compress -AsArray
+    if ($state.ContainsKey('changeIssueAfterList') -and $state.changeIssueAfterList) {
+        $changedIssue = @($state.issues | Where-Object { $_.number -eq [int]$state.changeIssueAfterList }) | Select-Object -First 1
+        if ($changedIssue) { $changedIssue.updatedAt = '2026-10-26T00:00:00.0000000Z' }
+    }
+    $listJson
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
     $n = 100 + @($state.issues | Where-Object { $_ }).Count
