@@ -23,6 +23,9 @@ function Run-Stage([string]$stage) {
         [pscustomobject]@{ Code = $LASTEXITCODE; Output = $output; Receipt = $record }
     } finally { Pop-Location }
 }
+Check 'diagnostic fingerprints ignore project roots, line numbers, and case' (
+    (Get-ValidationDiagnosticFingerprint 'C:\work\game\Scripts\Player.gd:21:4: Invalid call' 'C:\work\game') -eq
+    (Get-ValidationDiagnosticFingerprint 'D:\other\game\scripts\player.gd:99:2: INVALID CALL' 'D:\other\game'))
 try {
     New-Item -ItemType Directory -Path (Join-Path $project '.ai/factory') -Force | Out-Null
     Set-Content (Join-Path $project '.gitignore') ".factory/"

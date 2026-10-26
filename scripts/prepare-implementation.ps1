@@ -81,6 +81,13 @@ if ($repoRoot) {
         $repositoryHeadSha = ([string]$headOutput[0]).Trim()
     }
 }
+$projectFactoryConfigSha256 = $null
+if ($repoRoot) {
+    $projectFactoryConfigPath = Join-Path $repoRoot '.ai/factory/factory.config.yaml'
+    if (Test-Path -LiteralPath $projectFactoryConfigPath -PathType Leaf) {
+        $projectFactoryConfigSha256 = (Get-FileHash -LiteralPath $projectFactoryConfigPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+}
 $context = [ordered]@{
     schemaVersion = 1
     preparedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -89,6 +96,7 @@ $context = [ordered]@{
         workingDirectory = $workingDirectory
         repositoryRoot = $repoRoot
         repositoryHeadSha = $repositoryHeadSha
+        projectFactoryConfigSha256 = $projectFactoryConfigSha256
         gitBranch = if ($repoRoot) { (& git -C $repoRoot branch --show-current 2>$null) -join '' } else { $null }
         gitStatus = if ($repoRoot) { @(& git -C $repoRoot status --short 2>$null) } else { @() }
         factoryRuntimeRoot = if ($env:FACTORY_RUNTIME_ROOT) { $env:FACTORY_RUNTIME_ROOT } else { $null }

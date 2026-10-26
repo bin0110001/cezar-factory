@@ -159,6 +159,56 @@ function Get-ValidationTimeoutSeconds([string]$Stage) {
     return 7200
 }
 
+function Get-ValidationDiagnosticFingerprint([string]$Diagnostic, [string]$ProjectRoot) {
+    $normalized = ([string]$Diagnostic).Normalize([Text.NormalizationForm]::FormC) -replace '\\', '/'
+    if ($ProjectRoot) {
+        $normalized = $normalized -replace [regex]::Escape(([IO.Path]::GetFullPath($ProjectRoot) -replace '\\', '/')), '<project>'
+    }
+    $normalized = $normalized -replace '(?i)(\.(?:gd|cs|ps1|py|ts|tsx|js|jsx|go|rs|cpp|h)):\d+(?::\d+)?', '$1:#'
+    $normalized = ($normalized -replace '\s+', ' ').Trim().ToLowerInvariant()
+    $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+}
+
+function Get-ValidationDiagnosticComparison($StageConfig, [string]$Root, [string]$ContextPath, [string]$BaseSha, $Diagnostics) {
+    $comparison = [ordered]@{ status = 'unconfigured'; reasonCode = 'baseline_not_configured'; baselineSha256 = $null; knownFingerprints = @(); newFingerprints = @(); unclassifiedCount = 0 }
+    if (-not ($StageConfig -is [System.Collections.IDictionary]) -or -not $StageConfig.Contains('baselinePath') -or -not $StageConfig.Contains('baselineSha256')) { return $comparison }
+    $relative = [string]$StageConfig.baselinePath
+    $pin = [string]$StageConfig.baselineSha256
+    if (-not $relative -or $pin -notmatch '^[a-fA-F0-9]{64}$') { $comparison.status = 'unavailable'; $comparison.reasonCode = 'baseline_config_invalid'; return $comparison }
+    $path = [IO.Path]::GetFullPath((Join-Path $Root $relative))
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (-not $path.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { $comparison.status = 'unavailable'; $comparison.reasonCode = 'baseline_path_invalid'; return $comparison }
+    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $pin.ToLowerInvariant()) { $comparison.status = 'unavailable'; $comparison.reasonCode = 'baseline_hash_mismatch'; return $comparison }
+    try {
+        $context = Get-Content -Raw $ContextPath | ConvertFrom-Json -ErrorAction Stop
+        $configPath = Join-Path $Root '.ai/factory/factory.config.yaml'
+        if (-not $context.environment.projectFactoryConfigSha256 -or (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$context.environment.projectFactoryConfigSha256) { throw 'factory_config_changed' }
+        if (-not $BaseSha -or -not $context.environment.repositoryHeadSha) { throw 'base_missing' }
+        $baselineCommit = (& git -C $Root log -1 --format=%H $BaseSha -- $relative 2>$null | Select-Object -First 1)
+        if ($LASTEXITCODE -ne 0 -or -not $baselineCommit) { throw 'baseline_not_in_base' }
+        $baseHash = (& git -C $Root rev-parse "$BaseSha`:$relative" 2>$null | Select-Object -First 1)
+        $headHash = (& git -C $Root rev-parse "HEAD`:$relative" 2>$null | Select-Object -First 1)
+        if ($LASTEXITCODE -ne 0 -or $baseHash -ne $headHash) { throw 'baseline_changed_in_branch' }
+        $baseline = Get-Content -Raw $path | ConvertFrom-Json -ErrorAction Stop
+        if ($baseline.schemaVersion -ne 1 -or -not $baseline.sourceHeadSha -or -not $baseline.expiresAt -or -not $baseline.diagnosticFingerprints) { throw 'baseline_schema_invalid' }
+        $expiry = [DateTimeOffset]::Parse([string]$baseline.expiresAt)
+        if ($expiry -le [DateTimeOffset]::UtcNow) { throw 'baseline_expired' }
+        & git -C $Root merge-base --is-ancestor ([string]$baseline.sourceHeadSha) $BaseSha 2>$null
+        if ($LASTEXITCODE -ne 0) { throw 'baseline_source_not_ancestor' }
+        $known = @($baseline.diagnosticFingerprints | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        $fingerprints = @($Diagnostics | ForEach-Object { Get-ValidationDiagnosticFingerprint ([string]$_) $Root } | Sort-Object -Unique)
+        $comparison.status = 'compared'; $comparison.reasonCode = 'baseline_compared'; $comparison.baselineSha256 = $actual
+        $comparison.knownFingerprints = @($fingerprints | Where-Object { $_ -in $known })
+        $comparison.newFingerprints = @($fingerprints | Where-Object { $_ -notin $known })
+        return $comparison
+    } catch {
+        $comparison.status = 'unavailable'; $comparison.reasonCode = 'baseline_provenance_invalid'
+        return $comparison
+    }
+}
+
 function Invoke-FactoryValidation {
     param(
         [ValidateSet('changed', 'full', 'verify')][string]$Stage,
@@ -183,6 +233,7 @@ function Invoke-FactoryValidation {
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage); workingDirectory = '.'; evidencePath = ''
         validationResult = $null
+        diagnosticComparison = $null
         changedFiles = @(); changedFilesKnown = $false
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
@@ -397,6 +448,9 @@ function Invoke-FactoryValidation {
                 $receipt.exitCode = 1; $receipt.message = "Configured validation.$Stage emitted an invalid JSON result: $resultError"
             } else {
                 $receipt.validationResult = $result
+                $diagnostics = @()
+                if ($result.PSObject.Properties['diagnostics']) { $diagnostics = @($result.diagnostics) }
+                $receipt.diagnosticComparison = Get-ValidationDiagnosticComparison $stageConfig $root $contextPath $baseSha $diagnostics
                 if ($result.message) { $receipt.message = [string]$result.message }
                 switch ([string]$result.status) {
                     'passed' {

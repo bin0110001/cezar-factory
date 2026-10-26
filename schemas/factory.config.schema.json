@@ -85,6 +85,8 @@
         "prerequisites": { "type": "array", "items": { "type": "string" } },
         "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },
         "evidencePath": { "type": "string" },
+        "baselinePath": { "type": "string" },
+        "baselineSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
         "appliesTo": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["command", "workingDirectory", "prerequisites", "timeoutSeconds", "evidencePath", "appliesTo"],
