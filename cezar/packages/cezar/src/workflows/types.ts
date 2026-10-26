@@ -62,7 +62,7 @@ export const workflowStepSchema = z
     finalizer: z.boolean().optional(),
     /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
     idempotent: z.literal(true).optional(),
-    /** Hard upper bound for a finalizer command, in seconds. */
+    /** Hard upper bound for a check command, in seconds. */
     timeoutSeconds: z.number().int().positive().max(300).optional(),
     onFail: z
       .object({

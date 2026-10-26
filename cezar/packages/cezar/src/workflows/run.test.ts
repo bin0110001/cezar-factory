@@ -907,6 +907,36 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(notes[1]).toContain('you are running step 2 of 2');
   }, 60_000);
 
+  it('treats a bounded check timeout as terminal instead of starting an agent repair retry', async () => {
+    const workflow: WorkflowDef = {
+      name: 'bounded-check-timeout',
+      source: 'built-in',
+      steps: [
+        { id: 'implement', name: 'implement', skill: 'implement', prompt: '{{task}}' },
+        { id: 'verify', command: 'sleep 10', timeoutSeconds: 1, onFail: { retry: 'implement', max: 2 } },
+      ],
+    };
+    const internal = manager as unknown as {
+      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number; timedOut?: boolean }>;
+    };
+    const originalRunCheckStep = internal.runCheckStep.bind(manager);
+    internal.runCheckStep = async (_state, step) => (step as { id: string }).id === 'verify'
+      ? { ok: false, output: 'check timed out after 1s', exitCode: 124, timedOut: true }
+      : originalRunCheckStep(_state, step);
+    const record = manager.startRun(workflow, { task: 'mock:done check timeout', worktree: false });
+    const deadline = Date.now() + 15_000;
+    while (manager.isActive(record.id)) {
+      if (Date.now() > deadline) throw new Error('timed check did not finish in time');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const finished = store.getRun(record.id);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'check_timeout', stepId: 'verify' });
+    expect(finished?.steps.map((step) => step.status)).toEqual(['done', 'failed']);
+    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
+    internal.runCheckStep = originalRunCheckStep;
+  }, 30_000);
+
   it('validates and publishes an agent output before dispatching its consumer', async () => {
     const priorOutput = process.env.CEZ_MOCK_OUTPUT_TEXT;
     const response = { proposal: 'defer', rationale: 'dependency is missing' };

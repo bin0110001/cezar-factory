@@ -4468,12 +4468,19 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode, structuredOutput, contractError, contractFailureReason, control } = await this.runCheckStep(state, step, input.task, stepInput, emit);
+      const { ok, output, exitCode, structuredOutput, contractError, contractFailureReason, control, timedOut } = await this.runCheckStep(state, step, input.task, stepInput, emit);
       if (state.cancelled) break;
       if (contractError) {
         this.finishStep(runId, step.id, 'failed', output, emit);
         runError = `check "${step.id}" output contract failed`;
         terminalOutcome = { kind: 'contract_failure', reasonCode: contractFailureReason ?? 'output_invalid', stepId: step.id };
+        break;
+      }
+      if (timedOut || exitCode === 124 || output.startsWith('check timed out after ')) {
+        const message = `check "${step.id}" timed out after ${step.timeoutSeconds}s`;
+        this.finishStep(runId, step.id, 'failed', message, emit);
+        runError = message;
+        terminalOutcome = { kind: 'timeout', reasonCode: 'check_timeout', stepId: step.id };
         break;
       }
       if (ok) {
@@ -5974,6 +5981,7 @@ export class RunManager {
     ok: boolean; output: string; exitCode: number; structuredOutput?: unknown; contractError?: boolean;
     contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid';
     control?: ReturnType<typeof workflowControlOf>['control'];
+    timedOut?: boolean;
   }> {
     // `{{task}}` in a command expands through an env var, never by pasting the
     // task text into the shell line, so task content cannot inject commands.
@@ -5981,7 +5989,7 @@ export class RunManager {
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const processGroup = step.finalizer === true && process.platform !== 'win32';
+      const processGroup = Boolean(step.timeoutSeconds) && process.platform !== 'win32';
       const child = spawn('bash', ['-lc', command], {
         cwd: state.cwd,
         env: { ...process.env, CEZAR_TASK: task, CEZAR_INPUT_JSON: JSON.stringify(stepInput) },
@@ -6002,7 +6010,7 @@ export class RunManager {
       let timedOut = false;
       let timeoutTimer: NodeJS.Timeout | undefined;
       let forceKillTimer: NodeJS.Timeout | undefined;
-      if (step.finalizer && step.timeoutSeconds) {
+      if (step.timeoutSeconds) {
         timeoutTimer = setTimeout(() => {
           timedOut = true;
           signalCommand('SIGTERM');
@@ -6051,7 +6059,7 @@ export class RunManager {
           resolve({ ok: true, output: trimmed, exitCode, structuredOutput: parsed.data, control: parsed.control });
           return;
         }
-        resolve({ ok: !timedOut && code === 0, output: timedOut ? `finalizer timed out after ${step.timeoutSeconds}s\n${trimmed}` : trimmed, exitCode });
+        resolve({ ok: !timedOut && code === 0, output: timedOut ? `check timed out after ${step.timeoutSeconds}s\n${trimmed}` : trimmed, exitCode, timedOut });
       });
     });
   }
