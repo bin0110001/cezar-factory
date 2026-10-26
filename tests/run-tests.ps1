@@ -168,7 +168,10 @@ $recoveryScript = Get-Content -Raw (Join-Path $factory 'scripts/recover-audit-re
 Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -match 'recover-audit-reservations\.ps1 -ApiUrl "\$CEZAR_API_URL" -ProjectId "\$CEZAR_PROJECT_ID"')
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
+$failureAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-failure-audit/SKILL.md')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
+Assert 'failure audit skill matches the active command-only collector workflow' ($failureAuditWorkflow -match 'audit-factory-failures\.ps1' -and $failureAuditWorkflow -notmatch 'skill:\s*factory-failure-audit' -and $failureAuditSkill -match 'active daily.*workflow is command-only' -and $failureAuditSkill -match 'does not invoke this skill')
+Assert 'failure audit skill does not promise an unimplemented publication or recovery handoff' ($failureAuditSkill -match 'Do not claim an issue\s+was created' -and $failureAuditSkill -match 'publication and recovery have no owner in the active\s+failure-audit workflow' -and $failureAuditSkill -notmatch 'Publication is a separate workflow command tracked')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
