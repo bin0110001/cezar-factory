@@ -10,6 +10,7 @@ invalid agent result or 10 for missing/unreadable validator policy or unreadable
 param(
     [Parameter(Mandatory)][ValidateSet('intake', 'plan', 'implementation', 'review', 'investigation')][string]$Kind,
     [Parameter(Mandatory)][string]$Path,
+    [string]$Task,
     [string]$SchemaDir = (Join-Path $PSScriptRoot '../schemas')
 )
 Set-StrictMode -Off
@@ -35,6 +36,11 @@ if (-not (Test-Path $Path)) { $errors.Add("result file not found: $Path"); Done 
 try { $rawResult = Get-Content -Raw $Path } catch { ConfigurationFailure "could not read result file: $Path" }
 try { $result = $rawResult | ConvertFrom-Json -AsHashtable } catch { $errors.Add("not valid JSON: $($_.Exception.Message)"); Done }
 if ($result -isnot [hashtable]) { $errors.Add('result must be a JSON object'); Done }
+if ($Kind -eq 'investigation') {
+    if ($Task -notmatch 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') { ConfigurationFailure 'investigation validation requires the workflow-selected issue through -Task.' }
+    $result.issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
+    $result | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
+}
 $resolvedSchemaPath = Join-Path $SchemaDir $schemaFile
 if (-not (Test-Path $resolvedSchemaPath)) { ConfigurationFailure "result schema is missing: $resolvedSchemaPath" }
 try { $schema = Get-Content -Raw $resolvedSchemaPath | ConvertFrom-Json -AsHashtable } catch { ConfigurationFailure "result schema is unreadable or invalid: $resolvedSchemaPath" }

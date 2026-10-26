@@ -67,7 +67,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/deploy/deploy-vllm-mac.sh', 'scripts/deploy/validate-deployment.sh',
 'scripts/deploy/vllm-trusted-proxy.py', 'scripts/deploy/deploy-vllm-trusted-proxy-mac.sh', 'scripts/deploy/validate-vllm-trusted-proxy-mac.sh',
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
-'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/factory.config.schema.json', 'schemas/validation-receipt.schema.json', 'schemas/project-validation-result.schema.json', 'schemas/project-validation-baseline.schema.json',
+'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/factory.config.schema.json', 'schemas/validation-receipt.schema.json', 'schemas/project-validation-result.schema.json', 'schemas/project-validation-baseline.schema.json', 'schemas/investigation-result.schema.json',
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
@@ -155,8 +155,8 @@ $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.p
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
 Assert 'planner returns a schema-validated structured artifact for deterministic consumers' ($planWorkflow -match '(?s)id: plan.*?outputSchema:.*?required: \[issue, objective' -and $planWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey plan' -and $planWorkflow -notmatch 'id: plan.*?plan-result\.json' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Return one JSON object')
-Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
-Assert 'typed resolved preflight owns investigation early exit without duplicate agent instructions' ($investigateWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $investigateWorkflow -match '(?s)id: investigate.*?when:.*?resolved.*?const: open' -and $investigateWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $investigateSkill -notmatch 'already-resolved\.json|Already-resolved issues')
+Assert 'investigation skill defines bounded inputs, forbidden effects and the validated result contract' ($investigateSkill -match 'single issue selected by the Cezar workflow' -and $investigateSkill -match 'Do not discover or select other work' -and $investigateSkill -match 'run Factory scripts' -and $investigateSkill -match 'investigate-result\.json' -and $investigateSkill -notmatch 'issue number.*selected task|Hindsight after normal review' -and $investigateWorkflow -match 'workflow-selected issue: \{\{task\}\}' -and $investigateWorkflow -match 'validate-result\.ps1 .* -Task "\{\{task\}\}"' -and $investigateWorkflow -notmatch 'copying the numeric issue number|Read compact evidence only')
+Assert 'typed resolved preflight owns investigation early exit without duplicate agent instructions' ($investigateWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $investigateWorkflow -match '(?s)id: investigate.*?when:.*?resolved.*?const: open' -and $investigateWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $investigateSkill -notmatch 'already-resolved\.json|Already-resolved issues|retain the lesson through Hindsight')
 Assert 'review typed resolved preflight gates all downstream work without duplicate agent instructions' ($reviewWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and @([regex]::Matches($reviewWorkflow, '(?ms)^  - id: (?:full-verification|verify-project|review|validate|merge-eligibility|route)\b(?:(?!^  - id: ).)*?when:\s+type: object')).Count -eq 6 -and $reviewWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $reviewSkill -notmatch 'already-resolved\.json|Already-resolved issues')
 Assert 'fix-review typed resolved preflight owns early exit without duplicate agent instructions' ($fixReviewWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $fixReviewWorkflow -match '(?s)id: fix\s+name:.*?when:.*?resolved.*?const: open' -and $fixReviewWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $fixSkill -notmatch 'already-resolved\.json|Already-resolved issues')
 Assert 'implementation typed resolved preflight owns early exit without skill duplication' ($implementWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $implementWorkflow -notmatch 'already-resolved\.json' -and $implementSkill -notmatch 'Already-resolved issues|already-resolved\.json')
@@ -249,8 +249,16 @@ foreach ($entry in $resultExamples) {
     Assert "$($entry.Skill) has a concrete JSON result example" $example.Success
     if (-not $example.Success) { continue }
     $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
+    $exampleJson = $example.Groups[1].Value
+    if ($entry.Skill -eq 'factory-investigate') {
+        # The model-facing shape omits issue; its workflow validator binds the
+        # selected task identity before downstream steps consume the artifact.
+        $investigationExample = $exampleJson | ConvertFrom-Json -AsHashtable
+        $investigationExample.issue = 7
+        $exampleJson = $investigationExample | ConvertTo-Json -Depth 10
+    }
     $valid = $false
-    try { $valid = [bool](Test-Json -Json $example.Groups[1].Value -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
+    try { $valid = [bool](Test-Json -Json $exampleJson -SchemaFile $schemaPath -ErrorAction Stop) } catch { }
     Assert "$($entry.Skill) example satisfies $($entry.Schema)" $valid
     if ($valid) {
         $withoutIssue = $example.Groups[1].Value | ConvertFrom-Json -AsHashtable
@@ -650,7 +658,10 @@ try {
     $env:FAKE_GH_STATE = Join-Path $tmp 'gh-state.json'
     function Test-Validate([string]$Kind, $Obj) {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
-        $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null; $global:LASTEXITCODE
+        $global:LASTEXITCODE = 0
+        if ($Kind -eq 'investigation') { & pwsh -NoProfile -File $val -Kind $Kind -Path $f -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null }
+        else { & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null }
+        $global:LASTEXITCODE
     }
     function Validation-Errors($Obj) {
         $f = Join-Path $tmp 'r-semantic.json'; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
@@ -860,6 +871,12 @@ try {
     $inv = @{ issue = 7; failureClassification = 'flaky-test'; evidence = 'e'; attemptsReviewed = 'a'; rootCauseHypothesis = 'h'; confidence = 'high'; recommendedAction = 'retry'; automaticRetryAppropriate = $true }
     Assert 'validate: good investigation passes' ((Test-Validate 'investigation' $inv) -eq 0)
     Assert 'validate: unknown classification fails' ((Test-Validate 'investigation' (With $inv @{ failureClassification = 'gremlins' })) -ne 0)
+    Assert 'validate: unsupported investigation confidence fails' ((Test-Validate 'investigation' (With $inv @{ confidence = 'certain' })) -ne 0)
+    $investigationBindingPath = Join-Path $tmp 'investigation-selected-issue.json'
+    (With $inv @{ issue = 999 }) | ConvertTo-Json -Depth 5 | Set-Content $investigationBindingPath
+    & pwsh -NoProfile -File $val -Kind investigation -Path $investigationBindingPath -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null
+    $boundInvestigation = Get-Content -Raw $investigationBindingPath | ConvertFrom-Json
+    Assert 'validate: investigation issue is bound from workflow task, overriding model-proposed identity' ($LASTEXITCODE -eq 0 -and $boundInvestigation.issue -eq 7)
 
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')

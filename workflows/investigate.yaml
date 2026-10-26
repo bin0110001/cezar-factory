@@ -53,16 +53,10 @@ steps:
               required: [status]
               properties: { status: { const: open } }
     prompt: |
-      Investigate repeated failures on this GitHub issue: {{task}}
-
-      Read `.factory/context/memory-recall.json` when present; record a real recall miss when unavailable.
-      Read compact evidence only (issue comments, PR checks, artifact summaries under scripts/artifacts or
-      .factory/); do not paste full logs. Do not modify code. Write the structured result as JSON to
-      .factory/investigate-result.json (create the directory), copying the numeric issue number from the
-      task into the required integer "issue" field.
+      Investigate repeated failures for the workflow-selected issue: {{task}}
   - id: validate
     name: Validate investigation result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json -Task "{{task}}"
     when:
       type: object
       required: [outputs]

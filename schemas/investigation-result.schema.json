@@ -8,7 +8,11 @@
       "minimum": 1
     },
     "failureClassification": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "implementation", "test", "flaky-test", "environment", "dependency",
+        "merge-conflict", "requirements", "architecture", "unknown"
+      ]
     },
     "evidence": {
       "type": "string"
@@ -20,7 +24,8 @@
       "type": "string"
     },
     "confidence": {
-      "type": "string"
+      "type": "string",
+      "enum": ["low", "medium", "high"]
     },
     "recommendedAction": {
       "type": "string"
