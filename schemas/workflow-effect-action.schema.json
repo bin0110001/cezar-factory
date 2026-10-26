@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkflowEffectActionV1",
+  "description": "A normalized, revision-bound proposed effect. The deterministic consumer must enforce its operation allowlist and re-check the target state before applying it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "target",
+    "expectedRevision",
+    "operation",
+    "arguments",
+    "rationale",
+    "operationKey"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$" },
+        "id": { "oneOf": [
+          { "type": "integer", "minimum": 1 },
+          { "type": "string", "minLength": 1, "maxLength": 256 }
+        ] }
+      }
+    },
+    "expectedRevision": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "operation": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "maxLength": 128 },
+    "arguments": { "type": "object", "minProperties": 1 },
+    "rationale": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "operationKey": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

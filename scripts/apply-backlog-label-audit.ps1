@@ -24,6 +24,12 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:AllowedAuditLabelNames = @(
+    'factory:new', 'factory:needs-plan', 'factory:tracking', 'factory:blocked', 'factory:needs-help',
+    'type:bug', 'type:feature', 'type:refactor', 'type:docs', 'type:test', 'type:maintenance',
+    'risk:low', 'risk:medium', 'risk:high',
+    'complexity:small', 'complexity:medium', 'complexity:large'
+)
 
 function Read-JsonFile([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
@@ -80,9 +86,20 @@ function Add-AuditReservation([int]$IssueNumber, $LiveIssue) {
 function Write-ReceiptReport([string]$Path, [string]$Status, [string]$OperationKey, $Receipts, [string]$Proposal = '') {
     $report = [ordered]@{ generatedAt = [DateTimeOffset]::UtcNow.ToString('o'); status = $Status; operationKey = $OperationKey; receipts = @($Receipts) }
     if ($Proposal) { $report.proposal = [IO.Path]::GetFullPath($Proposal) }
-    $parent = Split-Path -Parent $Path
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $parent = Split-Path -Parent $fullPath
     if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -NoNewline
+    $tempPath = Join-Path $parent ".$([IO.Path]::GetFileName($fullPath)).$([guid]::NewGuid().ToString('N')).tmp"
+    $backupPath = "$tempPath.bak"
+    try {
+        $json = $report | ConvertTo-Json -Depth 12
+        [IO.File]::WriteAllText($tempPath, $json, [Text.UTF8Encoding]::new($false))
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) { [IO.File]::Replace($tempPath, $fullPath, $backupPath) }
+        else { [IO.File]::Move($tempPath, $fullPath) }
+    } finally {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+    }
     $report
 }
 
@@ -102,6 +119,25 @@ function Get-DesiredLabels($Outcome) {
     if ($states[0] -eq 'factory:needs-plan' -and $complexities.Count -ne 1) { throw "Issue $($Outcome.issue) classified as factory:needs-plan needs exactly one complexity label." }
     if ([string]::IsNullOrWhiteSpace([string]$Outcome.reason)) { throw "Issue $($Outcome.issue) proposal needs a rationale." }
     $labels
+}
+
+function New-BacklogLabelAction($Outcome, [string]$ExpectedRevision, [string]$OperationKey, [string[]]$DesiredLabels) {
+    $rationale = [string]$Outcome.reason
+    if (-not $ExpectedRevision -or $rationale.Length -gt 500 -or [string]::IsNullOrWhiteSpace($rationale)) {
+        throw "Issue $($Outcome.issue) action is missing a bounded revision or rationale."
+    }
+    [ordered]@{
+        schemaVersion = 1
+        target = [ordered]@{ kind = 'github_issue'; id = [int]$Outcome.issue }
+        expectedRevision = $ExpectedRevision
+        operation = 'github.issue.update_labels'
+        arguments = [ordered]@{
+            addLabels = @($DesiredLabels | Sort-Object -Unique)
+            removeLabels = @('factory:auditing')
+        }
+        rationale = $rationale
+        operationKey = $OperationKey
+    }
 }
 
 $inputDoc = Read-JsonFile $InputPath
@@ -304,24 +340,35 @@ foreach ($outcome in $outcomes) {
     $snapshot = @($candidate.labels | ForEach-Object { [string]$_ } | Sort-Object -Unique)
     $expectedReserved = @($snapshot + 'factory:auditing' | Sort-Object -Unique)
     $expectedFinal = @(@($snapshot | Where-Object { $_ -ne 'factory:auditing' }) + $desired | Sort-Object -Unique)
+    $preparedReceipt = @($preparationReceipts | Where-Object { [int]$_.issue -eq $number })[0]
+    $actionKey = "backlog-label-audit:${number}:$batchKey"
+    $action = New-BacklogLabelAction $outcome ([string]$preparedReceipt.revision) $actionKey $desired
+    if ($action.operation -ne 'github.issue.update_labels' -or @($action.arguments.addLabels | Where-Object { $_ -notin $script:AllowedAuditLabelNames }).Count -or @($action.arguments.removeLabels | Where-Object { $_ -ne 'factory:auditing' }).Count) {
+        throw "Issue $number action exceeds the backlog audit effect allowlist."
+    }
+    $actionReceiptIndex = $receipts.Count
+    $receipts += [ordered]@{ issue = $number; operationKey = $action.operationKey; status = 'applying'; action = $action }
+    Write-ReceiptReport $OutputPath 'applying' $operationKey $receipts $ProposalPath | Out-Null
     $live = Get-LiveIssue $number
     if ($live.state -ne 'OPEN') { throw "Issue $number is no longer open; refusing stale audit effect." }
     $liveLabels = @($live.labels)
     $alreadyApplied = Same-Labels $liveLabels $expectedFinal
     if (-not $alreadyApplied) {
-        $preparedReceipt = @($preparationReceipts | Where-Object { [int]$_.issue -eq $number })[0]
-        if (-not (Same-Labels $liveLabels $expectedReserved) -or $live.updatedAt -ne [string]$preparedReceipt.revision) {
+        if (-not (Same-Labels $liveLabels $expectedReserved) -or $live.updatedAt -ne [string]$action.expectedRevision) {
             throw "Issue $number changed since candidate collection; refusing to overwrite current labels."
         }
-        $args = @('issue', 'edit', [string]$number, '--remove-label', 'factory:auditing')
-        foreach ($label in $desired) { $args += @('--add-label', $label) }
-        Invoke-Gh $args | Out-Null
+        $ghArgs = @('issue', 'edit', [string]$action.target.id)
+        foreach ($label in $action.arguments.removeLabels) { $ghArgs += @('--remove-label', $label) }
+        foreach ($label in $action.arguments.addLabels) { $ghArgs += @('--add-label', $label) }
+        Invoke-Gh $ghArgs | Out-Null
         $live = Get-LiveIssue $number
         if ($live.state -ne 'OPEN' -or -not (Same-Labels $live.labels $expectedFinal)) {
             throw "Issue $number label effect could not be verified; outcome remains unresolved."
         }
     }
-    $receipts += [ordered]@{ issue = $number; operationKey = "backlog-label-audit:${number}:$batchKey"; status = 'verified'; labels = $desired; alreadyApplied = $alreadyApplied }
+    $receipts[$actionReceiptIndex].status = 'verified'
+    $receipts[$actionReceiptIndex].observedRevision = $live.updatedAt
+    $receipts[$actionReceiptIndex].alreadyApplied = $alreadyApplied
     Write-ReceiptReport $OutputPath 'applying' $operationKey $receipts $ProposalPath | Out-Null
 }
 
