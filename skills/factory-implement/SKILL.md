@@ -168,8 +168,3 @@ change.
 - Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return one JSON object matching the workflow's implementation output contract. Set `issue` to the number in the prepared context; the workflow validates the contract and materializes the result.
 - Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
 - The workflow owns result persistence under `.factory/`; never commit its generated artifacts.
-
-## Already-resolved issues
-
-The workflow's typed preflight finishes work on a closed or `factory:done` issue before this skill is
-dispatched. No implementation result is expected for that path.

@@ -7,21 +7,57 @@ steps:
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status: { type: string, enum: [open, already-resolved] }
+        issue: { type: integer }
+        reason: { type: string }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      additionalProperties: false
   - id: full-verification
     name: Run required project suite
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: review
     name: Run factory-review skill
     skill: factory-review
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     # Each Cezar run starts a fresh session in its own worktree, so the reviewer never shares the implementer's context.
     prompt: |
       Review the pull request for this GitHub issue: {{task}}
-
-      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
-      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Do not modify code. Write the structured review result as JSON to .factory/review-result.json
       (create the directory) with the issue number in "issue", the exact PR URL, the 40-character PR head SHA you
@@ -30,6 +66,14 @@ steps:
   - id: validate
     name: Validate review result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind review -Path .factory/review-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: review
       max: 1
@@ -40,9 +84,25 @@ steps:
   - id: merge-eligibility
     name: Verify live PR, review, validation and repository gates
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verify-merge-eligibility.ps1 -ReviewPath .factory/review-result.json -OutputPath .factory/merge-eligibility.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: route
     name: Post findings and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json -GatePath .factory/merge-eligibility.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: validate
       max: 1

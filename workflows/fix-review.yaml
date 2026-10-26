@@ -47,9 +47,6 @@ steps:
     prompt: |
       Address the review findings on this GitHub issue's PR: {{task}}
 
-      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
-      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
-
       The workflow already moved the issue to factory:working. Do not run Factory lifecycle or routing
       scripts and do not edit factory:* labels. Read only the latest review comment's blocking findings.
       Push fixes to the existing PR, then write the structured result as JSON to .factory/implement-result.json

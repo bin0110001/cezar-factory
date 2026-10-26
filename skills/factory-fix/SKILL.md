@@ -81,9 +81,3 @@ The example shows a successful fix. Use `status: failure` and describe the
 blocker when the review finding cannot be resolved; a successful result needs
 the existing PR URL. Set `documentationUpdated` to `false` after confirming
 that no documentation change is needed.
-
-## Already-resolved issues
-
-The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
-writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
-resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.

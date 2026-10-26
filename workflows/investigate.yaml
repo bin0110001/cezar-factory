@@ -55,9 +55,6 @@ steps:
     prompt: |
       Investigate repeated failures on this GitHub issue: {{task}}
 
-      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
-      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
-
       Read `.factory/context/memory-recall.json` when present; record a real recall miss when unavailable.
       Read compact evidence only (issue comments, PR checks, artifact summaries under scripts/artifacts or
       .factory/); do not paste full logs. Do not modify code. Write the structured result as JSON to
