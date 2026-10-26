@@ -41,7 +41,7 @@ function Get-IssueBody([int]$IssueNumber) {
 
 $factoryMarkers = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate', 'factory:auditing', 'factory:tracking')
 $search = 'is:open ' + (($factoryMarkers | ForEach-Object { "-label:`"$_`"" }) -join ' ')
-$raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', $search, '--limit', '1000', '--json', 'number,title,labels,updatedAt')
+$raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', $search, '--limit', '1000', '--json', 'number,title,labels,updatedAt,blockedBy,closedByPullRequestsReferences')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
 $unmarked = @($issues |
     Where-Object {
@@ -69,6 +69,9 @@ $unmarked = @($issues |
             title = [string]$_.title
             labels = $labels
             updatedAt = $_.updatedAt
+            blockedByStates = @($_.blockedBy | Where-Object { $_ } | ForEach-Object { [string]$_.state } | Where-Object { $_ -in @('OPEN', 'CLOSED') })
+            dependencyStateUnknown = (@($_.blockedBy | Where-Object { $_ } | Where-Object { [string]$_.state -notin @('OPEN', 'CLOSED') }).Count -gt 0)
+            linkedClosingPullRequestCount = @($_.closedByPullRequestsReferences | Where-Object { $_ }).Count
             typeHint = $typeHint
             riskHint = $riskHint
             ruleConflicts = if ($typeHintConflict) { @('legacy labels map to multiple issue types') } else { @() }
@@ -83,6 +86,8 @@ $remainingCandidates = @()
 $staged = @()
 $ruleHits = [ordered]@{
     legacy_blocked_marker = 0
+    github_dependency_open = 0
+    open_issue_with_closed_linked_pr = 0
     legacy_decomposition_marker = 0
     legacy_type_marker = 0
 }
@@ -94,7 +99,25 @@ foreach ($candidate in $unmarked) {
     $add = @()
     $hasBlockedMarker = $legacyLabels -contains 'blocked' -or $legacyLabels -contains 'blocker'
     $hasDecompositionMarker = $legacyLabels -contains 'needs-decomp' -or $legacyLabels -contains 'needs-decomposition'
-    if ($hasBlockedMarker -and $hasDecompositionMarker) {
+    $blockedByStates = @($candidate.blockedByStates | Where-Object { $_ })
+    $linkedClosingPullRequestCount = [int]$candidate.linkedClosingPullRequestCount
+    $unknownDependencyState = [bool]$candidate.dependencyStateUnknown
+    $hasOpenDependency = @($blockedByStates | Where-Object { [string]$_ -eq 'OPEN' }).Count -gt 0
+    if ($hasOpenDependency -and $linkedClosingPullRequestCount -gt 0) {
+        $candidate['ruleConflicts'] = @($candidate.ruleConflicts) + 'open dependency conflicts with a linked closing pull request'
+    } elseif ($unknownDependencyState) {
+        $candidate['ruleConflicts'] = @($candidate.ruleConflicts) + 'GitHub dependency state is missing or unsupported'
+    } elseif ($linkedClosingPullRequestCount -gt 0) {
+        # An open issue with a linked closing PR needs outcome review; never infer
+        # completion from a PR reference while the issue itself remains open.
+        $state = 'factory:needs-help'
+        $reason = 'open issue has a linked closing pull request; verify its merge outcome'
+        $ruleId = 'open_issue_with_closed_linked_pr'
+    } elseif ($hasOpenDependency) {
+        $state = 'factory:blocked'
+        $reason = 'GitHub reports an open blocking dependency'
+        $ruleId = 'github_dependency_open'
+    } elseif ($hasBlockedMarker -and $hasDecompositionMarker) {
         $candidate['ruleConflicts'] = @($candidate.ruleConflicts) + 'legacy labels imply conflicting lifecycle states'
     } elseif ($hasBlockedMarker) {
         $state = 'factory:blocked'

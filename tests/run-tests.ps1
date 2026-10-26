@@ -120,6 +120,7 @@ Assert 'backlog reconciliation is pinned to the Factory gateway code model' ($ca
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
 Assert 'backlog audit is a bounded candidate-only proposal with workflow-owned effects' ($backlogAuditSkill -match 'current-worktree `.factory/backlog-label-audit-input\.json`' -and $backlogAuditSkill -match 'at most three ambiguous open issues' -and $backlogAuditSkill -match 'Do not discover issues,\s+run scripts or `gh`' -and $backlogAuditSkill -match 'The deterministic consumer verifies')
 Assert 'backlog audit standardizes classification and valid closing labels' ($backlogAuditSkill -match '(?s)factory:needs-plan.*?complexity:large' -and $backlogAuditSkill -match '(?s)Each proposal.*?durable closing state' -and $backlogAuditSkill -match 'Include every candidate\s+exactly once' -and $backlogAuditSkill -match 'allowlisted `added` labels')
+Assert 'backlog audit escalates unresolved deterministic signal conflicts' ($backlogAuditSkill -match 'ruleConflicts' -and $backlogAuditSkill -match 'factory:needs-help')
 Assert 'backlog audit has no contradictory file-writing or issue-creation instructions' ($backlogAuditSkill -notmatch 'create an issue|Create.*?issue|file-writing mechanism|shell heredocs|create a temporary audit script|PowerShell/runtime file-writing')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $planMaterializeStep = [regex]::Match($planWorkflow, '(?s)  - id: validate\r?\n(?<step>.*?)(?=  - id: )').Groups['step'].Value
@@ -962,7 +963,9 @@ try {
         @{ number = 2; title = 'Already audited'; body = 'audited body'; labels = @(@{ name = 'factory:needs-help' }) },
         @{ number = 1; title = 'Unmarked docs'; body = 'docs body'; labels = @(@{ name = 'documentation' }) },
         @{ number = 4; title = 'Blocked legacy work'; body = 'blocked body'; labels = @(@{ name = 'blocker' }) },
-        @{ number = 5; title = 'Conflicting legacy types'; body = 'candidate body'; labels = @(@{ name = 'bug' }, @{ name = 'test' }) }
+        @{ number = 5; title = 'Conflicting legacy types'; body = 'candidate body'; labels = @(@{ name = 'bug' }, @{ name = 'test' }) },
+        @{ number = 6; title = 'Blocked by open issue'; body = 'dependency body'; labels = @(); blockedBy = @(@{ number = 60; state = 'OPEN' }) },
+        @{ number = 7; title = 'Open issue with closed linked PR'; body = 'outcome needs verification'; labels = @(); closedByPullRequestsReferences = @(@{ number = 70; url = 'https://github.com/x/y/pull/70' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
     & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
@@ -970,8 +973,8 @@ try {
     $candidateIssues = @($auditCandidates.candidates | ForEach-Object { if ($_ -and $_.PSObject.Properties.Name -contains 'issue') { $_.issue } })
     $resolvedIssues = @($auditCandidates.resolved | ForEach-Object { if ($_ -and $_.PSObject.Properties.Name -contains 'issue') { $_.issue } })
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
-    Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
-    Assert 'backlog audit input: deterministic hit and ambiguity rates use the eligible rule sample' ($auditCandidates.classificationMetrics.eligibleIssues -eq 4 -and $auditCandidates.classificationMetrics.deterministicRuleHits -eq 3 -and $auditCandidates.classificationMetrics.deterministicRuleHitRate -eq 0.75 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousRate -eq 0.25)
+    Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 5)
+    Assert 'backlog audit input: deterministic hit and ambiguity rates use the eligible rule sample' ($auditCandidates.classificationMetrics.eligibleIssues -eq 6 -and $auditCandidates.classificationMetrics.deterministicRuleHits -eq 5 -and $auditCandidates.classificationMetrics.deterministicRuleHitRate -eq 0.8333 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousRate -eq 0.1667)
     $savedAuditState = Get-Gh
     $emptyAuditState = Get-Gh; $emptyAuditState.issues = @(); $emptyAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $emptyAuditPath = Join-Path $tmp 'empty-backlog-label-audit-input.json'
@@ -980,8 +983,10 @@ try {
     Assert 'backlog audit input: rates remain unknown when no issues are eligible' ($emptyAuditRun.Code -eq 0 -and $null -eq $emptyAuditMetrics.classificationMetrics.deterministicRuleHitRate -and $null -eq $emptyAuditMetrics.classificationMetrics.ambiguousRate)
     $savedAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
-    Assert 'backlog audit collector is read-only' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
+    Assert 'backlog audit collector is read-only' (@($auditCandidates.resolved).Count -eq 5 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
+    Assert 'backlog audit input: authoritative open dependency resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 6 }).added) -contains 'factory:blocked' -and @($auditCandidates.resolved | Where-Object { $_.issue -eq 6 }).ruleId -eq 'github_dependency_open')
+    Assert 'backlog audit input: open issue with linked closing PR escalates to needs-help' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 7 }).added) -contains 'factory:needs-help' -and @($auditCandidates.resolved | Where-Object { $_.issue -eq 7 }).ruleId -eq 'open_issue_with_closed_linked_pr')
     Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: conflicting legacy type labels receive no deterministic type or risk hint' ($auditCandidates.candidates[0].typeHint -eq $null -and $auditCandidates.candidates[0].riskHint -eq $null -and @($auditCandidates.candidates[0].ruleConflicts) -contains 'legacy labels map to multiple issue types')
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
@@ -994,6 +999,24 @@ try {
     $stateConflictAuditDoc = Get-Content -Raw $stateConflictAuditPath | ConvertFrom-Json
     Assert 'backlog audit input: conflicting lifecycle markers stay ambiguous' ($stateConflictAuditRun.Code -eq 0 -and @($stateConflictAuditDoc.resolved).Count -eq 0 -and @($stateConflictAuditDoc.candidates).Count -eq 1 -and @($stateConflictAuditDoc.candidates[0].ruleConflicts) -contains 'legacy labels imply conflicting lifecycle states')
     $savedStateConflictAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $savedUnknownDependencyState = Get-Gh
+    $unknownDependencyState = Get-Gh
+    $unknownDependencyState.issues = @(@{ number = 9; title = 'Dependency state unavailable'; body = 'unknown dependency'; updatedAt = '2026-10-25T12:34:56Z'; labels = @(); blockedBy = @(@{ number = 90 }) })
+    $unknownDependencyState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $unknownDependencyPath = Join-Path $tmp 'unknown-dependency-audit-input.json'
+    $unknownDependencyRun = Run 'audit-backlog-labels.ps1' @{ GhCommand = $gh; OutputPath = $unknownDependencyPath }
+    $unknownDependencyDoc = Get-Content -Raw $unknownDependencyPath | ConvertFrom-Json
+    Assert 'backlog audit input: unknown dependency state remains ambiguous' ($unknownDependencyRun.Code -eq 0 -and @($unknownDependencyDoc.resolved).Count -eq 0 -and @($unknownDependencyDoc.candidates).Count -eq 1 -and @($unknownDependencyDoc.candidates[0].ruleConflicts) -contains 'GitHub dependency state is missing or unsupported')
+    $savedUnknownDependencyState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $savedConflictingOutcomeState = Get-Gh
+    $conflictingOutcomeState = Get-Gh
+    $conflictingOutcomeState.issues = @(@{ number = 10; title = 'Dependency and linked PR conflict'; body = 'conflicting signals'; updatedAt = '2026-10-25T12:34:56Z'; labels = @(); blockedBy = @(@{ number = 100; state = 'OPEN' }); closedByPullRequestsReferences = @(@{ number = 101; url = 'https://github.com/x/y/pull/101' }) })
+    $conflictingOutcomeState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $conflictingOutcomePath = Join-Path $tmp 'conflicting-outcome-audit-input.json'
+    $conflictingOutcomeRun = Run 'audit-backlog-labels.ps1' @{ GhCommand = $gh; OutputPath = $conflictingOutcomePath }
+    $conflictingOutcomeDoc = Get-Content -Raw $conflictingOutcomePath | ConvertFrom-Json
+    Assert 'backlog audit input: conflicting open dependency and linked PR signals escalate' ($conflictingOutcomeRun.Code -eq 0 -and @($conflictingOutcomeDoc.resolved).Count -eq 0 -and @($conflictingOutcomeDoc.candidates).Count -eq 1 -and @($conflictingOutcomeDoc.candidates[0].ruleConflicts) -contains 'open dependency conflicts with a linked closing pull request')
+    $savedConflictingOutcomeState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $auditGuardValid = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
     Assert 'backlog audit handoff guard accepts only the bounded same-run candidate artifact' ($auditGuardValid.Code -eq 0 -and $auditGuardValid.Out -match '"candidates":1')
     $invalidAuditInput = Get-Content -Raw $auditInput | ConvertFrom-Json
@@ -1012,7 +1035,7 @@ try {
     $auditPreparation = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true; WorkflowContract = $true }
     if ($auditPreparation.Code -ne 0) { Write-Host "  preparation diagnostic: $($auditPreparation.Out)" }
     $prepared = Get-Content -Raw $auditPreparationPath | ConvertFrom-Json
-    Assert 'backlog audit preparation applies static labels and reserves only ambiguous candidates' ($auditPreparation.Code -eq 0 -and $prepared.status -eq 'prepared' -and @($prepared.receipts).Count -eq 4 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'factory:blocked' -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit preparation applies static labels and reserves only ambiguous candidates' ($auditPreparation.Code -eq 0 -and $prepared.status -eq 'prepared' -and @($prepared.receipts).Count -eq 6 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'factory:blocked' -and (Get-Gh).labels -contains 'factory:needs-help' -and (Get-Gh).labels -contains 'factory:auditing')
     Assert 'backlog audit preparation records a durable reservation' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
     Assert 'backlog audit preparation creates taxonomy through the deterministic consumer' (@((Get-Gh).created).Count -gt 0)
     $auditProposalPath = Join-Path $tmp 'backlog-label-audit.json'

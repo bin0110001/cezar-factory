@@ -23,7 +23,11 @@ the limitation and stop without a fallback lookup.
 
 ## Required judgment
 
-Use the existing labels and supplied `typeHint`/`riskHint` as evidence. Map
+Use existing labels and supplied `typeHint`/`riskHint` as evidence. Read
+`blockedByStates`, `linkedClosingPullRequestCount`, and any `ruleConflicts`;
+treat unresolved state, dependency, linked PR, or legacy-label conflicts as
+missing evidence and escalate with
+`factory:needs-help`. Map
 `bug` to `type:bug`, `test` to `type:test`, `enhancement` to `type:feature`,
 `migration` or `architecture` to `type:refactor`, and documentation or
 localization to `type:docs`. Use `type:maintenance` only for operational work.
