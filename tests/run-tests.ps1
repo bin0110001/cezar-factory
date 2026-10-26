@@ -71,7 +71,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/apply-backlog-label-audit.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'schemas/workflow-effect-action.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'schemas/workflow-effect-action.schema.json', 'docs/local-model-evaluation.md',
 'tests/fixtures/validation-result-passed.json', 'tests/fixtures/validation-result-failed.json', 'tests/fixtures/validation-result-skipped.json', 'tests/fixtures/validation-result-unavailable.json', 'tests/fixtures/validation-result-no-matching-tests.json', 'tests/fixtures/validation-result-malformed.json',
 'scripts/recover-audit-reservations.ps1',
 'tests/watchdog-automations.ps1', 'tests/watchdog-mock-api.py', 'tests/fixtures/watchdog-runs.json', 'tests/fixtures/watchdog-runs-envelope.json', 'tests/fixtures/watchdog-runs-envelope-simple.json', 'tests/fixtures/watchdog-runs-malformed.json',
@@ -147,6 +147,9 @@ $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-recon
 Assert 'backlog workflow owns snapshot and dry-run script calls' ($backlogWorkflow -match 'collect-backlog-snapshot\.ps1' -and $backlogWorkflow -match 'reconcile-backlog\.ps1 .* -DryRun' -and $backlogWorkflow -match 'BatchCap 1 -ProjectConcurrencyCap 1')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'backlog audit returns schema-validated JSON before its deterministic label consumer' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit\s+name:.*?outputSchema:.*?maxItems: 3' -and $maintenanceWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey backlog-label-audit' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')) -match 'Return one JSON object')
+Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1' -and $maintenanceWorkflow -match 'factory-startup[^\r\n]*validate-backlog-label-audit-input\.ps1')
+$auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
+Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
@@ -922,6 +925,20 @@ try {
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
     Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
+    $auditGuardValid = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
+    Assert 'backlog audit handoff guard accepts only the bounded same-run candidate artifact' ($auditGuardValid.Code -eq 0 -and $auditGuardValid.Out -match '"candidates":1')
+    $invalidAuditInput = Get-Content -Raw $auditInput | ConvertFrom-Json
+    $invalidAuditInput.outputPath = Join-Path $tmp 'foreign-audit-input.json'
+    $invalidAuditInput | ConvertTo-Json -Depth 8 | Set-Content $auditInput
+    $auditGuardForeignPath = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
+    Assert 'backlog audit handoff guard rejects a path outside its run artifact' ($auditGuardForeignPath.Code -ne 0)
+    $invalidAuditInput.outputPath = [IO.Path]::GetFullPath($auditInput)
+    $invalidAuditInput.candidates = @($invalidAuditInput.candidates) + @($invalidAuditInput.candidates)
+    $invalidAuditInput | ConvertTo-Json -Depth 8 | Set-Content $auditInput
+    $auditGuardOversize = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
+    Assert 'backlog audit handoff guard rejects candidates over its cap' ($auditGuardOversize.Code -ne 0)
+    & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
+    $auditCandidates = Get-Content -Raw $auditInput | ConvertFrom-Json
     $auditPreparationPath = Join-Path $tmp 'backlog-label-audit-preparation.json'
     $auditPreparation = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true; WorkflowContract = $true }
     if ($auditPreparation.Code -ne 0) { Write-Host "  preparation diagnostic: $($auditPreparation.Out)" }
