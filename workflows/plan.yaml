@@ -3,7 +3,7 @@ description: Plan an issue - validated plan result, then routed to factory:ready
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,validate-result.ps1,route-plan-or-default.ps1,route-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,materialize-workflow-output.ps1,validate-result.ps1,route-plan-or-default.ps1,route-state.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -21,9 +21,6 @@ steps:
             action: { type: string, const: no_work }
             reasonCode: { type: string, const: no_work }
           additionalProperties: false
-      allOf:
-        - if: { properties: { status: { const: already-resolved } }, required: [status] }
-          then: { required: [$cezar] }
       additionalProperties: false
   - id: recall
     name: Create bounded memory-recall artifact
@@ -43,6 +40,42 @@ steps:
   - id: plan
     name: Run factory-plan skill
     skill: factory-plan
+    outputSchema:
+      type: object
+      required: [issue, objective, acceptanceCriteria, nonGoals, risks, dependencies, suggestedWorkBreakdown, requiredProjectSkills, unresolvedQuestions, complexity, readyNotReadyStatus]
+      properties:
+        issue: { type: integer, minimum: 1 }
+        objective: { type: string, minLength: 1 }
+        acceptanceCriteria: { type: string, minLength: 1 }
+        nonGoals: { type: string }
+        risks: { type: string }
+        dependencies: { type: string }
+        suggestedWorkBreakdown: { type: string }
+        requiredProjectSkills: { type: array, items: { type: string } }
+        unresolvedQuestions: { type: string }
+        complexity: { type: string, enum: [complexity:small, complexity:medium, complexity:large] }
+        readyNotReadyStatus: { type: string, enum: [ready, not-ready, decomposed] }
+        memoryRecall:
+          type: object
+          required: [banksQueried, memoryCount]
+          properties:
+            banksQueried: { type: array, items: { type: string } }
+            memoryIds: { type: array, items: { type: string } }
+            memoryCount: { type: integer, minimum: 0, maximum: 8 }
+            contextChars: { type: integer, minimum: 0, maximum: 12000 }
+        subIssues:
+          type: array
+          maxItems: 40
+          items:
+            type: object
+            required: [title, body, type, risk, complexity]
+            properties:
+              title: { type: string, minLength: 1 }
+              body: { type: string, minLength: 1 }
+              type: { type: string }
+              risk: { type: string }
+              complexity: { type: string }
+              dependsOn: { type: array, items: { type: integer, minimum: 0 } }
     when:
       type: object
       required: [outputs]
@@ -58,14 +91,30 @@ steps:
     prompt: |
       Plan this GitHub issue: {{task}}
 
-      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
-      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
-
       Read `.factory/context/memory-recall.json` when present. Treat an unavailable or miss status as a genuine recall miss; do not invent memories.
 
-      Write the structured plan result as JSON to .factory/plan-result.json (create the directory).
-      Include the issue number in the "issue" field. Do not run Factory scripts or edit factory:* labels; the workflow routes state.
+      Return exactly one JSON object conforming to the plan result contract. Do not write a result file,
+      run Factory scripts, or edit factory:* labels; the workflow validates and routes the result.
   - id: validate
+    name: Materialize and validate the structured plan result
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey plan -Path .factory/plan-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved, plan]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
+            plan: { type: object }
+    onFail:
+      retry: plan
+      max: 1
+  - id: validate-plan
     name: Validate plan result and Definition of Ready
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
     when:
@@ -99,5 +148,5 @@ steps:
               required: [status]
               properties: { status: { const: open } }
     onFail:
-      retry: validate
+      retry: validate-plan
       max: 1

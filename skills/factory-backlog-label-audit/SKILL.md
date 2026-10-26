@@ -27,8 +27,8 @@ if cross-repository tracking is required.
   selects candidates and fetches their bounded bodies; the consumer applies
   deterministic labels and creates reservations.
 - This is a single bounded pass: consume the collector artifact performed
-  before the LLM step, process only its emitted candidates, and write one
-  result. Do not run the collector, list issues again, create a temporary
+  before the LLM step, process only its emitted candidates, and return one
+  structured proposal. Do not run the collector, list issues again, create a temporary
   audit script, or retry with a different shell command. If a pre-LLM step
   fails, the workflow stops before this skill.
 - The workflow validates the handoff before this skill starts. If reading the
@@ -72,9 +72,9 @@ documentation, or non-production maintenance. When uncertain, skip.
    fetch, or inspect any other issue.
 3. Do not read GitHub state or apply any changes. The deterministic workflow consumer owns live state checks, label edits, and verification after this proposal is written.
 4. For every candidate, propose exactly one durable closing Factory state label. For classifiable work, use `factory:new`, one `type:*`, and one `risk:*`. For decomposition-needed work, use `factory:needs-plan`, one `type:*`, one `risk:*`, and `complexity:large`; this routes it to autonomous large-model planning. For an epic or tracking parent, use `factory:tracking`; for blocked work, use `factory:blocked`; use `factory:needs-help` only for a genuine human escalation. Include a concise rationale. Do not use a bare skipped outcome.
-5. Write `.factory/backlog-label-audit.json` as a proposal for the deterministic consumer:
+5. Return one JSON object as a proposal for the deterministic consumer:
 
-The result file must contain only the candidates from the input file. Never add
+The result must contain only the candidates from the input artifact. Never add
 issues discovered in a later listing or from a prior audit artifact. Use the
 repository's PowerShell/runtime file-writing mechanism; do not use shell
 heredocs or create files outside the repository.
@@ -87,4 +87,4 @@ heredocs or create files outside the repository.
 }
 ```
 
-The workflow consumer validates that every candidate appears exactly once, rejects unsupported labels, rechecks the open issue's current labels against the collected snapshot and reservation, applies the proposal, and verifies the result. If current state changed, the consumer fails closed; do not retry with a new issue listing or edit labels manually.
+The workflow validates the JSON output, then materializes it for the consumer. The consumer checks that every candidate appears exactly once, rejects unsupported labels, rechecks the open issue's current labels against the collected snapshot and reservation, applies the proposal, and verifies the result. If current state changed, the consumer fails closed; do not retry with a new issue listing or edit labels manually.

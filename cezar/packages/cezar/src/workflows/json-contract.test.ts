@@ -1,7 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import { validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowDefSchema, workflowStepSchema } from './types.ts';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
+import { normalizeWorkflowDoc, stepsIssue, validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowDefSchema, workflowFileSchema, workflowStepSchema } from './types.ts';
+
+const factoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 
 describe('workflow JSON contracts', () => {
+  it.each(['plan.yaml', 'maintenance.yaml'])('loads Factory workflow %s output contracts as valid definitions', (file) => {
+    const parsed = workflowFileSchema.safeParse(parseYaml(readFileSync(join(factoryRoot, 'workflows', file), 'utf8')));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const normalized = normalizeWorkflowDoc(parsed.data);
+    expect(stepsIssue(normalized.steps)).toBeNull();
+    expect(workflowDefSchema.safeParse({ ...normalized, source: 'file' }).success).toBe(true);
+    const outputStep = normalized.steps.find((step) => step.outputSchema && (step.skill || step.prompt));
+    expect(outputStep).toBeDefined();
+    const value = file === 'plan.yaml'
+      ? {
+          issue: 12, objective: 'Bounded planning', acceptanceCriteria: 'The plan is actionable.',
+          nonGoals: 'No implementation', risks: 'Review decomposition', dependencies: 'None',
+          suggestedWorkBreakdown: 'Inspect, implement, verify', requiredProjectSkills: [],
+          unresolvedQuestions: '', complexity: 'complexity:medium', readyNotReadyStatus: 'ready',
+        }
+      : {
+          considered: [12],
+          changed: [{ issue: 12, added: ['factory:new', 'type:feature', 'risk:medium'], reason: 'feature request' }],
+          skipped: [],
+        };
+    const invalid = file === 'plan.yaml'
+      ? { ...value, complexity: 'incorrect' }
+      : { ...value, changed: [{ issue: 12, added: ['factory:unsafe'], reason: 'invalid proposal' }] };
+    const validResult = validateWorkflowContract(outputStep!.outputSchema!, value);
+    expect(validResult, JSON.stringify(validResult)).toMatchObject({ success: true });
+    expect(validateWorkflowContract(outputStep!.outputSchema!, invalid).success).toBe(false);
+
+    const preflightId = file === 'plan.yaml' ? 'resolved' : 'backlog-label-audit-prepare';
+    const preflightStep = normalized.steps.find((step) => step.id === preflightId);
+    expect(preflightStep?.outputSchema).toBeDefined();
+    const preflightValues = file === 'plan.yaml'
+      ? [
+          { status: 'open', issue: 12 },
+          { status: 'already-resolved', issue: 12, $cezar: { action: 'no_work', reasonCode: 'no_work' } },
+        ]
+      : [
+          { status: 'prepared', candidateCount: 0, resolvedCount: 2, $cezar: { action: 'no_work', reasonCode: 'no_work' } },
+          { status: 'prepared', candidateCount: 2, resolvedCount: 1 },
+        ];
+    for (const preflightValue of preflightValues) {
+      const result = validateWorkflowContract(preflightStep!.outputSchema!, preflightValue);
+      expect(result, JSON.stringify(result)).toMatchObject({ success: true });
+    }
+  });
+
   it('accepts values matching a standard JSON Schema', () => {
     expect(validateWorkflowContract(
       { type: 'object', required: ['count'], properties: { count: { type: 'integer' } }, additionalProperties: false },

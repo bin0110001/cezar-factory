@@ -109,6 +109,7 @@ $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implement
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
+Assert 'planner returns a schema-validated structured artifact for deterministic consumers' ($planWorkflow -match '(?s)id: plan.*?outputSchema:.*?required: \[issue, objective' -and $planWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey plan' -and $planWorkflow -notmatch 'id: plan.*?plan-result\.json' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Return one JSON object')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
@@ -118,6 +119,8 @@ Assert 'implementation preparation fetches issue and captures environment plus b
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('backlog-reconciliation','failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
 Assert 'backlog workflow owns snapshot and dry-run script calls' ($backlogWorkflow -match 'collect-backlog-snapshot\.ps1' -and $backlogWorkflow -match 'reconcile-backlog\.ps1 .* -DryRun' -and $backlogWorkflow -match 'BatchCap 1 -ProjectConcurrencyCap 1')
+$maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'backlog audit returns schema-validated JSON before its deterministic label consumer' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit\s+name:.*?outputSchema:.*?maxItems: 3' -and $maintenanceWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey backlog-label-audit' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')) -match 'Return one JSON object')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
@@ -483,11 +486,27 @@ try {
     # Windows PowerShell 5.1.
     & pwsh -NoProfile -File (Join-Path $scripts 'install.ps1') -ProjectPath $rp -FactoryPath $factory *>&1 | Out-Null
     $val = Join-Path $rp '.ai/factory/scripts/validate-result.ps1'
+    $materialize = Join-Path $rp '.ai/factory/scripts/materialize-workflow-output.ps1'
     $route = Join-Path $rp '.ai/factory/scripts/route-state.ps1'
     $localJob = Join-Path $rp '.ai/factory/scripts/local/run-local-job.ps1'
     Assert 'local utility runner installed' (Test-Path $localJob)
     Assert 'OpenHands job validator installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/openhands/validate-job.ps1'))
     Assert 'Hindsight recall boundary installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/hindsight/recall.ps1'))
+    Assert 'workflow output materializer installed' (Test-Path $materialize)
+    $priorWorkflowInput = $env:CEZAR_INPUT_JSON
+    try {
+        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ plan = @{ issue = 123; objective = 'test'; acceptanceCriteria = 'test'; nonGoals = ''; risks = 'none'; dependencies = 'none'; suggestedWorkBreakdown = 'one step'; requiredProjectSkills = @(); unresolvedQuestions = ''; complexity = 'complexity:small'; readyNotReadyStatus = 'ready' } } } | ConvertTo-Json -Depth 8 -Compress)
+        Push-Location $rp
+        try { $materialized = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'plan'; Path = '.factory/plan-result.json' } }
+        finally { Pop-Location }
+        $materializedPlan = Get-Content -Raw (Join-Path $rp '.factory/plan-result.json') | ConvertFrom-Json
+        Assert 'workflow output materializer writes the selected structured output' ($materialized.Code -eq 0 -and $materializedPlan.issue -eq 123 -and $materializedPlan.objective -eq 'test')
+        Push-Location $rp
+        try { $pathEscape = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'plan'; Path = '..\outside.json' } }
+        finally { Pop-Location }
+        Assert 'workflow output materializer rejects workspace path escape' ($pathEscape.Code -ne 0)
+    }
+    finally { if ($null -eq $priorWorkflowInput) { Remove-Item Env:CEZAR_INPUT_JSON -ErrorAction SilentlyContinue } else { $env:CEZAR_INPUT_JSON = $priorWorkflowInput } }
     Assert 'backlog reconciler installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/reconcile-backlog.ps1'))
     Assert 'backlog snapshot collector installed' (Test-Path (Join-Path $rp '.ai/factory/scripts/collect-backlog-snapshot.ps1'))
     Assert 'local evaluation scripts installed' ((Test-Path (Join-Path $rp '.ai/factory/scripts/record-local-evaluation.ps1')) -and (Test-Path (Join-Path $rp '.ai/factory/scripts/evaluate-local-promotion.ps1')))

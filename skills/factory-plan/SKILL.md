@@ -99,15 +99,15 @@ source: skills/factory-plan/SKILL.md
 - Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
 - In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
 
-### 10. Write the Plan Result
+### 10. Return the Plan Result
 
 - Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise use `not-ready` and record the questions in `unresolvedQuestions`.
-- Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in the `issue` field.
+- Return one JSON object conforming to `plan.schema.json`, including the issue number in the `issue` field. The workflow validates and materializes the result for deterministic consumers.
 - Do not post comments, create issues, or edit lifecycle labels. The workflow validates the artifact, posts the plan, creates any declared sub-issues, and routes the issue state. High-risk plan approval remains a separate human gate.
 
 ## Output Format
 
-Produce a structured plan result conforming to `plan.schema.json`:
+Return a structured plan result conforming to `plan.schema.json`:
 
 ```json
 {
@@ -127,9 +127,3 @@ Produce a structured plan result conforming to `plan.schema.json`:
 ```
 
 `subIssues` is required only when `readyNotReadyStatus` is `decomposed`.
-
-## Already-resolved issues
-
-The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
-writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
-resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.

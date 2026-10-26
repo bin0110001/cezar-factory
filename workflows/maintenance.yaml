@@ -5,7 +5,7 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,materialize-workflow-output.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
   # Independent deterministic housekeeping runs before the bounded classification
   # agent so an agent failure cannot suppress either maintenance task.
   - id: refresh-stale-workable
@@ -40,15 +40,49 @@ steps:
             action: { type: string, const: no_work }
             reasonCode: { type: string, const: no_work }
           additionalProperties: false
-      allOf:
-        - if: { properties: { candidateCount: { const: 0 } }, required: [candidateCount] }
-          then: { required: [$cezar] }
-        - if: { properties: { candidateCount: { minimum: 1 } }, required: [candidateCount] }
-          then: { not: { required: [$cezar] } }
       additionalProperties: false
   - id: backlog-label-audit
     name: Audit at most three legacy issues
     skill: factory-backlog-label-audit
+    outputSchema:
+      type: object
+      required: [considered, changed, skipped]
+      properties:
+        considered:
+          type: array
+          maxItems: 3
+          items: { type: integer, minimum: 1 }
+        changed:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            required: [issue, added, reason]
+            properties:
+              issue: { type: integer, minimum: 1 }
+              added:
+                type: array
+                minItems: 1
+                maxItems: 4
+                items: { type: string, enum: [factory:new, factory:needs-plan, factory:tracking, factory:blocked, factory:needs-help, type:bug, type:feature, type:refactor, type:docs, type:test, type:maintenance, risk:low, risk:medium, risk:high, complexity:small, complexity:medium, complexity:large] }
+              reason: { type: string, minLength: 1, maxLength: 500 }
+            additionalProperties: false
+        skipped:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            required: [issue, reason, added]
+            properties:
+              issue: { type: integer, minimum: 1 }
+              reason: { type: string, minLength: 1, maxLength: 500 }
+              added:
+                type: array
+                minItems: 1
+                maxItems: 4
+                items: { type: string, enum: [factory:new, factory:needs-plan, factory:tracking, factory:blocked, factory:needs-help, type:bug, type:feature, type:refactor, type:docs, type:test, type:maintenance, risk:low, risk:medium, risk:high, complexity:small, complexity:medium, complexity:large] }
+            additionalProperties: false
+      additionalProperties: false
     prompt: |
       {{task}}
 
@@ -59,11 +93,23 @@ steps:
       Do not run it or any other Factory script, retrieve issue bodies, call `gh issue list`, or
       manually select issues. Read only the worktree-local `.factory/backlog-label-audit-input.json`
       artifact. The resolved entries have already been applied and verified; evaluate only the
-      remaining candidates, which are capped at three. Write a candidate-only proposal to
-      `.factory/backlog-label-audit.json`; each changed
-      or skipped entry must include the proposed allowlisted closing labels and a concise rationale.
+      remaining candidates, which are capped at three. Return one JSON object matching the
+      workflow output contract; each changed or skipped entry must include the proposed
+      allowlisted closing labels and a concise rationale. Do not write files.
       Do not read or mutate GitHub state. The following deterministic workflow step validates the
       proposal and applies effects after checking the live issue state and audit reservation.
+  - id: backlog-label-audit-materialize
+    name: Materialize the validated proposal for the effect consumer
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey backlog-label-audit -Path .factory/backlog-label-audit.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [backlog-label-audit]
+          properties:
+            backlog-label-audit: { type: object }
   - id: backlog-label-audit-apply
     name: Validate and apply backlog-label proposals
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json
