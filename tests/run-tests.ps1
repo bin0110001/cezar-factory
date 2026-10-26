@@ -656,7 +656,7 @@ try {
     $closingFirst = Run 'ensure-pr-closes-issue.ps1' $closingArgs
     $closingReceipt = $null
     try { $closingReceipt = $closingFirst.Out | ConvertFrom-Json } catch { }
-    Assert 'PR close guard emits normalized action receipt and verifies the remote edit' ($closingFirst.Code -eq 0 -and $closingReceipt.status -eq 'linked' -and $closingReceipt.action.schemaVersion -eq 1 -and $closingReceipt.action.operation -eq 'pull_request.closing_reference.ensure' -and $closingReceipt.action.expectedRevision -eq 'rev-1' -and -not [string]::IsNullOrWhiteSpace([string]$closingReceipt.observedRevision) -and (Get-Gh).prs[0].body -match 'Closes #7')
+    Assert 'PR close guard emits a schema-valid action receipt and verifies the remote edit' ($closingFirst.Code -eq 0 -and $closingReceipt.status -eq 'linked' -and $closingReceipt.action.schemaVersion -eq 1 -and $closingReceipt.action.operation -eq 'pull_request.closing_reference.ensure' -and $closingReceipt.action.expectedRevision -eq 'rev-1' -and (Test-Json -Json ($closingReceipt.action | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) -and -not [string]::IsNullOrWhiteSpace([string]$closingReceipt.observedRevision) -and (Get-Gh).prs[0].body -match 'Closes #7')
     $closingReplay = Run 'ensure-pr-closes-issue.ps1' $closingArgs
     $closingReplayReceipt = $null
     try { $closingReplayReceipt = $closingReplay.Out | ConvertFrom-Json } catch { }
@@ -1057,6 +1057,7 @@ try {
     $auditAction = (@($auditApplication.receipts | Where-Object { $_.issue -eq 5 })[0]).action
     $expectedAuditActionKey = "backlog-label-audit:5:$(([DateTimeOffset]$auditCandidates.generatedAt).ToUniversalTime().ToString('o'))"
     Assert 'backlog audit receipt exposes a revision-bound allowlisted action' ($auditAction.schemaVersion -eq 1 -and $auditAction.target.kind -eq 'github_issue' -and $auditAction.target.id -eq 5 -and $auditAction.expectedRevision -eq $preparedRevision -and $auditAction.operation -eq 'github.issue.update_labels' -and @($auditAction.arguments.addLabels) -contains 'type:maintenance' -and @($auditAction.arguments.removeLabels) -contains 'factory:auditing' -and $auditAction.rationale.Length -gt 0 -and $auditAction.operationKey -eq $expectedAuditActionKey)
+    Assert 'backlog label consumer emits an action validated by the shared schema' (Test-Json -Json ($auditAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
     $effectActionSchema = Get-Content -Raw (Join-Path $factory 'schemas/workflow-effect-action.schema.json') | ConvertFrom-Json
     Assert 'workflow effect action schema declares the normalized action contract' (@($effectActionSchema.required) -contains 'expectedRevision' -and @($effectActionSchema.required) -contains 'operationKey' -and $effectActionSchema.properties.schemaVersion.const -eq 1)
 

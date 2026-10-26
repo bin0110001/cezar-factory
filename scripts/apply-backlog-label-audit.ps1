@@ -126,7 +126,7 @@ function New-BacklogLabelAction($Outcome, [string]$ExpectedRevision, [string]$Op
     if (-not $ExpectedRevision -or $rationale.Length -gt 500 -or [string]::IsNullOrWhiteSpace($rationale)) {
         throw "Issue $($Outcome.issue) action is missing a bounded revision or rationale."
     }
-    [ordered]@{
+    $action = [ordered]@{
         schemaVersion = 1
         target = [ordered]@{ kind = 'github_issue'; id = [int]$Outcome.issue }
         expectedRevision = $ExpectedRevision
@@ -138,6 +138,11 @@ function New-BacklogLabelAction($Outcome, [string]$ExpectedRevision, [string]$Op
         rationale = $rationale
         operationKey = $OperationKey
     }
+    $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) {
+        throw "Generated backlog effect action does not satisfy the shared contract: $schemaPath"
+    }
+    $action
 }
 
 $inputDoc = Read-JsonFile $InputPath

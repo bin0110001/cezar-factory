@@ -38,7 +38,7 @@ function Test-ClosingReference([string]$Body, [int]$IssueNumber) {
 function New-EffectAction([string]$Url, [string]$Revision, [int]$IssueNumber, [string]$Reference) {
     $identity = [Text.Encoding]::UTF8.GetBytes("ensure-pr-closes-issue`n$Url`n$IssueNumber")
     $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($identity)).ToLowerInvariant()
-    return [ordered]@{
+    $action = [ordered]@{
         schemaVersion = 1
         target = @{ kind = 'pull_request'; id = $Url }
         expectedRevision = $Revision
@@ -47,6 +47,11 @@ function New-EffectAction([string]$Url, [string]$Revision, [int]$IssueNumber, [s
         rationale = 'Ensure a successful implementation PR closes its source issue when merged.'
         operationKey = "factory:ensure-pr-closes-issue:$key"
     }
+    $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) {
+        throw "Generated PR effect action does not satisfy the shared contract: $schemaPath"
+    }
+    return $action
 }
 
 function Write-EffectResult([string]$Status, [int]$IssueNumber, [string]$Url, $Action, [string]$ObservedRevision) {

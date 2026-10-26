@@ -218,6 +218,12 @@ function Add-Comment([string]$Body) {
         Fail 'comment action is missing a bounded revision, rationale or operation key'
     }
     $actionJson = $action | ConvertTo-Json -Compress -Depth 6
+    $actionSchemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    try {
+        if (-not (Test-Json -Json $actionJson -SchemaFile $actionSchemaPath -ErrorAction Stop)) {
+            Fail 'comment action does not satisfy the shared workflow effect contract'
+        }
+    } catch { Fail "comment action schema validation failed: $($_.Exception.Message)" }
     $actionPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($actionJson))
     $actionMarker = "<!-- factory:effect-action:v1:$actionPayload -->"
     $markedBody = $Body + "`n`n" + $marker + "`n" + $actionMarker
