@@ -99,6 +99,34 @@ describe('StepRail', () => {
     expect(artifact.textContent).toContain('"verdict": "passed"')
   })
 
+  it('summarizes validation verdicts and diagnostic baseline counts while retaining the full receipt', () => {
+    render(<StepRail steps={[step('full-validation', 'failed', {
+      kind: 'check',
+      output: {
+        schemaVersion: 1,
+        stage: 'full',
+        status: 'failed',
+        reasonCode: 'validation_result_failed',
+        diagnosticComparison: {
+          status: 'compared',
+          reasonCode: 'baseline_compared',
+          baselineSha256: 'a'.repeat(64),
+          knownFingerprints: ['b'.repeat(64)],
+          newFingerprints: ['c'.repeat(64), 'd'.repeat(64)],
+          unclassifiedCount: 1,
+        },
+      },
+      outputAttempt: 1,
+      outputDigest: 'e'.repeat(64),
+    })]} />)
+    const artifact = document.querySelector('[data-slot="step-artifact"]')!
+    expect(artifact.querySelector('[data-slot="validation-receipt-summary"]')?.getAttribute('data-status')).toBe('failed')
+    expect(artifact.textContent).toContain('Validation failed · full')
+    expect(artifact.textContent).toContain('Reason: validation_result_failed')
+    expect(artifact.textContent).toContain('Diagnostics (compared): 1 known · 2 new · 1 unclassified')
+    expect(artifact.textContent).toContain('"knownFingerprints"')
+  })
+
   it('does not render legacy output without its integrity digest', () => {
     render(<StepRail steps={[step('verify', 'done', { output: { verdict: 'passed' } })]} />)
     expect(document.querySelector('[data-slot="step-artifact"]')).toBeNull()

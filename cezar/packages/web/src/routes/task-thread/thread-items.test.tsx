@@ -104,6 +104,31 @@ describe('ToolCard — states', () => {
     expect(document.querySelector('[data-slot="tool-output"]')).toBeNull()
   })
 
+  it('summarizes a failed validation receipt from the final output line without hiding raw output', () => {
+    const receipt = {
+      schemaVersion: 1,
+      stage: 'full',
+      status: 'failed',
+      reasonCode: 'validation_result_failed',
+      diagnosticComparison: {
+        status: 'compared',
+        knownFingerprints: ['b'.repeat(64)],
+        newFingerprints: ['c'.repeat(64)],
+        unclassifiedCount: 1,
+      },
+    }
+    const item = goldenItem(bashAndScreenshot, 'toolu_mock_1', 'completed')
+    render(<ToolCard item={{ ...item, name: 'check', toolKind: 'execute', status: 'failed', exitCode: 1,
+      output: `warning: runner note\n${JSON.stringify(receipt)}` }} />)
+    fireEvent.click(trigger(/Ran.*git status --short/))
+    const summary = document.querySelector('[data-slot="validation-receipt-summary"]')!
+    expect(summary.getAttribute('data-status')).toBe('failed')
+    expect(summary.textContent).toContain('Validation failed · full')
+    expect(summary.textContent).toContain('Diagnostics (compared): 1 known · 1 new · 1 unclassified')
+    expect(document.querySelector('[data-slot="tool-output"] pre')?.textContent).toContain('warning: runner note')
+    expect(document.querySelector('[data-slot="tool-output"] pre')?.textContent).toContain('"reasonCode":"validation_result_failed"')
+  })
+
   it('running execute WITH output: open by default — the live tail is visible while streaming', () => {
     const running = goldenItem(bashAndScreenshot, 'toolu_mock_1', 'running')
     // What the reducer holds mid-stream: the running golden item + accumulated `item.delta{output}`.

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { StepState, StepStatus } from '@open-mercato/cezar-api-client'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { ValidationReceiptSummary } from './validation-receipt-summary'
 
 /**
  * The WORKFLOW step rail (spec §"Task thread" — steps ≠ plan: these are the run's own
@@ -77,6 +78,7 @@ export function StepRail({ steps }: { steps: StepState[] }) {
                 Structured result · attempt {step.outputAttempt ?? 1} · sha256 {step.outputDigest.slice(0, 12)}…
               </summary>
               <div className="mt-1 space-y-1 rounded-md border bg-muted/40 p-2">
+                <ValidationReceiptSummary value={step.output} />
                 <p className="break-all text-[10px] text-soft-foreground">
                   Content SHA-256: <code>{step.outputDigest}</code>
                   {step.outputSourceDigest ? <> · Workflow step SHA-256: <code>{step.outputSourceDigest}</code></> : null}

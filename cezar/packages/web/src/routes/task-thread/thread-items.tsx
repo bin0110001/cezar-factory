@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { parseReviewMessage } from './diff-comments'
 import { Markdown } from './markdown'
 import { ReviewCommentsBlock } from './review-comments-block'
+import { ValidationReceiptSummary } from './validation-receipt-summary'
 import { useDraft } from './thread-draft'
 import { splitToolTitle, streakLabel, type ContextGroupBlock } from './thread-groups'
 import { useThreadCardCache } from './thread-open-cards'
@@ -497,6 +498,7 @@ function ToolOutput({ text, streaming }: { text: string; streaming: boolean }) {
   const clamped = !streaming && !expanded && lines > OUTPUT_CLAMP_LINES
   return (
     <div data-slot="tool-output" data-clamped={clamped ? 'true' : undefined}>
+      {!streaming ? <div className="px-3 pt-3"><ValidationReceiptSummary value={text} /></div> : null}
       <div className="relative">
         <div
           ref={boxRef}
