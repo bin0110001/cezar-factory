@@ -8,7 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { realpath } from 'node:fs/promises';
+import { realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -87,9 +87,11 @@ describe('workspace projects API', () => {
     clearProjectProbeCache();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     store.flush();
-    for (const dir of [home, repoRoot, otherRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [home, repoRoot, otherRoot]) {
+      await rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
     if (savedRemote === undefined) delete process.env.CEZ_REMOTE;

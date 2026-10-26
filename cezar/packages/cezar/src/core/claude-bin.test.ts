@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, win32 } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   claudeInstallCandidates,
@@ -144,9 +144,9 @@ describe('claudeInstallCandidates', () => {
    * #459 — the same rule `resolveOnPath` follows in `server/open-in-app.ts`.
    */
   it('never offers a shell-only .cmd/.bat shim to the spawn callers', () => {
-    const candidates = claudeInstallCandidates(join('C:', 'Users', 'u'), 'win32', join('C:', 'nodejs'));
+    const candidates = claudeInstallCandidates(win32.join('C:', 'Users', 'u'), 'win32', win32.join('C:', 'nodejs'));
     expect(candidates.some((c) => c.endsWith('.cmd') || c.endsWith('.bat'))).toBe(false);
-    expect(candidates).toContain(join('C:', 'nodejs', 'claude.exe'));
+    expect(candidates).toContain(win32.join('C:', 'nodejs', 'claude.exe'));
   });
 });
 
@@ -154,9 +154,9 @@ describe('claudeShellCandidates', () => {
   it('adds the win32 .cmd shim, because that is all `npm install -g` writes there', () => {
     // `join` renders with the HOST's separator, so build the expectation the same way rather
     // than hard-coding backslashes that only appear when the suite runs on Windows.
-    const nodeBinDir = join('C:', 'Program Files', 'nodejs');
-    expect(claudeShellCandidates(join('C:', 'Users', 'u'), 'win32', nodeBinDir))
-      .toContain(join(nodeBinDir, 'claude.cmd'));
+    const nodeBinDir = win32.join('C:', 'Program Files', 'nodejs');
+    expect(claudeShellCandidates(win32.join('C:', 'Users', 'u'), 'win32', nodeBinDir))
+      .toContain(win32.join(nodeBinDir, 'claude.cmd'));
   });
 
   it('is identical to the spawn list on posix, where there is no shim to add', () => {
@@ -170,13 +170,13 @@ describe('claudeShellCandidates', () => {
    * carrying both a native install and an npm one resolves the npm shim over the native binary.
    */
   it('tries each shim beside the .exe of its own directory, native installer first', () => {
-    const home = join('C:', 'Users', 'u');
-    const nodeBinDir = join('C:', 'Program Files', 'nodejs');
+    const home = win32.join('C:', 'Users', 'u');
+    const nodeBinDir = win32.join('C:', 'Program Files', 'nodejs');
     expect(claudeShellCandidates(home, 'win32', nodeBinDir)).toEqual([
-      join(home, '.local', 'bin', 'claude.exe'),
-      join(home, '.local', 'bin', 'claude.cmd'),
-      join(nodeBinDir, 'claude.exe'),
-      join(nodeBinDir, 'claude.cmd'),
+      win32.join(home, '.local', 'bin', 'claude.exe'),
+      win32.join(home, '.local', 'bin', 'claude.cmd'),
+      win32.join(nodeBinDir, 'claude.exe'),
+      win32.join(nodeBinDir, 'claude.cmd'),
     ]);
   });
 });

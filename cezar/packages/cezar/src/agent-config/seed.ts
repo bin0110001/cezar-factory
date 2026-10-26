@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { agentHomePaths } from '../paths.ts';
 import { CONFIG_FILES } from './catalog.ts';
 
@@ -17,10 +17,10 @@ import { CONFIG_FILES } from './catalog.ts';
  * semantics and are never touched here.
  */
 
-function git(cwd: string, args: string[]): Promise<{ ok: boolean; stdout: string }> {
+function git(cwd: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, encoding: 'utf8' }, (err, stdout) =>
-      resolve({ ok: !err, stdout: stdout ?? '' }),
+    execFile('git', args, { cwd, encoding: 'utf8' }, (err, stdout, stderr) =>
+      resolve({ ok: !err, stdout: stdout ?? '', stderr: stderr ?? '' }),
     );
   });
 }
@@ -66,26 +66,28 @@ export async function seedAgentConfigLocalLayer(
   const seeded: string[] = [];
 
   const commonDir = await git(worktreeCwd, ['rev-parse', '--git-common-dir']);
+  if (!commonDir.ok) console.error({ worktreeCwd, commonDir });
   if (!commonDir.ok) return [];
   const commonGitDir = commonDir.stdout.trim();
-  const absCommonGitDir = commonGitDir.startsWith('/') ? commonGitDir : join(worktreeCwd, commonGitDir);
+  const absCommonGitDir = isAbsolute(commonGitDir) ? commonGitDir : join(worktreeCwd, commonGitDir);
 
   for (const def of CONFIG_FILES) {
     if (!def.seeded) continue;
     const src = def.resolve(repoRoot, home);
     const rel = relative(repoRoot, src);
+    const gitRel = rel.replaceAll('\\', '/');
     // Never seed something outside the repo, or that isn't there.
     if (rel.startsWith('..') || !(await fileExists(src))) continue;
     // Only seed a genuinely-ignored file — never force-exclude a tracked one.
-    const ignored = await git(repoRoot, ['check-ignore', '-q', '--', rel]);
+    const ignored = await git(repoRoot, ['check-ignore', '-q', '--', gitRel]);
     if (!ignored.ok) continue;
 
     const dest = join(worktreeCwd, rel);
     try {
       await mkdir(dirname(dest), { recursive: true });
       await copyFile(src, dest);
-      await ensureExcluded(absCommonGitDir, rel);
-      seeded.push(rel);
+      await ensureExcluded(absCommonGitDir, gitRel);
+      seeded.push(gitRel);
     } catch {
       // best-effort: a seed failure must not fail the run
     }

@@ -14,7 +14,12 @@ describe('timestamped process telemetry', () => {
     const usage = await import('./process-usage.ts');
     expect(usage).toHaveProperty('currentTimedUsage');
     answer('100 1 2048 125\n'); usage.registerRunProcess('a', 100); await tick();
-    expect(usage.currentTimedUsage('a')).toEqual({ sampledAt: '2026-09-18T00:00:00.000Z', cpuPct: 125, rssBytes: 2097152, procCount: 1 });
+    expect(usage.currentTimedUsage('a')).toEqual({
+      sampledAt: '2026-09-18T00:00:00.000Z',
+      cpuPct: process.platform === 'win32' ? null : 125,
+      rssBytes: 2097152,
+      procCount: 1,
+    });
     answer(null); await vi.advanceTimersByTimeAsync(12_000);
     expect(usage.currentTimedUsage('a')?.sampledAt).toBe('2026-09-18T00:00:00.000Z');
     usage.unregisterRunProcess('a'); expect(usage.currentTimedUsage('a')).toBeUndefined();

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -111,25 +112,39 @@ describe('workspace semaphore across RunManagers (step 2.5)', () => {
     // Settle everything before tearing the fixtures down: cancel whatever is
     // still live and wait for terminal statuses, so no check-step child or
     // mock session outlives its repo directory.
-    for (const store of stores) {
+    for (const [index, store] of stores.entries()) {
+      const manager = managers[index];
       for (const run of store.listRuns()) {
-        const m = managers[stores.indexOf(store)];
-        if (!settled.includes(store.getRun(run.id)?.status ?? '')) m?.cancel(run.id);
+        if (!settled.includes(store.getRun(run.id)?.status ?? '')) manager?.cancel(run.id);
       }
     }
+    const sessions = managers.flatMap((manager) => {
+      const active = manager as unknown as { active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }> };
+      return [...active.active.values()].flatMap((state) => state.session ? [state.session] : []);
+    });
+    let didSettle = false;
+    const sessionResults = Promise.allSettled(sessions.map((session) => session.result));
+    await Promise.race([sessionResults.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    if (!didSettle) {
+      for (const session of sessions) session.hardStop?.();
+      await Promise.race([sessionResults.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 10_000))]);
+    }
     for (const store of stores) {
-      await waitFor(
-        () => store.listRuns().every((r) => settled.includes(r.status)),
-        'all runs to settle before teardown',
-      ).catch(() => undefined);
       store.flush();
     }
     for (const manager of managers.splice(0)) manager.dispose();
     stores.length = 0;
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+      try {
+        await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (process.platform !== 'win32' || !['EBUSY', 'EPERM'].includes(code ?? '')) throw error;
+      }
+    }
     if (savedEnv.CEZ_DRY_RUN === undefined) delete process.env.CEZ_DRY_RUN;
     else process.env.CEZ_DRY_RUN = savedEnv.CEZ_DRY_RUN;
-  });
+  }, 30_000);
 
   it('caps concurrent runs across two projects: with cap 2, the third run queues', async () => {
     const semaphore = new WorkspaceSemaphore({ initial: { maxParallel: 2 } });

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -16,6 +17,7 @@ describe('CEZ:MONITORING on a non-final workflow step (#1076)', () => {
   let repoRoot: string;
   let store: RunStore;
   let manager: RunManager;
+  let ownedManagers: RunManager[];
   let currentId: string | undefined;
   const savedDryRun = process.env.CEZ_DRY_RUN;
 
@@ -37,17 +39,41 @@ describe('CEZ:MONITORING on a non-final workflow step (#1076)', () => {
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
     manager = new RunManager(store, repoRoot);
+    ownedManagers = [manager];
     currentId = undefined;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const sessions: Array<{ result: Promise<unknown>; hardStop?(): void }> = [];
+    for (const owned of ownedManagers) {
+      const active = owned as unknown as { active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }> };
+      const session = currentId ? active.active.get(currentId)?.session : undefined;
+      if (session) sessions.push(session);
+    }
     if (currentId) manager.cancel(currentId);
-    manager.dispose();
+    let didSettle = false;
+    const settled = Promise.allSettled(sessions.map((session) => session.result));
+    await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    if (!didSettle) {
+      for (const session of sessions) session.hardStop?.();
+      await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 15_000))]);
+      if (!didSettle) throw new Error('monitored provider sessions did not exit after hard stop; keeping the fixture directory');
+    }
+    for (const owned of ownedManagers) owned.dispose();
     if (savedDryRun === undefined) delete process.env.CEZ_DRY_RUN;
     else process.env.CEZ_DRY_RUN = savedDryRun;
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    try {
+      await rm(repoRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Windows may retain a transient handle to a killed provider's working directory.
+      // The fixture is outside the checkout and unique; leave it for OS temp cleanup rather
+      // than making a passing lifecycle test hang on antivirus/indexer locks.
+      if (process.platform !== 'win32' || !['EBUSY', 'EPERM'].includes(code ?? '')) throw error;
+    }
+    ownedManagers = [];
+  }, 30_000);
 
   const waitFor = async (id: string, predicate: (record: RunRecord | undefined) => boolean) => {
     const deadline = Date.now() + 20_000;
@@ -90,6 +116,7 @@ describe('CEZ:MONITORING on a non-final workflow step (#1076)', () => {
 
   it('keeps monitoring wake-ups bounded and cancellation terminal', async () => {
     manager.dispose();
+    ownedManagers.push(manager);
     manager = new RunManager(store, repoRoot, {
       semaphore: new WorkspaceSemaphore({ initial: { monitoringWakeIntervalMinutes: 0.001 } }),
     });
@@ -122,6 +149,7 @@ describe('CEZ:MONITORING on a non-final workflow step (#1076)', () => {
     const reopened = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
     store = reopened;
     manager = new RunManager(reopened, repoRoot);
+    ownedManagers.push(manager);
     await manager.recover();
 
     await waitFor(record.id, (current) => current?.activity === 'monitoring');

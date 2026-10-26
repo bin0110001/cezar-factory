@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -28,6 +29,7 @@ const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
 describe('recover() and the follow-up ceiling (#471)', () => {
   let repoRoot: string;
   let store: RunStore;
+  let managers: RunManager[];
   const savedFollowups = process.env.CEZ_FOLLOWUPS;
 
   beforeEach(async () => {
@@ -38,18 +40,26 @@ describe('recover() and the follow-up ceiling (#471)', () => {
     await run('git', ['add', '-A'], { cwd: repoRoot });
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    managers = [];
   });
 
   // Capped at 0 — recover() re-queues, the queue never drains, no agent is spawned.
   const frozen = () =>
     new WorkspaceSemaphore({ initial: { maxParallel: 0 } });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const manager of managers) manager.dispose();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     if (savedFollowups === undefined) delete process.env.CEZ_FOLLOWUPS;
     else process.env.CEZ_FOLLOWUPS = savedFollowups;
-  });
+  }, 30_000);
+
+  const recoveringManager = () => {
+    const manager = new RunManager(store, repoRoot, { semaphore: frozen() });
+    managers.push(manager);
+    return manager;
+  };
 
   const WORKFLOW_DEF = {
     name: 'quick-task',
@@ -77,7 +87,7 @@ describe('recover() and the follow-up ceiling (#471)', () => {
     const id = queuedRun(true);
     expect(store.getRun(id)?.generateFollowups).toBe(true); // the pre-restart truth
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     // The record must not keep claiming follow-ups it will never produce.
     expect(store.getRun(id)?.generateFollowups).toBe(false);
@@ -88,7 +98,7 @@ describe('recover() and the follow-up ceiling (#471)', () => {
     process.env.CEZ_FOLLOWUPS = '1';
     const id = queuedRun(true);
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     expect(store.getRun(id)?.generateFollowups).toBe(true);
   });
@@ -97,7 +107,7 @@ describe('recover() and the follow-up ceiling (#471)', () => {
     process.env.CEZ_FOLLOWUPS = '1';
     const id = queuedRun(false);
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     expect(store.getRun(id)?.generateFollowups).toBe(false);
   });

@@ -34,11 +34,13 @@ filter envelope.
 
 ## Exceptional user-input gate
 
-Only a major architectural decision pauses work for the user. An external
+An unresolved major architectural decision blocks planning. High-risk plans
+also wait for explicit human plan approval before implementation. An external
 dependency may block one issue, but it does not pause the rest of the backlog.
 
 | Outcome | State | Human action to resume |
 |---|---|---|
+| High-risk plan awaiting approval | `factory:needs-help` | Review the posted plan and relabel `factory:ready` when approved |
 | Unresolved major architectural decision | `factory:needs-help` or `factory:human-review` | Ask one focused question about compatibility, ownership, or the system contract; planning resumes automatically after the answer |
 | External blocker | `factory:blocked` | Record the dependency and continue other eligible issues; resume this issue when evidence shows it is clear |
 | Independent review finds issues | `factory:changes-requested` | Fix and re-review automatically; user review is not a gate |
@@ -52,9 +54,14 @@ while another issue waits for CI, independent review, or release. Do not wait
 for per-issue user scheduling; only a major architectural decision pauses for
 user input.
 
-The `[factory] maintenance` automation runs only fixed script steps plus the
-capped legacy-label audit: backlog-label audit, `refresh-stale-workable`, and
-`maintain-repository.ps1`. It does not select or classify issues for intake;
+The `[factory] maintenance` automation runs deterministic housekeeping before
+backlog classification. The collector emits static rule proposals and at most
+three ambiguous candidates; a preparation consumer applies static decisions,
+checks live state, and reserves candidates. The agent returns a bounded
+proposal and a final consumer rechecks the issue revision and applies it. A
+zero-candidate result uses Cezar `no_work` and skips the agent. The workflow
+also runs `refresh-stale-workable` and `maintain-repository.ps1` before the
+agent step so agent failure cannot suppress those tasks. It does not select or classify issues for intake;
 `[factory] intake` is the only intake path. `refresh-stale-workable` is a
 repair loop, not a new lifecycle state. It selects at most two open
 issues older than 24 hours in `factory:new`, `factory:needs-plan`,

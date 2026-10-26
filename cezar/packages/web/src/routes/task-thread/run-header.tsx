@@ -68,7 +68,7 @@ import { OpenInMenu, type OpenInChoice } from '@/components/open-in-menu'
 import { toast } from '@/components/ui/toaster'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { DirectionalUsage } from '@/components/directional-usage'
-import { budgetStop, deriveAttention } from '@/lib/attention'
+import { budgetStop, deriveAttention, outcomeExplanation } from '@/lib/attention'
 import { queuePositions, runTitle } from '@/lib/task-groups'
 import { usableRunners } from '@/lib/provider-status'
 import {
@@ -182,6 +182,7 @@ function RunHeaderView({
   ).data
   const health = useHealth()
   const metricVisibility = usageMetricVisibility(health.data)
+  const outcomeTitle = outcomeExplanation(run)
 
   return (
     <header
@@ -200,7 +201,12 @@ function RunHeaderView({
                 Plan {planTally.done}/{planTally.total}
               </span>
             ) : null}
-            <Pill dot={attention.tone} pulse={attention.pulse}>
+            <Pill
+              dot={attention.tone}
+              pulse={attention.pulse}
+              title={outcomeTitle}
+              aria-label={outcomeTitle ? `${attention.label}: ${outcomeTitle}` : attention.label}
+            >
               {attention.label}
               {queuePosition !== undefined ? ` #${queuePosition}` : ''}
             </Pill>
@@ -257,6 +263,21 @@ function RunHeaderView({
             are what the run IS doing right now, not metadata about how it started. */}
         <DispatchParentLine run={run} />
         <DispatchChildrenLine run={run} />
+        {run.finalization ? (
+          <div
+            data-slot="run-finalization"
+            role="status"
+            title={run.finalization.cleanupError}
+            className="pb-1 text-xs text-muted-foreground"
+          >
+            {run.finalization.status === 'running'
+              ? 'Cleanup running'
+              : run.finalization.status === 'failed'
+                ? 'Cleanup finished with errors'
+                : 'Cleanup complete'}
+            {run.finalization.cleanupError ? ' — ' + run.finalization.cleanupError : ''}
+          </div>
+        ) : null}
 
         <div data-slot="run-tabs" className="mt-1.5 flex items-end gap-1 md:mt-2.5">
           <TabLink to={`/tasks/${run.id}`} active={tab === 'session'}>

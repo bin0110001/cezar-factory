@@ -35,6 +35,7 @@ describe('seedAgentConfigLocalLayer', () => {
   it('copies a gitignored personal file into the worktree and excludes it', async () => {
     mkdirSync(join(repo, '.claude'), { recursive: true });
     writeFileSync(join(repo, '.claude', 'settings.local.json'), '{"env":{"X":"1"}}');
+    expect(execFileSync('git', ['check-ignore', '--', '.claude/settings.local.json'], { cwd: repo, encoding: 'utf8' })).toBeTruthy();
     const wt = makeWorktree();
     try {
       const seeded = await seedAgentConfigLocalLayer(repo, wt, env);

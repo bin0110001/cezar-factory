@@ -187,6 +187,18 @@ describe('#897 a turn that outlives its prompt POST', () => {
   const textIndex = (events: AgentEvent[], needle: string): number =>
     events.findIndex((e) => e.type === 'text' && e.text.includes(needle));
 
+  it('preserves stderr when the server exits before listening', async () => {
+    const runner = new OpencodeServerRunner({ bin: mockBin, timeoutMs: 60_000 });
+    const { events, onEvent } = record();
+    const session = runner.startSession(
+      { userPrompt: 'check the tree', cwd: process.cwd(), env: { MOCK_OPENCODE_FAIL_STARTUP: '1' } },
+      onEvent,
+      {},
+    );
+    await session.result;
+    expect(errors(events)).toContain('opencode: opencode serve exited before it started listening: mock startup failure detail');
+  }, 15_000);
+
   /** Resolves once `count` `turn-end` events have been seen. */
   function afterTurnEnds(events: AgentEvent[], count: number, timeoutMs = 10_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
@@ -294,6 +306,7 @@ describe('#897 a turn that outlives its prompt POST', () => {
     const started = Date.now();
     await session.result;
 
+    expect(errors(events)).toEqual([]);
     expect(types(events).filter((t) => t === 'turn-end')).toHaveLength(1);
     expect(notes(events)).toEqual([]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(TURN_IDLE_GRACE_MS);
@@ -307,9 +320,10 @@ describe('#897 a turn that outlives its prompt POST', () => {
     });
     await session.result;
 
-    // Swallowing the drop must not swallow a real failure: no `session.idle`
-    // ever arrived, so the drop was never explained and the note stands.
-    expect(notes(events).join(' ')).toContain('opencode: prompt failed:');
+    // Swallowing the drop must not swallow a real failure: the request error
+    // may arrive before or after the SSE close under load, so it can surface as
+    // either a prompt-failed note or the bootstrap error.
+    expect([...notes(events), ...errors(events)].join(' ')).toContain('opencode:');
     expect(types(events).filter((t) => t === 'turn-end')).toHaveLength(1);
   }, 30_000);
 
@@ -347,7 +361,7 @@ describe('#897 a turn that outlives its prompt POST', () => {
     await session.result;
 
     // Nothing to wait for, so no grace window is spent.
-    expect(types(events).filter((t) => t === 'turn-end')).toHaveLength(1);
+    expect(types(events).filter((t) => t === 'turn-end'), JSON.stringify(events)).toHaveLength(1);
     expect(Date.now() - started).toBeLessThan(TURN_IDLE_GRACE_MS);
   }, 30_000);
 });

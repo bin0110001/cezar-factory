@@ -44,25 +44,48 @@ function Compact([string]$Text, [int]$Max = 240) {
     if ($value.Length -gt $Max) { return $value.Substring(0, $Max) + '…' }
     return $value
 }
+function Normalize-UtcTimestamp($Value) {
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    if ($Value -is [DateTimeOffset]) { return $Value.ToUniversalTime().ToString('o') }
+    if ($Value -is [DateTime]) { return $Value.ToUniversalTime().ToString('o') }
+    $parsed = [DateTimeOffset]::MinValue
+    if ([DateTimeOffset]::TryParse([string]$Value, [ref]$parsed)) { return $parsed.ToUniversalTime().ToString('o') }
+    return [string]$Value
+}
 function Compact-Run($Run, [string]$ProjectId) {
+    $startedAt = Normalize-UtcTimestamp $Run.startedAt
+    $finishedAt = Normalize-UtcTimestamp $Run.finishedAt
+    $durationSeconds = $null
+    if ($startedAt -and $finishedAt) {
+        $started = [DateTimeOffset]::MinValue
+        $finished = [DateTimeOffset]::MinValue
+        if ([DateTimeOffset]::TryParse($startedAt, [ref]$started) -and [DateTimeOffset]::TryParse($finishedAt, [ref]$finished)) {
+            $durationSeconds = [Math]::Max(0, [Math]::Round(($finished - $started).TotalSeconds, 2))
+        }
+    }
     [ordered]@{
         projectId = $ProjectId
         id = [string]$Run.id
         titleSummary = Compact ([string]$Run.titleSummary)
         workflow = [string]$Run.workflow
+        runner = [string]$Run.runner
+        model = [string]$Run.model
+        modelIdentity = [string]$Run.modelIdentity
         status = [string]$Run.status
         conclusion = [string]$Run.conclusion
-        createdAt = [string]$Run.createdAt
-        startedAt = [string]$Run.startedAt
-        finishedAt = [string]$Run.finishedAt
+        createdAt = Normalize-UtcTimestamp $Run.createdAt
+        startedAt = $startedAt
+        finishedAt = $finishedAt
+        durationSeconds = $durationSeconds
         tokensUsed = $Run.tokensUsed
         inputTokens = $Run.inputTokens
         outputTokens = $Run.outputTokens
+        costUsd = $Run.costUsd
         steps = @($Run.steps | ForEach-Object { [ordered]@{ id = [string]$_.id; status = [string]$_.status; startedAt = [string]$_.startedAt; finishedAt = [string]$_.finishedAt } })
         failureSignatures = @($Run.steps | Where-Object { $_.status -in @('failed','error','cancelled','canceled') } | ForEach-Object { [string]$_.id })
         terminalReason = Compact ([string]$Run.terminalReason)
         validationOutcome = Compact ([string]$Run.validationOutcome)
-        automationTrigger = if ($Run.automationTrigger) { [ordered]@{ trigger = [string]$Run.automationTrigger.trigger; occurrenceAt = [string]$Run.automationTrigger.occurrenceAt } } else { $null }
+        automationTrigger = if ($Run.automationTrigger) { [ordered]@{ trigger = [string]$Run.automationTrigger.trigger; occurrenceAt = Normalize-UtcTimestamp $Run.automationTrigger.occurrenceAt } } else { $null }
         diffStat = if ($Run.diffStat) { [ordered]@{ files = $Run.diffStat.files; adds = $Run.diffStat.adds; dels = $Run.diffStat.dels } } else { $null }
         prCount = @($Run.prRefs).Count
         issueNumber = if ([int]$Run.issueNumber -gt 0) { [int]$Run.issueNumber } else { $null }
@@ -76,12 +99,12 @@ function Compact-Automation($Automation) {
         kind = [string]$Automation.kind
         schedule = $Automation.schedule
         task = if ($Automation.task) { [ordered]@{ workflow = [string]$Automation.task.workflow; runner = [string]$Automation.task.runner; model = [string]$Automation.task.model } } else { $null }
-        state = if ($Automation.state) { [ordered]@{ nextRunAt = [string]$Automation.state.nextRunAt; lastSuccessAt = [string]$Automation.state.lastSuccessAt; consecutiveFailures = $Automation.state.consecutiveFailures } } else { $null }
+        state = if ($Automation.state) { [ordered]@{ nextRunAt = Normalize-UtcTimestamp $Automation.state.nextRunAt; lastSuccessAt = Normalize-UtcTimestamp $Automation.state.lastSuccessAt; consecutiveFailures = $Automation.state.consecutiveFailures } } else { $null }
         counts = $Automation.counts
         runs7d = $Automation.runs7d
         costUsd7d = $Automation.costUsd7d
-        nextRunAt = [string]$Automation.nextRunAt
-        lastRun = if ($Automation.lastRun) { [ordered]@{ runId = [string]$Automation.lastRun.runId; status = [string]$Automation.lastRun.status; ts = [string]$Automation.lastRun.ts } } else { $null }
+        nextRunAt = Normalize-UtcTimestamp $Automation.nextRunAt
+        lastRun = if ($Automation.lastRun) { [ordered]@{ runId = [string]$Automation.lastRun.runId; status = [string]$Automation.lastRun.status; ts = Normalize-UtcTimestamp $Automation.lastRun.ts } } else { $null }
     }
 }
 
@@ -120,6 +143,11 @@ if ($github.available -and $repoSlug) {
     try {
         $github.workflows = @(Invoke-GhJson @('workflow','list','--repo',$repoSlug,'--all','--limit','100','--json','id,name,state,path'))
         $github.runs = @(Invoke-GhJson @('run','list','--repo',$repoSlug,'--limit',[string]$HistoryLimit,'--json','databaseId,workflowName,event,status,conclusion,createdAt,updatedAt,headBranch,headSha,url,displayTitle'))
+        foreach ($run in $github.runs) {
+            foreach ($field in @('createdAt','updatedAt')) {
+                if ($run.PSObject.Properties[$field]) { $run.$field = Normalize-UtcTimestamp $run.$field }
+            }
+        }
         $github.schedules = @()
     } catch { Add-Limitation $github.limitations ("GitHub history unavailable: " + (Compact $_.Exception.Message)) }
 } elseif (-not $github.available) { Add-Limitation $github.limitations 'GitHub CLI (gh) is unavailable.' }

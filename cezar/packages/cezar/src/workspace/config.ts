@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { z } from 'zod';
 // Contract VALUES, like `workspaceUiStateSchema` in workspace/migrations.ts: the tag bounds this
 // file must not `.catch` away are the same constants the PATCH route validates against, so they
@@ -45,7 +45,7 @@ const workspaceProjectSchema = z
     id: z.string().regex(PROJECT_ID_RE),
     /** Absolute, realpath-normalized repo root (normalization is the writer's
      *  job — `registerProject` in step 1.3; the schema only demands absolute). */
-    root: z.string().min(1).max(4096).refine((p) => p.startsWith('/'), 'root must be absolute'),
+    root: z.string().min(1).max(4096).refine(isAbsolute, 'root must be absolute'),
     /** Display name (basename by default). `''` = caller derives a fallback. */
     name: z.string().max(200).catch(''),
     addedAt: z.string().max(64).catch(''),
@@ -376,7 +376,25 @@ export function atomicWriteJsonSync(path: string, value: unknown): void {
     fsyncSync(fd);
     closeSync(fd);
     fd = -1;
-    renameSync(tmp, path);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        renameSync(tmp, path);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // Windows can briefly reject replacement when another same-process
+        // atomic writer is swapping this destination. Keep the write atomic
+        // and retry only those transient sharing violations.
+        if (
+          process.platform !== 'win32' ||
+          attempt >= 100 ||
+          !['EACCES', 'EBUSY', 'EPERM'].includes(code ?? '')
+        ) {
+          throw error;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
+    }
   } catch (error) {
     if (fd !== -1) {
       try {

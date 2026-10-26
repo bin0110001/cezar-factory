@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '../core/agent-runner.ts';
@@ -532,14 +533,31 @@ describe('pasted screenshots materialize to disk and reach the agent as file pat
     manager = new RunManager(store, repoRoot);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    for (const { id } of store.listRuns()) manager.cancel(id);
+    const active = manager as unknown as { active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }> };
+    const sessions = store.listRuns().map(({ id }) => active.active.get(id)?.session).filter((session) => session !== undefined);
+    let didSettle = false;
+    const settled = Promise.allSettled(sessions.map((session) => session.result));
+    await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    if (!didSettle) {
+      for (const session of sessions) session.hardStop?.();
+      await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 10_000))]);
+      if (!didSettle) throw new Error('attachment fixture provider sessions did not exit after cancellation');
+    }
+    manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    try {
+      await rm(repoRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || !['EBUSY', 'EPERM'].includes(code ?? '')) throw error;
+    }
+  }, 30_000);
 
   function readStdinLines(): Array<{ userText: string; imageCount: number }> {
     return readFileSync(stdinFile, 'utf8')
@@ -928,7 +946,8 @@ describe('pasted screenshots materialize to disk and reach the agent as file pat
     const pathMatch = followUp?.userText.match(/- (.*pasted-\d+\.jpg)/);
     expect(pathMatch).toBeTruthy();
     const filePath = pathMatch?.[1] as string;
-    expect(filePath).toMatch(new RegExp(`^${join(dataDir, 'runs', `${record.id}-images`).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/pasted-\\d+\\.jpg$`));
+    expect(dirname(filePath)).toBe(join(dataDir, 'runs', `${record.id}-images`));
+    expect(basename(filePath)).toMatch(/^pasted-\d+\.jpg$/);
     expect(existsSync(filePath)).toBe(true);
     expect(readFileSync(filePath).equals(Buffer.from(TINY_PNG_B64, 'base64'))).toBe(true);
 
@@ -980,7 +999,7 @@ describe('pasted screenshots materialize to disk and reach the agent as file pat
       .split('\n')
       .map((line) => JSON.parse(line) as { type: string; text?: string; images?: string[] })
       .find((event) => event.type === 'user-message' && event.text === 'fix what this shows');
-    expect(userMessage?.images?.[0]).toBe(`/api/v1/runs/${record.id}/images/${filePath.split('/').pop()}`);
+    expect(userMessage?.images?.[0]).toBe(`/api/v1/runs/${record.id}/images/${basename(filePath)}`);
     expect(ndjson).not.toContain(TINY_PNG_B64);
 
     manager.finish(record.id);

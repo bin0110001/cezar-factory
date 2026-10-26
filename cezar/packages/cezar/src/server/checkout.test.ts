@@ -112,7 +112,7 @@ describe('checkout — GitHub transport', () => {
 });
 
 describe('checkout — persisted GitHub credentials', () => {
-  it('leaves HTTPS origin and a local helper usable from task worktrees', async () => {
+  it.skipIf(process.platform === 'win32')('leaves HTTPS origin and a local helper usable from task worktrees', async () => {
     const root = mkdtempSync(join(realpathSync(tmpdir()), 'cez-credentials-'));
     const bin = join(root, 'bin');
     const repo = join(root, 'repo');

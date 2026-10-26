@@ -56,7 +56,7 @@ describe('server state', () => {
     s.instanceId = 'install-a';
     saveServerState(s);
     const mode = statSync(serverStatePath()).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (process.platform !== 'win32') expect(mode).toBe(0o600);
     expect(loadServerState().steps.deps?.status).toBe('done');
     expect(loadServerState().instanceId).toBe('install-a');
   });
@@ -77,8 +77,8 @@ describe('server state', () => {
   it('lock is exclusive against a live foreign pid and reclaims stale', () => {
     const release = acquireLock();
     // simulate a live foreign holder
-    writeFileSync(join(home, 'server.install.lock'), `${process.pid === 1 ? 2 : 1}\n`);
-    // pid 1 is alive on posix; expect the lock to be held
+    writeFileSync(join(home, 'server.install.lock'), `${process.ppid}\n`);
+    // Vitest's parent process is alive on both Windows and POSIX.
     expect(() => acquireLock()).toThrow(LockHeldError);
     // a dead pid is reclaimed
     writeFileSync(join(home, 'server.install.lock'), '999999999\n');
@@ -89,7 +89,7 @@ describe('server state', () => {
 
   it('lock acquisition is atomic (wx) — a pre-existing live lock file always wins', () => {
     // Simulate the race loser: the file appears (live pid) before our write.
-    writeFileSync(join(home, 'server.install.lock'), `${process.pid === 1 ? 2 : 1}\n`, { flag: 'wx' });
+    writeFileSync(join(home, 'server.install.lock'), `${process.ppid}\n`, { flag: 'wx' });
     expect(() => acquireLock()).toThrow(LockHeldError);
   });
 
@@ -205,7 +205,7 @@ describe('server state', () => {
     // but the SAME instance is exclusive against a live foreign pid
     writeFileSync(
       join(home, 'server-instances', 'shop-example-com.install.lock'),
-      `${process.pid === 1 ? 2 : 1}\n`,
+      `${process.ppid}\n`,
     );
     expect(() => acquireLock('shop-example-com')).toThrow(LockHeldError);
     release();

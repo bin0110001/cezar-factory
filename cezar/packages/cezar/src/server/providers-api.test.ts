@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -506,7 +507,7 @@ describe('workspace provider API', () => {
     } finally {
       recover.mockRestore();
       contexts.disposeAll();
-      rmSync(lazyRoot, { recursive: true, force: true });
+      await rm(lazyRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     }
   });
 

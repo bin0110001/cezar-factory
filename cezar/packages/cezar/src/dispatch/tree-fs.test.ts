@@ -92,7 +92,7 @@ describe('the tree directory', () => {
 
   it('names an inbox message by instant, sender and subject, and writes a readable header', () => {
     const path = writeInboxMessage(dataDir, MISSION, 'cccccccc', { from: CHILD, subject: 'Scope overlap?', body: 'we both touch auth' });
-    expect(path).toMatch(/inbox\/cccccccc\/.*-bbbbbbbb-scope-overlap\.md$/);
+    expect(path.replaceAll('\\', '/')).toMatch(/inbox\/cccccccc\/.*-bbbbbbbb-scope-overlap\.md$/);
     const text = readFileSync(path, 'utf8');
     expect(text).toContain('# Scope overlap?');
     expect(text).toContain(`- From: ${CHILD}`);

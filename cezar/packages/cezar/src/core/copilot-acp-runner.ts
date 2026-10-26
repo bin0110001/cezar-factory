@@ -19,6 +19,7 @@ import { buildChildEnv } from './agent-env.ts';
 import { AcpClient, type AcpContentBlock, type AcpMessage, type AcpRequestAnswer } from './acp-client.ts';
 import { abortAcpTurn, endAcpReplay, mapAcpFrame, type AcpUiMapperState } from './acp-ui-mapper.ts';
 import { EOF_KILL_GRACE_MS, EOF_TERM_GRACE_MS } from './claude-cli-runner.ts';
+import { disclaimedCommand } from './disclaim-spawn.ts';
 import {
   COPILOT_AUTH_FAILURE_MESSAGE,
   copilotDialect,
@@ -167,7 +168,9 @@ class CopilotAcpSession implements AgentSession {
     private readonly onEvent: ((event: AgentEvent) => void) | undefined,
     private readonly opts: SessionOptions,
   ) {
-    this.child = nodeSpawn(bin, buildCopilotArgs(spec), { cwd: spec.cwd, env: buildCopilotEnv(backend, spec.env) });
+    const env = buildCopilotEnv(backend, spec.env);
+    const [file, args] = disclaimedCommand(bin, buildCopilotArgs(spec), env);
+    this.child = nodeSpawn(file, args, { cwd: spec.cwd, env });
     this.pid = this.child.pid;
     this.hasExited = trackChildExit(this.child);
     this.child.on('error', (error: NodeJS.ErrnoException) => {

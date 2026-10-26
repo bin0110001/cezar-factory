@@ -6,6 +6,7 @@ import {
   ATTENTION_RANK,
   budgetStop,
   deriveAttention,
+  outcomeExplanation,
   wantsAttention,
   type Attention,
   type AttentionTone,
@@ -135,6 +136,18 @@ describe('deriveAttention', () => {
     for (const status of ALL_STATUSES) {
       expect(deriveAttention(run({ status })).bucket).not.toBe('unseen')
     }
+  })
+})
+
+describe('typed run outcome explanation', () => {
+  it('explains no-work, blocked, failure, and timeout semantics while retaining the stable code wording', () => {
+    expect(outcomeExplanation({ outcome: { kind: 'no_work', reasonCode: 'no_work' } })).toBe('No work — no work')
+    expect(outcomeExplanation({ outcome: { kind: 'contract_failure', reasonCode: 'output_malformed', stepId: 'check' } })).toBe('Contract failure — output malformed at check')
+    expect(outcomeExplanation({ outcome: { kind: 'blocked', reasonCode: 'policy_blocked', stepId: 'preflight' } })).toBe('Blocked — policy blocked at preflight')
+    expect(outcomeExplanation({ outcome: { kind: 'infrastructure_failure', reasonCode: 'engine_interrupted' } })).toBe('Infrastructure failure — engine interrupted')
+    expect(outcomeExplanation({ outcome: { kind: 'infrastructure_failure', reasonCode: 'artifact_integrity_failed', stepId: 'consumer' } })).toBe('Infrastructure failure — artifact integrity failed at consumer')
+    expect(outcomeExplanation({ outcome: { kind: 'timeout', reasonCode: 'deadline_exceeded' } })).toBe('Timed out — deadline exceeded')
+    expect(outcomeExplanation({})).toBeUndefined()
   })
 })
 

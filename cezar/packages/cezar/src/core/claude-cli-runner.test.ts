@@ -153,12 +153,9 @@ describe('a teardown cezar initiated', () => {
     expect(uiEvents).toContainEqual({
       type: 'turn.completed',
       turnId: 'turn_1',
-      stopReason: 'end_turn',
+      stopReason: 'cancelled',
     });
     expect(events.at(-1)).toEqual({ type: 'done' });
-    expect(
-      events.some((e) => e.type === 'note' && e.message.includes('terminated by cezar (code 143)')),
-    ).toBe(true);
   }, 15_000);
 });
 

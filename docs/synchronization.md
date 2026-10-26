@@ -1,29 +1,36 @@
 # Factory Synchronization
 
-How the factory is synchronized to Cezar by default, with local project
-installation as a fallback. All scripts are PowerShell 7 and live in `scripts/`.
+How the shared Factory runtime, Cezar automation definitions, and optional local
+project layer are delivered. All scripts are PowerShell 7 and live in `scripts/`.
 
-## Default release pipeline
+## Shared Factory runtime
 
-Every Factory-managed change must force a release attempt on every configured
-target, even when the Factory version is unchanged. A matching version does
-not prove that the target's automations, runtime mount, or service deployment
-is current.
+After an implementation change passes validation and independent review and is
+merged to `dev`, run `scripts/release/promote-stable.ps1`. It runs the full
+Factory test suite and only then fast-forwards `origin/stable`. The Bazzite
+`factory-autodeploy` timer fast-forwards the read-only Factory mount used by
+Cezar and reconciles automations. Never deploy or promote an untested commit;
+never edit the Bazzite checkout by hand. Runtime promotion is separate from the
+implementation PR and its review gates.
 
-Use remote-only synchronization whenever the target project already exists in
-Cezar. Configure `apiUrl` and `projectId` in the host-local
-`config/factory-projects.json`, omit `projectPath`, and run:
+## Configured Cezar automation synchronization
+
+Every Factory-managed release also synchronizes automation definitions to
+explicitly configured Cezar projects, even if the Factory version appears
+unchanged. Read targets only from the host-local
+`config/factory-projects.json`; never scan for projects. The supported remote
+release is:
 
 ```powershell
 ./scripts/push-factory-updates.ps1 -SyncAutomations
 ```
 
 This reads automation definitions and the Factory version from the current
-checkout and updates only the target Cezar project's `[factory]` automations.
-No application checkout is required.
+checkout and updates only each target Cezar project's `[factory]` automations.
+It does not copy runtime scripts or application/infrastructure files.
 
-Use the local installation/update flow below only when the target also needs
-the full `.ai/factory` project layer.
+Use a local `projectPath` only as a fallback when a target needs the full
+`.ai/factory` project layer. Do not put a remote container path there.
 
 ## Cezar runtime registration
 

@@ -32,6 +32,11 @@ const arg = (flag, fallback) => {
 const hostname = arg('--hostname', '127.0.0.1');
 const port = Number(arg('--port', '0'));
 
+if (process.env.MOCK_OPENCODE_FAIL_STARTUP === '1') {
+  console.error('mock startup failure detail');
+  process.exit(17);
+}
+
 const SESSION_ID = 'ses_mock_1';
 const MESSAGE_ID = 'msg_mock_1';
 

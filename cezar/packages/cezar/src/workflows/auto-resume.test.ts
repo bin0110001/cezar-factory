@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -71,10 +72,21 @@ describe('a run stopped by a usage limit resumes itself', () => {
     if (manager) {
       // Cancellation interrupts active provider sessions and removes queued work, but the final
       // lifecycle writes still settle asynchronously. Drain every record before deleting the
-      // fixture: a late runs.json save can recreate a child path during rmSync (#804).
+      // fixture: a late runs.json save can recreate a child path during cleanup (#804).
       try {
         for (const { id } of store.listRuns()) manager.cancel(id);
-        const deadline = Date.now() + 10_000;
+        const active = manager as unknown as {
+          active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }>;
+        };
+        const sessions = store.listRuns().map(({ id }) => active.active.get(id)?.session).filter((session) => session !== undefined);
+        const settled = Promise.allSettled(sessions.map((session) => session.result));
+        let didSettle = false;
+        await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+        if (!didSettle) {
+          for (const session of sessions) session.hardStop?.();
+          await Promise.race([settled, new Promise((resolve) => setTimeout(resolve, 2_000))]);
+        }
+        const deadline = Date.now() + 5_000;
         while (store.listRuns().some(({ id }) => manager?.isActive(id))) {
           if (Date.now() >= deadline) throw new Error('timed out waiting for auto-resume runs to stop');
           await new Promise((resolve) => setTimeout(resolve, 25));
@@ -98,10 +110,10 @@ describe('a run stopped by a usage limit resumes itself', () => {
     // is safer than recreating the ENOENT race this test guards against.
     if (!teardownError) {
       store.flush();
-      rmSync(repoRoot, { recursive: true, force: true });
+      await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     }
     if (teardownError) throw teardownError;
-  });
+  }, 30_000);
 
   it('schedules the resume for the provider\'s reset instant plus the grace', async () => {
     manager = new RunManager(store, repoRoot);

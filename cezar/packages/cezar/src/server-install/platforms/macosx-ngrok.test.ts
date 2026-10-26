@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,11 @@ import { loadServerState } from '../state.ts';
 import { createAutoUi } from '../ui.ts';
 import { StepAborted } from '../steps.ts';
 import type { InstallContext, Runner, Ui } from '../types.ts';
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, homedir: () => process.env.CEZ_TEST_HOME ?? actual.homedir() };
+});
 
 const okRunner: Runner = { capture: async () => ({ code: 0, stdout: '', stderr: '' }), interactive: async () => 0 };
 
@@ -137,13 +142,17 @@ describe('macosx-ngrok', () => {
 describe('macosx-ngrok review fixes (PR #423)', () => {
   let home: string;
   const original = process.env.CEZ_HOME;
+  const originalTestHome = process.env.CEZ_TEST_HOME;
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'cez-mac-fix-'));
     process.env.CEZ_HOME = home;
+    process.env.CEZ_TEST_HOME = home;
   });
   afterEach(() => {
     if (original === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = original;
+    if (originalTestHome === undefined) delete process.env.CEZ_TEST_HOME;
+    else process.env.CEZ_TEST_HOME = originalTestHome;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -194,7 +203,7 @@ describe('macosx-ngrok review fixes (PR #423)', () => {
     expect(tokenCall?.env?.NGROK_AUTHTOKEN).toBe('SECRET-TOKEN');
   });
 
-  it('writes the credential-bearing plist 0600', async () => {
+  it.skipIf(process.platform === 'win32')('writes the credential-bearing plist 0600', async () => {
     const runner: Runner = {
       capture: async (_p, args) => {
         if (args[0] === 'print' || args.join(' ').includes('command -v')) return { code: 0, stdout: '/usr/local/bin/ngrok', stderr: '' };

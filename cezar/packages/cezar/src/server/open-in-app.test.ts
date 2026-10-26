@@ -220,7 +220,11 @@ describe('resolveOnPath (#469 Windows launcher safety)', () => {
     rmSync(join(stubDir, 'editor.com'));
     addStub('editor.exe');
     expect(resolveOnPath('editor', 'win32', false, stubDir)).toBe('editor.exe');
-    expect(resolveOnPath('editor', 'linux', true, stubDir)).toBe('editor.exe');
+    // The WSL branch relies on POSIX X_OK semantics for a mounted Windows
+    // executable, which the Windows filesystem does not expose to Node.
+    if (process.platform !== 'win32') {
+      expect(resolveOnPath('editor', 'linux', true, stubDir)).toBe('editor.exe');
+    }
   });
 
   it('does not offer .cmd or .bat shims that require a shell to execute', () => {
@@ -231,7 +235,7 @@ describe('resolveOnPath (#469 Windows launcher safety)', () => {
     expect(resolveOnPath('editor', 'linux', true, stubDir)).toBeNull();
   });
 
-  it('prefers a WSL-native bare launcher over a Windows-side executable', () => {
+  it.skipIf(process.platform === 'win32')('prefers a WSL-native bare launcher over a Windows-side executable', () => {
     addStub('editor');
     addStub('editor.exe');
     expect(resolveOnPath('editor', 'linux', true, stubDir)).toBe('editor');
@@ -306,7 +310,7 @@ describe('resolveOnPath (#1066 executable regular files)', () => {
     root = '';
   });
 
-  it('ignores directories but resolves executable files and symlinks', () => {
+  it.skipIf(process.platform === 'win32')('ignores directories but resolves executable files and symlinks', () => {
     root = mkdtempSync(join(tmpdir(), 'cez-open-in-app-'));
     mkdirSync(join(root, 'directory-launcher'));
     const executable = join(root, 'file-launcher');

@@ -1,7 +1,11 @@
 import { accessSync, constants, statSync } from 'node:fs';
 import { execPath } from 'node:process';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, posix, win32 } from 'node:path';
+
+function joinForPlatform(platform: NodeJS.Platform, ...parts: string[]): string {
+  return (platform === 'win32' ? win32 : posix).join(...parts);
+}
 
 /**
  * Where Claude Code's own installers put a binary this process can SPAWN, most specific first.
@@ -31,15 +35,15 @@ export function claudeInstallCandidates(
 ): string[] {
   if (platform === 'win32') {
     return [
-      join(home, '.local', 'bin', 'claude.exe'), // native installer
-      join(nodeBinDir, 'claude.exe'), // npm global, next to node.exe
+      joinForPlatform(platform, home, '.local', 'bin', 'claude.exe'), // native installer
+      joinForPlatform(platform, nodeBinDir, 'claude.exe'), // npm global, next to node.exe
     ];
   }
   return [
-    join(home, '.local', 'bin', 'claude'), // native installer (install.sh)
-    join(home, '.claude', 'local', 'claude'), // legacy `claude migrate-installer` local install
-    join(nodeBinDir, 'claude'), // `npm install -g`, incl. nvm/fnm/volta prefixes
-    join(home, '.npm-global', 'bin', 'claude'), // `npm config set prefix ~/.npm-global`
+    joinForPlatform(platform, home, '.local', 'bin', 'claude'), // native installer (install.sh)
+    joinForPlatform(platform, home, '.claude', 'local', 'claude'), // legacy `claude migrate-installer` local install
+    joinForPlatform(platform, nodeBinDir, 'claude'), // `npm install -g`, incl. nvm/fnm/volta prefixes
+    joinForPlatform(platform, home, '.npm-global', 'bin', 'claude'), // `npm config set prefix ~/.npm-global`
     '/opt/homebrew/bin/claude', // Homebrew, Apple silicon
     '/usr/local/bin/claude', // Homebrew Intel, manual symlink, system `sudo npm -g`
     '/usr/bin/claude', // distro packaging, system `sudo npm -g` on Debian/Ubuntu
@@ -108,7 +112,7 @@ function onSearchPath(
   // `path.delimiter` describes the HOST, but `platform` may be an injected value under test;
   // derive the separator from `platform` so the two can never disagree.
   const sep = platform === 'win32' ? ';' : ':';
-  return searchPath.split(sep).some((dir) => dir && names.some((name) => isExecutable(join(dir, name))));
+  return searchPath.split(sep).some((dir) => dir && names.some((name) => isExecutable(joinForPlatform(platform, dir, name))));
 }
 
 /**

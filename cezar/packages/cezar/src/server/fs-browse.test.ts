@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
@@ -61,7 +62,7 @@ describe('GET /api/v1/fs/browse (step 4.1)', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     store.flush();
     for (const [key, value] of [
       ['HOME', savedHome],
@@ -72,7 +73,7 @@ describe('GET /api/v1/fs/browse (step 4.1)', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    for (const dir of [home, outside]) rmSync(dir, { recursive: true, force: true });
+    await Promise.all([home, outside].map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 })));
   });
 
   const browse = (query = '') => apiRequest(app, `/api/v1/fs/browse${query}`);

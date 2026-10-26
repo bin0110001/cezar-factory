@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
@@ -23,7 +24,12 @@ describe('tracker API boundaries and isolation', () => {
     mkdirSync(join(root, '.ai/cezar'), { recursive: true });
     store = RunStore.open(join(root, '.ai/cezar'));
   });
-  afterEach(() => { store.flush(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); rmSync(root, { recursive: true, force: true }); });
+  afterEach(async () => {
+    store.flush();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 20_000);
   const app = (workspaceEvents?: WorkspaceEventBus) => createApp({
     repoRoot: root, store, manager: {} as RunManager, version: 'test', workspaceEvents,
   });
@@ -196,5 +202,10 @@ it('keeps credential HTTP responses write-only and aliases connection routes to 
     expect((await apiRequest(instance, '/api/v1/tracker/connection', { method: 'DELETE' })).status).toBe(200);
     expect(await (await apiRequest(instance, '/api/v1/tracker/connection')).json()).toEqual({ connection: null, demo: false });
     expect(fetcher).not.toHaveBeenCalled();
-  } finally { store.flush(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    store.flush();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }
 });

@@ -71,8 +71,9 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/apply-backlog-label-audit.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/recover-audit-reservations.ps1',
+'tests/watchdog-automations.ps1', 'tests/watchdog-mock-api.py', 'tests/fixtures/watchdog-runs.json', 'tests/fixtures/watchdog-runs-envelope.json', 'tests/fixtures/watchdog-runs-envelope-simple.json', 'tests/fixtures/watchdog-runs-malformed.json',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
@@ -89,8 +90,8 @@ Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automa
 Assert 'maintenance is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-maintenance'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-maintenance'.model -eq 'factory-gateway/factory-code')
 Assert 'backlog reconciliation is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-backlog-reconciliation'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-backlog-reconciliation'.model -eq 'factory-gateway/factory-code')
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
-Assert 'backlog audit requires the stable Cezar candidate script' ($backlogAuditSkill -match 'installed audit script' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
-Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
+Assert 'backlog audit is proposal-only and the workflow owns deterministic effects' ($backlogAuditSkill -match 'read-only collector' -and $backlogAuditSkill -match 'preparation consumer' -and $backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -match 'Do not run the collector, list issues again')
+Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'Every proposal must include a durable closing label' -and $backlogAuditSkill -match 'bare skipped outcome is invalid')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
@@ -120,7 +121,7 @@ $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenan
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
 $recoveryScript = Get-Content -Raw (Join-Path $factory 'scripts/recover-audit-reservations.ps1')
-Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_')
+Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -match 'recover-audit-reservations\.ps1 -ApiUrl "\$CEZAR_API_URL" -ProjectId "\$CEZAR_PROJECT_ID"')
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
@@ -655,8 +656,12 @@ try {
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
+    $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: plan-result retry reuses matching comment receipt' ((Invoke-Route 'plan-result' $plan) -eq 0 -and @((Get-Gh).comments).Count -eq 1)
+    $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: plan-result refuses changed content after a prior receipt' ((Invoke-Route 'plan-result' (With $plan @{ objective = 'changed plan' })) -ne 0 -and @((Get-Gh).comments).Count -eq 1)
     Set-Gh @('factory:needs-plan', 'risk:high')
-    Assert 'route: risk:high plan proceeds without user approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-help')
+    Assert 'route: risk:high plan is held for human approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help' -and (Get-Gh).labels -notcontains 'factory:ready')
     Set-Gh @('factory:needs-plan')
     Assert 'route: not-ready -> needs-help' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Set-Gh @('factory:review')
@@ -665,7 +670,7 @@ try {
     Set-Gh @('factory:ready')
     Assert 'route: start -> working' ((Invoke-Route 'start' $null 7) -eq 0 -and (Get-Gh).labels -contains 'factory:working' -and (Get-Gh).labels -notcontains 'factory:ready')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
-    Assert 'route: selected worker recorded' ($execution.execution.provider -eq 'openhands' -and $execution.execution.agent -eq 'codex' -and $execution.execution.status -eq 'selected')
+    Assert 'route: selected worker recorded' ($execution.execution.provider -eq 'cezar' -and $execution.execution.agent -eq 'codex' -and $execution.execution.status -eq 'selected')
     Set-Gh @('factory:ready', 'complexity:medium', 'agent:local')
     Assert 'route: medium complexity cannot select local worker' ((Invoke-Route 'start' $null 7) -eq 0 -and (Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json).execution.agent -eq 'codex')
     Assert 'route: start is idempotent while working' ((Invoke-Route 'start' $null 7) -eq 0)
@@ -752,12 +757,12 @@ try {
     Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & pwsh -NoProfile -File $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
 
     $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'
-    @{ labels = @(); comments = @(); created = @(); issues = @(
-        @{ number = 3; title = 'Unmarked test'; labels = @(@{ name = 'test' }) },
-        @{ number = 2; title = 'Already audited'; labels = @(@{ name = 'factory:needs-help' }) },
-        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) },
-        @{ number = 4; title = 'Blocked legacy work'; labels = @(@{ name = 'blocker' }) },
-        @{ number = 5; title = 'Ambiguous legacy work'; labels = @(@{ name = 'question' }) }
+    @{ labels = @(); comments = @(); created = @(); issueState = 'OPEN'; issues = @(
+        @{ number = 3; title = 'Unmarked test'; body = 'test body'; labels = @(@{ name = 'test' }) },
+        @{ number = 2; title = 'Already audited'; body = 'audited body'; labels = @(@{ name = 'factory:needs-help' }) },
+        @{ number = 1; title = 'Unmarked docs'; body = 'docs body'; labels = @(@{ name = 'documentation' }) },
+        @{ number = 4; title = 'Blocked legacy work'; body = 'blocked body'; labels = @(@{ name = 'blocker' }) },
+        @{ number = 5; title = 'Ambiguous legacy work'; body = 'candidate body'; labels = @(@{ name = 'question' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
     & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
@@ -767,12 +772,30 @@ try {
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
     Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
     Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
-    Assert 'backlog audit input: clear markers resolve without human escalation' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -notcontains 'factory:needs-help')
+    Assert 'backlog audit collector is read-only' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
-    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
-    Assert 'backlog audit input: reservation marker is durable' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
-    Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
+    $auditPreparationPath = Join-Path $tmp 'backlog-label-audit-preparation.json'
+    $auditPreparation = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true; WorkflowContract = $true }
+    if ($auditPreparation.Code -ne 0) { Write-Host "  preparation diagnostic: $($auditPreparation.Out)" }
+    $prepared = Get-Content -Raw $auditPreparationPath | ConvertFrom-Json
+    Assert 'backlog audit preparation applies static labels and reserves only ambiguous candidates' ($auditPreparation.Code -eq 0 -and $prepared.status -eq 'prepared' -and @($prepared.receipts).Count -eq 4 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'factory:blocked' -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit preparation records a durable reservation' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
+    Assert 'backlog audit preparation creates taxonomy through the deterministic consumer' (@((Get-Gh).created).Count -gt 0)
+    $auditProposalPath = Join-Path $tmp 'backlog-label-audit.json'
+    $auditApplicationPath = Join-Path $tmp 'backlog-label-audit-application.json'
+    @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium'); reason = 'No objective legacy type marker; classify as maintenance.' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $auditProposalPath
+    $state = Get-Gh; $candidateState = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $preparedRevision = @((Get-Content -Raw $auditPreparationPath | ConvertFrom-Json).receipts | Where-Object { $_.issue -eq 5 })[0].revision
+    $candidateState.updatedAt = '2026-10-25T12:34:56.0000000Z'; $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleRevision = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer rejects stale issue revision even if labels are unchanged' ($staleRevision.Code -ne 0 -and (Get-Gh).labels -contains 'factory:auditing')
+    $state = Get-Gh; $candidateState = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $candidateState.updatedAt = $preparedRevision; $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $applyAudit = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer applies and verifies bounded proposal' ($applyAudit.Code -eq 0 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'type:maintenance' -and (Get-Gh).labels -notcontains 'factory:auditing')
+    $applyAuditAgain = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $auditApplication = Get-Content -Raw $auditApplicationPath | ConvertFrom-Json
+    Assert 'backlog audit consumer recognizes exact prior effect after retry' ($applyAuditAgain.Code -eq 0 -and (@($auditApplication.receipts | Where-Object { $_.issue -eq 5 })[0].alreadyApplied))
 
     $recoveryOutput = Join-Path $tmp 'audit-reservation-recovery.json'
     $expired = @{ issue = 5; owner = 'test'; createdAt = '2020-01-01T00:00:00Z'; expiresAt = '2020-01-01T01:00:00Z' } | ConvertTo-Json -Compress
@@ -851,9 +874,10 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
-$pythonRunner = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { $null }
+$pythonRunner = if (Get-Command python.exe -ErrorAction SilentlyContinue) { (Get-Command python.exe -ErrorAction SilentlyContinue).Source } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { $null }
 if ($pythonRunner) {
-    $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') }
+    $pythonArgs = @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v')
+    if ($pythonRunner -eq 'py') { $pythonArgs = @('-3') + $pythonArgs }
     Push-Location $factory
     try {
         $pythonOutput = & $pythonRunner @pythonArgs *>&1 | Out-String
@@ -962,7 +986,7 @@ try {
     Assert 'godot apply pins the version on a pushed branch' ($r.Code -eq 0 -and (Get-Content -Raw .godot-version).Trim() -eq '4.8-stable' -and (& git ls-remote --heads origin factory/godot-4.8))
     $r = GodotStep test @('-AllowFailure')
     Assert 'godot test passes with the project command' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
-    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 3`"`n"
+    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 1`"`n"
     $r = GodotStep test @('-AllowFailure')
     Assert 'godot test -AllowFailure records a failure without failing the step' ($r.Code -eq 0 -and -not (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
     $r = GodotStep test
@@ -1003,6 +1027,11 @@ Write-Host '== bounded failure audit =='
 $failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-bounds.ps1') 2>&1 | Out-String
 Write-Host $failureAuditOutput
 Assert 'failure collector obeys identity and read budgets' ($LASTEXITCODE -eq 0)
+
+Write-Host '== watchdog fixtures =='
+$watchdogOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'watchdog-automations.ps1') 2>&1 | Out-String
+Write-Host $watchdogOutput
+Assert 'watchdog parsing and eligibility fixtures pass' ($LASTEXITCODE -eq 0)
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

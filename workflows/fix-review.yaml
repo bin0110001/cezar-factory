@@ -7,12 +7,46 @@ steps:
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status: { type: string, enum: [open, already-resolved] }
+        issue: { type: integer }
+        reason: { type: string }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      allOf:
+        - if: { properties: { status: { const: already-resolved } }, required: [status] }
+          then: { required: [$cezar] }
+      additionalProperties: false
   - id: start
     name: Move issue to factory:working
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: fix
     name: Run factory-fix skill
     skill: factory-fix
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     prompt: |
       Address the review findings on this GitHub issue's PR: {{task}}
 
@@ -26,18 +60,42 @@ steps:
   - id: targeted-tests
     name: Run targeted validation
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: fix
       max: 1
   - id: validate
     name: Validate fix result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: fix
       max: 1
   - id: route
     name: Return issue to factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: validate
       max: 1

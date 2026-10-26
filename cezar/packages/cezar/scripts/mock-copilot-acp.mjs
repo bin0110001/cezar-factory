@@ -144,8 +144,9 @@ async function handle(frame) {
       });
     }
 
-    // A beat, so a cancel arriving mid-turn is actually mid-turn.
-    await sleep(20);
+    // Give the cancellation test a wide enough window to interrupt after the
+    // tool-start event, even when the parent test worker is under suite load.
+    await sleep(text.includes('long job') ? 500 : 20);
     if (cancelled) {
       answer(id, { stopReason: 'cancelled', usage: { inputTokens: 8, outputTokens: 0, totalTokens: 8 } });
       return;

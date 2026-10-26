@@ -1,5 +1,6 @@
-import { z } from 'zod';
+import { fromJSONSchema, z } from 'zod';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
+import type { RunOutcome } from '@open-mercato/cezar-contract';
 
 /**
  * A workflow is an ordered list of steps. Two step kinds:
@@ -21,6 +22,13 @@ import { RUNNER_IDS } from '../core/agent-runner.ts';
  * in the diff. `retryOn: [1]` loops on the verdict and fails the run on the
  * infrastructure, naming the code.
  */
+export const checkFailureCategorySchema = z.enum([
+  'work_verdict', 'test_regression', 'configuration', 'missing_command', 'authentication',
+  'provider_unavailable', 'provider_quota', 'transient_transport', 'timeout', 'cancelled',
+  'malformed_result', 'unknown',
+]);
+export type CheckFailureCategory = z.infer<typeof checkFailureCategorySchema>;
+
 export const workflowStepSchema = z
   .object({
     id: z.string().min(1),
@@ -43,6 +51,19 @@ export const workflowStepSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Standard JSON Schema contracts for structured check data. */
+    inputSchema: z.record(z.string(), z.any()).optional(),
+    outputSchema: z.record(z.string(), z.any()).optional(),
+    /** Standard JSON Schema over `{ task, outputs }`; a mismatch skips this step. */
+    when: z.record(z.string(), z.any()).optional(),
+    /** Normalized nonzero check exit classification, keyed by exit code string. */
+    failureReasons: z.record(z.string(), checkFailureCategorySchema).optional(),
+    /** Cleanup command run after the ordinary workflow reaches any terminal path. */
+    finalizer: z.boolean().optional(),
+    /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
+    idempotent: z.literal(true).optional(),
+    /** Hard upper bound for a finalizer command, in seconds. */
+    timeoutSeconds: z.number().int().positive().max(300).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -59,6 +80,25 @@ export const workflowStepSchema = z
   })
   .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
     message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  })
+  .refine((s) => !s.failureReasons || Boolean(s.command), {
+    message: 'failureReasons can only be declared on a check step',
+  })
+  .refine((s) => !s.timeoutSeconds || Boolean(s.command), {
+    message: 'timeoutSeconds can only be declared on a check step',
+  })
+  .refine((s) => !s.finalizer || (Boolean(s.command) && s.timeoutSeconds !== undefined && s.idempotent === true && !s.onFail && !s.when && !s.inputSchema && !s.outputSchema && !s.failureReasons), {
+    message: 'a finalizer must be bounded and explicitly idempotent, and cannot have conditions, contracts, failure maps, or retries',
+  })
+  .refine((s) => !s.failureReasons || Object.keys(s.failureReasons).every((code) => /^-?\d+$/.test(code)), {
+    message: 'failureReasons keys must be numeric exit codes',
+  })
+  .refine((s) => {
+    if (!s.when) return true;
+    const result = validateWorkflowContract(s.when, {});
+    return result.success || result.failure !== 'schema_invalid';
+  }, {
+    message: 'when must be a valid JSON Schema',
   });
 
 /**
@@ -78,7 +118,84 @@ export const workflowFileSchema = z
   });
 
 export type WorkflowStepDef = z.infer<typeof workflowStepSchema>;
+
+/** Parse a workflow value against its declared standard JSON Schema contract. */
+export function validateWorkflowContract(schema: Record<string, unknown>, value: unknown):
+  | { success: true; data: unknown }
+  | { success: false; failure: 'schema_invalid' | 'value_invalid'; message: string } {
+  try {
+    const result = fromJSONSchema(schema).safeParse(value);
+    return result.success
+      ? { success: true, data: result.data }
+      : { success: false, failure: 'value_invalid', message: result.error.issues.map((issue) => issue.message).join('; ') };
+  } catch (error) {
+    return { success: false, failure: 'schema_invalid', message: error instanceof Error ? error.message : 'invalid JSON Schema' };
+  }
+}
+
+/** Conditional step applicability using the same standard JSON Schema validator as inputs. */
+export function workflowConditionMatches(schema: Record<string, unknown> | undefined, value: unknown): boolean {
+  if (!schema) return true;
+  const result = validateWorkflowContract(schema, value);
+  if (result.success) return true;
+  if (result.failure === 'schema_invalid') throw new Error(`invalid workflow condition schema: ${result.message}`);
+  return false;
+}
+
+/** Reserved control envelope understood only after the declared output schema passes. */
+const workflowControlSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('no_work'), reasonCode: z.literal('no_work') }).strict(),
+  z.object({ action: z.literal('skip_step'), reasonCode: z.literal('precondition_not_met') }).strict(),
+  z.object({ action: z.literal('blocked'), reasonCode: z.enum(['policy_blocked', 'dependency_unavailable', 'provider_quota', 'human_input_required']) }).strict(),
+]);
+const workflowControlEnvelopeSchema = z.object({ $cezar: workflowControlSchema }).passthrough();
+export type WorkflowControl = z.infer<typeof workflowControlSchema>;
+
+export function workflowControlOf(value: unknown): { control?: WorkflowControl; error?: string } {
+  if (typeof value !== 'object' || value === null || !('$cezar' in value)) return {};
+  const parsed = workflowControlEnvelopeSchema.safeParse(value);
+  if (!parsed.success) return { error: `invalid $cezar control: ${parsed.error.issues.map((issue) => issue.message).join('; ')}` };
+  return { control: parsed.data.$cezar };
+}
 export type WorkflowDoc = z.infer<typeof workflowFileSchema>;
+
+/** Typed terminal meaning for a failed check, derived only from its declared retry contract. */
+export function checkFailureOutcome(
+  step: Pick<WorkflowStepDef, 'id' | 'onFail' | 'failureReasons'>,
+  exitCode: number,
+  retriesExhausted: boolean,
+): RunOutcome | undefined {
+  const category = step.failureReasons?.[String(exitCode)];
+  if (category) {
+    if (category === 'work_verdict' || category === 'test_regression') {
+      if (retriesExhausted || !step.onFail || !retryableExit(step.onFail.retryOn, exitCode)) {
+        return { kind: 'task_failure', reasonCode: category, stepId: step.id };
+      }
+      return undefined;
+    }
+    if (category === 'timeout') return { kind: 'timeout', reasonCode: 'check_timeout', stepId: step.id };
+    if (category === 'cancelled') return { kind: 'cancelled', reasonCode: 'check_cancelled', stepId: step.id };
+    return { kind: 'infrastructure_failure', reasonCode: category, stepId: step.id };
+  }
+  if (step.failureReasons) return { kind: 'infrastructure_failure', reasonCode: 'unknown', stepId: step.id };
+  if (!step.onFail) return undefined;
+  if (!retryableExit(step.onFail.retryOn, exitCode)) {
+    return { kind: 'infrastructure_failure', reasonCode: 'infrastructure_failed', stepId: step.id };
+  }
+  if (retriesExhausted) return { kind: 'task_failure', reasonCode: 'task_failed', stepId: step.id };
+  return undefined;
+}
+
+/** Explicit taxonomy mode retries only mapped work verdicts; omission preserves legacy numeric behavior. */
+export function shouldRetryCheck(step: Pick<WorkflowStepDef, 'onFail' | 'failureReasons'>, exitCode: number): boolean {
+  if (step.failureReasons) {
+    const category = step.failureReasons[String(exitCode)];
+    return Boolean(step.onFail) && (category === 'work_verdict' || category === 'test_regression')
+      && retryableExit(step.onFail?.retryOn, exitCode);
+  }
+  if (!step.onFail) return false;
+  return retryableExit(step.onFail.retryOn, exitCode);
+}
 
 /**
  * A resolved workflow: a catalog entry, or the ad-hoc "(planned)" chain a task
@@ -211,12 +328,20 @@ export function stepsIssue(steps: WorkflowStepDef[]): string | null {
   const ids = steps.map((s) => s.id);
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup) return `duplicate step id "${dup}"`;
+  const finalizerIndex = steps.findIndex((step) => step.finalizer === true);
+  if (finalizerIndex >= 0 && steps.slice(finalizerIndex).some((step) => step.finalizer !== true)) {
+    return 'finalizer steps must form a contiguous suffix of the workflow';
+  }
+  const finalizerBudget = steps.slice(finalizerIndex < 0 ? steps.length : finalizerIndex)
+    .reduce((total, step) => total + (step.timeoutSeconds ?? 0), 0);
+  if (finalizerBudget > 300) return 'combined finalizer timeout budget cannot exceed 300 seconds';
   for (const [i, s] of steps.entries()) {
     if (!s.onFail) continue;
     const target = ids.indexOf(s.onFail.retry);
     if (target < 0 || target >= i) {
       return `step "${s.id}": onFail.retry must reference an earlier step (got "${s.onFail.retry}")`;
     }
+    if (steps[target]?.finalizer) return `step "${s.id}": onFail.retry cannot target a finalizer`;
   }
   return null;
 }

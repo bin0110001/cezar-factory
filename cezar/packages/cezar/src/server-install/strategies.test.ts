@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,14 @@ import { createAutoUi } from './ui.ts';
 import { nginxVhost, systemdUnit } from './platforms/ubuntu-vps.ts';
 import type { BackendCheck } from '../core/backend-detect.ts';
 import type { Runner } from './types.ts';
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    userInfo: () => ({ username: 'test-user', uid: 1000, gid: 1000, shell: '', homedir: 'C:/tmp' }),
+  };
+});
 
 const noRunner: Runner = { capture: async () => ({ code: 0, stdout: '', stderr: '' }), interactive: async () => 0 };
 

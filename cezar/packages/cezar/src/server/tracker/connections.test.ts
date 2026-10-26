@@ -22,14 +22,18 @@ it('stores each project outside its checkout with private permissions and fresh 
   expect(await readdir(a)).toEqual([]);
   const dir = join(home, 'tracker-connections');
   const file = join(dir, (await readdir(dir)).find(name => name.endsWith('.env'))!);
-  expect((await stat(file)).mode & 0o777).toBe(0o600);
-  expect((await stat(dir)).mode & 0o777).toBe(0o700);
+  if (process.platform !== 'win32') {
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+  }
   expect(await readFile(file, 'utf8')).toContain('private-test-A');
   const next = await store.write(a, { kind: 'linear', key: 'private-test-B' });
   expect(next?.id).not.toBe(first?.id);
   expect(await readFile(file, 'utf8')).not.toContain('private-test-A');
-  await chmod(file, 0o644);
-  expect(await store.read(a)).toBeNull();
+  if (process.platform !== 'win32') {
+    await chmod(file, 0o644);
+    expect(await store.read(a)).toBeNull();
+  }
   expect(await store.remove(a)).toBe(true);
   expect(await store.remove(a)).toBe(true);
   expect(await store.read(a)).toBeNull();

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,6 +31,7 @@ const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
 describe('recover() and the dispatch field', () => {
   let repoRoot: string;
   let store: RunStore;
+  let managers: RunManager[];
 
   beforeEach(async () => {
     repoRoot = mkdtempSync(join(tmpdir(), 'cez-recover-dispatch-'));
@@ -39,15 +41,22 @@ describe('recover() and the dispatch field', () => {
     await run('git', ['add', '-A'], { cwd: repoRoot });
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    managers = [];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const manager of managers) manager.dispose();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     vi.restoreAllMocks();
-  });
+  }, 30_000);
 
   const frozen = () => new WorkspaceSemaphore({ initial: { maxParallel: 0 } });
+  const recoveringManager = () => {
+    const manager = new RunManager(store, repoRoot, { semaphore: frozen() });
+    managers.push(manager);
+    return manager;
+  };
 
   const WORKFLOW_DEF = {
     name: 'quick-task',
@@ -91,7 +100,7 @@ describe('recover() and the dispatch field', () => {
 
   it('keeps the dispatch on the record across a restart', async () => {
     const { id, dispatch } = queuedDispatchedRun();
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
     expect(store.getRun(id)?.status).toBe('queued');
     expect(store.getRun(id)?.dispatch).toEqual(dispatch);
   });
@@ -100,7 +109,7 @@ describe('recover() and the dispatch field', () => {
     const rebuilt = captureRebuiltInput();
     const { dispatch } = queuedDispatchedRun();
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     expect(rebuilt).toHaveLength(1);
     expect(rebuilt[0]?.dispatch).toEqual(dispatch);
@@ -118,7 +127,7 @@ describe('recover() and the dispatch field', () => {
     });
     store.updateRun(id, { workflowDef: WORKFLOW_DEF });
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     expect(store.getRun(id)?.dispatch).toBeUndefined();
     expect(rebuilt[0]?.dispatch).toBeUndefined();
@@ -149,7 +158,7 @@ describe('recover() and the dispatch field', () => {
         dispatch: { rootRunId: parent.id, parentRunId: parent.id },
       });
 
-      await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+      await recoveringManager().recover();
 
       expect(store.getRun(child.id)?.status).toBe('done');
       expect(store.getRun(child.id)?.dispatch?.parentRunId).toBe(parent.id); // the dispatch survives the settle
@@ -192,7 +201,7 @@ describe('recover() and the dispatch field', () => {
         },
       });
 
-      await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+      await recoveringManager().recover();
 
       expect(store.getRun(child.id)?.status).toBe('done'); // cezar's own settle is unchanged
       // The question stays on the terminal record as the honest trace of what went unanswered.

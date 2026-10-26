@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -171,13 +172,28 @@ describe('systemPrompt end-to-end (dry run)', () => {
     });
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    const active = manager as unknown as {
+      active: Map<string, { session?: { result: Promise<unknown>; interrupt?(): void; hardStop?(): void } }>;
+    };
+    for (const entry of active.active.values()) entry.session?.interrupt?.();
+    for (const entry of active.active.values()) {
+      const session = entry.session;
+      if (!session) continue;
+      let settled = false;
+      const result = session.result.then(() => { settled = true; }, () => { settled = true; });
+      await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+      if (!settled) {
+        session.hardStop?.();
+        await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+      }
+    }
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   });
 
   // Agent step + trailing check so the agent step is non-interactive — the
@@ -579,13 +595,21 @@ describe('the global follow-up gate (dry run)', () => {
     });
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(repoRoot, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EBUSY' || attempt >= 5) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
   });
 
   const workflow: WorkflowDef = {

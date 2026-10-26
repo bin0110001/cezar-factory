@@ -184,7 +184,7 @@ async function registeredWorktrees(repoRoot: string): Promise<RegisteredWorktree
 }
 
 function worktreeInfo(path: string, branch: string, baseBranch: string): WorktreeInfo {
-  return { path, branch, baseBranch };
+  return { path: resolve(path), branch, baseBranch };
 }
 
 /** Git canonicalizes symlinked path prefixes (macOS `/var` → `/private/var`). */
@@ -287,23 +287,32 @@ export async function createWorktree(
 }
 
 /**
- * Best-effort on-disk size of a worktree directory in bytes, via POSIX
- * `du -sk` (kibibytes → bytes). Returns `null` when `du` is unavailable —
- * including all of Windows, where `du` is not a command — or on any error.
- * Never throws and never blocks: worktree retention is count-based, so a null
- * size only blanks the panel's size column, it does not affect reclamation.
+ * Best-effort on-disk size of a worktree directory in bytes. Uses Node's
+ * filesystem APIs so the cockpit reports sizes on Windows as well as POSIX
+ * hosts. Symbolic links are not followed: the worktree's size must not absorb
+ * external directories or loop back into itself. Returns `null` on any race or
+ * unreadable path; retention is count-based, so this only blanks the size UI.
  */
-export function worktreeSizeBytes(path: string): Promise<number | null> {
-  return new Promise((resolve) => {
-    execFile('du', ['-sk', path], { encoding: 'utf8' }, (err, stdout) => {
-      if (err) {
-        resolve(null);
-        return;
+export async function worktreeSizeBytes(path: string): Promise<number | null> {
+  try {
+    const root = await stat(path);
+    if (!root.isDirectory()) return null;
+    const pending = [path];
+    let bytes = 0;
+    while (pending.length) {
+      const directory = pending.pop() as string;
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const entryPath = join(directory, entry.name);
+        if (entry.isDirectory()) pending.push(entryPath);
+        else if (entry.isFile()) bytes += (await stat(entryPath)).size;
+        // Deliberately skip symlinks and special files.
+        if (!Number.isSafeInteger(bytes)) return null;
       }
-      const kib = Number.parseInt(stdout.trim().split(/\s+/)[0] ?? '', 10);
-      resolve(Number.isFinite(kib) ? kib * 1024 : null);
-    });
-  });
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 /** Remove a task worktree and its branch. Best effort — never throws. */

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -45,12 +46,15 @@ describe('RunManager — task-scoped agent TMPDIR (#785)', () => {
     await registerProject(repoRoot);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    manager.dispose();
     store.flush();
-    for (const dir of [home, repoRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [home, repoRoot]) {
+      await rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
-  });
+  }, 30_000);
 
   const newRun = () =>
     store.createRun({

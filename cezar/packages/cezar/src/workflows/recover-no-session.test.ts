@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -20,6 +21,7 @@ const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
 describe('recover() and a running run with no agent session', () => {
   let repoRoot: string;
   let store: RunStore;
+  let managers: RunManager[];
 
   beforeEach(async () => {
     repoRoot = mkdtempSync(join(tmpdir(), 'cez-recover-nosession-'));
@@ -29,14 +31,22 @@ describe('recover() and a running run with no agent session', () => {
     await run('git', ['add', '-A'], { cwd: repoRoot });
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    managers = [];
   });
 
   const frozen = () => new WorkspaceSemaphore({ initial: { maxParallel: 0 } });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const manager of managers) manager.dispose();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 30_000);
+
+  const recoveringManager = () => {
+    const manager = new RunManager(store, repoRoot, { semaphore: frozen() });
+    managers.push(manager);
+    return manager;
+  };
 
   const WORKFLOW_DEF = {
     name: 'quick-task',
@@ -64,7 +74,7 @@ describe('recover() and a running run with no agent session', () => {
     store.updateRun(id, { workflowDef: WORKFLOW_DEF, status: 'running', startedAt: new Date().toISOString(), currentStepId: 'work' });
     store.updateStep(id, 'work', { status: 'running' });
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     const record = store.getRun(id);
     expect(record?.status).toBe('queued');
@@ -83,7 +93,7 @@ describe('recover() and a running run with no agent session', () => {
     store.updateRun(id, { workflowDef: WORKFLOW_DEF, status: 'running', startedAt: new Date().toISOString(), currentStepId: 'work' });
     store.updateStep(id, 'work', { status: 'running', sessionId: 'sess-1', backend: 'claude' });
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     // The continuation path: interrupted, then resumed from the recorded session (queued here
     // only because the semaphore is frozen).

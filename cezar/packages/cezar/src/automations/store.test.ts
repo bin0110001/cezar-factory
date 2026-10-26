@@ -43,9 +43,11 @@ describe('AutomationStore', () => {
     const persisted = JSON.parse(readFileSync(path, 'utf8'));
     expect(persisted.future).toEqual({ kept: true });
     expect(persisted.automations[0].futureDefinition).toBe(true);
-    expect((await import('node:fs/promises')).stat(path).then((stat) => stat.mode & 0o777)).resolves.toBe(
-      0o600,
-    );
+    if (process.platform !== 'win32') {
+      await expect((await import('node:fs/promises')).stat(path).then((stat) => stat.mode & 0o777)).resolves.toBe(
+        0o600,
+      );
+    }
   });
 
   it('salvages valid entries and malformed NDJSON rows with one warning per file', async () => {
@@ -188,7 +190,7 @@ describe('AutomationStore.acquireLease — a lock nobody is holding any more (#9
     unlinkSync(join(dir, 'automation-poll.lock'));
   });
 
-  it('allows at most one of two processes to reclaim the same abandoned lock', async () => {
+  it.skipIf(process.platform === 'win32')('allows at most one of two processes to reclaim the same abandoned lock', async () => {
     const dir = await lockedDirectory(JSON.stringify({ pid: UNREACHABLE_PID, startedAt: new Date().toISOString() }));
     const guard = join(dir, 'automation-poll.lock.guard');
     mkdirSync(guard);
@@ -232,7 +234,7 @@ describe('AutomationStore.acquireLease — a lock nobody is holding any more (#9
     lease?.release();
   });
 
-  it('recovers a real killed owner after the bounded guard stale window', async () => {
+  it.skipIf(process.platform === 'win32')('recovers a real killed owner after the bounded guard stale window', async () => {
     const dir = await directory();
     const child = fileURLToPath(new URL('./store-lease-child.testkit.ts', import.meta.url));
     const childProcess = spawn(process.execPath, ['--import', 'tsx', child, dir], { stdio: ['pipe', 'pipe', 'inherit'] });

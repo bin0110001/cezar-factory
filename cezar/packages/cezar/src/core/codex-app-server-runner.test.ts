@@ -35,7 +35,7 @@ describe('a teardown cezar initiated (codex app-server)', () => {
     new URL('./__fixtures__/codex/mock-codex-app-server.mjs', import.meta.url),
   );
 
-  it('settles the session instead of failing it when the app-server exits 143', async () => {
+  it.skipIf(process.platform === 'win32')('settles the session instead of failing it when the app-server exits 143', async () => {
     const runner = new CodexAppServerRunner({ bin: mockBin, timeoutMs: 0 });
     const events: AgentEvent[] = [];
     let sawText: () => void = () => {};

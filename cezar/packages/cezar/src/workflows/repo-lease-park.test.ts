@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -50,16 +51,31 @@ describe('a parked in-place run releases the working-tree lease', () => {
     manager = new RunManager(store, repoRoot);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     for (const record of store.listRuns()) manager.cancel(record.id);
+    const active = manager as unknown as { active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }> };
+    const sessions = store.listRuns().map(({ id }) => active.active.get(id)?.session).filter((session) => session !== undefined);
+    let didSettle = false;
+    const settled = Promise.allSettled(sessions.map((session) => session.result));
+    await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    if (!didSettle) {
+      for (const session of sessions) session.hardStop?.();
+      await Promise.race([settled.then(() => { didSettle = true; }), new Promise((resolve) => setTimeout(resolve, 10_000))]);
+      if (!didSettle) throw new Error('provider sessions did not exit after cancellation; preserving their fixture directory');
+    }
     manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    try {
+      await rm(repoRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || !['EBUSY', 'EPERM'].includes(code ?? '')) throw error;
+    }
+  }, 30_000);
 
   const waitFor = async (id: string, pred: (r: RunRecord | undefined) => boolean, ms = 20_000) => {
     const deadline = Date.now() + ms;

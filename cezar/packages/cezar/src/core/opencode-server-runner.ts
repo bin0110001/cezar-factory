@@ -166,8 +166,10 @@ class OpencodeSession implements AgentSession {
     private readonly onEvent: ((event: AgentEvent) => void) | undefined,
     private readonly opts: SessionOptions,
   ) {
-    // Random high port; the actual bound URL is read back from stdout.
-    const port = 40000 + Math.floor(Math.random() * 20000);
+    // Random high port; the actual bound URL is read back from stdout. Keep
+    // below 50000 because Windows commonly reserves blocks starting there for
+    // Hyper-V/WSL, and binding one of those ports fails with EACCES.
+    const port = 40000 + Math.floor(Math.random() * 10000);
     try {
       const env = buildChildEnv({ backend: 'opencode', extraEnv: spec.env });
       const [file, argv] = disclaimedCommand(bin, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], env);
@@ -200,7 +202,7 @@ class OpencodeSession implements AgentSession {
     this.child.stderr.on('data', (chunk: string) => stderrChunks.push(chunk));
 
     // The server prints its URL on stdout once listening.
-    const urlReady = this.waitForServerUrl(port);
+    const urlReady = this.waitForServerUrl(port, stderrChunks);
 
     const limitMs = spec.timeoutMs ?? timeoutMs;
     let deadline: NodeJS.Timeout | undefined;
@@ -336,7 +338,7 @@ class OpencodeSession implements AgentSession {
 
   // ---- server lifecycle ---------------------------------------------------
 
-  private waitForServerUrl(fallbackPort: number): Promise<string> {
+  private waitForServerUrl(fallbackPort: number, stderrChunks: readonly string[]): Promise<string> {
     return new Promise((resolve, reject) => {
       let buffer = '';
       const timer = setTimeout(() => {
@@ -353,18 +355,22 @@ class OpencodeSession implements AgentSession {
           resolve(m[0]);
         }
       };
-      const onExit = () => {
+      const onClose = () => {
         cleanup();
-        reject(new Error('opencode serve exited before it started listening'));
+        const detail = stderrChunks.join('').trim().slice(-2_000);
+        const reason = detail || this.spawnFailed?.message;
+        reject(new Error(`opencode serve exited before it started listening${reason ? `: ${reason}` : ''}`));
       };
       const cleanup = () => {
         clearTimeout(timer);
         this.child.stdout.off('data', onData);
-        this.child.off('exit', onExit);
+        this.child.off('close', onClose);
       };
       this.child.stdout.setEncoding('utf8');
       this.child.stdout.on('data', onData);
-      this.child.once('exit', onExit);
+      // `close` follows stdio closure, so the diagnostic includes final stderr
+      // instead of racing the tail of an early startup error.
+      this.child.once('close', onClose);
     });
   }
 

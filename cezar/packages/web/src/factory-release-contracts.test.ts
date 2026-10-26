@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   factoryDeploymentReceiptSchema,
@@ -7,7 +8,7 @@ import {
   parseFactoryReleaseManifest,
 } from '@open-mercato/cezar-api-client';
 
-const fixtures = resolve(process.cwd(), '../../../schemas/factory-release/fixtures');
+const fixtures = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../schemas/factory-release/fixtures');
 async function readFixture(name: string): Promise<unknown> {
   return JSON.parse(await readFile(resolve(fixtures, name), 'utf8'));
 }

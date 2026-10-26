@@ -29,14 +29,14 @@ describe('paths', () => {
   it('honors the CEZ_HOME override', () => {
     process.env.CEZ_HOME = '/tmp/cez-home-test';
     expect(cezarHomeDir()).toBe('/tmp/cez-home-test');
-    expect(serverStatePath()).toBe('/tmp/cez-home-test/server.json');
-    expect(serverLockPath()).toBe('/tmp/cez-home-test/server.install.lock');
+    expect(serverStatePath()).toBe(join('/tmp/cez-home-test', 'server.json'));
+    expect(serverLockPath()).toBe(join('/tmp/cez-home-test', 'server.install.lock'));
   });
 
   it('the default instance keeps the legacy un-suffixed paths', () => {
     process.env.CEZ_HOME = '/tmp/cez-home-test';
-    expect(serverStatePath(DEFAULT_SERVER_INSTANCE)).toBe('/tmp/cez-home-test/server.json');
-    expect(serverLockPath(DEFAULT_SERVER_INSTANCE)).toBe('/tmp/cez-home-test/server.install.lock');
+    expect(serverStatePath(DEFAULT_SERVER_INSTANCE)).toBe(join('/tmp/cez-home-test', 'server.json'));
+    expect(serverLockPath(DEFAULT_SERVER_INSTANCE)).toBe(join('/tmp/cez-home-test', 'server.install.lock'));
   });
 
   it('workspace config/ui-state live directly under the cezar home', () => {
@@ -47,16 +47,16 @@ describe('paths', () => {
 
   it('workspace paths honor the CEZ_HOME override', () => {
     process.env.CEZ_HOME = '/tmp/cez-home-test';
-    expect(workspaceConfigPath()).toBe('/tmp/cez-home-test/config.json');
-    expect(workspaceUiStatePath()).toBe('/tmp/cez-home-test/ui-state.json');
+    expect(workspaceConfigPath()).toBe(join('/tmp/cez-home-test', 'config.json'));
+    expect(workspaceUiStatePath()).toBe(join('/tmp/cez-home-test', 'ui-state.json'));
   });
 
   it('a named instance lives under server-instances/, keyed by slug', () => {
     process.env.CEZ_HOME = '/tmp/cez-home-test';
-    expect(serverInstancesDir()).toBe('/tmp/cez-home-test/server-instances');
-    expect(serverStatePath('shop-example-com')).toBe('/tmp/cez-home-test/server-instances/shop-example-com.json');
+    expect(serverInstancesDir()).toBe(join('/tmp/cez-home-test', 'server-instances'));
+    expect(serverStatePath('shop-example-com')).toBe(join('/tmp/cez-home-test', 'server-instances', 'shop-example-com.json'));
     expect(serverLockPath('shop-example-com')).toBe(
-      '/tmp/cez-home-test/server-instances/shop-example-com.install.lock',
+      join('/tmp/cez-home-test', 'server-instances', 'shop-example-com.install.lock'),
     );
   });
 });
@@ -79,8 +79,7 @@ it('an EMPTY CEZ_HOME falls back to the default instead of a relative cwd path',
   const original = process.env.CEZ_HOME;
   process.env.CEZ_HOME = '';
   try {
-    expect(cezarHomeDir().startsWith('/')).toBe(true);
-    expect(cezarHomeDir().endsWith('/.cezar')).toBe(true);
+    expect(cezarHomeDir()).toBe(join(homedir(), '.cezar'));
   } finally {
     if (original === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = original;

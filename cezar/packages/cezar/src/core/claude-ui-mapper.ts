@@ -142,6 +142,31 @@ export function mapClaudeMessage(msg: unknown, state: ClaudeUiMapperState): Clau
   }
 }
 
+/** Close a turn whose final `result` frame was lost when cezar stopped the CLI. */
+export function abortClaudeTurn(
+  state: ClaudeUiMapperState,
+  stopReason: Extract<StopReason, 'cancelled' | 'timeout'>,
+): ClaudeUiMapping {
+  if (!state.currentTurnId) return { events: [], state };
+  const events: UiEvent[] = [];
+  for (const block of state.streaming) {
+    const item: UiMessageItem | UiReasoningItem =
+      block.kind === 'message'
+        ? { kind: 'message', id: block.id, role: 'assistant', text: block.text }
+        : { kind: 'reasoning', id: block.id, text: block.text };
+    if (block.parentItemId !== undefined) item.parentItemId = block.parentItemId;
+    events.push({ type: 'item.completed', item });
+  }
+  for (const tool of state.openTools.values()) {
+    events.push({ type: 'item.completed', item: { ...tool, status: 'failed' } });
+  }
+  events.push({ type: 'turn.completed', turnId: state.currentTurnId, stopReason });
+  return {
+    events,
+    state: { ...state, currentTurnId: null, openTools: new Map(), streaming: [] },
+  };
+}
+
 // ---- system/init → session.started ----------------------------------------
 
 function mapInit(msg: Record<string, unknown>, state: ClaudeUiMapperState): ClaudeUiMapping {

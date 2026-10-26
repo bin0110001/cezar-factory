@@ -241,7 +241,7 @@ describe('agent accounts store', () => {
       await mergeWriteAgentAccounts((store) => {
         store.accounts.push(account('work'));
       });
-      expect(statSync(agentAccountsPath()).mode & 0o777).toBe(0o600);
+      if (process.platform !== 'win32') expect(statSync(agentAccountsPath()).mode & 0o777).toBe(0o600);
     });
 
     it('converges two concurrent writers instead of dropping one', async () => {

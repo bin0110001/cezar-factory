@@ -43,7 +43,7 @@
     "execution": {
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["openhands", "local"] },
+        "provider": { "type": "string", "enum": ["cezar", "local"] },
         "record": { "type": "string" }
       },
       "required": ["provider", "record"],

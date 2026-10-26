@@ -18,7 +18,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const darwin = { platform: 'darwin' as const, hostEnv: { CEZ_DISCLAIM_EXEC: trampoline } };
 
 describe('disclaimedCommand', () => {
-  it('routes an agent through the desktop trampoline, resolved on the child PATH', () => {
+  it.skipIf(process.platform === 'win32')('routes an agent through the desktop trampoline, resolved on the child PATH', () => {
     expect(disclaimedCommand('claude', ['-p', 'x'], { PATH: `/nowhere:${dir}` }, darwin))
       .toEqual([trampoline, [DISCLAIM_EXEC_FLAG, claude, '-p', 'x']]);
     expect(disclaimedCommand(claude, [], {}, darwin)).toEqual([trampoline, [DISCLAIM_EXEC_FLAG, claude]]);
@@ -34,5 +34,13 @@ describe('disclaimedCommand', () => {
   it('keeps a missing program a plain spawn, so ENOENT and its install hint survive', () => {
     expect(disclaimedCommand('codex', ['app-server'], { PATH: dir }, darwin)).toEqual(['codex', ['app-server']]);
     expect(disclaimedCommand('./claude', [], { PATH: dir }, darwin)).toEqual(['./claude', []]);
+  });
+
+  it('runs JavaScript CLI scripts through Node on Windows', () => {
+    const mock = join(dir, 'mock-claude.mjs');
+    expect(disclaimedCommand(mock, ['--print'], {}, { platform: 'win32' }))
+      .toEqual([process.execPath, [mock, '--print']]);
+    expect(disclaimedCommand('codex.cmd', ['app-server'], {}, { platform: 'win32' }))
+      .toEqual(['codex.cmd', ['app-server']]);
   });
 });

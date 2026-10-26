@@ -33,6 +33,11 @@ export function disclaimedCommand(
   opts: DisclaimOptions = {},
 ): [string, string[]] {
   const platform = opts.platform ?? process.platform;
+  // Windows does not launch Node shebang files through CreateProcess. Explicit
+  // JS CLI fixtures and the bundled dry-run mocks must go through Node itself.
+  if (platform === 'win32' && /\.(?:mjs|cjs|js)$/i.test(program)) {
+    return [process.execPath, [program, ...args]];
+  }
   const trampoline = (opts.hostEnv ?? process.env).CEZ_DISCLAIM_EXEC;
   if (platform !== 'darwin' || !trampoline || !isExecutable(trampoline)) return [program, [...args]];
   const resolved = resolveProgram(program, childEnv?.PATH ?? process.env.PATH);

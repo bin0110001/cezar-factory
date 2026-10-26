@@ -104,6 +104,22 @@ function Add-Comment([string]$Body) {
     $f = [IO.Path]::GetTempFileName()
     try { [IO.File]::WriteAllText($f, $Body); Invoke-Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
+function Add-PlanCommentOnce([string]$Body) {
+    $prefix = "<!-- factory:plan-result:${Issue}:"
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
+    $receipt = "$prefix$hash -->"
+    $fresh = Invoke-Gh issue view $Issue --json 'labels,comments' | ConvertFrom-Json
+    $freshStates = @($fresh.labels | ForEach-Object { [string]$_.name } | Where-Object { $stateLabels -contains $_ })
+    if ($freshStates.Count -ne 1 -or $freshStates[0] -notin @('factory:needs-plan', 'factory:new') -or $current -notcontains $freshStates[0]) {
+        Fail 'issue state changed before the plan-result comment could be applied'
+    }
+    $prior = @($fresh.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($prefix) })
+    if ($prior.Count -gt 0) {
+        if ($prior | Where-Object { $_ -notmatch [regex]::Escape($receipt) }) { Fail 'a prior plan-result comment has different content; reconcile the issue before retrying' }
+        return
+    }
+    Add-Comment ($Body + "`n`n$receipt")
+}
 function Get-SelectedWorker([string[]]$IssueLabels) {
     # Complexity is an implementation-tier guard. Medium and large work must
     # never fall through to the bounded local worker, even if a stale or
@@ -117,13 +133,13 @@ function Get-SelectedWorker([string[]]$IssueLabels) {
     'codex'
 }
 function Write-ExecutionRecord([string]$Status, $Result = $null) {
-    # Keep only workflow-decision data in the project artifact; OpenHands owns
+    # Keep only workflow-decision data in the project artifact; Cezar owns
     # the session transcript, command history, and worktree internals.
     $path = Join-Path $ProjectPath '.factory/execution.json'
     $worker = Get-SelectedWorker $labels
     $record = [ordered]@{
         execution = [ordered]@{
-            provider = if ($worker -eq 'local') { 'local' } else { 'openhands' }
+            provider = if ($worker -eq 'local') { 'local' } else { 'cezar' }
             agent = $worker
             status = $Status
             issue = $Issue
@@ -132,7 +148,7 @@ function Write-ExecutionRecord([string]$Status, $Result = $null) {
                 workflow = if ($env:CEZ_WORKFLOW_NAME) { $env:CEZ_WORKFLOW_NAME } else { "factory-$Event" }
                 github_issue = $Issue
                 worker = $worker
-                provider = if ($worker -eq 'local') { 'local' } else { 'openhands' }
+                provider = if ($worker -eq 'local') { 'local' } else { 'cezar' }
                 model = if ($env:FACTORY_MODEL) { $env:FACTORY_MODEL } else { $worker }
             }
         }
@@ -205,16 +221,20 @@ switch ($Event) {
                 "| #$($numbers[$i]) | $($subs[$i].title) | $($subs[$i].type) | $($subs[$i].risk) | $deps |"
             }
             $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues and queued them as ``factory:needs-plan`` for autonomous planning and implementation in dependency order. This parent is a tracking record and is closed after decomposition.`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
-            Add-Comment ($plan + "`n`n" + $table)
+            Add-PlanCommentOnce ($plan + "`n`n" + $table)
             Set-State 'factory:done'
             Invoke-Gh issue close $Issue --comment "Decomposed into $($subs.Count) child issues, queued for autonomous planning and implementation in dependency order." | Out-Null
             Done 'factory:done' "decomposed into $($subs.Count) queued sub-issues"
         }
         if ($result.readyNotReadyStatus -ne 'ready') {
-            Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
+            Add-PlanCommentOnce ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'
         }
-        Add-Comment $plan; Set-State 'factory:ready'; Done 'factory:ready'
+        if ($labels -contains 'risk:high') {
+            Add-PlanCommentOnce ($plan + "`n`n**risk:high: human plan approval required.** Review the plan; if approved, relabel factory:ready.")
+            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'risk:high plan approval'
+        }
+        Add-PlanCommentOnce $plan; Set-State 'factory:ready'; Done 'factory:ready'
     }
     'implement-result' {
         Assert-Source 'factory:working'

@@ -1,6 +1,17 @@
 import { homedir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, posix, sep, win32 } from 'node:path';
 import type { AgentHomePaths } from './agent-config/catalog.ts';
+
+function pathStyle(path: string) {
+  if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\')) return win32;
+  if (path.startsWith('/')) return posix;
+  return undefined;
+}
+
+function joinForPath(path: string, ...parts: string[]): string {
+  const style = pathStyle(path);
+  return style ? style.join(path, ...parts) : join(path, ...parts);
+}
 
 /**
  * Per-user cezar home. Literal `~/.cezar` on every platform (no XDG, no
@@ -16,7 +27,10 @@ import type { AgentHomePaths } from './agent-config/catalog.ts';
 export function cezarHomeDir(env: NodeJS.ProcessEnv = process.env): string {
   // `|| undefined` so an EMPTY CEZ_HOME (e.g. `CEZ_HOME= cezar …`) falls back
   // to the default instead of yielding relative paths in the cwd.
-  return (env.CEZ_HOME || undefined) ?? join(homedir(), '.cezar');
+  const override = env.CEZ_HOME || undefined;
+  if (override) return override;
+  const home = env.HOME || env.USERPROFILE || homedir();
+  return joinForPath(home, '.cezar');
 }
 
 /**
@@ -35,8 +49,9 @@ export function cezarHomeDir(env: NodeJS.ProcessEnv = process.env): string {
  */
 export function assertCezarHomeWriteIsSandboxed(path: string, env: NodeJS.ProcessEnv = process.env): void {
   if (!env.VITEST) return;
-  const realHome = join(homedir(), '.cezar');
-  if (path !== realHome && !path.startsWith(realHome + sep)) return;
+  const realHome = joinForPath(env.HOME || env.USERPROFILE || homedir(), '.cezar');
+  const separator = pathStyle(realHome)?.sep ?? sep;
+  if (path !== realHome && !path.startsWith(realHome + separator)) return;
   throw new Error(
     `[cez] refusing to write ${path} from a test run — CEZ_HOME is not pinned to a sandbox. ` +
       'Pin it (the vitest setup file does this by default) so the suite never touches the real cezar home.',
@@ -131,9 +146,10 @@ export function agentAccountsPath(): string {
  * `PUT /api/workspace/config`, the browse root in
  * `src/server/fs-browse.ts` — expands it through this one helper.
  */
-export function expandTilde(path: string): string {
-  if (path === '~') return homedir();
-  return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path;
+export function expandTilde(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.HOME || env.USERPROFILE || homedir();
+  if (path === '~') return home;
+  return path.startsWith('~/') ? joinForPath(home, path.slice(2)) : path;
 }
 
 /**
@@ -161,14 +177,17 @@ export function serverLockPath(instance: string = DEFAULT_SERVER_INSTANCE): stri
  */
 export function agentHomePaths(env: NodeJS.ProcessEnv = process.env): AgentHomePaths {
   const home = env.HOME || env.USERPROFILE || homedir();
-  const xdgConfig = env.XDG_CONFIG_HOME?.trim() || join(home, '.config');
+  // Tests and remote/container launches may describe a different host OS than
+  // the process running cezar. Join paths using the supplied home directory's
+  // convention so e.g. HOME=/home/u stays POSIX on a Windows dev machine.
+  const xdgConfig = env.XDG_CONFIG_HOME?.trim() || joinForPath(home, '.config');
   return {
-    claude: env.CLAUDE_CONFIG_DIR?.trim() || join(home, '.claude'),
-    codex: env.CODEX_HOME?.trim() || join(home, '.codex'),
-    opencodeConfig: join(xdgConfig, 'opencode'),
-    cursor: env.CURSOR_CONFIG_DIR?.trim() || join(home, '.cursor'),
-    copilot: env.COPILOT_HOME?.trim() || join(home, '.copilot'),
-    junie: join(home, '.junie'),
+    claude: env.CLAUDE_CONFIG_DIR?.trim() || joinForPath(home, '.claude'),
+    codex: env.CODEX_HOME?.trim() || joinForPath(home, '.codex'),
+    opencodeConfig: joinForPath(xdgConfig, 'opencode'),
+    cursor: env.CURSOR_CONFIG_DIR?.trim() || joinForPath(home, '.cursor'),
+    copilot: env.COPILOT_HOME?.trim() || joinForPath(home, '.copilot'),
+    junie: joinForPath(home, '.junie'),
   };
 }
 
@@ -200,7 +219,10 @@ export function agentHomePaths(env: NodeJS.ProcessEnv = process.env): AgentHomeP
  * login this account will never use.
  */
 export function claudeStateFilePath(claudeHome: string, env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.HOME || env.USERPROFILE || homedir();
+  const joinPath = (base: string, ...parts: string[]) => joinForPath(base, ...parts);
+  const dirnamePath = pathStyle(claudeHome)?.dirname.bind(pathStyle(claudeHome)!) ?? dirname;
   const seesOverride = (env.CLAUDE_CONFIG_DIR?.trim() || '') !== ''
-    || claudeHome !== join(env.HOME || env.USERPROFILE || homedir(), '.claude');
-  return seesOverride ? join(claudeHome, '.claude.json') : join(dirname(claudeHome), '.claude.json');
+    || claudeHome !== joinPath(home, '.claude');
+  return seesOverride ? joinPath(claudeHome, '.claude.json') : joinPath(dirnamePath(claudeHome), '.claude.json');
 }

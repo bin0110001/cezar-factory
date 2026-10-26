@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,16 +56,31 @@ describe('autonomous mode nudges at turn end instead of parking (#autonomous)', 
     currentId = undefined;
   });
 
-  afterEach(() => {
-    if (currentId) manager.cancel(currentId); // release the session + repo lock
+  afterEach(async () => {
+    if (currentId) {
+      manager.cancel(currentId); // release the session + repo lock
+      const active = manager as unknown as {
+        active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }>;
+      };
+      const session = active.active.get(currentId)?.session;
+      if (session) {
+        let settled = false;
+        const result = session.result.then(() => { settled = true; }, () => { settled = true; });
+        await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+        if (!settled) {
+          session.hardStop?.();
+          await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+        }
+      }
+    }
     manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 30_000);
 
   const waitFor = async (id: string, pred: (r: RunRecord | undefined) => boolean, ms = 20_000) => {
     const deadline = Date.now() + ms;

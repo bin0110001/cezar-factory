@@ -7,12 +7,54 @@ steps:
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status: { type: string, enum: [open, already-resolved] }
+        issue: { type: integer }
+        reason: { type: string }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      allOf:
+        - if: { properties: { status: { const: already-resolved } }, required: [status] }
+          then: { required: [$cezar] }
+      additionalProperties: false
   - id: recall
     name: Create bounded memory-recall artifact
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective "{{task}}" -TaskClass investigation
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
   - id: investigate
     name: Run factory-investigate skill
     skill: factory-investigate
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     prompt: |
       Investigate repeated failures on this GitHub issue: {{task}}
 
@@ -27,12 +69,36 @@ steps:
   - id: validate
     name: Validate investigation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     onFail:
       retry: investigate
       max: 1
   - id: route
     name: Route to retry or needs-help
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event investigate-result -Path .factory/investigate-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     onFail:
       retry: validate
       max: 1

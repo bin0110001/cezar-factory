@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,9 +59,11 @@ describe('agent profiles API', () => {
     clearProjectProbeCache();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     store.flush();
-    for (const dir of [home, repoRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [home, repoRoot]) {
+      await rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    }
     for (const [key, value] of [
       ['CEZ_HOME', saved.home],
       ['CEZ_REMOTE', saved.remote],

@@ -7,15 +7,57 @@ steps:
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status: { type: string, enum: [open, already-resolved] }
+        issue: { type: integer }
+        reason: { type: string }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      allOf:
+        - if: { properties: { status: { const: already-resolved } }, required: [status] }
+          then: { required: [$cezar] }
+      additionalProperties: false
   - id: prepare
     name: Prepare issue and environment context
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/prepare-implementation.ps1 -Task "{{task}}" -OutputPath .factory/implementation-context.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: start
     name: Move issue to factory:working
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: implement
     name: Run factory-implement skill
     skill: factory-implement
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     prompt: |
       Implement this GitHub issue: {{task}}
 
@@ -42,36 +84,84 @@ steps:
   - id: ensure-result
     name: Preserve implementation handoff
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-implementation-result.ps1 -Path .factory/implement-result.json -ContextPath .factory/implementation-context.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: ensure-pr-closes-issue
     name: Ensure successful PR closes the issue on merge
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: implement
       max: 2
   - id: full-verification
     name: Run required verification
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: implement
       max: 1
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: implement
       max: 1
   - id: validate
     name: Validate implementation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: implement
       max: 1
   - id: route
     name: Set factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     onFail:
       retry: validate
       max: 1

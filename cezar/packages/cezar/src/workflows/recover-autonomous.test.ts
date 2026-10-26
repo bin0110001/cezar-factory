@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -26,6 +27,7 @@ const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
 describe('recover() and the autonomous flag (#489)', () => {
   let repoRoot: string;
   let store: RunStore;
+  let managers: RunManager[];
 
   beforeEach(async () => {
     repoRoot = mkdtempSync(join(tmpdir(), 'cez-recover-auto-'));
@@ -35,14 +37,22 @@ describe('recover() and the autonomous flag (#489)', () => {
     await run('git', ['add', '-A'], { cwd: repoRoot });
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    managers = [];
   });
 
   const frozen = () => new WorkspaceSemaphore({ initial: { maxParallel: 0 } });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const manager of managers) manager.dispose();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 30_000);
+
+  const recoveringManager = () => {
+    const manager = new RunManager(store, repoRoot, { semaphore: frozen() });
+    managers.push(manager);
+    return manager;
+  };
 
   const WORKFLOW_DEF = {
     name: 'quick-task',
@@ -67,7 +77,7 @@ describe('recover() and the autonomous flag (#489)', () => {
     const id = queuedRun(true);
     expect(store.getRun(id)?.autonomous).toBe(true);
 
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
 
     // Still recovered (queued), still autonomous — so a later settleSuccess lands it at `done`.
     expect(store.getRun(id)?.status).toBe('queued');
@@ -76,7 +86,7 @@ describe('recover() and the autonomous flag (#489)', () => {
 
   it('leaves a non-autonomous recovered run non-autonomous', async () => {
     const id = queuedRun(false);
-    await new RunManager(store, repoRoot, { semaphore: frozen() }).recover();
+    await recoveringManager().recover();
     expect(store.getRun(id)?.autonomous).toBe(false);
   });
 });

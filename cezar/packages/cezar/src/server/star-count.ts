@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix, win32 } from 'node:path';
 
 import { z } from 'zod';
 
@@ -74,7 +74,8 @@ const diskEntrySchema = z.object({
 });
 
 export function starCachePath(home: string = homedir()): string {
-  return join(home, '.cache', 'cez', 'star-count.json');
+  const style = /^[A-Za-z]:[\\/]/.test(home) || home.startsWith('\\\\') ? win32 : home.startsWith('/') ? posix : undefined;
+  return style ? style.join(home, '.cache', 'cez', 'star-count.json') : join(home, '.cache', 'cez', 'star-count.json');
 }
 
 /**

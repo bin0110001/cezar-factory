@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,19 +17,24 @@ import { ProjectContextError, ProjectContexts, type ProjectContextSource } from 
 describe('ProjectContexts', () => {
   let rootA: string;
   let rootB: string;
+  let instances: ProjectContexts[];
 
   beforeEach(() => {
     rootA = mkdtempSync(join(tmpdir(), 'cez-ctx-a-'));
     rootB = mkdtempSync(join(tmpdir(), 'cez-ctx-b-'));
+    instances = [];
   });
 
-  afterEach(() => {
-    rmSync(rootA, { recursive: true, force: true });
-    rmSync(rootB, { recursive: true, force: true });
+  afterEach(async () => {
+    for (const context of instances) context.disposeAll();
+    await rm(rootA, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    await rm(rootB, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   });
 
   function makeContexts(projects: ProjectContextSource[]): ProjectContexts {
-    return new ProjectContexts({ listProjects: async () => projects });
+    const contexts = new ProjectContexts({ listProjects: async () => projects });
+    instances.push(contexts);
+    return contexts;
   }
 
   it('builds lazily: nothing on construction, first access builds, second returns the same instance', async () => {
@@ -68,6 +74,7 @@ describe('ProjectContexts', () => {
       listProjects: async () => [{ id: 'a', root: rootA, status: 'not-git' }],
       automationStore: resolveAutomationStore,
     });
+    instances.push(contexts);
     const context = await contexts.context('a');
     expect(context.automationStore).toBe(automationStore);
     expect(resolveAutomationStore).toHaveBeenCalledWith('a', rootA);

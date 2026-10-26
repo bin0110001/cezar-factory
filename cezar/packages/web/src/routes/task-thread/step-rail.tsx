@@ -54,22 +54,37 @@ export function StepRail({ steps }: { steps: StepState[] }) {
   return (
     <div data-slot="step-rail" className="flex min-w-0 flex-col gap-1">
       {steps.map((step, index) => (
-        <div
-          key={step.id}
-          data-slot="step-row"
-          data-visual={railVisual(step.status)}
-          className="flex min-h-[22px] min-w-0 items-center gap-2 text-[13px] text-muted-foreground"
-        >
-          <RailIcon visual={railVisual(step.status)} />
-          <span className="min-w-0 truncate font-medium text-foreground">{step.name}</span>
-          {step.iterations > 1 ? (
-            <span data-slot="step-iterations" className="shrink-0 text-xs text-soft-foreground tabular-nums">
-              ×{step.iterations}
+        <div key={step.id} className="flex min-w-0 flex-col">
+          <div
+            data-slot="step-row"
+            data-visual={railVisual(step.status)}
+            className="flex min-h-[22px] min-w-0 items-center gap-2 text-[13px] text-muted-foreground"
+          >
+            <RailIcon visual={railVisual(step.status)} />
+            <span className="min-w-0 truncate font-medium text-foreground" title={step.skipReason ? `Skipped: ${step.skipReason.replaceAll('_', ' ')}` : undefined}>{step.name}</span>
+            {step.iterations > 1 ? (
+              <span data-slot="step-iterations" className="shrink-0 text-xs text-soft-foreground tabular-nums">
+                ×{step.iterations}
+              </span>
+            ) : null}
+            <span className="ml-auto shrink-0 pl-2 text-[11.5px] text-soft-foreground tabular-nums">
+              {step.kind} · step {index + 1} of {steps.length}
             </span>
+          </div>
+          {step.output !== undefined && step.outputDigest ? (
+            <details data-slot="step-artifact" className="ml-5 min-w-0 pb-1 text-xs">
+              <summary className="w-fit cursor-pointer text-soft-foreground hover:text-foreground">
+                Structured result · attempt {step.outputAttempt ?? 1} · sha256 {step.outputDigest.slice(0, 12)}…
+              </summary>
+              <div className="mt-1 space-y-1 rounded-md border bg-muted/40 p-2">
+                <p className="break-all text-[10px] text-soft-foreground">
+                  Content SHA-256: <code>{step.outputDigest}</code>
+                  {step.outputSourceDigest ? <> · Workflow step SHA-256: <code>{step.outputSourceDigest}</code></> : null}
+                </p>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] text-foreground">{JSON.stringify(step.output, null, 2)}</pre>
+              </div>
+            </details>
           ) : null}
-          <span className="ml-auto shrink-0 pl-2 text-[11.5px] text-soft-foreground tabular-nums">
-            {step.kind} · step {index + 1} of {steps.length}
-          </span>
         </div>
       ))}
       <div data-slot="step-progress" className="mt-1 h-0.5 overflow-hidden rounded-full bg-muted">

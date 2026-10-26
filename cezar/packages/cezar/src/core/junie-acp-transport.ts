@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve as resolvePath } from 'node:path';
 import { trackChildExit } from './agent-runner.ts';
 import { buildChildEnv } from './agent-env.ts';
+import { disclaimedCommand } from './disclaim-spawn.ts';
 import { EOF_KILL_GRACE_MS, EOF_TERM_GRACE_MS, KILL_GRACE_MS } from './claude-cli-runner.ts';
 
 export interface JunieAcpMessage {
@@ -54,9 +55,11 @@ export function spawnJunieAcp(
   extraEnv?: Record<string, string>,
 ): ChildProcessWithoutNullStreams {
   try {
-    return nodeSpawn(bin, ['--acp=true', '-p', cwd], {
+    const env = buildJunieAcpEnv(extraEnv);
+    const [file, args] = disclaimedCommand(bin, ['--acp=true', '-p', cwd], env);
+    return nodeSpawn(file, args, {
       cwd,
-      env: buildJunieAcpEnv(extraEnv),
+      env,
     });
   } catch (error) {
     throw junieSpawnError(error, bin);

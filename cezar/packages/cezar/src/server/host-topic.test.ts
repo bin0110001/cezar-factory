@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,11 +47,11 @@ describe('host topic + sampler (live-server path)', () => {
     hostUsageSampler.dispose();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     hostUsageSampler.dispose();
     vi.useRealTimers();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   });
 
   const build = () => {

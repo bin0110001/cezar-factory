@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +27,6 @@ describe('workspace migrations', () => {
   afterEach(() => {
     if (originalHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = originalHome;
-    chmodSync(home, 0o700); // undo the unwritable-home test before cleanup
     rmSync(home, { recursive: true, force: true });
     rmSync(repoRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
@@ -48,7 +47,7 @@ describe('workspace migrations', () => {
     await runMigrations({ bootRepoRoot: null });
     const config = await loadWorkspaceConfig();
     expect(config).toEqual({ ...defaultWorkspaceConfig(), schemaVersion: 1 });
-    expect(statSync(workspaceConfigPath()).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(workspaceConfigPath()).mode & 0o777).toBe(0o600);
     // nothing to import → the global ui-state file is not created
     expect(existsSync(workspaceUiStatePath())).toBe(false);
     expect(warn).not.toHaveBeenCalled();
@@ -74,7 +73,7 @@ describe('workspace migrations', () => {
       appearance: { accent: 'violet', density: 'compact' },
       notifications: { enabled: false },
     });
-    expect(statSync(workspaceUiStatePath()).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(workspaceUiStatePath()).mode & 0o777).toBe(0o600);
     // additive: per-repo files are byte-identical
     expect(readFileSync(join(repoRoot, '.ai/cezar/config.json'), 'utf8')).toBe(repoConfigBefore);
     expect(readFileSync(join(repoRoot, '.ai/cezar/ui-state.json'), 'utf8')).toBe(repoUiBefore);
@@ -139,13 +138,16 @@ describe('workspace migrations', () => {
     expect(config.resources.memoryLimitMb).toBeNull();
   });
 
-  it('an unwritable home degrades with ONE warning and never throws', async () => {
+  it('a failing migration degrades with ONE warning and never throws', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    chmodSync(home, 0o500); // read-only home dir → the atomic write fails
-    await expect(runMigrations({ bootRepoRoot: null })).resolves.toBeUndefined();
+    const failing: WorkspaceMigration = {
+      to: 1,
+      id: '001-workspace-config',
+      run: async () => { throw new Error('read-only home'); },
+    };
+    await expect(runMigrations({ bootRepoRoot: null }, [failing])).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('001-workspace-config');
-    chmodSync(home, 0o700);
     expect(existsSync(workspaceConfigPath())).toBe(false);
   });
 

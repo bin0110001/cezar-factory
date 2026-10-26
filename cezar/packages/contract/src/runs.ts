@@ -70,6 +70,24 @@ export const stepStatusSchema = z.enum([
 ]);
 export type StepStatus = z.infer<typeof stepStatusSchema>;
 
+/** Typed terminal semantics supplement the legacy run status. Additive and optional on old rows. */
+const outcomeWithStep = <const K extends string, const R extends string>(kind: K, reasonCode: readonly [R, ...R[]]) =>
+  z.object({ kind: z.literal(kind), reasonCode: z.enum(reasonCode), stepId: z.string().optional() });
+
+export const runOutcomeSchema = z.discriminatedUnion('kind', [
+  outcomeWithStep('completed', ['workflow_completed', 'explicit_finish', 'legacy_completed']),
+  outcomeWithStep('no_work', ['no_work']),
+  outcomeWithStep('skipped', ['precondition_not_met']),
+  outcomeWithStep('blocked', ['precondition_not_met', 'policy_blocked', 'dependency_unavailable', 'provider_quota', 'human_input_required']),
+  outcomeWithStep('task_failure', ['task_failed', 'work_verdict', 'test_regression']),
+  outcomeWithStep('contract_failure', ['input_invalid', 'input_schema_invalid', 'condition_schema_invalid', 'output_missing', 'output_malformed', 'output_invalid', 'output_schema_invalid']),
+  outcomeWithStep('infrastructure_failure', ['infrastructure_failed', 'engine_interrupted', 'artifact_integrity_failed', 'cleanup_failed', 'configuration', 'missing_command', 'authentication', 'provider_unavailable', 'provider_quota', 'transient_transport', 'malformed_result', 'unknown']),
+  outcomeWithStep('timeout', ['deadline_exceeded', 'idle_timeout', 'check_timeout']),
+  outcomeWithStep('cancelled', ['user_cancelled', 'check_cancelled']),
+  outcomeWithStep('unclassified_failure', ['unclassified_failure', 'legacy_unclassified']),
+]);
+export type RunOutcome = z.infer<typeof runOutcomeSchema>;
+
 const usageCounterSchema = z.number().finite().nonnegative();
 
 /** One step of a run's chain. */
@@ -78,6 +96,8 @@ export const stepStateSchema = z.object({
   name: z.string(),
   kind: z.enum(['agent', 'check']),
   status: stepStatusSchema,
+  /** Stable reason for a conditional or no-work skip. */
+  skipReason: z.string().optional(),
   iterations: z.number(),
   tokensUsed: z.number(),
   inputTokens: usageCounterSchema.optional(),
@@ -90,6 +110,14 @@ export const stepStateSchema = z.object({
   startedAt: z.string().optional(),
   finishedAt: z.string().optional(),
   error: z.string().optional(),
+  /** Validated structured output from a successful check attempt. */
+  output: z.any().optional(),
+  /** Attempt identity for output provenance; stale attempts are not consumed. */
+  outputAttempt: z.number().int().positive().optional(),
+  /** SHA-256 of the canonical serialized output. */
+  outputDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** SHA-256 of the producing workflow step definition. */
+  outputSourceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   /** Latest agent session id — `claude --resume <id>` and friends. */
   sessionId: z.string().optional(),
   /** Backend that owns `sessionId`; absent on records written before backend affinity. */
@@ -216,6 +244,18 @@ export const runRecordSchema = z.object({
    */
   dispatch: dispatchSchema.optional(),
   status: runStatusSchema,
+  /** Typed meaning of the terminal state; absent while non-terminal and on old records. */
+  outcome: runOutcomeSchema.optional(),
+  /** Durable cleanup intent and receipt for restartable workflow finalizers. */
+  finalization: z.object({
+    status: z.enum(['running', 'complete', 'failed']),
+    terminal: z.enum(['success', 'failed', 'cancelled']),
+    error: z.string().optional(),
+    outcome: runOutcomeSchema.optional(),
+    startedAt: z.string(),
+    finishedAt: z.string().optional(),
+    cleanupError: z.string().optional(),
+  }).optional(),
   /** `monitoring` while `status === 'running'` and the agent is working on downstream work.
    *  Absent on old runs; cleared on resume/end. */
   activity: runActivitySchema.optional(),

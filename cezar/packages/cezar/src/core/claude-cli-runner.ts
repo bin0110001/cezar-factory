@@ -21,6 +21,7 @@ import { resolveClaudeBin } from './claude-bin.ts';
 import { costWeightedTokens, type RawUsage } from './usage.ts';
 import { readNdjson } from './ndjson.ts';
 import {
+  abortClaudeTurn,
   claudeTurnStarted,
   createClaudeUiState,
   mapClaudeMessage,
@@ -318,6 +319,10 @@ export class ClaudeCliRunner implements AgentRunner {
       const exitCode = await waitForExit(child);
       if (eofTermTimer) clearTimeout(eofTermTimer);
       if (eofKillTimer) clearTimeout(eofKillTimer);
+
+      if (uiState.currentTurnId && (timedOut || terminatedByCezar)) {
+        emitUi((state) => abortClaudeTurn(state, timedOut ? 'timeout' : 'cancelled'));
+      }
 
       if (spawnFailed) throw spawnFailed;
 

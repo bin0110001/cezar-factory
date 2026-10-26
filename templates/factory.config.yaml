@@ -34,11 +34,45 @@ features:
 project:
   type: godot
 
+# Used by the optional Godot upgrade workflow. Set the project-owned test command;
+# only exit codes listed below are treated as repairable test regressions. Other
+# non-zero codes stop as unclassified failures instead of invoking the coding agent.
+godot:
+  testCommand: ""
+  testRegressionExitCodes: [1]
+
 execution:
-  provider: openhands
+  provider: cezar
   record: .factory/execution.json
 
 validation:
-  changed: "./scripts/factory/test-changed.ps1"
-  full: "./scripts/factory/test-full.ps1"
+  # Replace these empty commands with project-owned verification scripts.
+  # Empty or missing commands return `unavailable`; they never count as pass.
+  quick:
+    command: ""
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 120
+    evidencePath: ".factory/artifacts/verification-quick.json"
+    appliesTo:
+      - "*"
+  targeted:
+    command: ""
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 600
+    evidencePath: ".factory/artifacts/verification-targeted.json"
+    appliesTo:
+      - "*"
+  full:
+    command: ""
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 1800
+    evidencePath: ".factory/artifacts/verification-full.json"
+    appliesTo:
+      - "*"
   verify: "./scripts/factory/verify.ps1"

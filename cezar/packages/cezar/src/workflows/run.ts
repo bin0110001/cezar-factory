@@ -33,6 +33,7 @@ import {
   seedHandoffFile,
 } from '../handoff.ts';
 import { todosPath } from '../todos.ts';
+import { collectPriorStepOutputs, workflowStepDigest } from './structured-artifacts.ts';
 // Contract VALUES, like `workspaceUiStateSchema` in workspace/migrations.ts: the attachment
 // vocabulary the routes validate with is the same one the engine stores and re-reads by, so the
 // wire and the disk can never disagree about what counts as an image (#950).
@@ -58,7 +59,7 @@ import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/stor
 // Task dispatch (spec 2026-09-10-dispatch). Every import below is inert unless the feature is
 // ON *and* the run carries a `dispatch`: `dispatchOf()` is the single gate, and a run without one
 // takes byte-for-byte the path it took before this feature existed.
-import type { DispatchInput, DispatchIntent, DispatchReport, RunDispatch } from '@open-mercato/cezar-contract';
+import type { DispatchInput, DispatchIntent, DispatchReport, RunDispatch, RunOutcome } from '@open-mercato/cezar-contract';
 import { resolveCapabilities } from '../server/capabilities.ts';
 import { composeDispatchPrompt } from '../dispatch/prompts.ts';
 import {
@@ -107,8 +108,12 @@ import { UiEventSink } from '../runs/ui-event-sink.ts';
 import type { UiEvent } from '../core/ui-events.ts';
 import {
   chainStepNote,
+  checkFailureOutcome,
+  validateWorkflowContract,
+  workflowConditionMatches,
+  workflowControlOf,
   DEFAULT_ALLOWED_TOOLS,
-  retryableExit,
+  shouldRetryCheck,
   stepKind,
   type WorkflowDef,
   type WorkflowStepDef,
@@ -358,6 +363,7 @@ interface ActiveRun {
   /** Identity of this async owner; stale promises must not mutate a replacement owner. */
   ownerToken: symbol;
   cancelled: boolean;
+  finalizing?: boolean;
   interrupt: () => void;
   /** Where this run's steps execute: the task worktree, or the repo root. */
   cwd: string;
@@ -1654,6 +1660,10 @@ export class RunManager {
     // per-run directory here — bounded to `<dataDir>/tmp`, never a sibling.
     sweepAgentTmpDirs(this.dataDir, live.map((r) => r.id));
     for (const run of live) {
+      if (run.finalization) {
+        await this.resumeFinalizers(run);
+        continue;
+      }
       if (run.status === 'queued') {
         await this.reviveQueuedRun(run, 'cezar restarted');
         continue;
@@ -1758,6 +1768,58 @@ export class RunManager {
     // one — see `reconcileAutoResumes`.
     this.reconcileAutoResumes();
     void this.pump();
+  }
+
+  /** Resume only the durable cleanup suffix after a process restart. */
+  private async resumeFinalizers(run: RunRecord): Promise<void> {
+    const workflow = run.workflowDef;
+    const finals = workflow?.steps.filter((step) => step.finalizer) ?? [];
+    const cwd = run.worktreePath && existsSync(run.worktreePath)
+      ? run.worktreePath
+      : run.worktree === false ? this.repoRoot : undefined;
+    let cleanupError = run.finalization?.cleanupError;
+    const startedAt = run.finalization?.startedAt ?? new Date().toISOString();
+    if (finals.length && !cwd) cleanupError = 'finalizer worktree is unavailable after restart';
+    if (cwd) {
+      const state = { cwd, interrupt: () => undefined } as ActiveRun;
+      for (const step of finals) {
+        const current = this.store.getRun(run.id)?.steps.find((item) => item.id === step.id);
+        if (current?.status === 'done') continue;
+        if (current?.status === 'failed') {
+          cleanupError = [cleanupError, `${step.id}: ${current.error ?? 'previous finalizer attempt failed'}`].filter(Boolean).join('; ');
+          continue;
+        }
+        this.store.updateStep(run.id, step.id, { status: 'running', startedAt: new Date().toISOString() });
+        this.store.flush({ throwOnError: true });
+        const result = await this.runCheckStep(state, step, run.task, { task: run.task, outputs: {} }, (event) => {
+          this.store.appendEvent(run.id, event);
+        });
+        this.store.updateStep(run.id, step.id, {
+          status: result.ok ? 'done' : 'failed',
+          ...(result.ok ? {} : { error: result.output }),
+          finishedAt: new Date().toISOString(),
+        });
+        if (!result.ok) cleanupError = [cleanupError, `${step.id}: ${result.output}`].filter(Boolean).join('; ');
+        this.store.flush({ throwOnError: true });
+      }
+    }
+    const finalization = run.finalization!;
+    const failed = Boolean(cleanupError);
+    this.store.updateRun(run.id, {
+      finalization: { ...finalization, status: failed ? 'failed' : 'complete', startedAt,
+        finishedAt: new Date().toISOString(), ...(cleanupError ? { cleanupError } : {}) },
+      ...(failed && finalization.terminal === 'success'
+        ? { status: 'failed', error: `workflow cleanup failed: ${cleanupError}`,
+            outcome: { kind: 'infrastructure_failure', reasonCode: 'cleanup_failed' } as RunOutcome,
+            finishedAt: new Date().toISOString() }
+        : { status: finalization.terminal === 'success' ? 'done' : finalization.terminal, finishedAt: new Date().toISOString(),
+            ...(finalization.error ? { error: finalization.error } : {}),
+            ...(finalization.outcome ? { outcome: finalization.outcome }
+              : finalization.terminal === 'success' ? { outcome: { kind: 'completed', reasonCode: 'workflow_completed' } as RunOutcome } : {}) }),
+    });
+    this.store.flush({ throwOnError: true });
+    this.store.appendEvent(run.id, { type: 'lifecycle', message: failed ? 'workflow cleanup finished with errors' : 'workflow cleanup finished' });
+    this.reportSettledChildToParent(run.id);
   }
 
   /** The persisted definition when it looks sane, else the catalog by name. */
@@ -2852,6 +2914,10 @@ export class RunManager {
     }
     const state = this.active.get(runId);
     if (!state) return false;
+    // Cleanup has its own persisted terminal intent and bounded commands. Do
+    // not interrupt it or let the cancellation grace timer retire its owner.
+    if (state.finalizing) return false;
+    const hasFinalizers = Boolean(this.store.getRun(runId)?.workflowDef?.steps.some((step) => step.finalizer));
     state.cancelled = true;
     this.clearIdleTimer(state);
     try {
@@ -2865,8 +2931,19 @@ export class RunManager {
         this.store.updateStep(runId, step.id, { status: 'cancelled', finishedAt });
       }
     }
-    this.store.updateRun(runId, { status: 'cancelled', finishedAt, currentStepId: undefined });
+    if (hasFinalizers) {
+      this.store.updateRun(runId, {
+        finalization: {
+          status: 'running',
+          terminal: 'cancelled',
+          startedAt: new Date().toISOString(),
+        },
+      });
+      this.store.flush({ throwOnError: true });
+    }
+    if (!hasFinalizers) this.store.updateRun(runId, { status: 'cancelled', finishedAt, currentStepId: undefined });
     this.store.appendEvent(runId, { type: 'lifecycle', message: 'run cancelled' });
+    if (hasFinalizers) return true;
     // A startup wedge has no provider session to reap, so release its slot immediately. Once a
     // session has opened, keep the slot until its interrupt/teardown settles; admitting a
     // replacement while a non-cooperative provider is still alive would violate maxParallel.
@@ -3960,6 +4037,7 @@ export class RunManager {
         this.store.updateRun(runId, {
           status: 'failed',
           error: message,
+          outcome: { kind: 'blocked', reasonCode: 'human_input_required', stepId },
           finishedAt: failedAt,
           currentStepId: undefined,
           askParked: undefined,
@@ -3974,6 +4052,7 @@ export class RunManager {
         this.store.updateRun(runId, {
           status: 'failed',
           error: message,
+          outcome: { kind: 'timeout', reasonCode: 'idle_timeout', stepId },
           finishedAt: failedAt,
           currentStepId: undefined,
         });
@@ -4073,6 +4152,15 @@ export class RunManager {
     // established; only explicit opt-out and non-Git modes run in place.
     const repo = await getRepoInfo(this.repoRoot);
     if (state.cancelled) {
+      if (workflow.steps.some((step) => step.finalizer)) {
+        const startedAt = new Date().toISOString();
+        this.store.updateRun(runId, {
+          finalization: { status: 'running', terminal: 'cancelled', startedAt },
+        });
+        this.store.flush({ throwOnError: true });
+        const record = this.store.getRun(runId);
+        if (record) await this.resumeFinalizers(record);
+      }
       this.dropActive(runId, state);
       return;
     }
@@ -4189,6 +4277,7 @@ export class RunManager {
     const retriesUsed = new Map<string, number>();
     let checkFailure: string | null = null;
     let runError: string | null = null;
+    let terminalOutcome: RunOutcome | undefined;
     let idleFailed = false;
     // `startRun` already persisted the task's attachments so a queued bubble can render them
     // (#612). Reuse those files for the agent-facing path note instead of minting
@@ -4229,12 +4318,58 @@ export class RunManager {
     }
 
     let i = 0;
-    while (i < workflow.steps.length) {
+    while (i < workflow.steps.length && !workflow.steps[i]?.finalizer) {
       if (state.cancelled) break;
       const step = workflow.steps[i] as WorkflowStepDef;
       const kind = stepKind(step);
       const record = this.store.getRun(runId)?.steps.find((s) => s.id === step.id);
       const iteration = (record?.iterations ?? 0) + 1;
+      const priorStepStates = workflow.steps.slice(0, i).flatMap((prior) => {
+        const artifact = this.store.getRun(runId)?.steps.find((candidate) => candidate.id === prior.id);
+        return artifact ? [artifact] : [];
+      });
+      const priorSourceDigests = Object.fromEntries(workflow.steps.slice(0, i).map((prior) => [prior.id, workflowStepDigest(prior)]));
+      const { outputs: priorOutputs, invalidArtifactStepId } = collectPriorStepOutputs(priorStepStates, priorSourceDigests);
+      const stepInput = { task: input.task, outputs: priorOutputs };
+      if (invalidArtifactStepId) {
+        const error = `prior step output artifact from "${invalidArtifactStepId}" failed integrity verification`;
+        this.finishStep(runId, step.id, 'failed', error, emit);
+        runError = `step "${step.id}" cannot consume an invalid prior artifact`;
+        terminalOutcome = { kind: 'infrastructure_failure', reasonCode: 'artifact_integrity_failed', stepId: step.id };
+        break;
+      }
+      try {
+        if (!workflowConditionMatches(step.when, stepInput)) {
+          this.store.updateStep(runId, step.id, {
+            status: 'skipped',
+            skipReason: 'precondition_not_met',
+            finishedAt: new Date().toISOString(),
+          });
+          emit({ type: 'step-end', stepId: step.id, status: 'skipped', reason: 'precondition_not_met' });
+          appendHandoffHeartbeat(this.dataDir, runId, `step "${step.id}" skipped — precondition_not_met`);
+          i++;
+          continue;
+        }
+      } catch (conditionError) {
+        this.finishStep(runId, step.id, 'failed', `workflow condition failed: ${String(conditionError)}`, emit);
+        runError = `step "${step.id}" condition schema is invalid`;
+        terminalOutcome = { kind: 'contract_failure', reasonCode: 'condition_schema_invalid', stepId: step.id };
+        break;
+      }
+      if (step.inputSchema) {
+        const inputResult = validateWorkflowContract(step.inputSchema, stepInput);
+        if (!inputResult.success) {
+          const error = `step input contract failed: ${inputResult.message}`;
+          this.finishStep(runId, step.id, 'failed', error, emit);
+          runError = `step "${step.id}" input contract failed`;
+          terminalOutcome = {
+            kind: 'contract_failure',
+            reasonCode: inputResult.failure === 'schema_invalid' ? 'input_schema_invalid' : 'input_invalid',
+            stepId: step.id,
+          };
+          break;
+        }
+      }
 
       this.store.updateRun(runId, { currentStepId: step.id });
       this.store.updateStep(runId, step.id, {
@@ -4260,7 +4395,9 @@ export class RunManager {
           emit,
           startImages,
           taskBackend,
-          extraSystemPrompt,
+          step.inputSchema || Object.keys(priorOutputs).length > 0
+            ? [extraSystemPrompt, `Structured workflow input (JSON):\n${JSON.stringify(stepInput)}`].filter(Boolean).join('\n\n')
+            : extraSystemPrompt,
           chainStepNote(workflow.steps, i),
           startAttachments,
         );
@@ -4296,10 +4433,59 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode } = await this.runCheckStep(state, step, input.task, emit);
+      const { ok, output, exitCode, structuredOutput, contractError, contractFailureReason, control } = await this.runCheckStep(state, step, input.task, stepInput, emit);
       if (state.cancelled) break;
+      if (contractError) {
+        this.finishStep(runId, step.id, 'failed', output, emit);
+        runError = `check "${step.id}" output contract failed`;
+        terminalOutcome = { kind: 'contract_failure', reasonCode: contractFailureReason ?? 'output_invalid', stepId: step.id };
+        break;
+      }
       if (ok) {
+        if (control?.action === 'no_work') {
+          this.finishStep(runId, step.id, 'done', undefined, emit);
+          terminalOutcome = { kind: 'no_work', reasonCode: 'no_work', stepId: step.id };
+          for (const skipped of workflow.steps.slice(i + 1).filter((later) => !later.finalizer)) {
+            this.store.updateStep(runId, skipped.id, { status: 'skipped', skipReason: 'no_work', finishedAt: new Date().toISOString() });
+            emit({ type: 'step-end', stepId: skipped.id, status: 'skipped', reason: 'workflow reported no work' });
+          }
+          if (structuredOutput !== undefined) {
+            this.store.updateStep(runId, step.id, {
+              output: structuredOutput,
+              outputAttempt: iteration,
+              outputSourceDigest: workflowStepDigest(step),
+            });
+            this.store.flush({ throwOnError: true });
+          }
+          break;
+        }
+        if (control?.action === 'skip_step') {
+          this.store.updateStep(runId, step.id, { status: 'skipped', skipReason: control.reasonCode, finishedAt: new Date().toISOString() });
+          emit({ type: 'step-end', stepId: step.id, status: 'skipped', reason: control.reasonCode });
+          appendHandoffHeartbeat(this.dataDir, runId, `step "${step.id}" skipped — ${control.reasonCode}`);
+          i++;
+          continue;
+        }
+        if (control?.action === 'blocked') {
+          const error = `workflow blocked: ${control.reasonCode}`;
+          this.finishStep(runId, step.id, 'failed', error, emit);
+          runError = `step "${step.id}" blocked (${control.reasonCode})`;
+          terminalOutcome = { kind: 'blocked', reasonCode: control.reasonCode, stepId: step.id };
+          break;
+        }
         this.finishStep(runId, step.id, 'done', undefined, emit);
+        if (structuredOutput !== undefined) {
+          // Commit the successful step and its validated attempt-scoped output
+          // together before a later step can consume it. `touch()` is debounced;
+          // relying on it here allowed a downstream step to observe an artifact
+          // that a crash/restart could not yet recover.
+          this.store.updateStep(runId, step.id, {
+            output: structuredOutput,
+            outputAttempt: iteration,
+            outputSourceDigest: workflowStepDigest(step),
+          });
+          this.store.flush({ throwOnError: true });
+        }
         i++;
         continue;
       }
@@ -4307,15 +4493,22 @@ export class RunManager {
       // A failure the check itself says is not about the diff (`onFail.retryOn`)
       // ends the run here: looping back would spend a full agent attempt on a
       // cause that is not in the worktree, twice over.
-      if (step.onFail && !retryableExit(step.onFail.retryOn, exitCode)) {
+      if (step.onFail && !shouldRetryCheck(step, exitCode)) {
         const codes = (step.onFail.retryOn ?? []).join(', ');
+        const category = step.failureReasons?.[String(exitCode)];
+        const reason = category
+          ? `failure category ${category}`
+          : step.failureReasons
+            ? 'exit code is not classified by failureReasons'
+            : `onFail.retryOn (${codes})`;
         emit({
           type: 'note',
           stepId: step.id,
-          message: `check exited ${exitCode} — not retried (onFail.retryOn: ${codes})`,
+          message: `check exited ${exitCode} — not retried (${reason})`,
         });
         this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited ${exitCode}`, emit);
-        runError = `check "${step.id}" exited ${exitCode}, which onFail.retryOn (${codes}) does not retry`;
+        runError = `check "${step.id}" exited ${exitCode}; ${reason} does not permit an agent retry`;
+        terminalOutcome = checkFailureOutcome(step, exitCode, false);
         break;
       }
 
@@ -4341,6 +4534,7 @@ export class RunManager {
 
       this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited non-zero`, emit);
       runError = `check "${step.id}" failed${step.onFail ? ` after ${used + 1} attempts` : ''}`;
+      terminalOutcome = checkFailureOutcome(step, exitCode, true);
       break;
     }
 
@@ -4355,6 +4549,57 @@ export class RunManager {
     // below, ahead of the park, so they still land as `cancelled`/`failed`.
     const askPark = state.askPark;
     state.askPark = undefined;
+
+    const finalizers = workflow.steps.filter((step) => step.finalizer);
+    if (finalizers.length && this.active.get(runId) === state) {
+      const terminal = state.cancelled ? 'cancelled' : runError || idleFailed || askPark === 'waiting' ? 'failed' : 'success';
+      const originalError = runError
+        ?? (idleFailed ? this.inactivityFailureMessage() : undefined)
+        ?? (askPark === 'waiting'
+          ? 'the session closed before the question was answered — continue to answer it, but the remaining workflow steps will not resume automatically'
+          : undefined);
+      const originalOutcome = terminalOutcome
+        ?? (idleFailed ? { kind: 'timeout', reasonCode: 'idle_timeout', stepId: this.store.getRun(runId)?.currentStepId } as RunOutcome : undefined)
+        ?? (askPark === 'waiting' ? { kind: 'blocked', reasonCode: 'human_input_required', stepId: this.store.getRun(runId)?.currentStepId } as RunOutcome : undefined);
+      const startedAt = new Date().toISOString();
+      this.store.updateRun(runId, {
+        finalization: { status: 'running', terminal, ...(originalError ? { error: originalError } : {}),
+          ...(originalOutcome ? { outcome: originalOutcome } : {}), startedAt },
+      });
+      this.store.flush({ throwOnError: true });
+      state.finalizing = true;
+      if (state.cancellationTimer) {
+        clearTimeout(state.cancellationTimer);
+        state.cancellationTimer = undefined;
+      }
+      let cleanupError: string | undefined;
+      for (const step of finalizers) {
+        const current = this.store.getRun(runId)?.steps.find((item) => item.id === step.id);
+        if (current?.status === 'done') continue;
+        this.store.updateStep(runId, step.id, { status: 'running', startedAt: new Date().toISOString() });
+        this.store.flush({ throwOnError: true });
+        state.currentStepId = step.id;
+        const result = await this.runCheckStep(state, step, input.task, { task: input.task, outputs: {} }, (event) => {
+          this.store.appendEvent(runId, event);
+        });
+        this.finishStep(runId, step.id, result.ok ? 'done' : 'failed', result.ok ? undefined : result.output, (event) => {
+          this.store.appendEvent(runId, event);
+        });
+        if (!result.ok) cleanupError = [cleanupError, `${step.id}: ${result.output}`].filter(Boolean).join('; ');
+        this.store.flush({ throwOnError: true });
+      }
+      const finishedAtFinalizers = new Date().toISOString();
+      this.store.updateRun(runId, { finalization: { status: cleanupError ? 'failed' : 'complete', terminal,
+        ...(originalError ? { error: originalError } : {}), ...(originalOutcome ? { outcome: originalOutcome } : {}),
+        startedAt, finishedAt: finishedAtFinalizers, ...(cleanupError ? { cleanupError } : {}) } });
+      this.store.flush({ throwOnError: true });
+      state.finalizing = false;
+      if (cleanupError && terminal === 'success') {
+        runError = `workflow cleanup failed: ${cleanupError}`;
+        terminalOutcome = { kind: 'infrastructure_failure', reasonCode: 'cleanup_failed' };
+      }
+      if (terminal === 'failed' && !runError) runError = originalError ?? 'workflow stopped before completion';
+    }
 
     // Final autosave: the branch always ends holding the finished state.
     this.clearAutosaveTimer(state);
@@ -4375,12 +4620,13 @@ export class RunManager {
           this.store.updateStep(runId, s.id, { status: 'cancelled' });
         }
       }
-      this.store.updateRun(runId, { status: 'cancelled', finishedAt, currentStepId: undefined });
+    if (!state.finalizing) this.store.updateRun(runId, { status: 'cancelled', finishedAt, currentStepId: undefined });
       emit({ type: 'lifecycle', message: 'run cancelled' });
     } else if (runError) {
       this.store.updateRun(runId, {
         status: 'failed',
         error: runError,
+        outcome: terminalOutcome,
         finishedAt,
         currentStepId: undefined,
         // A crash or a wall-clock timeout while parked on a question does not answer it either.
@@ -4410,6 +4656,7 @@ export class RunManager {
       this.store.updateRun(runId, {
         status: 'failed',
         error,
+        outcome: { kind: 'blocked', reasonCode: 'human_input_required', stepId: run?.currentStepId },
         finishedAt,
         currentStepId: undefined,
         awaitingAnswerSince: finishedAt,
@@ -4423,12 +4670,18 @@ export class RunManager {
           this.store.updateStep(runId, s.id, { status: 'failed', error, finishedAt });
         }
       }
-      this.store.updateRun(runId, { status: 'failed', error, finishedAt, currentStepId: undefined });
+      this.store.updateRun(runId, {
+        status: 'failed',
+        error,
+        finishedAt,
+        currentStepId: undefined,
+        outcome: { kind: 'timeout', reasonCode: 'idle_timeout', stepId: run?.currentStepId },
+      });
       emit({ type: 'lifecycle', message: `run stopped — ${error}` });
     } else {
       // Includes `askPark === 'abandoned'`: Finish on a parked run ends it the
       // way Finish always does, with the later steps left honestly at `pending`.
-      await this.settleSuccess(runId);
+      await this.settleSuccess(runId, terminalOutcome?.kind === 'no_work' ? terminalOutcome : undefined);
     }
     this.clearIdleTimer(state);
     this.dropActive(runId, state);
@@ -5195,10 +5448,11 @@ export class RunManager {
    * OFF) AND the run is not autonomous. Autonomous runs — and runs with the gate
    * off — settle straight to `done`, leaving the diff in the worktree untouched.
    */
-  private async settleSuccess(runId: string): Promise<void> {
+  private async settleSuccess(runId: string, outcome?: RunOutcome): Promise<void> {
     const review = await this.reviewGateApplies(runId);
     this.store.updateRun(runId, {
       status: review ? 'review' : 'done',
+      outcome,
       finishedAt: new Date().toISOString(),
       currentStepId: undefined,
       // A run that got all the way to a settled turn is not in a limit loop, so the resume
@@ -5642,16 +5896,49 @@ export class RunManager {
     state: ActiveRun,
     step: WorkflowStepDef,
     task: string,
+    stepInput: { task: string; outputs: Record<string, unknown> },
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
-  ): Promise<{ ok: boolean; output: string; exitCode: number }> {
+  ): Promise<{
+    ok: boolean; output: string; exitCode: number; structuredOutput?: unknown; contractError?: boolean;
+    contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid';
+    control?: ReturnType<typeof workflowControlOf>['control'];
+  }> {
     // `{{task}}` in a command expands through an env var, never by pasting the
     // task text into the shell line, so task content cannot inject commands.
     const command = (step.command as string).replaceAll('{{task}}', '${CEZAR_TASK}');
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env: { ...process.env, CEZAR_TASK: task } });
-      state.interrupt = () => child.kill('SIGTERM');
+      const processGroup = step.finalizer === true && process.platform !== 'win32';
+      const child = spawn('bash', ['-lc', command], {
+        cwd: state.cwd,
+        env: { ...process.env, CEZAR_TASK: task, CEZAR_INPUT_JSON: JSON.stringify(stepInput) },
+        ...(processGroup ? { detached: true } : {}),
+      });
+      const signalCommand = (signal: NodeJS.Signals) => {
+        if (processGroup && child.pid) {
+          try {
+            process.kill(-child.pid, signal);
+            return;
+          } catch {
+            // The group may already have exited; fall through to the direct child.
+          }
+        }
+        child.kill(signal);
+      };
+      state.interrupt = () => signalCommand('SIGTERM');
+      let timedOut = false;
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      let forceKillTimer: NodeJS.Timeout | undefined;
+      if (step.finalizer && step.timeoutSeconds) {
+        timeoutTimer = setTimeout(() => {
+          timedOut = true;
+          signalCommand('SIGTERM');
+          forceKillTimer = setTimeout(() => signalCommand('SIGKILL'), 1_000);
+          forceKillTimer.unref?.();
+        }, step.timeoutSeconds * 1000);
+        timeoutTimer.unref?.();
+      }
 
       let output = '';
       const collect = (chunk: Buffer) => {
@@ -5663,20 +5950,53 @@ export class RunManager {
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
       child.on('error', (err) => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         state.interrupt = () => undefined;
         const message = `failed to spawn: ${err.message}`;
         emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: -1 });
         resolve({ ok: false, output: message, exitCode: -1 });
       });
       child.on('close', (code) => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         state.interrupt = () => undefined;
         const trimmed = output.trim() || '(no output)';
         // `code` is null when a signal killed the child; -1 then, the same value an
         // unspawnable command reports, and one no `retryOn` list can name — neither
         // is a verdict on the diff, so neither buys the agent another attempt.
-        const exitCode = code ?? -1;
+        const exitCode = timedOut ? 124 : code ?? -1;
         emit({ type: 'check-output', stepId: step.id, command, text: trimmed, exitCode });
-        resolve({ ok: code === 0, output: trimmed, exitCode });
+        if (code === 0 && step.outputSchema) {
+          let decoded: unknown;
+          try {
+            decoded = JSON.parse(trimmed);
+          } catch {
+            const message = 'check output contract failed: stdout was not valid JSON';
+            emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
+            resolve({ ok: false, output: message, exitCode: 1, contractError: true,
+              contractFailureReason: output.trim().length === 0 ? 'output_missing' : 'output_malformed' });
+            return;
+          }
+          const parsed = validateWorkflowContract(step.outputSchema, decoded);
+          if (!parsed.success) {
+            const message = `check output contract failed: ${parsed.message}`;
+            emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
+            resolve({ ok: false, output: message, exitCode: 1, contractError: true,
+              contractFailureReason: parsed.failure === 'schema_invalid' ? 'output_schema_invalid' : 'output_invalid' });
+            return;
+          }
+          const controlResult = workflowControlOf(parsed.data);
+          if (controlResult.error) {
+            const message = `check output contract failed: ${controlResult.error}`;
+            emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
+            resolve({ ok: false, output: message, exitCode: 1, contractError: true, contractFailureReason: 'output_invalid' });
+            return;
+          }
+          resolve({ ok: true, output: trimmed, exitCode, structuredOutput: parsed.data, control: controlResult.control });
+          return;
+        }
+        resolve({ ok: !timedOut && code === 0, output: timedOut ? `finalizer timed out after ${step.timeoutSeconds}s\n${trimmed}` : trimmed, exitCode });
       });
     });
   }

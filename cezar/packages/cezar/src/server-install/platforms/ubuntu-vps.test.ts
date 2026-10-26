@@ -19,6 +19,14 @@ import { StepAborted } from '../steps.ts';
 import { createAutoUi } from '../ui.ts';
 import type { InstallContext, InstallStep, Runner, Ui } from '../types.ts';
 
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    userInfo: () => ({ username: 'test-user', uid: 1000, gid: 1000, shell: '', homedir: 'C:/tmp' }),
+  };
+});
+
 const okRunner: Runner = { capture: async () => ({ code: 0, stdout: '', stderr: '' }), interactive: async () => 0 };
 
 function ctxWith(over: {

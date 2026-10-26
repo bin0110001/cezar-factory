@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +33,7 @@ describe('recover() contains backend session failures (#562)', () => {
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (savedBin === undefined) delete process.env.CEZ_CODEX_BIN;
     else process.env.CEZ_CODEX_BIN = savedBin;
     if (savedPassthrough === undefined) delete process.env.CEZ_ENV_PASSTHROUGH;
@@ -40,7 +41,7 @@ describe('recover() contains backend session failures (#562)', () => {
     if (savedReject === undefined) delete process.env.MOCK_CODEX_REJECT_RESUME;
     else process.env.MOCK_CODEX_REJECT_RESUME = savedReject;
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   });
 
   it('marks one recovery continuation failed and does not retry it on the next boot', async () => {

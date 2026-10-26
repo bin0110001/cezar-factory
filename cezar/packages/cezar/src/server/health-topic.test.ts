@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,10 +64,11 @@ describe('health topic + cache (live-server path)', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    currentApp = undefined;
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
     if (savedDryRun === undefined) delete process.env.CEZ_DRY_RUN;
     else process.env.CEZ_DRY_RUN = savedDryRun;
     if (savedRemote === undefined) delete process.env.CEZ_REMOTE;
@@ -143,8 +145,10 @@ describe('health topic + cache (live-server path)', () => {
     return ((await res.json()) as { defaultRunner?: string }).defaultRunner;
   };
 
-  it('registers exactly one `health` topic', () => {
-    const { registrations } = build();
+  it('registers exactly one `health` topic', async () => {
+    const { app, registrations } = build();
+    currentApp = app;
+    await settle();
     // `host` (spec 2026-09-20-host-resource-telemetry) is the app's SECOND topic, so this no
     // longer asserts the registry holds one key — it asserts what it always meant: health is
     // registered exactly ONCE (a duplicate is a programming error the hub throws on), and the

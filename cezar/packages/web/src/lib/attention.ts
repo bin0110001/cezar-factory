@@ -42,6 +42,26 @@ export interface Attention {
   label: string
 }
 
+/** Human explanation for the typed terminal outcome, separate from its stable machine code. */
+export function outcomeExplanation(run: Pick<RunRecord, 'outcome'>): string | undefined {
+  const outcome = run.outcome
+  if (!outcome) return undefined
+  const label = {
+    completed: 'Completed',
+    no_work: 'No work',
+    skipped: 'Skipped',
+    blocked: 'Blocked',
+    task_failure: 'Task failure',
+    contract_failure: 'Contract failure',
+    infrastructure_failure: 'Infrastructure failure',
+    timeout: 'Timed out',
+    cancelled: 'Cancelled',
+    unclassified_failure: 'Unclassified failure',
+  }[outcome.kind]
+  const reason = outcome.reasonCode.replaceAll('_', ' ')
+  return `${label} — ${reason}${outcome.stepId ? ` at ${outcome.stepId}` : ''}`
+}
+
 /**
  * Whether a run is blocked on a permission prompt.
  *

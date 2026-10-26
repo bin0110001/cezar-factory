@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -46,9 +47,22 @@ server.listen(0,'127.0.0.1',()=>console.log('http://127.0.0.1:'+server.address()
     expect(child.costUsd).toBe(0);
     expect(remainingBudgetUsd(parent, [child])).toBe(3);
   } finally {
+    const active = manager as unknown as {
+      active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }>;
+    };
+    await Promise.all([...active.active.values()].map(async ({ session }) => {
+      if (!session) return;
+      let settled = false;
+      const result = session.result.then(() => { settled = true; }, () => { settled = true; });
+      await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+      if (!settled) {
+        session.hardStop?.();
+        await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+      }
+    }));
     manager.dispose();
     store.flush();
     vi.unstubAllEnvs();
-    rmSync(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   }
 }, 15000);

@@ -222,13 +222,19 @@ export async function loadAgentAccounts(): Promise<AgentAccountStore> {
  * read→rename window, which is the same bargain `config.json` makes. Throws on write failure (a
  * read-only home); degrading is the caller's policy.
  */
-export async function mergeWriteAgentAccounts(
+let agentAccountsWriteQueue: Promise<void> = Promise.resolve();
+
+export function mergeWriteAgentAccounts(
   mutator: (store: AgentAccountStore) => AgentAccountStore | void,
 ): Promise<AgentAccountStore> {
-  const current = await loadAgentAccounts();
-  const next = mutator(current) ?? current;
-  atomicWriteJsonSync(agentAccountsPath(), next);
-  return next;
+  const write = agentAccountsWriteQueue.then(async () => {
+    const current = await loadAgentAccounts();
+    const next = mutator(current) ?? current;
+    atomicWriteJsonSync(agentAccountsPath(), next);
+    return next;
+  });
+  agentAccountsWriteQueue = write.then(() => undefined, () => undefined);
+  return write;
 }
 
 /**

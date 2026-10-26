@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -43,15 +44,29 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     manager = new RunManager(store, repoRoot);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const active = manager as unknown as {
+      active: Map<string, { session?: { result: Promise<unknown>; hardStop?(): void } }>;
+    };
+    for (const [id, entry] of active.active) {
+      manager.cancel(id);
+      if (!entry.session) continue;
+      let settled = false;
+      const result = entry.session.result.then(() => { settled = true; }, () => { settled = true; });
+      await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+      if (!settled) {
+        entry.session.hardStop?.();
+        await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+      }
+    }
     manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
-  });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 30_000);
 
   const workflowFor = (retryOn: number[]): WorkflowDef => ({
     name: 'implement-and-check',

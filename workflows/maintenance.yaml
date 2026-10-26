@@ -5,13 +5,47 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+  # Independent deterministic housekeeping runs before the bounded classification
+  # agent so an agent failure cannot suppress either maintenance task.
+  - id: refresh-stale-workable
+    name: Refresh at most two stale workable issues
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
+  - id: repository-maintenance
+    name: Run deterministic repository maintenance
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json
   - id: recover-audit-reservations
     name: Release expired backlog-label audit reservations
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -OutputPath .factory/audit-reservation-recovery.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -ApiUrl "$CEZAR_API_URL" -ProjectId "$CEZAR_PROJECT_ID" -OutputPath .factory/audit-reservation-recovery.json
   - id: backlog-label-audit-collect
     name: Collect bounded backlog-label audit input
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json
+  - id: backlog-label-audit-validate
+    name: Validate bounded backlog-label audit handoff
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-backlog-label-audit-input.ps1 -Path .factory/backlog-label-audit-input.json -MaxCandidates 3
+  - id: backlog-label-audit-prepare
+    name: Apply deterministic classifications and reserve candidates
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -Prepare -WorkflowContract -OutputPath .factory/backlog-label-audit-preparation.json
+    outputSchema:
+      type: object
+      required: [status, candidateCount, resolvedCount]
+      properties:
+        status: { type: string, const: prepared }
+        candidateCount: { type: integer, minimum: 0, maximum: 3 }
+        resolvedCount: { type: integer, minimum: 0 }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      allOf:
+        - if: { properties: { candidateCount: { const: 0 } }, required: [candidateCount] }
+          then: { required: [$cezar] }
+        - if: { properties: { candidateCount: { minimum: 1 } }, required: [candidateCount] }
+          then: { not: { required: [$cezar] } }
+      additionalProperties: false
   - id: backlog-label-audit
     name: Audit at most three legacy issues
     skill: factory-backlog-label-audit
@@ -19,15 +53,17 @@ steps:
       {{task}}
 
       Apply only the bounded legacy-label policy in the Factory Backlog Label Audit skill.
-      The workflow already ran the only entry point, `audit-backlog-labels.ps1`, exactly once.
+      The workflow already ran the read-only collector, `audit-backlog-labels.ps1`, exactly once,
+      validated the bounded input, and applied deterministic legacy-label classifications and
+      audit reservations through the preparation consumer.
       Do not run it or any other Factory script, retrieve issue bodies, call `gh issue list`, or
       manually select issues. Read only the worktree-local `.factory/backlog-label-audit-input.json`
-      artifact. Copy every resolved entry unchanged and evaluate only the remaining candidates, which
-      are capped at three. Record issue numbers considered and labels changed in
-      `.factory/backlog-label-audit.json`.
-  - id: refresh-stale-workable
-    name: Refresh at most two stale workable issues
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
-  - id: repository-maintenance
-    name: Run deterministic repository maintenance
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json
+      artifact. The resolved entries have already been applied and verified; evaluate only the
+      remaining candidates, which are capped at three. Write a candidate-only proposal to
+      `.factory/backlog-label-audit.json`; each changed
+      or skipped entry must include the proposed allowlisted closing labels and a concise rationale.
+      Do not read or mutate GitHub state. The following deterministic workflow step validates the
+      proposal and applies effects after checking the live issue state and audit reservation.
+  - id: backlog-label-audit-apply
+    name: Validate and apply backlog-label proposals
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json

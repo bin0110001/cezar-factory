@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -48,6 +48,20 @@ describe('RunStore — directional usage persistence', () => {
 
   afterEach(() => {
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('reclaims an aged run-index lock when its recorded owner is gone', () => {
+    const lockPath = join(dataDir, 'runs.json.lock');
+    writeFileSync(lockPath, '2147483647\n0\n', 'utf8');
+    const stale = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, stale, stale);
+
+    const store = RunStore.open(dataDir);
+    const run = store.createRun({ title: 'lock recovery', workflow: 'quick-task', task: 'lock recovery', steps: [] });
+    store.flush({ throwOnError: true });
+
+    expect(RunStore.open(dataDir).getRun(run.id)?.title).toBe('lock recovery');
+    expect(() => readFileSync(lockPath)).toThrow();
   });
 
   it('round-trips step checkpoints and complete run aggregates through runs.json', () => {
@@ -176,6 +190,7 @@ describe('RunStore — titleSummary + diffStat (#389)', () => {
     expect(run?.title).toBe('fix the login bug');
     expect(run?.titleSummary).toBeUndefined();
     expect(run?.diffStat).toBeUndefined();
+    expect(run?.outcome).toEqual({ kind: 'completed', reasonCode: 'legacy_completed' });
     expect(run?.generateFollowups).toBeUndefined();
     // Retention field (#483) is additive: a record without it parses and reads undefined.
     expect(run?.worktreeReclaimedAt).toBeUndefined();
@@ -221,6 +236,30 @@ describe('RunStore — titleSummary + diffStat (#389)', () => {
     expect(store.getRun(run.id)).toMatchObject({ status: 'done' });
     expect(store.getRun(run.id)?.activity).toBeUndefined();
     expect(store.getRun(run.id)?.monitoringWakeAt).toBeUndefined();
+  });
+
+  it('writes typed outcomes for terminal updates, preserves explicit reasons, and clears them on resume', () => {
+    const store = RunStore.open(dataDir);
+    const run = store.createRun({ title: 'typed outcome', task: 'task', workflow: 'quick-task', steps: [] });
+    store.updateRun(run.id, { status: 'done' });
+    expect(store.getRun(run.id)?.outcome).toEqual({ kind: 'completed', reasonCode: 'workflow_completed' });
+
+    store.updateRun(run.id, {
+      status: 'failed',
+      outcome: { kind: 'blocked', reasonCode: 'policy_blocked', stepId: 'preflight' },
+    });
+    store.flush();
+    const reopened = RunStore.open(dataDir, { keepLive: true });
+    expect(reopened.getRun(run.id)?.outcome).toEqual({ kind: 'blocked', reasonCode: 'policy_blocked', stepId: 'preflight' });
+    reopened.updateRun(run.id, { status: 'running' });
+    expect(reopened.getRun(run.id)?.outcome).toBeUndefined();
+  });
+
+  it('drops an unknown additive outcome without discarding its legacy run', () => {
+    writeFileSync(join(dataDir, 'runs.json'), JSON.stringify([{ ...LEGACY_RUN, outcome: { kind: 'surprise', reasonCode: 'x' } }]), 'utf8');
+    const loaded = RunStore.open(dataDir).getRun('legacy-1');
+    expect(loaded?.id).toBe('legacy-1');
+    expect(loaded?.outcome).toEqual({ kind: 'completed', reasonCode: 'legacy_completed' });
   });
 
   it('clears process-local wake-cap display state when records reopen', () => {
@@ -547,6 +586,29 @@ describe('RunStore — secret redaction before persistence (#427)', () => {
     expect(RunStore.open(dataDir).getRun(run.id)?.titleSummary).toBe('Set GITHUB_TOKEN=[REDACTED] in CI');
   });
 
+  it('scrubs original and cleanup errors nested in finalization receipts', () => {
+    process.env.GITHUB_TOKEN = 'gho_thisisarealsecrettoken123456';
+    delete process.env.CEZ_REDACT_SECRETS;
+    const store = RunStore.open(dataDir);
+    const run = store.createRun({ title: 't', workflow: 'w', task: 'task', steps: [] });
+    store.updateRun(run.id, {
+      finalization: {
+        status: 'failed',
+        terminal: 'failed',
+        error: 'original gho_thisisarealsecrettoken123456',
+        cleanupError: 'cleanup gho_thisisarealsecrettoken123456',
+        startedAt: new Date().toISOString(),
+      },
+    });
+    store.flush();
+    expect(store.getRun(run.id)?.finalization).toMatchObject({
+      error: 'original [REDACTED]',
+      cleanupError: 'cleanup [REDACTED]',
+    });
+    const raw = readFileSync(join(dataDir, 'runs.json'), 'utf8');
+    expect(raw).not.toContain('gho_thisisarealsecrettoken123456');
+  });
+
   it('scrubs a token shape from a user-supplied title too', () => {
     delete process.env.CEZ_REDACT_SECRETS;
     const store = RunStore.open(dataDir);
@@ -600,6 +662,34 @@ describe('RunStore — secret redaction before persistence (#427)', () => {
     expect(raw).toContain('[REDACTED]');
     // Survives a reopen — the scrub happened on the way in, not on read.
     expect(RunStore.open(dataDir).getRun(run.id)?.steps[0]?.error).toBe('auth failed for [REDACTED]');
+  });
+
+  it('durably persists structured output with attempt digest and scrubs embedded host secrets', () => {
+    process.env.GITHUB_TOKEN = 'gho_thisisarealsecrettoken123456';
+    delete process.env.CEZ_REDACT_SECRETS;
+    const store = RunStore.open(dataDir);
+    const run = store.createRun({
+      title: 't', workflow: 'w', task: 'task',
+      steps: [{ id: 'collect', name: 'Collect', kind: 'check' }],
+    });
+    store.updateStep(run.id, 'collect', {
+      iterations: 2, status: 'done', outputAttempt: 2,
+      outputSourceDigest: 'a'.repeat(64),
+      output: { token: 'gho_thisisarealsecrettoken123456', count: 4 },
+    });
+    store.flush({ throwOnError: true });
+    expect(store.getRun(run.id)?.steps[0]).toMatchObject({
+      iterations: 2, status: 'done', outputAttempt: 2,
+      outputSourceDigest: 'a'.repeat(64),
+      output: { token: '[REDACTED]', count: 4 },
+    });
+    expect(store.getRun(run.id)?.steps[0]?.outputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(readFileSync(join(dataDir, 'runs.json'), 'utf8')).not.toContain('gho_thisisarealsecrettoken123456');
+    expect(RunStore.open(dataDir).getRun(run.id)?.steps[0]).toMatchObject({
+      status: 'done', iterations: 2, outputAttempt: 2,
+      outputSourceDigest: 'a'.repeat(64),
+      output: { token: '[REDACTED]', count: 4 },
+    });
   });
 
   it('leaves non-error step fields untouched (no over-redaction)', () => {

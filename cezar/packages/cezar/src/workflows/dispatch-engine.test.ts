@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PENDING_ASK_MAX_QUESTIONS, type DispatchInput, type RunDispatch } from '@open-mercato/cezar-contract';
+import type { AgentSession } from '../core/agent-runner.ts';
 import { runRecordSchema, RunStore, type RunRecord } from '../runs/store.ts';
 import { WorkspaceSemaphore, type WorkspaceResourceLimits } from '../workspace/semaphore.ts';
 import { RunManager } from './run.ts';
@@ -13,6 +15,18 @@ import type { WorkflowDef } from './types.ts';
 
 const run = promisify(execFile);
 const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
+
+async function waitForSessions(sessions: AgentSession[]): Promise<void> {
+  await Promise.all(sessions.map(async (session) => {
+    let settled = false;
+    const result = session.result.then(() => { settled = true; }, () => { settled = true; });
+    await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    if (settled) return;
+    session.hardStop?.();
+    await Promise.race([result, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+    if (!settled) throw new Error('timed out waiting for a dispatched agent session to exit');
+  }));
+}
 
 /**
  * Task dispatch's ENGINE (spec `.ai/specs/2026-09-10-dispatch.md`), driven end to end through the
@@ -54,24 +68,27 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
   });
 
   afterEach(async () => {
+    const active = manager as unknown as { active: Map<string, { session?: AgentSession }> };
+    const sessions = [...active.active.values()].flatMap(({ session }) => session ? [session] : []);
     for (const id of started) manager.cancel(id);
     // Cancellation interrupts the agent process, but the terminal lifecycle and its final
     // writes happen asynchronously. Do not remove the repository while a dispatched child is
     // still finishing inside it — under a full-suite load that races the recursive delete and
     // surfaces as ENOTEMPTY (#986).
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + 20_000;
     while (store.listRuns().some(({ id }) => manager.isActive(id))) {
       if (Date.now() >= deadline) throw new Error('timed out waiting for dispatch runs to stop');
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
+    await waitForSessions(sessions);
     manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  });
+    await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }, 30_000);
 
   /** A manager with its own semaphore, so a test can decide how much of the tree may run. */
   const boot = (limits: Partial<WorkspaceResourceLimits> = {}): RunManager =>

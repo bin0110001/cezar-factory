@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { cpus } from 'node:os';
-import { join } from 'node:path';
+import { posix as pathPosix } from 'node:path';
 
 /**
  * The process's own cgroup limits and usage (spec
@@ -226,7 +226,7 @@ function defaultReadCgroupFile(path: string): string | undefined {
 function joinCgroupPath(mountPoint: string, cgroupPath: string): string {
   const root = mountPoint.replace(/\/+$/, '') || '/';
   if (cgroupPath === '/' || cgroupPath === '') return root;
-  return join(root, cgroupPath);
+  return pathPosix.join(root, cgroupPath);
 }
 
 /**

@@ -7,12 +7,54 @@ steps:
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status: { type: string, enum: [open, already-resolved] }
+        issue: { type: integer }
+        reason: { type: string }
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action: { type: string, const: no_work }
+            reasonCode: { type: string, const: no_work }
+          additionalProperties: false
+      allOf:
+        - if: { properties: { status: { const: already-resolved } }, required: [status] }
+          then: { required: [$cezar] }
+      additionalProperties: false
   - id: recall
     name: Create bounded memory-recall artifact
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective "{{task}}" -TaskClass planning
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
   - id: plan
     name: Run factory-plan skill
     skill: factory-plan
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     prompt: |
       Plan this GitHub issue: {{task}}
 
@@ -26,12 +68,36 @@ steps:
   - id: validate
     name: Validate plan result and Definition of Ready
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     onFail:
       retry: plan
       max: 1
   - id: route
     name: Post plan to the issue and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-plan-or-default.ps1 -Path .factory/plan-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties:
+            resolved:
+              type: object
+              required: [status]
+              properties: { status: { const: open } }
     onFail:
       retry: validate
       max: 1

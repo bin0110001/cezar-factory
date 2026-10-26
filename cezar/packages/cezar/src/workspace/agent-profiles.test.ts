@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PROVIDER_IDS } from '../core/provider-auth.ts';
@@ -103,7 +103,7 @@ describe('agent profile resolution', () => {
       write({ accounts: [klaudiuszProfile] });
       const [, stored] = profilesForProvider(await loadAgentAccounts(), 'claude', env);
       expect(stored?.configDir).toBe('~/.claude-klaudiusz');
-      expect(stored?.path.endsWith('/.claude-klaudiusz')).toBe(true);
+      expect(stored?.path).toBe(join(homedir(), '.claude-klaudiusz'));
       expect(stored?.path.startsWith('~')).toBe(false);
     });
   });

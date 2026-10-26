@@ -1,8 +1,10 @@
 # Project Integration Model
 
-This document describes the optional local project integration layer. The
-default Factory release path synchronizes automations directly to Cezar and
-does not require this checkout layout.
+This document describes the optional local project integration layer. Cezar
+uses the shared, version-pinned Factory runtime mount for workflow scripts;
+configured automation definitions are synchronized through the Cezar API.
+This checkout layout is needed only when a project requires a full local
+`.ai/factory` installation.
 
 ## Project Structure
 
