@@ -22,9 +22,21 @@ dev work -> tests/run-tests.ps1 passes -> promote-stable.ps1 -> origin/stable
 
 ## Releasing
 
-1. Merge the change (reviewed PR to `dev`, as before).
-2. From the merged commit: `pwsh scripts/release/promote-stable.ps1`.
-3. Wait up to 5 minutes, or on the host run `scripts/deploy/factory-autodeploy.sh --force`.
+1. Validate the Factory change and automation catalog. Open an implementation
+   PR targeting `dev`; request auto-merge only after validation and independent
+   review pass. High-risk work must also pass its human plan-approval gate.
+2. After merge, run `pwsh scripts/release/promote-stable.ps1` from the tested
+   merged checkout. It runs the full Factory suite before fast-forwarding
+   `origin/stable`; never promote an untested or unmerged commit.
+3. The Bazzite timer advances the shared checkout and reconciles automations
+   from the host-local target registry. For immediate deployment, use the
+   supported Bazzite deployment flow and verify host/container parity. Stop on
+   a dirty or diverged checkout; do not overwrite it.
+4. Remote-only legacy targets receive automation synchronization from
+   `config/factory-projects.json`. They do not receive application or
+   infrastructure files. Install the full `.ai/factory` layer only when the
+   registry has an absolute, verified local `projectPath` and the dry run
+   succeeds.
 
 ## One-time host setup
 

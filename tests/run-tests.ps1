@@ -80,6 +80,11 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
+ $integrationGuide = Get-Content -Raw (Join-Path $factory 'docs/project-integration.md')
+ $sharedFactoryGuide = Get-Content -Raw (Join-Path $factory 'docs/shared-factory.md')
+Assert 'project integration guide documents current validation receipts and stages' ($integrationGuide -match 'versioned receipt' -and $integrationGuide -match '`targeted`, `full`, and `verify`' -and $integrationGuide -match 'no_matching_tests' -and $integrationGuide -notmatch 'Projects provide three standard validation scripts')
+Assert 'project integration guide documents shared checkout instead of per-project version pins' ($integrationGuide -match 'shared Factory checkout' -and $integrationGuide -notmatch 'Pin to Specific Versions')
+Assert 'shared Factory release docs require independent review and tested post-merge promotion' ($sharedFactoryGuide -match 'independent' -and $sharedFactoryGuide -match 'After merge' -and $sharedFactoryGuide -match 'full Factory suite')
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json

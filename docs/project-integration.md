@@ -179,61 +179,29 @@ Workflow `onFail.max` retry counts live in the workflow files; change them with 
 
 ## Validation Interface
 
-Projects provide three standard validation scripts:
+The Factory workflow invokes the project-owned `targeted`, `full`, and
+`verify` commands declared in `validation:`. Each command may return a
+structured JSON result or use the legacy exit-code contract. The workflow
+records a versioned receipt with stage, status, reason code, command metadata,
+project head, bounded output, and evidence references under
+`.factory/artifacts/validation/<stage>/<attempt>/`.
 
-### test-changed.ps1
+`targeted` is for applicable focused checks; its `appliesTo` patterns decide
+whether it runs for a change. `full` and `verify` are required gates and cannot
+be skipped. A project may mark `targeted` as `skip` only when focused checks
+are unsupported. Missing configuration, commands, or prerequisites produce an
+unavailable receipt and fail closed. Zero matching tests are reported as
+`no_matching_tests`, never as a pass. The workflow bounds targeted execution
+to 20 minutes and full/verify execution to two hours; the configured
+`timeoutSeconds` may impose a shorter project-specific limit. The template's
+`quick` entry is not currently invoked and is not a release gate.
 
-Tests only files changed in the current workitem:
-- Fast execution
-- Focused on relevant tests
-- Produce compact output
-- Store verbose logs separately
-- Return reliable exit code
-
-### `test-full`
-
-Runs the complete test suite:
-- Comprehensive validation
-- Longer execution time
-- Store full artifacts separately
-- Produce summarized output
-- Return reliable exit code
-
-### `verify`
-
-Performs factory-specific validation:
-- Checks factory configuration
-- Validates installed components
-- Ensures no runtime files are unintentionally tracked
-- Validation scripts exist
-- Project overrides reference valid base components
-- Automation definitions are valid
-- Required skills exist
-- Required workflows exist
-- Factory config is valid
-- Pinned version exists
-- Installed managed files match source version
-
-### Output Format
-
-All validation scripts produce structured JSON output for LLM-friendly consumption:
-
-```json
-{
-  "status": "passed|failed|warning",
-  "stage": "test|verify",
-  "passed": 42,
-  "failed": 0,
-  "warnings": 1,
-  "total": 43,
-  "errors": [...],
-  "failures": [...],
-  "checks": [...],
-  "artifact": "artifacts/verify-results.json"
-}
-```
-
-Results are also written to `artifacts/` subdirectory as timestamped JSON files, with verbose logs stored separately.
+The receipt distinguishes command failure from infrastructure failure and
+records diagnostic comparison against the pinned baseline when one is
+configured. A known baseline diagnostic remains visible and does not turn a
+failed full or verify receipt into a pass. See
+[`validation-baseline-policy.md`](validation-baseline-policy.md) for merge-gate
+behavior and baseline provenance requirements.
 
 ## Runtime Content
 
@@ -284,7 +252,7 @@ local `projectPath` and the release dry run succeeds.
 
 ## Factory-Provided Components
 
-The factory provides:
+The shared Factory checkout provides:
 
 - Workflows: Plan, implement, review, fix-review, investigate
 - Skills: Factory-plan, factory-implement, factory-review, factory-fix, factory-investigate, factory-learn
@@ -292,7 +260,7 @@ The factory provides:
 - Policies: Labels, risk, retry, definition-of-ready, definition-of-done, escalation
 - Schemas: Planning result, implementation result, review result, investigation result
 - Templates: Factory configuration, agentic config, gitignore fragment
-- Scripts: Install, update, verify, diff
+- Scripts: workflow-owned validation, routing, release, and runtime operations
 
 ## Project-Provided Components
 
@@ -305,10 +273,12 @@ Projects must provide:
 
 ## Best Practices
 
-1. Never Edit Synchronized Files: All customizations go in project directories
-2. Pin to Specific Versions: Avoid tracking factory main branch directly
-3. Test Updates: Verify updates in a branch before merging to main
-4. Document Overrides: Clearly document why project-specific changes are needed
-5. Stay Current: Regularly update to receive bug fixes and improvements
-6. Contribute Back: Share useful enhancements with the factory community
+1. Keep project-owned validation commands and domain guidance in the project.
+2. Put shared Factory behavior in the Factory checkout; use a project override
+   only when a documented project-specific difference is required.
+3. Validate Factory changes and review them through a PR targeting `dev`.
+4. Promote only the tested merged commit to `stable`; let the supported
+   shared-mount deployment flow reconcile configured automations.
+5. Use a full local `.ai/factory` installation only for a configured target
+   with a verified local `projectPath` and a successful release dry run.
 
