@@ -943,6 +943,15 @@ try {
     Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: conflicting legacy type labels receive no deterministic type or risk hint' ($auditCandidates.candidates[0].typeHint -eq $null -and $auditCandidates.candidates[0].riskHint -eq $null -and @($auditCandidates.candidates[0].ruleConflicts) -contains 'legacy labels map to multiple issue types')
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
+    $savedStateConflictAuditState = Get-Gh
+    $stateConflictAuditState = Get-Gh
+    $stateConflictAuditState.issues = @(@{ number = 8; title = 'Conflicting lifecycle markers'; body = 'state conflict'; updatedAt = '2026-10-25T12:34:56Z'; labels = @(@{ name = 'blocked' }, @{ name = 'needs-decomposition' }) })
+    $stateConflictAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $stateConflictAuditPath = Join-Path $tmp 'state-conflict-backlog-label-audit-input.json'
+    $stateConflictAuditRun = Run 'audit-backlog-labels.ps1' @{ GhCommand = $gh; OutputPath = $stateConflictAuditPath }
+    $stateConflictAuditDoc = Get-Content -Raw $stateConflictAuditPath | ConvertFrom-Json
+    Assert 'backlog audit input: conflicting lifecycle markers stay ambiguous' ($stateConflictAuditRun.Code -eq 0 -and @($stateConflictAuditDoc.resolved).Count -eq 0 -and @($stateConflictAuditDoc.candidates).Count -eq 1 -and @($stateConflictAuditDoc.candidates[0].ruleConflicts) -contains 'legacy labels imply conflicting lifecycle states')
+    $savedStateConflictAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $auditGuardValid = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
     Assert 'backlog audit handoff guard accepts only the bounded same-run candidate artifact' ($auditGuardValid.Code -eq 0 -and $auditGuardValid.Out -match '"candidates":1')
     $invalidAuditInput = Get-Content -Raw $auditInput | ConvertFrom-Json
