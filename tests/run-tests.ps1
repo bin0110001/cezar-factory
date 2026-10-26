@@ -929,6 +929,14 @@ try {
     $resolvedIssues = @($auditCandidates.resolved | ForEach-Object { if ($_ -and $_.PSObject.Properties.Name -contains 'issue') { $_.issue } })
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
     Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
+    Assert 'backlog audit input: deterministic hit and ambiguity rates use the eligible rule sample' ($auditCandidates.classificationMetrics.eligibleIssues -eq 4 -and $auditCandidates.classificationMetrics.deterministicRuleHits -eq 3 -and $auditCandidates.classificationMetrics.deterministicRuleHitRate -eq 0.75 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousRate -eq 0.25)
+    $savedAuditState = Get-Gh
+    $emptyAuditState = Get-Gh; $emptyAuditState.issues = @(); $emptyAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $emptyAuditPath = Join-Path $tmp 'empty-backlog-label-audit-input.json'
+    $emptyAuditRun = Run 'audit-backlog-labels.ps1' @{ GhCommand = $gh; OutputPath = $emptyAuditPath }
+    $emptyAuditMetrics = Get-Content -Raw $emptyAuditPath | ConvertFrom-Json
+    Assert 'backlog audit input: rates remain unknown when no issues are eligible' ($emptyAuditRun.Code -eq 0 -and $null -eq $emptyAuditMetrics.classificationMetrics.deterministicRuleHitRate -and $null -eq $emptyAuditMetrics.classificationMetrics.ambiguousRate)
+    $savedAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
     Assert 'backlog audit collector is read-only' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')

@@ -129,6 +129,9 @@ foreach ($candidate in $unmarked) {
 }
 
 $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+$eligibleIssueCount = @($unmarked).Count
+$deterministicRuleHitCount = @($resolved).Count
+$ambiguousIssueCount = [Math]::Max(0, $eligibleIssueCount - $deterministicRuleHitCount)
 $result = [ordered]@{
     generatedAt = [DateTimeOffset]::UtcNow.ToString('o')
     workingDirectory = (Get-Location).Path
@@ -138,9 +141,11 @@ $result = [ordered]@{
     resolved = $resolved
     staged = $staged
     classificationMetrics = [ordered]@{
-        eligibleIssues = @($unmarked).Count
-        deterministicRuleHits = @($resolved).Count
-        ambiguousIssues = [Math]::Max(0, @($unmarked).Count - @($resolved).Count)
+        eligibleIssues = $eligibleIssueCount
+        deterministicRuleHits = $deterministicRuleHitCount
+        deterministicRuleHitRate = if ($eligibleIssueCount) { [Math]::Round($deterministicRuleHitCount / $eligibleIssueCount, 4) } else { $null }
+        ambiguousIssues = $ambiguousIssueCount
+        ambiguousRate = if ($eligibleIssueCount) { [Math]::Round($ambiguousIssueCount / $eligibleIssueCount, 4) } else { $null }
         ambiguousIssuesSelectedForReview = @($remainingCandidates).Count
         ruleHits = $ruleHits
     }
