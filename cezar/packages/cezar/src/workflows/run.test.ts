@@ -929,7 +929,10 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(finished?.status).toBe('failed');
     expect(finished?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'check_timeout', stepId: 'verify' });
     expect(finished?.steps.map((step) => step.status)).toEqual(['done', 'failed']);
-    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
+    // The suite shares one mock-notes file across runs. Count only this task's
+    // opening prompt so earlier successful runs cannot make this assertion flaky.
+    const notes = readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n');
+    expect(notes.filter((note) => note.includes('mock:done check timeout'))).toHaveLength(1);
   }, 30_000);
 
   it('enforces an opt-in active run deadline as distinct from the check timeout', async () => {
