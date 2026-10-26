@@ -1,5 +1,36 @@
 {
-  "considered": [],
-  "changed": [],
-  "skipped": []
+  "considered": [
+    47,
+    49,
+    50
+  ],
+  "changed": [
+    {
+      "issue": 49,
+      "added": [
+        "factory:new",
+        "type:refactor",
+        "risk:medium",
+        "complexity:large"
+      ]
+    },
+    {
+      "issue": 50,
+      "added": [
+        "factory:new",
+        "type:feature",
+        "risk:medium",
+        "complexity:large"
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "issue": 47,
+      "reason": "tracking parent",
+      "added": [
+        "factory:tracking"
+      ]
+    }
+  ]
 }
