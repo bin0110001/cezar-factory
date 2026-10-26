@@ -182,6 +182,15 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+$missingWorkflowScripts = @()
+foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter '*.yaml') {
+    $workflowText = Get-Content -Raw $wf.FullName
+    foreach ($match in [regex]::Matches($workflowText, '\$FACTORY_RUNTIME_ROOT/scripts/(?<path>[^\s"'']+?\.ps1)')) {
+        $relativePath = Join-Path $factory "scripts/$($match.Groups['path'].Value)"
+        if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) { $missingWorkflowScripts += "$($wf.Name): scripts/$($match.Groups['path'].Value)" }
+    }
+}
+Assert "every workflow command script exists in the Factory checkout ($($missingWorkflowScripts -join ' | '))" ($missingWorkflowScripts.Count -eq 0)
 $factoryReleaseSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-release/SKILL.md')
 $finishReleaseSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-finish-release/SKILL.md')
 $skillOps = Get-Content -Raw (Join-Path $factory 'skills/factory-cezar-skill-operations/SKILL.md')
