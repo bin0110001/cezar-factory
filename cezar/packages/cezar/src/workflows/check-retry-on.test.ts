@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,6 +35,7 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
   beforeEach(async () => {
     repoRoot = mkdtempSync(join(tmpdir(), 'cez-retry-on-'));
     savedEnv.CEZ_DRY_RUN = process.env.CEZ_DRY_RUN;
+    savedEnv.CEZ_MOCK_STDIN_FILE = process.env.CEZ_MOCK_STDIN_FILE;
     process.env.CEZ_DRY_RUN = '1';
     await run('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
     writeFileSync(join(repoRoot, 'a.txt'), 'one\n');
@@ -148,7 +149,15 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
   }, 30_000);
 
   it('retries a classified test regression within budget and records the exhausted task outcome', async () => {
-    const record = manager.startRun(workflowFor([1], 1, 'test_regression'), {
+    const workflow = workflowFor([1], 1, 'test_regression');
+    workflow.maxRepairAttempts = 2;
+    workflow.maxRunDurationSeconds = 300;
+    const changedFile = join(repoRoot, 'src', 'login.ts');
+    mkdirSync(join(repoRoot, 'src'), { recursive: true });
+    writeFileSync(changedFile, 'pending repair\n');
+    const stdinFile = join(repoRoot, 'mock-stdin.jsonl');
+    process.env.CEZ_MOCK_STDIN_FILE = stdinFile;
+    const record = manager.startRun(workflow, {
       task: 'mock:done fix the login bug',
       worktree: false,
     });
@@ -170,6 +179,15 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
       'check failed — retrying from "implement" (attempt 1/2)',
       'check failed — retrying from "implement" (attempt 2/2)',
     ]);
+    const prompts = readFileSync(stdinFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line).userText as string);
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain('Repair attempt 1 of 2 for check "verify" (exit 1).');
+    expect(prompts[1]).toContain('Shared repair budget: 1 of 2 attempts used; 1 remain.');
+    expect(prompts[1]).toMatch(/Active workflow time remaining: \d+s\./);
+    expect(prompts[1]).toContain('login.ts');
+    expect(prompts[1]).toContain('CONFIG_NOT_FOUND');
+    expect(prompts[2]).toContain('Repair attempt 2 of 2 for check "verify" (exit 1).');
+    expect(prompts[2]).toContain('Shared repair budget: 2 of 2 attempts used; 0 remain.');
   }, 40_000);
 
   it('shares and persists one repair budget across multiple check retry loops', async () => {

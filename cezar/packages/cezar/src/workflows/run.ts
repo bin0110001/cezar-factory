@@ -52,7 +52,7 @@ import { materializeSkillDir } from '../skills-remote.ts';
 import { seedAgentConfigLocalLayer } from '../agent-config/seed.ts';
 import { readAgentModelProvider } from '../agent-config/models.ts';
 import { loadConfig, resolveWorktreeRetention } from '../config.ts';
-import { autosaveCommit, chooseForkBase, createWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
+import { autosaveCommit, chooseForkBase, createWorktree, worktreeDiff, worktreeDiffStat, worktreeShortstat } from '../git-worktree.ts';
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
 import { loadWorkflows } from './load.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
@@ -4676,7 +4676,25 @@ export class RunManager {
         this.store.updateRun(runId, { repairAttemptsUsed: repairAttemptsUsed + 1 });
         // Reserve the shared repair before looping. A process restart cannot reset the budget.
         this.store.flush({ throwOnError: true });
-        checkFailure = output;
+        const changedFiles = await worktreeDiffStat(state.cwd, this.store.getRun(runId)?.baseBranch ?? 'HEAD');
+        const changedFilesSummary = changedFiles.trim();
+        const boundedChangedFiles = changedFilesSummary.length > 4_000
+          ? `${changedFilesSummary.slice(0, 4_000)}\n… (summary truncated)`
+          : changedFilesSummary;
+        const remainingRunSeconds = state.workflowDeadlineAt === undefined
+          ? null
+          : Math.max(0, Math.ceil((state.workflowDeadlineAt - Date.now()) / 1000));
+        const sharedRepairsUsed = repairAttemptsUsed + 1;
+        checkFailure = [
+          `Repair attempt ${used + 1} of ${step.onFail.max} for check "${step.id}" (exit ${exitCode}).`,
+          `Shared repair budget: ${sharedRepairsUsed} of ${maxRepairAttempts} attempts used; ${Math.max(0, maxRepairAttempts - sharedRepairsUsed)} remain.`,
+          `Active workflow time remaining: ${remainingRunSeconds === null ? 'not configured' : `${remainingRunSeconds}s`}.`,
+          'The original task, acceptance criteria, and non-goals remain authoritative.',
+          'Changed files vs task base (bounded diff summary):',
+          boundedChangedFiles || '(no diff summary available)',
+          'Failure output (bounded):',
+          output,
+        ].join('\n');
         this.finishStep(runId, step.id, 'failed', 'check failed — looping back', emit);
         const retryIdx = workflow.steps.findIndex((s) => s.id === step.onFail?.retry);
         emit({

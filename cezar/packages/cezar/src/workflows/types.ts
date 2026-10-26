@@ -9,7 +9,8 @@ import type { RunOutcome } from '@open-mercato/cezar-contract';
  *    earlier step via `onFail` (bounded by `max`).
  *
  * `{{task}}` in a prompt is replaced with the user's task text. When a check
- * loops back, the failing output is appended to the retried agent's prompt.
+ * loops back, the retried agent receives bounded failure output, changed-file
+ * context, and the remaining shared repair/run budget.
  *
  * `onFail.retryOn` narrows the loop to the exit codes that mean *the work is
  * wrong*. Omitted, any non-zero code loops back — right for `npm test`, which
