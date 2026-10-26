@@ -102,4 +102,86 @@ describe('createDraftPr pre-PR autosave (#471 follow-up)', () => {
     expect(outcome.ok).toBe(true);
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it('reuses the exact open head/base PR on replay without creating another', async () => {
+    vi.stubEnv('CEZ_DRY_RUN', '0');
+    const calls: string[][] = [];
+    const execute = vi.fn(async (args: string[], _cwd: string, bin: string) => {
+      calls.push([bin, ...args]);
+      if (bin === 'git' && args[0] === 'remote') return { ok: true, stdout: 'https://github.com/acme/repo.git', stderr: '', notFound: false };
+      if (bin === 'git' && args[0] === 'push') return { ok: true, stdout: '', stderr: '', notFound: false };
+      if (args[1] === 'list') return {
+        ok: true,
+        stdout: JSON.stringify([{ url: 'https://github.com/acme/repo/pull/42', headRefName: 'cez/abc123', baseRefName: 'dev' }]),
+        stderr: '', notFound: false,
+      };
+      throw new Error(`unexpected tool call: ${bin} ${args.join(' ')}`);
+    });
+
+    const outcome = await createDraftPr({ ...input(), run: { ...input().run, baseBranch: 'origin/dev' } }, execute);
+    expect(outcome).toEqual({ ok: true, url: 'https://github.com/acme/repo/pull/42', dryRun: false });
+    expect(calls.some((call) => call[1] === 'pr' && call[2] === 'create')).toBe(false);
+    expect(execute).toHaveBeenCalledWith(
+      ['pr', 'list', '--head', 'cez/abc123', '--state', 'open', '--json', 'url,headRefName,baseRefName'],
+      repo,
+      'gh',
+      60_000,
+    );
+  });
+
+  it('resolves the repository default branch before matching or creating a PR', async () => {
+    vi.stubEnv('CEZ_DRY_RUN', '0');
+    const execute = vi.fn(async (args: string[], _cwd: string, bin: string) => {
+      if (bin === 'git' && args[0] === 'remote') return { ok: true, stdout: 'origin', stderr: '', notFound: false };
+      if (bin === 'git' && args[0] === 'push') return { ok: true, stdout: '', stderr: '', notFound: false };
+      if (args[0] === 'repo') return { ok: true, stdout: JSON.stringify({ defaultBranchRef: { name: 'main' } }), stderr: '', notFound: false };
+      if (args[1] === 'list') return { ok: true, stdout: '[]', stderr: '', notFound: false };
+      if (args[1] === 'create') return { ok: true, stdout: 'https://github.com/acme/repo/pull/44', stderr: '', notFound: false };
+      throw new Error(`unexpected tool call: ${bin} ${args.join(' ')}`);
+    });
+
+    const outcome = await createDraftPr(input(), execute);
+    expect(outcome).toEqual({ ok: true, url: 'https://github.com/acme/repo/pull/44', dryRun: false });
+    expect(execute).toHaveBeenCalledWith(['repo', 'view', '--json', 'defaultBranchRef'], repo, 'gh', 60_000);
+    expect(execute.mock.calls.some(([args]) => args[1] === 'create' && args.includes('main'))).toBe(true);
+  });
+
+  it('reconciles a lost create response by finding the newly created PR', async () => {
+    vi.stubEnv('CEZ_DRY_RUN', '0');
+    let listCalls = 0;
+    const execute = vi.fn(async (args: string[], _cwd: string, bin: string) => {
+      if (bin === 'git' && args[0] === 'remote') return { ok: true, stdout: 'origin', stderr: '', notFound: false };
+      if (bin === 'git' && args[0] === 'push') return { ok: true, stdout: '', stderr: '', notFound: false };
+      if (args[1] === 'list') {
+        listCalls++;
+        return {
+          ok: true,
+          stdout: JSON.stringify(listCalls === 1 ? [] : [{ url: 'https://github.com/acme/repo/pull/43', headRefName: 'cez/abc123', baseRefName: 'dev' }]),
+          stderr: '', notFound: false,
+        };
+      }
+      if (args[1] === 'create') return { ok: false, stdout: '', stderr: 'connection closed after create', notFound: false };
+      throw new Error(`unexpected tool call: ${bin} ${args.join(' ')}`);
+    });
+
+    const outcome = await createDraftPr({ ...input(), run: { ...input().run, baseBranch: 'dev' } }, execute);
+    expect(outcome).toEqual({ ok: true, url: 'https://github.com/acme/repo/pull/43', dryRun: false });
+    expect(listCalls).toBe(2);
+    expect(execute.mock.calls.filter(([args]) => args[1] === 'create')).toHaveLength(1);
+  });
+
+  it('fails closed when the PR lookup response is malformed', async () => {
+    vi.stubEnv('CEZ_DRY_RUN', '0');
+    const execute = vi.fn(async (args: string[], _cwd: string, bin: string) => {
+      if (bin === 'git' && args[0] === 'remote') return { ok: true, stdout: 'origin', stderr: '', notFound: false };
+      if (bin === 'git' && args[0] === 'push') return { ok: true, stdout: '', stderr: '', notFound: false };
+      if (args[1] === 'list') return { ok: true, stdout: '{bad json', stderr: '', notFound: false };
+      throw new Error('PR create must not follow an unverifiable lookup');
+    });
+
+    const outcome = await createDraftPr({ ...input(), run: { ...input().run, baseBranch: 'dev' } }, execute);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.error).toContain('malformed JSON');
+    expect(execute.mock.calls.some(([args]) => args[1] === 'create')).toBe(false);
+  });
 });

@@ -2455,7 +2455,7 @@ const PR_URL_RE = /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+/;
 const PUSH_TIMEOUT_MS = 60_000;
 const PROGRESS_LINES_MAX = 10;
 
-export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome> {
+export async function createDraftPr(input: DraftPrInput, execute: typeof execTool = execTool): Promise<DraftPrOutcome> {
   const { run } = input;
   const worktree = run.worktreePath;
   const branch = run.branch;
@@ -2485,12 +2485,12 @@ export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome
     return { ok: true, url: 'https://github.com/open-mercato/demo/pull/777', dryRun: true };
   }
 
-  const remote = await execTool(['remote', 'get-url', 'origin'], worktree, 'git');
+  const remote = await execute(['remote', 'get-url', 'origin'], worktree, 'git');
   if (!remote.ok || !remote.stdout.trim()) {
     return { ok: false, error: 'no git remote — add one (git remote add origin <url>) or merge the branch locally' };
   }
 
-  const push = await execTool(['push', '-u', 'origin', branch], worktree, 'git', PUSH_TIMEOUT_MS);
+  const push = await execute(['push', '-u', 'origin', branch], worktree, 'git', PUSH_TIMEOUT_MS);
   if (!push.ok) {
     return { ok: false, error: `git push failed — ${tail(push.stderr) || 'unknown error'}` };
   }
@@ -2500,20 +2500,43 @@ export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome
   // --base, gh aims at the repo default (main) even when work started on
   // develop. `origin/x` normalizes to `x`; a raw sha (detached-HEAD fork
   // point) can't be a PR base, so gh falls back to the default branch.
-  const prBase = run.baseBranch?.replace(/^origin\//, '');
-  const baseArgs = prBase && !/^[0-9a-f]{7,40}$/i.test(prBase) ? ['--base', prBase] : [];
-  const pr = await execTool(
+  const configuredBase = run.baseBranch?.replace(/^origin\//, '');
+  let prBase = configuredBase && !/^[0-9a-f]{7,40}$/i.test(configuredBase) ? configuredBase : undefined;
+  if (!prBase) {
+    const defaultBranch = await execute(['repo', 'view', '--json', 'defaultBranchRef'], worktree, 'gh', PUSH_TIMEOUT_MS);
+    if (!defaultBranch.ok) return { ok: false, error: `could not resolve repository default branch — ${tail(defaultBranch.stderr) || 'unknown error'}` };
+    try {
+      const value = JSON.parse(defaultBranch.stdout) as { defaultBranchRef?: { name?: unknown } };
+      if (typeof value.defaultBranchRef?.name !== 'string' || !value.defaultBranchRef.name.trim()) throw new Error('missing branch name');
+      prBase = value.defaultBranchRef.name;
+    } catch {
+      return { ok: false, error: 'gh repo view returned an invalid default branch response' };
+    }
+  }
+  const baseArgs = ['--base', prBase];
+  const expectedBase = prBase;
+  const existing = await findOpenDraftPr(execute, worktree, branch, expectedBase);
+  if (!existing.ok) return { ok: false, error: existing.error };
+  if (existing.url) return { ok: true, url: existing.url, dryRun: false };
+
+  const pr = await execute(
     ['pr', 'create', '--draft', '--head', branch, ...baseArgs, '--title', run.title, '--body', body],
     worktree,
     'gh',
     PUSH_TIMEOUT_MS,
   );
   if (!pr.ok) {
+    // The server may have created the PR while the CLI response was lost. Query
+    // the exact head/base again before reporting failure so a retry can safely
+    // reuse the remote effect rather than creating a duplicate.
+    const reconciled = await findOpenDraftPr(execute, worktree, branch, expectedBase);
+    if (reconciled.ok && reconciled.url) return { ok: true, url: reconciled.url, dryRun: false };
     if (pr.notFound) {
       return { ok: false, error: 'gh not found — install the GitHub CLI and run `gh auth login`, or merge the branch locally' };
     }
     const hint = /auth|log ?in|credential/i.test(pr.stderr) ? ' (try `gh auth login`)' : '';
-    return { ok: false, error: `gh pr create failed — ${tail(pr.stderr) || 'unknown error'}${hint}` };
+    const reconciliationError = reconciled.ok ? '' : `; PR reconciliation failed — ${reconciled.error}`;
+    return { ok: false, error: `gh pr create failed — ${tail(pr.stderr) || 'unknown error'}${hint}${reconciliationError}` };
   }
 
   // gh prints the PR URL on stdout; some versions echo it to stderr instead.
@@ -2522,6 +2545,44 @@ export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome
     return { ok: false, error: 'gh pr create returned no PR URL — check `gh pr list` manually' };
   }
   return { ok: true, url: match[0], dryRun: false };
+}
+
+type DraftPrExecutor = typeof execTool;
+
+/** Query GitHub for a single open PR matching this branch and requested base. */
+async function findOpenDraftPr(
+  execute: DraftPrExecutor,
+  cwd: string,
+  branch: string,
+  base?: string,
+): Promise<{ ok: true; url?: string } | { ok: false; error: string }> {
+  const result = await execute(
+    ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url,headRefName,baseRefName'],
+    cwd,
+    'gh',
+    PUSH_TIMEOUT_MS,
+  );
+  if (!result.ok) return { ok: false, error: tail(result.stderr) || 'could not list open pull requests' };
+
+  let rows: unknown;
+  try {
+    rows = JSON.parse(result.stdout);
+  } catch {
+    return { ok: false, error: 'gh pr list returned malformed JSON' };
+  }
+  if (!Array.isArray(rows)) return { ok: false, error: 'gh pr list returned an unexpected response shape' };
+  const matches = rows.filter((row): row is { url: string; headRefName: string; baseRefName: string } => {
+    if (!row || typeof row !== 'object') return false;
+    const item = row as Record<string, unknown>;
+    const head = item.headRefName;
+    const target = item.baseRefName;
+    const url = item.url;
+    return typeof head === 'string' && (head === branch || head.endsWith(`:${branch}`))
+      && typeof target === 'string' && (!base || target === base)
+      && typeof url === 'string' && /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(url);
+  });
+  if (matches.length > 1) return { ok: false, error: 'multiple open pull requests match this branch/base; refusing ambiguous reuse' };
+  return { ok: true, ...(matches[0] ? { url: matches[0].url } : {}) };
 }
 
 /**
