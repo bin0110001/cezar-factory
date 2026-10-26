@@ -1,0 +1,41 @@
+[
+  {
+    "id": "stalled-owned-run",
+    "workflow": "factory-implement",
+    "issueNumber": 42,
+    "status": "running",
+    "startedAt": "2020-01-01T00:00:00Z",
+    "runnerState": "stalled",
+    "lease": { "runId": "stalled-owned-run", "expiresAt": "2020-01-01T00:10:00Z" },
+    "heartbeatAt": "2020-01-01T00:05:00Z",
+    "lastProgressAt": "2020-01-01T00:05:00Z",
+    "deadlineAt": "2020-01-01T00:20:00Z"
+  },
+  {
+    "id": "unrelated-run",
+    "workflow": "application-build",
+    "status": "running",
+    "startedAt": "2020-01-01T00:00:00Z"
+  },
+  {
+    "id": "legitimate-long-run",
+    "workflow": "factory-implement",
+    "issueNumber": 43,
+    "status": "running",
+    "startedAt": "2020-01-01T00:00:00Z",
+    "runnerState": "active",
+    "lease": { "runId": "legitimate-long-run", "expiresAt": "2999-01-01T00:00:00Z" },
+    "heartbeatAt": "2999-01-01T00:00:00Z",
+    "lastProgressAt": "2999-01-01T00:00:00Z",
+    "deadlineAt": "2999-01-01T00:00:00Z"
+  },
+  {
+    "id": "current-cezar-record",
+    "workflow": "factory-plan",
+    "issueNumber": 44,
+    "status": "running",
+    "startedAt": "2020-01-01T00:00:00Z",
+    "runner": "claude",
+    "steps": [{ "id": "plan", "status": "running", "startedAt": "2020-01-01T00:00:00Z" }]
+  }
+]

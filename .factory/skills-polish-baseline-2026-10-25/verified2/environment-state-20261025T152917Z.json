@@ -1,0 +1,5731 @@
+{
+  "schemaVersion": 1,
+  "collectedAt": "2026-10-25T15:29:20.9924289Z",
+  "repository": "bin0110001/cezar-factory",
+  "local": {
+    "branch": "codex/implementation-tool-loop-guard",
+    "commit": "a9dc0b53c65cd64cc92176e7f2bfcfc2c9cbdc87",
+    "status": [
+      " ? .factory/issue-25",
+      " ? .factory/issue-32",
+      " m .factory/issue-55",
+      " m .factory/issue-57",
+      " m .factory/issue-58",
+      " m .factory/issue-61",
+      " m .factory/issue-68",
+      " M .factory/release-reports/release-status.jsonl",
+      " M cezar/Dockerfile",
+      " M docs/cezar-integration.md",
+      " M docs/factory-automation-status.md",
+      " M docs/skills-automation-polish-plan-2026-10-25.md",
+      " M scripts/collect-environment-state.ps1",
+      " M scripts/watchdog-automations.ps1",
+      " M skills/factory-plan/SKILL.md",
+      " M tests/run-tests.ps1",
+      " M workflows/maintenance.yaml",
+      "?? .claude/",
+      "?? .factory/skills-polish-baseline-2026-10-25/",
+      "?? docs/agent-invocation-inventory.md",
+      "?? docs/git-authentication.md",
+      "?? tests/fixtures/watchdog-runs-envelope.json",
+      "?? tests/fixtures/watchdog-runs-malformed.json",
+      "?? tests/fixtures/watchdog-runs.json"
+    ],
+    "version": "0.3.45",
+    "workflowCount": 10,
+    "automationCount": 14
+  },
+  "factory": {
+    "workflows": [
+      {
+        "name": "environment-analysis",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\environment-analysis.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequiredScripts collect-environment-state.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-environment-state.ps1 -OutputDirectory .factory/environment-analysis"
+        ],
+        "skills": [
+          "factory-environment-analysis"
+        ]
+      },
+      {
+        "name": "failure-audit",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\failure-audit.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-failure-audit -Step collect -RequireGh -RequiredScripts audit-factory-failures.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-factory-failures.ps1 -CreateIssue -RestartFailedIntake -OutputPath .factory/failure-audit-input.json"
+        ],
+        "skills": []
+      },
+      {
+        "name": "fix-review",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\fix-review.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,factory/test-changed.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -RouteOnFailure -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json"
+        ],
+        "skills": [
+          "factory-fix"
+        ]
+      },
+      {
+        "name": "godot-upgrade",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\godot-upgrade.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-godot-upgrade -Step check -RequireGh -RequiredScripts godot-upgrade.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step check",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step stage",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step apply",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step test -AllowFailure",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step test",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step publish"
+        ],
+        "skills": [
+          "factory-godot-upgrade"
+        ]
+      },
+      {
+        "name": "implement",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\implement.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,factory/test-changed.ps1,factory/test-full.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/prepare-implementation.ps1 -Task \"{{task}}\" -OutputPath .factory/implementation-context.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-implementation-result.ps1 -Path .factory/implement-result.json -ContextPath .factory/implementation-context.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -RouteOnFailure -FailureContextPath .factory/implementation-context.json -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json"
+        ],
+        "skills": [
+          "factory-implement"
+        ]
+      },
+      {
+        "name": "intake",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\intake.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-intake -Step select-issue -RequireGh -RequiredScripts select-intake-issue.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1 -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1 -Path .factory/intake-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json"
+        ],
+        "skills": []
+      },
+      {
+        "name": "investigate",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\investigate.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective \"{{task}}\" -TaskClass investigation",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event investigate-result -Path .factory/investigate-result.json"
+        ],
+        "skills": [
+          "factory-investigate"
+        ]
+      },
+      {
+        "name": "maintenance",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\maintenance.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,refresh-stale-workable.ps1,maintain-repository.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -ApiUrl \"$CEZAR_API_URL\" -ProjectId \"$CEZAR_PROJECT_ID\" -OutputPath .factory/audit-reservation-recovery.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-backlog-label-audit-input.ps1 -Path .factory/backlog-label-audit-input.json -MaxCandidates 3",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json"
+        ],
+        "skills": [
+          "factory-backlog-label-audit"
+        ]
+      },
+      {
+        "name": "plan",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\plan.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective \"{{task}}\" -TaskClass planning",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-plan-or-default.ps1 -Path .factory/plan-result.json"
+        ],
+        "skills": [
+          "factory-plan"
+        ]
+      },
+      {
+        "name": "review",
+        "path": "D:\\Projects\\cezar-factory\\workflows\\review.yaml",
+        "startup": true,
+        "commands": [
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,route-state.ps1",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task \"{{task}}\"",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind review -Path .factory/review-result.json",
+          "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json"
+        ],
+        "skills": [
+          "factory-review"
+        ]
+      }
+    ],
+    "automations": [
+      {
+        "file": "changes-requested.json",
+        "name": "[factory] changes-requested",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-fix-review",
+        "enabled": null
+      },
+      {
+        "file": "failure-audit.json",
+        "name": "[factory] failure-audit",
+        "kind": "schedule",
+        "schedule": {
+          "type": "daily",
+          "hour": 1,
+          "minute": 0
+        },
+        "workflow": "factory-failure-audit",
+        "enabled": null
+      },
+      {
+        "file": "godot-upgrade.json",
+        "name": "[factory] godot-upgrade",
+        "kind": "schedule",
+        "schedule": {
+          "type": "daily",
+          "hour": 3,
+          "minute": 0
+        },
+        "workflow": "factory-godot-upgrade",
+        "enabled": null
+      },
+      {
+        "file": "intake.json",
+        "name": "[factory] intake",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-intake",
+        "enabled": null
+      },
+      {
+        "file": "investigate.json",
+        "name": "[factory] investigate",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-investigate",
+        "enabled": null
+      },
+      {
+        "file": "maintenance.json",
+        "name": "[factory] maintenance",
+        "kind": "schedule",
+        "schedule": {
+          "type": "hours",
+          "every": 1
+        },
+        "workflow": "factory-maintenance",
+        "enabled": null
+      },
+      {
+        "file": "needs-plan-large.json",
+        "name": "[factory] needs-plan-large",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-plan",
+        "enabled": null
+      },
+      {
+        "file": "needs-plan-medium.json",
+        "name": "[factory] needs-plan-medium",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-plan",
+        "enabled": null
+      },
+      {
+        "file": "needs-plan-small.json",
+        "name": "[factory] needs-plan-small",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-plan",
+        "enabled": null
+      },
+      {
+        "file": "needs-plan.json",
+        "name": "[factory] needs-plan",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-plan",
+        "enabled": null
+      },
+      {
+        "file": "ready-to-implement-large.json",
+        "name": "[factory] ready-to-implement-large",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-implement",
+        "enabled": null
+      },
+      {
+        "file": "ready-to-implement-medium.json",
+        "name": "[factory] ready-to-implement-medium",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-implement",
+        "enabled": null
+      },
+      {
+        "file": "ready-to-implement-small.json",
+        "name": "[factory] ready-to-implement-small",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-implement",
+        "enabled": null
+      },
+      {
+        "file": "ready-to-review.json",
+        "name": "[factory] ready-to-review",
+        "kind": "github",
+        "schedule": null,
+        "workflow": "factory-review",
+        "enabled": null
+      }
+    ]
+  },
+  "github": {
+    "available": true,
+    "repository": "bin0110001/cezar-factory",
+    "workflows": [
+      {
+        "id": 372551208,
+        "name": "factory-ci",
+        "path": ".github/workflows/ci.yml",
+        "state": "active"
+      }
+    ],
+    "runs": [
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T14:03:45.0000000Z",
+        "databaseId": 40200471842,
+        "displayTitle": "Retry Factory autodeploy reconciliation on unchanged SHA",
+        "event": "pull_request",
+        "headBranch": "codex/issue-18-autodeploy-retry",
+        "headSha": "198f2f626512c0f1d1da5d6744c01f1ea6d782e5",
+        "status": "completed",
+        "updatedAt": "2026-10-25T14:08:00.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40200471842",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T14:03:42.0000000Z",
+        "databaseId": 40200467840,
+        "displayTitle": "Validate Factory workflow contracts in CI",
+        "event": "pull_request",
+        "headBranch": "codex/issue-33-workflow-contract-ci",
+        "headSha": "951e86b79ca85e3edfb4cea07db894e6d24cbded",
+        "status": "completed",
+        "updatedAt": "2026-10-25T14:08:34.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40200467840",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T14:03:41.0000000Z",
+        "databaseId": 40200466347,
+        "displayTitle": "Publish deduplicated Factory failure evidence",
+        "event": "pull_request",
+        "headBranch": "codex/issue-31-failure-publication",
+        "headSha": "3dde256d6b6e77e668460727230c5f68c1af4860",
+        "status": "completed",
+        "updatedAt": "2026-10-25T14:07:57.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40200466347",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T12:32:07.0000000Z",
+        "databaseId": 40193534050,
+        "displayTitle": "Fix Cezar HTTPS git auth via gh credential helper",
+        "event": "pull_request",
+        "headBranch": "fix/git-https-credential-helper",
+        "headSha": "ce3549b73c540c992e974ab1ec0e5b08c1589569",
+        "status": "completed",
+        "updatedAt": "2026-10-25T12:36:37.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40193534050",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T02:17:18.0000000Z",
+        "databaseId": 40153878982,
+        "displayTitle": "Fix Cezar workflow project context",
+        "event": "pull_request",
+        "headBranch": "codex/fix-cezar-automation-context",
+        "headSha": "e4d4c587255cb49a03cf604528a823b7750e0713",
+        "status": "completed",
+        "updatedAt": "2026-10-25T02:20:34.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40153878982",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-25T01:42:57.0000000Z",
+        "databaseId": 40151716498,
+        "displayTitle": "Fix maintenance workflow environment expansion",
+        "event": "pull_request",
+        "headBranch": "codex/fix-maintenance-env-expansion",
+        "headSha": "cab09644366853449175f8bc686c3ef7e1db8664",
+        "status": "completed",
+        "updatedAt": "2026-10-25T01:46:07.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40151716498",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T02:20:33.0000000Z",
+        "databaseId": 40053769609,
+        "displayTitle": "Define versioned verification contracts",
+        "event": "pull_request",
+        "headBranch": "codex/issue-49-verification-contract",
+        "headSha": "29df2cc2ad0ac8b081238ff965289794a8b0b4b6",
+        "status": "completed",
+        "updatedAt": "2026-10-24T02:25:25.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40053769609",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T02:05:44.0000000Z",
+        "databaseId": 40052721292,
+        "displayTitle": "Gate Factory auto-merge on the current reviewed head",
+        "event": "pull_request",
+        "headBranch": "codex/issue-27-current-head-gate",
+        "headSha": "5c2eb0030f05f06f33131fb802786a5531a2b681",
+        "status": "completed",
+        "updatedAt": "2026-10-24T02:09:31.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40052721292",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T02:04:57.0000000Z",
+        "databaseId": 40052662555,
+        "displayTitle": "Validate Factory workflow contracts in CI",
+        "event": "pull_request",
+        "headBranch": "codex/issue-33-workflow-contract-ci",
+        "headSha": "29f1d80428ad102b133c0c555deb24c3333b6735",
+        "status": "completed",
+        "updatedAt": "2026-10-24T02:08:28.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40052662555",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T01:54:50.0000000Z",
+        "databaseId": 40051917115,
+        "displayTitle": "Stage immutable Factory releases locally",
+        "event": "pull_request",
+        "headBranch": "codex/issue-63-controller",
+        "headSha": "bce7a0d732077d159f4cd994e0e9a8bc76c679c4",
+        "status": "completed",
+        "updatedAt": "2026-10-24T01:58:44.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40051917115",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T01:53:36.0000000Z",
+        "databaseId": 40051828884,
+        "displayTitle": "Stage immutable Factory releases locally",
+        "event": "pull_request",
+        "headBranch": "codex/issue-63-controller",
+        "headSha": "2862983b78ddbe18fd6ad161baec0a4023ef6c17",
+        "status": "completed",
+        "updatedAt": "2026-10-24T01:56:16.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40051828884",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T01:20:47.0000000Z",
+        "databaseId": 40049364792,
+        "displayTitle": "[skip ci] Preserve stable ancestry after squash merge",
+        "event": "pull_request",
+        "headBranch": "codex/stable-dev-ancestry-bridge",
+        "headSha": "cdb1e8bf4dbc2fc65a1649f15349ba279f241ff0",
+        "status": "completed",
+        "updatedAt": "2026-10-24T01:24:10.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40049364792",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T01:08:59.0000000Z",
+        "databaseId": 40048457469,
+        "displayTitle": "Define immutable Factory release contracts",
+        "event": "pull_request",
+        "headBranch": "codex/issue-62-release-contracts",
+        "headSha": "e044bc7f3df666a692977d8af2446e5790becafd",
+        "status": "completed",
+        "updatedAt": "2026-10-24T01:12:20.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40048457469",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-24T00:34:14.0000000Z",
+        "databaseId": 40045627342,
+        "displayTitle": "Add safe backlog reconciliation proposal workflow",
+        "event": "pull_request",
+        "headBranch": "codex/backlog-reconciliation",
+        "headSha": "8bed32a0c5645e6e76d929849efd6f6cf5647796",
+        "status": "completed",
+        "updatedAt": "2026-10-24T00:37:47.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/40045627342",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T22:26:11.0000000Z",
+        "databaseId": 39172211186,
+        "displayTitle": "Gate Factory auto-merge on the current reviewed head",
+        "event": "pull_request",
+        "headBranch": "codex/issue-27-current-head-gate",
+        "headSha": "aa267366be03bb3879f58eff515a008b3bbba8dd",
+        "status": "completed",
+        "updatedAt": "2026-10-18T22:29:07.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39172211186",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T21:59:08.0000000Z",
+        "databaseId": 39170216733,
+        "displayTitle": "Retry Factory autodeploy reconciliation on unchanged SHA",
+        "event": "pull_request",
+        "headBranch": "codex/issue-18-autodeploy-retry",
+        "headSha": "91d362009e9a64131db0d242efa903ed85fdfcb5",
+        "status": "completed",
+        "updatedAt": "2026-10-18T22:01:48.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39170216733",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T21:55:58.0000000Z",
+        "databaseId": 39169994915,
+        "displayTitle": "Document host credential use for GitHub CLI",
+        "event": "pull_request",
+        "headBranch": "codex/gh-cli-outside-sandbox",
+        "headSha": "fc0a4a60df8b0d1f6b240106193baa4a34dda885",
+        "status": "completed",
+        "updatedAt": "2026-10-18T21:58:59.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39169994915",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T21:44:37.0000000Z",
+        "databaseId": 39169177167,
+        "displayTitle": "Validate Factory workflow contracts in CI",
+        "event": "pull_request",
+        "headBranch": "codex/issue-33-workflow-contract-ci",
+        "headSha": "dc4528d68b243babedc6c9a41130297536c30861",
+        "status": "completed",
+        "updatedAt": "2026-10-18T21:46:56.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39169177167",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T21:05:05.0000000Z",
+        "databaseId": 39166242400,
+        "displayTitle": "Make backlog execution autonomous",
+        "event": "pull_request",
+        "headBranch": "codex/autonomous-backlog-lifecycle",
+        "headSha": "72568732473552ecfa84bf496c10f7ccfdcfbd60",
+        "status": "completed",
+        "updatedAt": "2026-10-18T21:08:26.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39166242400",
+        "workflowName": "factory-ci"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-10-18T15:53:07.0000000Z",
+        "databaseId": 39142489927,
+        "displayTitle": "Publish deduplicated Factory failure evidence",
+        "event": "pull_request",
+        "headBranch": "codex/issue-31-failure-publication",
+        "headSha": "0717abb62411bd3fd618c49e537ed935e2cb5ffa",
+        "status": "completed",
+        "updatedAt": "2026-10-18T15:56:47.0000000Z",
+        "url": "https://github.com/bin0110001/cezar-factory/actions/runs/39142489927",
+        "workflowName": "factory-ci"
+      }
+    ],
+    "schedules": [],
+    "workflowFiles": [
+      {
+        "file": "ci.yml",
+        "hasSchedule": false,
+        "scheduleLines": [],
+        "triggers": [
+          "push:",
+          "pull_request:"
+        ]
+      }
+    ],
+    "limitations": []
+  },
+  "projects": [
+    {
+      "projectId": "blackjackandhookersgadot",
+      "apiUrl": "http://192.168.86.69:4321",
+      "projectType": "godot",
+      "runs": [
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "f9f1084b-b72a-468f-9a4d-2acdf61c3613",
+          "titleSummary": "534: investigating startup profiling",
+          "workflow": "factory-investigate",
+          "status": "running",
+          "conclusion": "",
+          "createdAt": "2026-10-25T15:11:03.6120000Z",
+          "startedAt": "2026-10-25T15:11:03.7400000Z",
+          "finishedAt": null,
+          "durationSeconds": null,
+          "tokensUsed": 2124286,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 15:11:07",
+              "finishedAt": "10/25/2026 15:11:08"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 15:11:08",
+              "finishedAt": "10/25/2026 15:11:11"
+            },
+            {
+              "id": "investigate",
+              "status": "running",
+              "startedAt": "10/25/2026 15:11:11",
+              "finishedAt": ""
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 534
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "b5d0414c-4d27-47b3-b4bc-9d0e7277d52c",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T15:00:00.2820000Z",
+          "startedAt": "2026-10-25T15:00:07.5950000Z",
+          "finishedAt": "2026-10-25T15:06:47.4170000Z",
+          "durationSeconds": 400,
+          "tokensUsed": 359724,
+          "inputTokens": 25891,
+          "outputTokens": 116,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:11",
+              "finishedAt": "10/25/2026 15:00:11"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:11",
+              "finishedAt": "10/25/2026 15:00:38"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:38",
+              "finishedAt": "10/25/2026 15:06:33"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 15:06:33",
+              "finishedAt": "10/25/2026 15:06:42"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 15:06:42",
+              "finishedAt": "10/25/2026 15:06:47"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T15:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 26,
+            "dels": 21
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "a54be1cf-1fc7-4689-a893-5b7e518a73b0",
+          "titleSummary": "194: investigating content_scope filter gap",
+          "workflow": "factory-investigate",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T14:35:15.2620000Z",
+          "startedAt": "2026-10-25T14:35:15.4040000Z",
+          "finishedAt": "2026-10-25T14:49:43.0060000Z",
+          "durationSeconds": 868,
+          "tokensUsed": 1253386,
+          "inputTokens": 20065,
+          "outputTokens": 213,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 14:35:19",
+              "finishedAt": "10/25/2026 14:35:19"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 14:35:19",
+              "finishedAt": "10/25/2026 14:35:22"
+            },
+            {
+              "id": "investigate",
+              "status": "done",
+              "startedAt": "10/25/2026 14:35:22",
+              "finishedAt": "10/25/2026 14:49:35"
+            },
+            {
+              "id": "validate",
+              "status": "done",
+              "startedAt": "10/25/2026 14:49:35",
+              "finishedAt": "10/25/2026 14:49:36"
+            },
+            {
+              "id": "route",
+              "status": "done",
+              "startedAt": "10/25/2026 14:49:36",
+              "finishedAt": "10/25/2026 14:49:42"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 3,
+            "adds": 41,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "455a3e55-d9d8-43bc-bac1-cd39eb1c65c7",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T14:00:00.0980000Z",
+          "startedAt": "2026-10-25T14:12:58.3520000Z",
+          "finishedAt": "2026-10-25T14:31:02.6450000Z",
+          "durationSeconds": 1084,
+          "tokensUsed": 994046,
+          "inputTokens": 34799,
+          "outputTokens": 48,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 14:13:02",
+              "finishedAt": "10/25/2026 14:13:02"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 14:13:02",
+              "finishedAt": "10/25/2026 14:13:29"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 14:13:29",
+              "finishedAt": "10/25/2026 14:30:52"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 14:30:52",
+              "finishedAt": "10/25/2026 14:31:00"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 14:31:00",
+              "finishedAt": "10/25/2026 14:31:02"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T14:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "752d7bd1-232e-4363-8348-0645b41dfc3c",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T13:00:12.1570000Z",
+          "startedAt": "2026-10-25T13:19:39.6910000Z",
+          "finishedAt": "2026-10-25T13:50:11.9660000Z",
+          "durationSeconds": 1832,
+          "tokensUsed": 721679,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 13:19:43",
+              "finishedAt": "10/25/2026 13:19:44"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 13:19:44",
+              "finishedAt": "10/25/2026 13:20:10"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "failed",
+              "startedAt": "10/25/2026 13:20:10",
+              "finishedAt": "10/25/2026 13:50:10"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "backlog-label-audit"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T13:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 283
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "6de4f3ab-8acc-4a23-91b5-affe7ffca083",
+          "titleSummary": "194: investigating content scope filter",
+          "workflow": "factory-investigate",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T12:33:56.9370000Z",
+          "startedAt": "2026-10-25T12:33:57.0430000Z",
+          "finishedAt": "2026-10-25T13:04:04.7040000Z",
+          "durationSeconds": 1808,
+          "tokensUsed": 1441866,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 12:34:01",
+              "finishedAt": "10/25/2026 12:34:01"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 12:34:01",
+              "finishedAt": "10/25/2026 12:34:04"
+            },
+            {
+              "id": "investigate",
+              "status": "failed",
+              "startedAt": "10/25/2026 12:34:04",
+              "finishedAt": "10/25/2026 13:04:04"
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "investigate"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "507af77b-3d20-44be-a507-b6c988c28985",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T12:00:00.0790000Z",
+          "startedAt": "2026-10-25T12:00:00.1920000Z",
+          "finishedAt": "2026-10-25T12:02:40.9160000Z",
+          "durationSeconds": 161,
+          "tokensUsed": 58602,
+          "inputTokens": 19681,
+          "outputTokens": 164,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:15",
+              "finishedAt": "10/25/2026 12:00:15"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:15",
+              "finishedAt": "10/25/2026 12:00:42"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:42",
+              "finishedAt": "10/25/2026 12:02:26"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 12:02:26",
+              "finishedAt": "10/25/2026 12:02:35"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 12:02:35",
+              "finishedAt": "10/25/2026 12:02:40"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T12:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "f84ed139-feac-48c6-b082-3af21710c121",
+          "titleSummary": "194: implementing content scope bridge",
+          "workflow": "factory-implement",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T11:06:07.9590000Z",
+          "startedAt": "2026-10-25T11:06:08.0860000Z",
+          "finishedAt": "2026-10-25T11:06:41.6150000Z",
+          "durationSeconds": 34,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 11:06:27",
+              "finishedAt": "10/25/2026 11:06:28"
+            },
+            {
+              "id": "prepare",
+              "status": "done",
+              "startedAt": "10/25/2026 11:06:28",
+              "finishedAt": "10/25/2026 11:06:31"
+            },
+            {
+              "id": "start",
+              "status": "done",
+              "startedAt": "10/25/2026 11:06:31",
+              "finishedAt": "10/25/2026 11:06:36"
+            },
+            {
+              "id": "implement",
+              "status": "done",
+              "startedAt": "10/25/2026 11:06:40",
+              "finishedAt": "10/25/2026 11:06:41"
+            },
+            {
+              "id": "targeted-tests",
+              "status": "failed",
+              "startedAt": "10/25/2026 11:06:41",
+              "finishedAt": "10/25/2026 11:06:41"
+            },
+            {
+              "id": "full-verification",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "targeted-tests"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 5,
+            "adds": 427,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "dcd4f908-6286-4563-a9d9-9e8dde8c7df4",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T11:00:00.1250000Z",
+          "startedAt": "2026-10-25T11:00:00.3060000Z",
+          "finishedAt": "2026-10-25T11:02:24.1320000Z",
+          "durationSeconds": 144,
+          "tokensUsed": 77803,
+          "inputTokens": 19749,
+          "outputTokens": 177,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:13",
+              "finishedAt": "10/25/2026 11:00:14"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:14",
+              "finishedAt": "10/25/2026 11:00:41"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:41",
+              "finishedAt": "10/25/2026 11:02:13"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 11:02:13",
+              "finishedAt": "10/25/2026 11:02:22"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 11:02:22",
+              "finishedAt": "10/25/2026 11:02:24"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T11:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "7d0b2926-1ad8-412c-b123-52d24f5d08bf",
+          "titleSummary": "194: planning content_scope manifest bridge",
+          "workflow": "factory-plan",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T10:19:46.7070000Z",
+          "startedAt": "2026-10-25T10:19:46.8470000Z",
+          "finishedAt": "2026-10-25T10:20:38.1830000Z",
+          "durationSeconds": 51,
+          "tokensUsed": 66010,
+          "inputTokens": 10,
+          "outputTokens": 2983,
+          "costUsd": 0.21140240000000002,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 10:20:02",
+              "finishedAt": "10/25/2026 10:20:02"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 10:20:03",
+              "finishedAt": "10/25/2026 10:20:06"
+            },
+            {
+              "id": "plan",
+              "status": "done",
+              "startedAt": "10/25/2026 10:20:06",
+              "finishedAt": "10/25/2026 10:20:33"
+            },
+            {
+              "id": "validate",
+              "status": "done",
+              "startedAt": "10/25/2026 10:20:33",
+              "finishedAt": "10/25/2026 10:20:33"
+            },
+            {
+              "id": "route",
+              "status": "done",
+              "startedAt": "10/25/2026 10:20:33",
+              "finishedAt": "10/25/2026 10:20:38"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 3,
+            "adds": 45,
+            "dels": 177
+          },
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "050b4042-1717-41a9-8f01-cf59b20c3046",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T10:00:00.1170000Z",
+          "startedAt": "2026-10-25T10:00:00.2530000Z",
+          "finishedAt": "2026-10-25T10:04:18.9750000Z",
+          "durationSeconds": 259,
+          "tokensUsed": 185078,
+          "inputTokens": 21957,
+          "outputTokens": 186,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:16",
+              "finishedAt": "10/25/2026 10:00:16"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:16",
+              "finishedAt": "10/25/2026 10:00:42"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:42",
+              "finishedAt": "10/25/2026 10:04:08"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 10:04:08",
+              "finishedAt": "10/25/2026 10:04:16"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 10:04:16",
+              "finishedAt": "10/25/2026 10:04:18"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T10:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "5f388424-7e9a-4780-84e7-63f040cc2ce7",
+          "titleSummary": "194: investigating content_scope filter",
+          "workflow": "factory-investigate",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T09:20:33.2570000Z",
+          "startedAt": "2026-10-25T09:20:33.3840000Z",
+          "finishedAt": "2026-10-25T09:36:45.9290000Z",
+          "durationSeconds": 973,
+          "tokensUsed": 1820650,
+          "inputTokens": 82976,
+          "outputTokens": 291,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 09:20:50",
+              "finishedAt": "10/25/2026 09:20:51"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 09:20:51",
+              "finishedAt": "10/25/2026 09:20:54"
+            },
+            {
+              "id": "investigate",
+              "status": "done",
+              "startedAt": "10/25/2026 09:28:19",
+              "finishedAt": "10/25/2026 09:36:39"
+            },
+            {
+              "id": "validate",
+              "status": "done",
+              "startedAt": "10/25/2026 09:36:39",
+              "finishedAt": "10/25/2026 09:36:39"
+            },
+            {
+              "id": "route",
+              "status": "done",
+              "startedAt": "10/25/2026 09:36:39",
+              "finishedAt": "10/25/2026 09:36:45"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 3,
+            "adds": 41,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "9da4c870-fc1c-4d40-a2f2-e51f2120289d",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T09:00:00.1070000Z",
+          "startedAt": "2026-10-25T09:07:31.9160000Z",
+          "finishedAt": "2026-10-25T09:16:07.5080000Z",
+          "durationSeconds": 516,
+          "tokensUsed": 379794,
+          "inputTokens": 33586,
+          "outputTokens": 190,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 09:07:46",
+              "finishedAt": "10/25/2026 09:07:47"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 09:07:47",
+              "finishedAt": "10/25/2026 09:08:15"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 09:08:15",
+              "finishedAt": "10/25/2026 09:15:57"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 09:15:57",
+              "finishedAt": "10/25/2026 09:16:05"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 09:16:05",
+              "finishedAt": "10/25/2026 09:16:07"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T09:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "3a62f216-6544-4f44-ba15-f96b9d418b9a",
+          "titleSummary": "194: investigating package content scope fil…",
+          "workflow": "factory-investigate",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T08:35:00.0540000Z",
+          "startedAt": "2026-10-25T08:37:11.7480000Z",
+          "finishedAt": "2026-10-25T09:07:31.8930000Z",
+          "durationSeconds": 1820,
+          "tokensUsed": 2033239,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 08:37:28",
+              "finishedAt": "10/25/2026 08:37:28"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 08:37:28",
+              "finishedAt": "10/25/2026 08:37:31"
+            },
+            {
+              "id": "investigate",
+              "status": "failed",
+              "startedAt": "10/25/2026 08:37:31",
+              "finishedAt": "10/25/2026 09:07:31"
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "investigate"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "008a4eee-4f0f-4144-96a5-8699e7e4f767",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T08:00:00.0930000Z",
+          "startedAt": "2026-10-25T08:31:46.0220000Z",
+          "finishedAt": "2026-10-25T08:34:34.3590000Z",
+          "durationSeconds": 168,
+          "tokensUsed": 78239,
+          "inputTokens": 19801,
+          "outputTokens": 187,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 08:32:06",
+              "finishedAt": "10/25/2026 08:32:06"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 08:32:06",
+              "finishedAt": "10/25/2026 08:32:33"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 08:32:33",
+              "finishedAt": "10/25/2026 08:34:24"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 08:34:24",
+              "finishedAt": "10/25/2026 08:34:32"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 08:34:32",
+              "finishedAt": "10/25/2026 08:34:34"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T08:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "29050835-1130-4468-bba2-b88cead5bcbb",
+          "titleSummary": "194: investigating content_scope filter gap",
+          "workflow": "factory-investigate",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T07:56:38.8070000Z",
+          "startedAt": "2026-10-25T08:19:33.4310000Z",
+          "finishedAt": "2026-10-25T08:49:53.8250000Z",
+          "durationSeconds": 1820,
+          "tokensUsed": 1540937,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 08:19:49",
+              "finishedAt": "10/25/2026 08:19:49"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 08:19:49",
+              "finishedAt": "10/25/2026 08:19:53"
+            },
+            {
+              "id": "investigate",
+              "status": "failed",
+              "startedAt": "10/25/2026 08:19:53",
+              "finishedAt": "10/25/2026 08:49:53"
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "investigate"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "c83d7b84-f95b-41c6-aaf9-cd14f915db97",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T07:00:00.2830000Z",
+          "startedAt": "2026-10-25T07:49:34.3920000Z",
+          "finishedAt": "2026-10-25T07:52:15.8660000Z",
+          "durationSeconds": 161,
+          "tokensUsed": 100462,
+          "inputTokens": 20585,
+          "outputTokens": 196,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 07:49:54",
+              "finishedAt": "10/25/2026 07:49:55"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 07:49:55",
+              "finishedAt": "10/25/2026 07:50:20"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 07:50:20",
+              "finishedAt": "10/25/2026 07:52:05"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 07:52:05",
+              "finishedAt": "10/25/2026 07:52:13"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 07:52:13",
+              "finishedAt": "10/25/2026 07:52:15"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T07:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 32,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "1e82bfad-b452-4418-8c24-7cb8464e9352",
+          "titleSummary": "194: investigating content_scope filter",
+          "workflow": "factory-investigate",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T06:15:31.5880000Z",
+          "startedAt": "2026-10-25T06:42:03.3770000Z",
+          "finishedAt": "2026-10-25T07:18:29.8550000Z",
+          "durationSeconds": 2186,
+          "tokensUsed": 340483,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 06:42:19",
+              "finishedAt": "10/25/2026 06:42:19"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 06:42:20",
+              "finishedAt": "10/25/2026 06:42:23"
+            },
+            {
+              "id": "investigate",
+              "status": "failed",
+              "startedAt": "10/25/2026 06:48:29",
+              "finishedAt": "10/25/2026 07:18:29"
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "10/25/2026 06:48:29",
+              "finishedAt": "10/25/2026 06:48:29"
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "investigate"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 2,
+            "adds": 31,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "4dd77b6e-e10b-4304-bac7-ad88393eb679",
+          "titleSummary": "194: investigating content scope filter gap",
+          "workflow": "factory-investigate",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T06:10:27.9970000Z",
+          "startedAt": "2026-10-25T06:11:41.0060000Z",
+          "finishedAt": "2026-10-25T06:42:03.3400000Z",
+          "durationSeconds": 1822,
+          "tokensUsed": 828431,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 06:11:59",
+              "finishedAt": "10/25/2026 06:11:59"
+            },
+            {
+              "id": "recall",
+              "status": "done",
+              "startedAt": "10/25/2026 06:11:59",
+              "finishedAt": "10/25/2026 06:12:02"
+            },
+            {
+              "id": "investigate",
+              "status": "failed",
+              "startedAt": "10/25/2026 06:12:02",
+              "finishedAt": "10/25/2026 06:42:02"
+            },
+            {
+              "id": "validate",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "route",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "investigate"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 194
+        },
+        {
+          "projectId": "blackjackandhookersgadot",
+          "id": "e187e269-b1e3-49a7-a6c1-6f7909c09e90",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T06:00:00.1280000Z",
+          "startedAt": "2026-10-25T06:05:22.3750000Z",
+          "finishedAt": "2026-10-25T06:08:36.6290000Z",
+          "durationSeconds": 194,
+          "tokensUsed": 98731,
+          "inputTokens": 20128,
+          "outputTokens": 154,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 06:05:39",
+              "finishedAt": "10/25/2026 06:05:40"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 06:05:40",
+              "finishedAt": "10/25/2026 06:06:07"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 06:06:07",
+              "finishedAt": "10/25/2026 06:08:25"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 06:08:25",
+              "finishedAt": "10/25/2026 06:08:34"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 06:08:34",
+              "finishedAt": "10/25/2026 06:08:36"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T06:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 31,
+            "dels": 70
+          },
+          "prCount": 0,
+          "issueNumber": null
+        }
+      ],
+      "automations": [
+        {
+          "id": "36a74be9-a6f7-403b-bd3c-3ea0f9b70af2",
+          "name": "[factory] backlog-reconciliation",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 0,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-backlog-reconciliation",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": null,
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "7696ba92-00a1-4c41-b206-e405e7f97434",
+          "name": "[factory] changes-requested",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-fix-review",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:46.7530000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:46.7530000Z",
+          "lastRun": null
+        },
+        {
+          "id": "b9a1cdda-f93a-40f8-9fad-166e70470427",
+          "name": "[factory] failure-audit",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 1,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-failure-audit",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-07T01:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-06T14:21:18.1820000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "dda510a1-9850-4052-9c6d-c01edb6ad37f",
+          "name": "[factory] godot-upgrade",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 3,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-godot-upgrade",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-14T03:00:00.0000000Z",
+            "lastSuccessAt": null,
+            "consecutiveFailures": 3
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "012c90c9-11bf-4d04-bc97-ee98f97c5872",
+          "name": "[factory] intake",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-intake",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:39.9850000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 27,
+            "launched": 0,
+            "duplicates": 27,
+            "errors": 2
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:39.9850000Z",
+          "lastRun": null
+        },
+        {
+          "id": "40a15e81-f848-4e9a-bc48-ab14113e116d",
+          "name": "[factory] investigate",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-investigate",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:52.1360000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 32,
+            "launched": 3,
+            "duplicates": 29,
+            "errors": 0
+          },
+          "runs7d": 3,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:52.1360000Z",
+          "lastRun": {
+            "runId": "f9f1084b-b72a-468f-9a4d-2acdf61c3613",
+            "status": "running",
+            "ts": "2026-10-25T15:11:03.6580000Z"
+          }
+        },
+        {
+          "id": "a1e670fc-5e42-453a-9539-dd579943eba6",
+          "name": "[factory] maintenance",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 1
+          },
+          "task": {
+            "workflow": "factory-maintenance",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-25T15:00:00.3150000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 73,
+            "launched": 74,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 74,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+          "lastRun": {
+            "runId": "b5d0414c-4d27-47b3-b4bc-9d0e7277d52c",
+            "status": "done",
+            "ts": "2026-10-25T15:00:00.3140000Z"
+          }
+        },
+        {
+          "id": "fc133b87-2ec5-44e4-89da-fa5a12fa09a5",
+          "name": "[factory] needs-plan",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:40.9340000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:40.9340000Z",
+          "lastRun": null
+        },
+        {
+          "id": "25ddc256-83c0-423c-b286-794694de1b47",
+          "name": "[factory] needs-plan-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:42.6880000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:42.6880000Z",
+          "lastRun": null
+        },
+        {
+          "id": "7a2b22be-ab71-4808-8302-d8972590ed4b",
+          "name": "[factory] needs-plan-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:41.3750000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 2,
+            "launched": 1,
+            "duplicates": 1,
+            "errors": 0
+          },
+          "runs7d": 1,
+          "costUsd7d": 0.21,
+          "nextRunAt": "2026-10-25T15:31:41.3750000Z",
+          "lastRun": {
+            "runId": "7d0b2926-1ad8-412c-b123-52d24f5d08bf",
+            "status": "done",
+            "ts": "2026-10-25T10:19:46.7540000Z"
+          }
+        },
+        {
+          "id": "6a3506e6-455c-44dd-99f5-0a7ee952520d",
+          "name": "[factory] needs-plan-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:48.1320000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:48.1320000Z",
+          "lastRun": null
+        },
+        {
+          "id": "3cc692c1-b502-4762-81f1-a530c4aca7b5",
+          "name": "[factory] ready-to-implement",
+          "enabled": false,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-5.6-terra"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T02:18:59.9650000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "d8a5e343-3a60-4594-84ca-ccaf8044ce65",
+          "name": "[factory] ready-to-implement-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-6.1-sol"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:43.6370000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:43.6370000Z",
+          "lastRun": null
+        },
+        {
+          "id": "94403f4b-60ae-457a-b701-f13459fdcc75",
+          "name": "[factory] ready-to-implement-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-5.6-luna"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:48.5510000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 2,
+            "launched": 1,
+            "duplicates": 1,
+            "errors": 6
+          },
+          "runs7d": 1,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:48.5510000Z",
+          "lastRun": {
+            "runId": "f84ed139-feac-48c6-b082-3af21710c121",
+            "status": "failed",
+            "ts": "2026-10-25T11:06:08.0040000Z"
+          }
+        },
+        {
+          "id": "9df7b158-1c0c-4cf6-8bc4-c30fb7678da3",
+          "name": "[factory] ready-to-implement-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:42.2150000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:42.2150000Z",
+          "lastRun": null
+        },
+        {
+          "id": "80a0c7e0-83af-4c3c-8f30-5e00892784d3",
+          "name": "[factory] ready-to-review",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-review",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:47.6400000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:47.6400000Z",
+          "lastRun": null
+        }
+      ],
+      "status": "ready",
+      "limitations": []
+    },
+    {
+      "projectId": "cezar-factory",
+      "apiUrl": "http://192.168.86.69:4321",
+      "projectType": null,
+      "runs": [
+        {
+          "projectId": "cezar-factory",
+          "id": "4dc9a5d7-74d7-49b3-9939-c680afab19ea",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T15:00:00.1760000Z",
+          "startedAt": "2026-10-25T15:00:00.2600000Z",
+          "finishedAt": "2026-10-25T15:07:55.7520000Z",
+          "durationSeconds": 475,
+          "tokensUsed": 486202,
+          "inputTokens": 25915,
+          "outputTokens": 267,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:01",
+              "finishedAt": "10/25/2026 15:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:01",
+              "finishedAt": "10/25/2026 15:00:17"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:17",
+              "finishedAt": "10/25/2026 15:00:52"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:52",
+              "finishedAt": "10/25/2026 15:07:46"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 15:07:46",
+              "finishedAt": "10/25/2026 15:07:54"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 15:07:54",
+              "finishedAt": "10/25/2026 15:07:55"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T15:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 4,
+            "adds": 87,
+            "dels": 38
+          },
+          "prCount": 0,
+          "issueNumber": 65
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "cb94ed22-37c1-4d03-82f3-07bed665a949",
+          "titleSummary": "running existing issue intake",
+          "workflow": "factory-intake",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T15:00:00.0410000Z",
+          "startedAt": "2026-10-25T15:00:00.1280000Z",
+          "finishedAt": "2026-10-25T15:00:07.5750000Z",
+          "durationSeconds": 7,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:00",
+              "finishedAt": "10/25/2026 15:00:01"
+            },
+            {
+              "id": "select-issue",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:01",
+              "finishedAt": "10/25/2026 15:00:02"
+            },
+            {
+              "id": "intake",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:02",
+              "finishedAt": "10/25/2026 15:00:02"
+            },
+            {
+              "id": "validate",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:02",
+              "finishedAt": "10/25/2026 15:00:03"
+            },
+            {
+              "id": "route",
+              "status": "done",
+              "startedAt": "10/25/2026 15:00:03",
+              "finishedAt": "10/25/2026 15:00:07"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T15:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": 49
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "aefa12c4-8898-474a-a93d-c18792cdca2a",
+          "titleSummary": "running factory maintenance audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T14:00:00.0280000Z",
+          "startedAt": "2026-10-25T14:00:00.0830000Z",
+          "finishedAt": "2026-10-25T14:12:58.3300000Z",
+          "durationSeconds": 778,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 14:00:00",
+              "finishedAt": "10/25/2026 14:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 14:00:01",
+              "finishedAt": "10/25/2026 14:00:05"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 14:00:05",
+              "finishedAt": "10/25/2026 14:00:40"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 14:00:40",
+              "finishedAt": "10/25/2026 14:12:49"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 14:12:49",
+              "finishedAt": "10/25/2026 14:12:56"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 14:12:56",
+              "finishedAt": "10/25/2026 14:12:58"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T14:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 40,
+            "dels": 23
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "0e0e4a3f-cc86-4386-bc71-2919f4365552",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T13:00:12.0770000Z",
+          "startedAt": "2026-10-25T13:04:04.7280000Z",
+          "finishedAt": "2026-10-25T13:19:39.6630000Z",
+          "durationSeconds": 935,
+          "tokensUsed": 308945,
+          "inputTokens": 23210,
+          "outputTokens": 231,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 13:04:05",
+              "finishedAt": "10/25/2026 13:04:05"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 13:04:05",
+              "finishedAt": "10/25/2026 13:04:06"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 13:04:06",
+              "finishedAt": "10/25/2026 13:04:40"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 13:04:40",
+              "finishedAt": "10/25/2026 13:19:30"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 13:19:30",
+              "finishedAt": "10/25/2026 13:19:38"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 13:19:38",
+              "finishedAt": "10/25/2026 13:19:39"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T13:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 67
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "4e4bcca8-f877-46d6-86f0-e6943c3db7b0",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T12:00:00.0200000Z",
+          "startedAt": "2026-10-25T12:00:00.0620000Z",
+          "finishedAt": "2026-10-25T12:08:28.3480000Z",
+          "durationSeconds": 508,
+          "tokensUsed": 591517,
+          "inputTokens": 27034,
+          "outputTokens": 326,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:00",
+              "finishedAt": "10/25/2026 12:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:01",
+              "finishedAt": "10/25/2026 12:00:13"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:14",
+              "finishedAt": "10/25/2026 12:00:50"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 12:00:50",
+              "finishedAt": "10/25/2026 12:08:19"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 12:08:19",
+              "finishedAt": "10/25/2026 12:08:26"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 12:08:26",
+              "finishedAt": "10/25/2026 12:08:28"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T12:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 2,
+            "adds": 18,
+            "dels": 16
+          },
+          "prCount": 0,
+          "issueNumber": 65
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "d87a6fe2-5308-4299-b08f-cc84cc0eb513",
+          "titleSummary": "58: applying backlog label audit labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T11:00:00.0320000Z",
+          "startedAt": "2026-10-25T11:00:00.1060000Z",
+          "finishedAt": "2026-10-25T11:12:19.9690000Z",
+          "durationSeconds": 740,
+          "tokensUsed": 1345518,
+          "inputTokens": 32752,
+          "outputTokens": 398,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:00",
+              "finishedAt": "10/25/2026 11:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:01",
+              "finishedAt": "10/25/2026 11:00:17"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:17",
+              "finishedAt": "10/25/2026 11:00:54"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 11:00:54",
+              "finishedAt": "10/25/2026 11:12:11"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 11:12:11",
+              "finishedAt": "10/25/2026 11:12:18"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 11:12:18",
+              "finishedAt": "10/25/2026 11:12:19"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T11:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 18,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 58
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "8ab0a32f-52a3-42e0-8ae3-e7feb07022ea",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T10:00:00.0330000Z",
+          "startedAt": "2026-10-25T10:00:00.0950000Z",
+          "finishedAt": "2026-10-25T10:06:34.1230000Z",
+          "durationSeconds": 394,
+          "tokensUsed": 475386,
+          "inputTokens": 26540,
+          "outputTokens": 236,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:00",
+              "finishedAt": "10/25/2026 10:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:01",
+              "finishedAt": "10/25/2026 10:00:05"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:05",
+              "finishedAt": "10/25/2026 10:00:39"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 10:00:39",
+              "finishedAt": "10/25/2026 10:06:24"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 10:06:24",
+              "finishedAt": "10/25/2026 10:06:32"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 10:06:32",
+              "finishedAt": "10/25/2026 10:06:34"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T10:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "783c5b3e-036c-4418-8b75-dc94a18a3aa2",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T09:00:00.0260000Z",
+          "startedAt": "2026-10-25T09:00:00.0950000Z",
+          "finishedAt": "2026-10-25T09:17:20.3500000Z",
+          "durationSeconds": 1040,
+          "tokensUsed": 1000647,
+          "inputTokens": 31739,
+          "outputTokens": 279,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 09:00:00",
+              "finishedAt": "10/25/2026 09:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 09:00:01",
+              "finishedAt": "10/25/2026 09:00:13"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 09:00:13",
+              "finishedAt": "10/25/2026 09:00:47"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 09:00:47",
+              "finishedAt": "10/25/2026 09:17:11"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 09:17:11",
+              "finishedAt": "10/25/2026 09:17:19"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 09:17:19",
+              "finishedAt": "10/25/2026 09:17:20"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T09:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 3,
+            "adds": 73,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "80fa8160-100e-4d4b-8692-3efc1f109c23",
+          "titleSummary": "running backlog label audit maintenance",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T08:00:00.0290000Z",
+          "startedAt": "2026-10-25T08:22:44.5910000Z",
+          "finishedAt": "2026-10-25T08:31:45.9990000Z",
+          "durationSeconds": 541,
+          "tokensUsed": 425277,
+          "inputTokens": 24602,
+          "outputTokens": 275,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 08:22:45",
+              "finishedAt": "10/25/2026 08:22:45"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 08:22:45",
+              "finishedAt": "10/25/2026 08:23:29"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 08:23:29",
+              "finishedAt": "10/25/2026 08:24:04"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 08:24:04",
+              "finishedAt": "10/25/2026 08:31:36"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 08:31:36",
+              "finishedAt": "10/25/2026 08:31:44"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 08:31:44",
+              "finishedAt": "10/25/2026 08:31:45"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T08:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 61
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "5e57de0f-3573-4fe0-a845-d4de6a5d707c",
+          "titleSummary": "running factory maintenance audit",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T07:00:00.0270000Z",
+          "startedAt": "2026-10-25T07:18:29.8930000Z",
+          "finishedAt": "2026-10-25T07:49:31.9780000Z",
+          "durationSeconds": 1862,
+          "tokensUsed": 155785,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 07:18:30",
+              "finishedAt": "10/25/2026 07:18:30"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 07:18:30",
+              "finishedAt": "10/25/2026 07:18:53"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 07:18:53",
+              "finishedAt": "10/25/2026 07:19:31"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "failed",
+              "startedAt": "10/25/2026 07:19:31",
+              "finishedAt": "10/25/2026 07:49:31"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "backlog-label-audit"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T07:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "330752e1-125a-4009-bb6d-7b77e04d2c9a",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T06:00:00.0470000Z",
+          "startedAt": "2026-10-25T06:00:00.1070000Z",
+          "finishedAt": "2026-10-25T06:05:22.3530000Z",
+          "durationSeconds": 322,
+          "tokensUsed": 310172,
+          "inputTokens": 22955,
+          "outputTokens": 23,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 06:00:00",
+              "finishedAt": "10/25/2026 06:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 06:00:01",
+              "finishedAt": "10/25/2026 06:00:05"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 06:00:05",
+              "finishedAt": "10/25/2026 06:00:43"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 06:00:43",
+              "finishedAt": "10/25/2026 06:05:12"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 06:05:12",
+              "finishedAt": "10/25/2026 06:05:21"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 06:05:21",
+              "finishedAt": "10/25/2026 06:05:22"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T06:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "e3157d1a-42a1-4b54-82b3-d0db01053ac0",
+          "titleSummary": "running backlog label audit maintenance",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T05:00:00.0270000Z",
+          "startedAt": "2026-10-25T05:08:13.0550000Z",
+          "finishedAt": "2026-10-25T05:14:32.6160000Z",
+          "durationSeconds": 380,
+          "tokensUsed": 62630,
+          "inputTokens": 21695,
+          "outputTokens": 175,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 05:08:13",
+              "finishedAt": "10/25/2026 05:08:14"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 05:08:14",
+              "finishedAt": "10/25/2026 05:08:15"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 05:08:15",
+              "finishedAt": "10/25/2026 05:08:49"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 05:08:49",
+              "finishedAt": "10/25/2026 05:14:24"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 05:14:24",
+              "finishedAt": "10/25/2026 05:14:31"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 05:14:31",
+              "finishedAt": "10/25/2026 05:14:32"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T05:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "523b0c9a-b0ea-4b33-b0a2-d951447452bd",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T04:00:00.0270000Z",
+          "startedAt": "2026-10-25T04:54:34.8020000Z",
+          "finishedAt": "2026-10-25T05:02:44.8870000Z",
+          "durationSeconds": 490,
+          "tokensUsed": 494317,
+          "inputTokens": 26017,
+          "outputTokens": 271,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 04:54:35",
+              "finishedAt": "10/25/2026 04:54:35"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 04:54:35",
+              "finishedAt": "10/25/2026 04:54:36"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 04:54:36",
+              "finishedAt": "10/25/2026 04:55:12"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 04:55:12",
+              "finishedAt": "10/25/2026 05:02:37"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 05:02:37",
+              "finishedAt": "10/25/2026 05:02:43"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 05:02:43",
+              "finishedAt": "10/25/2026 05:02:44"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T04:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 55
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "fef54875-40e2-4dc8-a148-0595aeceef7d",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T03:00:00.0250000Z",
+          "startedAt": "2026-10-25T04:32:10.2660000Z",
+          "finishedAt": "2026-10-25T04:41:32.6750000Z",
+          "durationSeconds": 562,
+          "tokensUsed": 782941,
+          "inputTokens": 39680,
+          "outputTokens": 561,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 04:32:10",
+              "finishedAt": "10/25/2026 04:32:11"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 04:32:11",
+              "finishedAt": "10/25/2026 04:32:12"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 04:32:12",
+              "finishedAt": "10/25/2026 04:32:45"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 04:32:45",
+              "finishedAt": "10/25/2026 04:41:17"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 04:41:17",
+              "finishedAt": "10/25/2026 04:41:31"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 04:41:31",
+              "finishedAt": "10/25/2026 04:41:32"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T03:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 18,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 52
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "171f2395-4f1a-40f4-a118-21951ee704bc",
+          "titleSummary": "promoting backlog label audit to stable",
+          "workflow": "(planned)",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T02:44:24.2040000Z",
+          "startedAt": "2026-10-25T02:44:24.2320000Z",
+          "finishedAt": "2026-10-25T04:54:14.1340000Z",
+          "durationSeconds": 7790,
+          "tokensUsed": 3631928,
+          "inputTokens": 98439,
+          "outputTokens": 502,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "task",
+              "status": "done",
+              "startedAt": "10/25/2026 02:44:24",
+              "finishedAt": "10/25/2026 04:54:14"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": null,
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "6a52821b-83d3-4f81-806d-ea4781a71266",
+          "titleSummary": "running bounded backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T02:33:55.3240000Z",
+          "startedAt": "2026-10-25T02:33:55.4000000Z",
+          "finishedAt": "2026-10-25T02:39:11.5380000Z",
+          "durationSeconds": 316,
+          "tokensUsed": 312162,
+          "inputTokens": 23542,
+          "outputTokens": 367,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:55",
+              "finishedAt": "10/25/2026 02:33:56"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:56",
+              "finishedAt": "10/25/2026 02:33:57"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:57",
+              "finishedAt": "10/25/2026 02:34:32"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 02:34:32",
+              "finishedAt": "10/25/2026 02:39:02"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 02:39:02",
+              "finishedAt": "10/25/2026 02:39:10"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 02:39:10",
+              "finishedAt": "10/25/2026 02:39:11"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "manual",
+            "occurrenceAt": "2026-10-25T02:33:55.3150000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 9,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 49
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "1575a89e-150a-4ae9-984b-67166afaba7a",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T02:33:51.1960000Z",
+          "startedAt": "2026-10-25T02:33:51.3840000Z",
+          "finishedAt": "2026-10-25T14:24:43.9100000Z",
+          "durationSeconds": 42653,
+          "tokensUsed": 27296441,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:52",
+              "finishedAt": "10/25/2026 02:33:52"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:52",
+              "finishedAt": "10/25/2026 02:33:53"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 02:33:53",
+              "finishedAt": "10/25/2026 02:34:28"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "failed",
+              "startedAt": "10/25/2026 02:34:28",
+              "finishedAt": "10/25/2026 03:04:28"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "continue-1",
+              "status": "failed",
+              "startedAt": "10/25/2026 04:57:24",
+              "finishedAt": "10/25/2026 08:04:34"
+            },
+            {
+              "id": "continue-2",
+              "status": "done",
+              "startedAt": "10/25/2026 12:19:07",
+              "finishedAt": "10/25/2026 14:24:43"
+            }
+          ],
+          "failureSignatures": [
+            "backlog-label-audit",
+            "continue-1"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "manual",
+            "occurrenceAt": "2026-10-25T02:33:51.1810000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": 47
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "74fd68d0-2eb9-4413-9c80-a6c3ba57c47d",
+          "titleSummary": "running factory maintenance workflow",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T02:00:00.0240000Z",
+          "startedAt": "2026-10-25T02:00:00.0770000Z",
+          "finishedAt": "2026-10-25T02:00:01.8580000Z",
+          "durationSeconds": 2,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 02:00:00",
+              "finishedAt": "10/25/2026 02:00:01"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "failed",
+              "startedAt": "10/25/2026 02:00:01",
+              "finishedAt": "10/25/2026 02:00:01"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "recover-audit-reservations"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T02:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "8dc453b8-88bf-43a9-8c8f-3425179e51fa",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T01:00:00.0890000Z",
+          "startedAt": "2026-10-25T01:09:26.8170000Z",
+          "finishedAt": "2026-10-25T01:09:28.0520000Z",
+          "durationSeconds": 1,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 01:09:27",
+              "finishedAt": "10/25/2026 01:09:27"
+            },
+            {
+              "id": "recover-audit-reservations",
+              "status": "failed",
+              "startedAt": "10/25/2026 01:09:27",
+              "finishedAt": "10/25/2026 01:09:27"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "recover-audit-reservations"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T01:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "cezar-factory",
+          "id": "715057b4-372d-4600-8257-d900ad07ab38",
+          "titleSummary": "auditing recent cezar run failures",
+          "workflow": "factory-failure-audit",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T01:00:00.0300000Z",
+          "startedAt": "2026-10-25T01:09:25.5490000Z",
+          "finishedAt": "2026-10-25T01:09:26.7980000Z",
+          "durationSeconds": 1,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 01:09:25",
+              "finishedAt": "10/25/2026 01:09:26"
+            },
+            {
+              "id": "collect",
+              "status": "failed",
+              "startedAt": "10/25/2026 01:09:26",
+              "finishedAt": "10/25/2026 01:09:26"
+            }
+          ],
+          "failureSignatures": [
+            "collect"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T01:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        }
+      ],
+      "automations": [
+        {
+          "id": "9db4e873-802b-4ea8-8668-b94b6b550248",
+          "name": "[factory] backlog-label-audit",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 1
+          },
+          "task": {
+            "workflow": "factory-backlog-label-audit",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": null,
+            "consecutiveFailures": 1
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 1
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "c50219bc-de9a-4117-af05-9179e7c2fa6b",
+          "name": "[factory] backlog-reconciliation",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 0,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-backlog-reconciliation",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-26T00:00:00.0000000Z",
+            "lastSuccessAt": null,
+            "consecutiveFailures": null
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-26T00:00:00.0000000Z",
+          "lastRun": null
+        },
+        {
+          "id": "a86af07c-efa8-40cd-8611-384345fb8b39",
+          "name": "[factory] changes-requested",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-fix-review",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:13:45.3510000Z",
+            "consecutiveFailures": 3
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 3
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:33:15.9460000Z",
+          "lastRun": null
+        },
+        {
+          "id": "9dee2c49-9877-4a26-ac91-c9a259c290d8",
+          "name": "[factory] failure-audit",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 1,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-failure-audit",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-26T01:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-25T01:00:00.0390000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 1,
+            "launched": 2,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 2,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-26T01:00:00.0000000Z",
+          "lastRun": {
+            "runId": "715057b4-372d-4600-8257-d900ad07ab38",
+            "status": "failed",
+            "ts": "2026-10-25T01:00:00.0380000Z"
+          }
+        },
+        {
+          "id": "a1b34717-c766-48e7-a8f8-1944cb399b43",
+          "name": "[factory] intake",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-intake",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T02:33:32.1660000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T02:38:32.1660000Z",
+          "lastRun": null
+        },
+        {
+          "id": "aac5deef-4c97-4576-8111-db3bfbf2fea1",
+          "name": "[factory] intake-existing",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 1
+          },
+          "task": {
+            "workflow": "factory-intake",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-25T15:00:00.0530000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 1,
+            "launched": 1,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 1,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+          "lastRun": {
+            "runId": "cb94ed22-37c1-4d03-82f3-07bed665a949",
+            "status": "done",
+            "ts": "2026-10-25T15:00:00.0520000Z"
+          }
+        },
+        {
+          "id": "0271bee1-1233-4c17-84e7-575d14b97947",
+          "name": "[factory] investigate",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-investigate",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:59.5230000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:59.5230000Z",
+          "lastRun": null
+        },
+        {
+          "id": "3b3d8528-c4fb-4d00-8907-0797a2d3dcb7",
+          "name": "[factory] maintenance",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 1
+          },
+          "task": {
+            "workflow": "factory-maintenance",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-25T15:00:00.1860000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 19,
+            "launched": 21,
+            "duplicates": 0,
+            "errors": 1
+          },
+          "runs7d": 21,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+          "lastRun": {
+            "runId": "4dc9a5d7-74d7-49b3-9939-c680afab19ea",
+            "status": "done",
+            "ts": "2026-10-25T15:00:00.1850000Z"
+          }
+        },
+        {
+          "id": "b466bdbd-7c0a-4678-b6eb-d115a727be8a",
+          "name": "[factory] needs-plan",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:53.4100000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:53.4100000Z",
+          "lastRun": null
+        },
+        {
+          "id": "614e3a93-ca3a-44b3-a411-7ed396661c3a",
+          "name": "[factory] needs-plan-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:59.9610000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:59.9610000Z",
+          "lastRun": null
+        },
+        {
+          "id": "b9da80b5-26da-43b1-8f9c-7f2cdeec891e",
+          "name": "[factory] needs-plan-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:52.5350000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:52.5350000Z",
+          "lastRun": null
+        },
+        {
+          "id": "ad49ca58-5f96-4839-8309-64f40f39e1e7",
+          "name": "[factory] needs-plan-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:52.8740000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:52.8740000Z",
+          "lastRun": null
+        },
+        {
+          "id": "d07a86b5-f62a-4713-a9fb-5a7f73727bb1",
+          "name": "[factory] ready-to-implement-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-6.1-sol"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:53.7710000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:53.7710000Z",
+          "lastRun": null
+        },
+        {
+          "id": "e89a5313-6737-4439-b500-980c1b063b69",
+          "name": "[factory] ready-to-implement-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-5.6-luna"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:54.2250000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:54.2250000Z",
+          "lastRun": null
+        },
+        {
+          "id": "f263f3f0-752e-4d81-a9b3-5ee509bf5bd7",
+          "name": "[factory] ready-to-implement-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:54.6090000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:54.6090000Z",
+          "lastRun": null
+        },
+        {
+          "id": "8c9aef4c-8973-48e4-8525-138164a1dc14",
+          "name": "[factory] ready-to-review",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-review",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-24T22:31:55.0000000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 4
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-24T22:36:55.0000000Z",
+          "lastRun": null
+        },
+        {
+          "id": "6221c066-3e48-4dc5-b3a8-1952151b659a",
+          "name": "[factory] refresh-stale-workable",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 4
+          },
+          "task": {
+            "workflow": "factory-refresh-stale-workable",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+            "lastSuccessAt": null,
+            "consecutiveFailures": 1
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 1
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+          "lastRun": null
+        }
+      ],
+      "status": "ready",
+      "limitations": []
+    },
+    {
+      "projectId": "tableflux-animation-pipeline",
+      "apiUrl": "http://192.168.86.69:4321",
+      "projectType": null,
+      "runs": [
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "53d49df0-531d-4f2c-9b6f-f45267aaad08",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T15:00:00.4200000Z",
+          "startedAt": "2026-10-25T15:06:47.4430000Z",
+          "finishedAt": "2026-10-25T15:09:06.3900000Z",
+          "durationSeconds": 139,
+          "tokensUsed": 124417,
+          "inputTokens": 21243,
+          "outputTokens": 190,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 15:06:48",
+              "finishedAt": "10/25/2026 15:06:48"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 15:06:48",
+              "finishedAt": "10/25/2026 15:07:15"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 15:07:15",
+              "finishedAt": "10/25/2026 15:09:04"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 15:09:04",
+              "finishedAt": "10/25/2026 15:09:05"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 15:09:05",
+              "finishedAt": "10/25/2026 15:09:06"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T15:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "8de8d8d4-09b6-4ff3-9df8-700a458efa4a",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T14:00:00.2380000Z",
+          "startedAt": "2026-10-25T14:24:43.9590000Z",
+          "finishedAt": "2026-10-25T14:27:12.0790000Z",
+          "durationSeconds": 148,
+          "tokensUsed": 82007,
+          "inputTokens": 20665,
+          "outputTokens": 233,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 14:24:44",
+              "finishedAt": "10/25/2026 14:24:45"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 14:24:45",
+              "finishedAt": "10/25/2026 14:25:11"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 14:25:11",
+              "finishedAt": "10/25/2026 14:27:09"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 14:27:09",
+              "finishedAt": "10/25/2026 14:27:10"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 14:27:10",
+              "finishedAt": "10/25/2026 14:27:12"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T14:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "81b24862-be9e-4c46-895a-98efd59c68cb",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T13:00:12.2830000Z",
+          "startedAt": "2026-10-25T13:50:11.9940000Z",
+          "finishedAt": "2026-10-25T13:58:36.8740000Z",
+          "durationSeconds": 505,
+          "tokensUsed": 82148,
+          "inputTokens": 20774,
+          "outputTokens": 134,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 13:50:12",
+              "finishedAt": "10/25/2026 13:50:13"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 13:50:13",
+              "finishedAt": "10/25/2026 13:50:40"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 13:50:40",
+              "finishedAt": "10/25/2026 13:58:34"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 13:58:34",
+              "finishedAt": "10/25/2026 13:58:35"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 13:58:35",
+              "finishedAt": "10/25/2026 13:58:36"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T13:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "40eb4b52-2fd8-47ab-b798-3e26208a6080",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T12:00:00.2100000Z",
+          "startedAt": "2026-10-25T12:02:40.9490000Z",
+          "finishedAt": "2026-10-25T12:09:17.0850000Z",
+          "durationSeconds": 396,
+          "tokensUsed": 583719,
+          "inputTokens": 28913,
+          "outputTokens": 249,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 12:02:41",
+              "finishedAt": "10/25/2026 12:02:42"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 12:02:42",
+              "finishedAt": "10/25/2026 12:03:10"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 12:03:10",
+              "finishedAt": "10/25/2026 12:09:14"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 12:09:14",
+              "finishedAt": "10/25/2026 12:09:15"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 12:09:15",
+              "finishedAt": "10/25/2026 12:09:17"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T12:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": 1
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "b250b629-b2fb-4a6b-b54d-e38d96034fa0",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T11:00:00.3280000Z",
+          "startedAt": "2026-10-25T11:02:24.1620000Z",
+          "finishedAt": "2026-10-25T11:03:54.7600000Z",
+          "durationSeconds": 91,
+          "tokensUsed": 81604,
+          "inputTokens": 20629,
+          "outputTokens": 85,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 11:02:24",
+              "finishedAt": "10/25/2026 11:02:25"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 11:02:25",
+              "finishedAt": "10/25/2026 11:02:51"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 11:02:51",
+              "finishedAt": "10/25/2026 11:03:52"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 11:03:52",
+              "finishedAt": "10/25/2026 11:03:53"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 11:03:53",
+              "finishedAt": "10/25/2026 11:03:54"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T11:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "3bf19a57-6ca7-4024-ae45-a0e708692296",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T10:00:00.2980000Z",
+          "startedAt": "2026-10-25T10:04:18.9990000Z",
+          "finishedAt": "2026-10-25T10:09:19.3330000Z",
+          "durationSeconds": 300,
+          "tokensUsed": 373807,
+          "inputTokens": 24032,
+          "outputTokens": 541,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 10:04:19",
+              "finishedAt": "10/25/2026 10:04:20"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 10:04:20",
+              "finishedAt": "10/25/2026 10:04:46"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 10:04:46",
+              "finishedAt": "10/25/2026 10:09:17"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 10:09:17",
+              "finishedAt": "10/25/2026 10:09:18"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 10:09:18",
+              "finishedAt": "10/25/2026 10:09:19"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T10:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "ed3867ea-3501-4207-8141-7ec8cfc14223",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T09:00:00.2560000Z",
+          "startedAt": "2026-10-25T09:16:07.5330000Z",
+          "finishedAt": "2026-10-25T09:18:18.6570000Z",
+          "durationSeconds": 131,
+          "tokensUsed": 124231,
+          "inputTokens": 21213,
+          "outputTokens": 35,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 09:16:08",
+              "finishedAt": "10/25/2026 09:16:08"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 09:16:08",
+              "finishedAt": "10/25/2026 09:16:34"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 09:16:34",
+              "finishedAt": "10/25/2026 09:18:16"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 09:18:16",
+              "finishedAt": "10/25/2026 09:18:17"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 09:18:17",
+              "finishedAt": "10/25/2026 09:18:18"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T09:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "cc5b7df9-fdea-4b9b-bd48-6a26fce6a5bd",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T08:00:00.2270000Z",
+          "startedAt": "2026-10-25T08:34:34.3840000Z",
+          "finishedAt": "2026-10-25T08:37:11.7260000Z",
+          "durationSeconds": 157,
+          "tokensUsed": 101970,
+          "inputTokens": 20729,
+          "outputTokens": 117,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 08:34:35",
+              "finishedAt": "10/25/2026 08:34:35"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 08:34:35",
+              "finishedAt": "10/25/2026 08:35:00"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 08:35:00",
+              "finishedAt": "10/25/2026 08:37:09"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 08:37:09",
+              "finishedAt": "10/25/2026 08:37:10"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 08:37:10",
+              "finishedAt": "10/25/2026 08:37:11"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T08:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "dacda6aa-9251-45bc-bdf7-99ccdd39551e",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-25T07:00:00.4230000Z",
+          "startedAt": "2026-10-25T07:52:15.8930000Z",
+          "finishedAt": "2026-10-25T08:22:44.5610000Z",
+          "durationSeconds": 1829,
+          "tokensUsed": 1412964,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 07:52:16",
+              "finishedAt": "10/25/2026 07:52:17"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 07:52:17",
+              "finishedAt": "10/25/2026 07:52:44"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "failed",
+              "startedAt": "10/25/2026 07:52:44",
+              "finishedAt": "10/25/2026 08:22:44"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "backlog-label-audit"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T07:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "07f57adf-75e0-4356-88c6-0ad34c3c9467",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T06:00:00.3030000Z",
+          "startedAt": "2026-10-25T06:08:36.6590000Z",
+          "finishedAt": "2026-10-25T06:11:40.9840000Z",
+          "durationSeconds": 184,
+          "tokensUsed": 123926,
+          "inputTokens": 21173,
+          "outputTokens": 141,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 06:08:37",
+              "finishedAt": "10/25/2026 06:08:37"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 06:08:37",
+              "finishedAt": "10/25/2026 06:09:03"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 06:09:03",
+              "finishedAt": "10/25/2026 06:11:38"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 06:11:38",
+              "finishedAt": "10/25/2026 06:11:39"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 06:11:39",
+              "finishedAt": "10/25/2026 06:11:40"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T06:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "0c5bc356-d5de-4389-a60f-3267eceaebfe",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T05:00:00.2080000Z",
+          "startedAt": "2026-10-25T05:23:56.0580000Z",
+          "finishedAt": "2026-10-25T05:42:53.5510000Z",
+          "durationSeconds": 1137,
+          "tokensUsed": 132401,
+          "inputTokens": 25389,
+          "outputTokens": 345,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 05:23:56",
+              "finishedAt": "10/25/2026 05:23:57"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 05:23:57",
+              "finishedAt": "10/25/2026 05:24:22"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 05:24:22",
+              "finishedAt": "10/25/2026 05:42:51"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 05:42:51",
+              "finishedAt": "10/25/2026 05:42:52"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 05:42:52",
+              "finishedAt": "10/25/2026 05:42:53"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T05:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "4a6003aa-56f2-4161-9a5a-ad1185cd7648",
+          "titleSummary": "auditing factory backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T04:00:00.2080000Z",
+          "startedAt": "2026-10-25T05:05:39.0130000Z",
+          "finishedAt": "2026-10-25T05:07:50.6310000Z",
+          "durationSeconds": 132,
+          "tokensUsed": 102153,
+          "inputTokens": 20724,
+          "outputTokens": 187,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 05:05:39",
+              "finishedAt": "10/25/2026 05:05:40"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 05:05:40",
+              "finishedAt": "10/25/2026 05:06:06"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 05:06:06",
+              "finishedAt": "10/25/2026 05:07:48"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 05:07:48",
+              "finishedAt": "10/25/2026 05:07:49"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 05:07:49",
+              "finishedAt": "10/25/2026 05:07:50"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T04:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "00758ac3-3349-4e9f-8d47-a6356ccb1360",
+          "titleSummary": "auditing factory backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T03:00:00.2050000Z",
+          "startedAt": "2026-10-25T04:44:06.3750000Z",
+          "finishedAt": "2026-10-25T04:57:24.2320000Z",
+          "durationSeconds": 798,
+          "tokensUsed": 915638,
+          "inputTokens": 30919,
+          "outputTokens": 209,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 04:44:07",
+              "finishedAt": "10/25/2026 04:44:07"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 04:44:07",
+              "finishedAt": "10/25/2026 04:44:33"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 04:44:33",
+              "finishedAt": "10/25/2026 04:57:21"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 04:57:21",
+              "finishedAt": "10/25/2026 04:57:23"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 04:57:23",
+              "finishedAt": "10/25/2026 04:57:24"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T03:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 2
+          },
+          "prCount": 0,
+          "issueNumber": 63
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "732a7162-989a-41e4-987d-a24f03eff62c",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T02:00:00.2420000Z",
+          "startedAt": "2026-10-25T02:02:33.1460000Z",
+          "finishedAt": "2026-10-25T02:04:53.3440000Z",
+          "durationSeconds": 140,
+          "tokensUsed": 61301,
+          "inputTokens": 20613,
+          "outputTokens": 150,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 02:02:33",
+              "finishedAt": "10/25/2026 02:02:34"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 02:02:34",
+              "finishedAt": "10/25/2026 02:03:01"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 02:03:01",
+              "finishedAt": "10/25/2026 02:04:51"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 02:04:51",
+              "finishedAt": "10/25/2026 02:04:52"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 02:04:52",
+              "finishedAt": "10/25/2026 02:04:53"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T02:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 6,
+            "dels": 14
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "3a5f0562-a87b-4d68-bec5-c88e844b265e",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T01:00:00.3050000Z",
+          "startedAt": "2026-10-25T01:13:10.9860000Z",
+          "finishedAt": "2026-10-25T01:34:15.0760000Z",
+          "durationSeconds": 1264,
+          "tokensUsed": 211152,
+          "inputTokens": 34603,
+          "outputTokens": 182,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 01:13:11",
+              "finishedAt": "10/25/2026 01:13:12"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 01:13:12",
+              "finishedAt": "10/25/2026 01:13:37"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 01:13:37",
+              "finishedAt": "10/25/2026 01:34:12"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 01:34:12",
+              "finishedAt": "10/25/2026 01:34:13"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 01:34:13",
+              "finishedAt": "10/25/2026 01:34:15"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T01:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "0f70c6ad-fcdf-4af8-b41c-01572da727dc",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-25T00:00:00.2790000Z",
+          "startedAt": "2026-10-25T00:19:22.7270000Z",
+          "finishedAt": "2026-10-25T00:39:05.3980000Z",
+          "durationSeconds": 1183,
+          "tokensUsed": 19874,
+          "inputTokens": 19799,
+          "outputTokens": 75,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/25/2026 00:19:23",
+              "finishedAt": "10/25/2026 00:19:23"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/25/2026 00:19:23",
+              "finishedAt": "10/25/2026 00:19:50"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/25/2026 00:19:50",
+              "finishedAt": "10/25/2026 00:39:03"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/25/2026 00:39:03",
+              "finishedAt": "10/25/2026 00:39:04"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/25/2026 00:39:04",
+              "finishedAt": "10/25/2026 00:39:05"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-25T00:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "f1881e46-2587-4c91-a4ff-d801f06507e8",
+          "titleSummary": "auditing backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-24T23:00:00.6810000Z",
+          "startedAt": "2026-10-24T23:07:37.3530000Z",
+          "finishedAt": "2026-10-24T23:11:19.9510000Z",
+          "durationSeconds": 223,
+          "tokensUsed": 81501,
+          "inputTokens": 20559,
+          "outputTokens": 141,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/24/2026 23:07:38",
+              "finishedAt": "10/24/2026 23:07:38"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/24/2026 23:07:38",
+              "finishedAt": "10/24/2026 23:08:04"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/24/2026 23:08:04",
+              "finishedAt": "10/24/2026 23:11:17"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/24/2026 23:11:17",
+              "finishedAt": "10/24/2026 23:11:18"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/24/2026 23:11:18",
+              "finishedAt": "10/24/2026 23:11:19"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-24T23:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "0f24dad5-4891-4f4d-8405-9b806cabc069",
+          "titleSummary": "running backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-24T22:00:00.3370000Z",
+          "startedAt": "2026-10-24T22:00:00.4410000Z",
+          "finishedAt": "2026-10-24T22:06:47.8650000Z",
+          "durationSeconds": 407,
+          "tokensUsed": 633500,
+          "inputTokens": 27738,
+          "outputTokens": 128,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/24/2026 22:00:01",
+              "finishedAt": "10/24/2026 22:00:01"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/24/2026 22:00:01",
+              "finishedAt": "10/24/2026 22:00:29"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/24/2026 22:00:29",
+              "finishedAt": "10/24/2026 22:06:45"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/24/2026 22:06:45",
+              "finishedAt": "10/24/2026 22:06:46"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/24/2026 22:06:46",
+              "finishedAt": "10/24/2026 22:06:47"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-24T22:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 1,
+            "adds": 3,
+            "dels": 13
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "30e78c53-3aa8-4847-8dcb-23e51c78c21a",
+          "titleSummary": "auditing factory backlog labels",
+          "workflow": "factory-maintenance",
+          "status": "done",
+          "conclusion": "",
+          "createdAt": "2026-10-24T21:00:00.5820000Z",
+          "startedAt": "2026-10-24T21:00:00.6840000Z",
+          "finishedAt": "2026-10-24T21:06:43.1750000Z",
+          "durationSeconds": 402,
+          "tokensUsed": 593772,
+          "inputTokens": 27632,
+          "outputTokens": 243,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "done",
+              "startedAt": "10/24/2026 21:00:01",
+              "finishedAt": "10/24/2026 21:00:01"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "done",
+              "startedAt": "10/24/2026 21:00:01",
+              "finishedAt": "10/24/2026 21:00:31"
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "done",
+              "startedAt": "10/24/2026 21:00:31",
+              "finishedAt": "10/24/2026 21:06:40"
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "done",
+              "startedAt": "10/24/2026 21:06:40",
+              "finishedAt": "10/24/2026 21:06:41"
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "done",
+              "startedAt": "10/24/2026 21:06:41",
+              "finishedAt": "10/24/2026 21:06:43"
+            }
+          ],
+          "failureSignatures": [],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-24T21:00:00.0000000Z"
+          },
+          "diffStat": {
+            "files": 0,
+            "adds": 0,
+            "dels": 0
+          },
+          "prCount": 0,
+          "issueNumber": null
+        },
+        {
+          "projectId": "tableflux-animation-pipeline",
+          "id": "2bda17fc-bc19-449c-b36d-2dade6ef8670",
+          "titleSummary": "running factory backlog label audit",
+          "workflow": "factory-maintenance",
+          "status": "failed",
+          "conclusion": "",
+          "createdAt": "2026-10-24T20:00:00.1760000Z",
+          "startedAt": "2026-10-24T20:00:00.2910000Z",
+          "finishedAt": "2026-10-24T20:00:01.1350000Z",
+          "durationSeconds": 1,
+          "tokensUsed": 0,
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "steps": [
+            {
+              "id": "startup",
+              "status": "failed",
+              "startedAt": "10/24/2026 20:00:01",
+              "finishedAt": "10/24/2026 20:00:01"
+            },
+            {
+              "id": "backlog-label-audit-collect",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "backlog-label-audit",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "refresh-stale-workable",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            },
+            {
+              "id": "repository-maintenance",
+              "status": "pending",
+              "startedAt": "",
+              "finishedAt": ""
+            }
+          ],
+          "failureSignatures": [
+            "startup"
+          ],
+          "terminalReason": "",
+          "validationOutcome": "",
+          "automationTrigger": {
+            "trigger": "schedule",
+            "occurrenceAt": "2026-10-24T20:00:00.0000000Z"
+          },
+          "diffStat": null,
+          "prCount": 0,
+          "issueNumber": null
+        }
+      ],
+      "automations": [
+        {
+          "id": "21c89a25-70fd-408e-a9a8-69800499ef1e",
+          "name": "[factory] backlog-reconciliation",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 0,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-backlog-reconciliation",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": null,
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "243e6084-bd3c-4de2-ae0a-4fc6fe4338e0",
+          "name": "[factory] changes-requested",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-fix-review",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:47.1880000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:47.1880000Z",
+          "lastRun": null
+        },
+        {
+          "id": "8e52dfd4-c36b-4c27-ae99-69dcc216f7e1",
+          "name": "[factory] failure-audit",
+          "enabled": false,
+          "kind": "schedule",
+          "schedule": {
+            "type": "daily",
+            "hour": 1,
+            "minute": 0
+          },
+          "task": {
+            "workflow": "factory-failure-audit",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-14T01:00:00.0000000Z",
+            "lastSuccessAt": null,
+            "consecutiveFailures": 3
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": null,
+          "lastRun": null
+        },
+        {
+          "id": "a7d3d438-cfea-4cb7-bc08-face838f02d3",
+          "name": "[factory] intake",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-intake",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:29:02.5150000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 13
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:34:02.5150000Z",
+          "lastRun": null
+        },
+        {
+          "id": "33568d8e-f16c-4ede-b5c5-9600e144bd42",
+          "name": "[factory] investigate",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-investigate",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:29:03.0270000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 13
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:34:03.0270000Z",
+          "lastRun": null
+        },
+        {
+          "id": "dc1a230a-9fa7-4db0-b2eb-9fb9260018ee",
+          "name": "[factory] maintenance",
+          "enabled": true,
+          "kind": "schedule",
+          "schedule": {
+            "type": "hours",
+            "every": 1
+          },
+          "task": {
+            "workflow": "factory-maintenance",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+            "lastSuccessAt": "2026-10-25T15:00:00.4580000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 81,
+            "launched": 82,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 82,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T16:00:00.0000000Z",
+          "lastRun": {
+            "runId": "53d49df0-531d-4f2c-9b6f-f45267aaad08",
+            "status": "done",
+            "ts": "2026-10-25T15:00:00.4570000Z"
+          }
+        },
+        {
+          "id": "1c27ad5f-2c2b-4080-9668-e9cd0d1b1cf6",
+          "name": "[factory] needs-plan",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:44.1080000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:44.1080000Z",
+          "lastRun": null
+        },
+        {
+          "id": "fd42e089-5929-40fb-8383-2cd696791b71",
+          "name": "[factory] needs-plan-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:44.5500000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:44.5500000Z",
+          "lastRun": null
+        },
+        {
+          "id": "bfc77934-2471-4ece-8cda-cf4f8a062e96",
+          "name": "[factory] needs-plan-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:45.0260000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:45.0260000Z",
+          "lastRun": null
+        },
+        {
+          "id": "adc7f19e-4caa-44fa-9048-bd57d4f1e72c",
+          "name": "[factory] needs-plan-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-plan",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:46.3270000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:46.3270000Z",
+          "lastRun": null
+        },
+        {
+          "id": "1b8b03b6-5e14-4bc9-b25f-f220ad889641",
+          "name": "[factory] ready-to-implement-large",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-6.1-sol"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:40.4740000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:40.4740000Z",
+          "lastRun": null
+        },
+        {
+          "id": "d84cc420-cdf0-4dfa-9900-95e393b803cb",
+          "name": "[factory] ready-to-implement-medium",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "gpt-5.6-luna"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:45.8860000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:45.8860000Z",
+          "lastRun": null
+        },
+        {
+          "id": "c594ae94-117d-4152-b46d-993840a039e4",
+          "name": "[factory] ready-to-implement-small",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-implement",
+            "runner": "codex",
+            "model": "factory-gateway/factory-code"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:43.1850000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:43.1850000Z",
+          "lastRun": null
+        },
+        {
+          "id": "9a8544f9-c465-42d5-9cf6-9064182fe92f",
+          "name": "[factory] ready-to-review",
+          "enabled": true,
+          "kind": "github",
+          "schedule": null,
+          "task": {
+            "workflow": "factory-review",
+            "runner": "claude",
+            "model": "sonnet"
+          },
+          "state": {
+            "nextRunAt": null,
+            "lastSuccessAt": "2026-10-25T15:26:45.4680000Z",
+            "consecutiveFailures": 0
+          },
+          "counts": {
+            "matches": 0,
+            "launched": 0,
+            "duplicates": 0,
+            "errors": 0
+          },
+          "runs7d": 0,
+          "costUsd7d": 0,
+          "nextRunAt": "2026-10-25T15:31:45.4680000Z",
+          "lastRun": null
+        }
+      ],
+      "status": "ready",
+      "limitations": []
+    }
+  ],
+  "limitations": []
+}

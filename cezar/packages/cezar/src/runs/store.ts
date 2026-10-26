@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { StreamRedaction } from './stream-redaction.ts';
@@ -13,7 +13,7 @@ import { MAX_REF } from './task-refs.ts';
 import { workflowDefSchema } from '../workflows/types.ts';
 // A contract VALUE, like `workspaceUiStateSchema` in `workspace/migrations.ts`: the persisted
 // `dispatch` object and its wire half are literally the same schema, so they cannot drift.
-import { dispatchSchema, trackerAssociationSchema, trackerAutomationEventSchema } from '@open-mercato/cezar-contract';
+import { dispatchSchema, runOutcomeSchema, trackerAssociationSchema, trackerAutomationEventSchema } from '@open-mercato/cezar-contract';
 
 import { RUNNER_IDS } from '../core/agent-runner.ts';
 
@@ -69,6 +69,8 @@ const stepStateSchema = z.object({
   name: z.string(),
   kind: z.enum(['agent', 'check']),
   status: z.enum(['pending', 'running', 'waiting', 'review', 'done', 'failed', 'cancelled', 'skipped']),
+  /** Stable reason for a conditional or no-work skip. */
+  skipReason: z.string().optional(),
   iterations: z.number(),
   tokensUsed: z.number(),
   inputTokens: usageCounterSchema.optional(),
@@ -81,6 +83,14 @@ const stepStateSchema = z.object({
   startedAt: z.string().optional(),
   finishedAt: z.string().optional(),
   error: z.string().optional(),
+  /** Validated structured output from the latest successful check attempt. */
+  output: z.any().optional(),
+  /** Attempt that produced `output`; stale values are never exposed downstream. */
+  outputAttempt: z.number().int().positive().optional(),
+  /** Digest of the canonical serialized output, checked before downstream consumption. */
+  outputDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** Digest of the producing workflow step definition, pinning artifact provenance to its source. */
+  outputSourceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   /** Latest backend-owned session id, used for same-backend Continue. */
   sessionId: z.string().optional(),
   /** Backend that owns `sessionId`. Optional so pre-affinity runs.json files still parse;
@@ -243,6 +253,18 @@ export const runRecordSchema = z.object({
    *  as an ordinary flat task — degraded, but running. */
   dispatch: dispatchSchema.optional().catch(undefined),
   status: z.enum(['queued', 'running', 'waiting', 'review', 'done', 'failed', 'cancelled']),
+  /** Additive typed terminal semantics. An invalid legacy value is dropped without losing its run. */
+  outcome: runOutcomeSchema.optional().catch(undefined),
+  /** Durable cleanup intent and receipt for restartable workflow finalizers. */
+  finalization: z.object({
+    status: z.enum(['running', 'complete', 'failed']),
+    terminal: z.enum(['success', 'failed', 'cancelled']),
+    error: z.string().optional(),
+    outcome: runOutcomeSchema.optional(),
+    startedAt: z.string(),
+    finishedAt: z.string().optional(),
+    cleanupError: z.string().optional(),
+  }).optional().catch(undefined),
   /** Sub-state of `running` (spec 2026-07-18-subagent-monitoring-status, #490):
    *  `monitoring` while the agent is still working on its own downstream work.
    *  Optional/absent on old runs; cleared when the run resumes or ends. */
@@ -781,6 +803,7 @@ export function reconcileLoadedRun(run: RunRecord, opts?: { keepLive?: boolean }
     const askParked = run.status === 'waiting' && run.askParked === true;
     run.status = 'failed';
     run.error = 'interrupted — cezar process exited during the run';
+    run.outcome = { kind: 'infrastructure_failure', reasonCode: 'engine_interrupted' };
     run.finishedAt = run.finishedAt ?? new Date().toISOString();
     // Stamped from `finishedAt`, so every cold read of the same record agrees on the instant.
     if (askParked) run.awaitingAnswerSince = run.finishedAt;
@@ -788,6 +811,14 @@ export function reconcileLoadedRun(run: RunRecord, opts?: { keepLive?: boolean }
       if (step.status === 'running' || step.status === 'waiting') step.status = 'failed';
     }
   }
+  if (!['running', 'waiting', 'queued', 'review'].includes(run.status) && !run.outcome) {
+    run.outcome = run.status === 'done'
+      ? { kind: 'completed', reasonCode: 'legacy_completed' }
+      : run.status === 'cancelled'
+        ? { kind: 'cancelled', reasonCode: 'user_cancelled' }
+        : { kind: 'unclassified_failure', reasonCode: 'legacy_unclassified' };
+  }
+  if (['running', 'waiting', 'queued', 'review'].includes(run.status)) run.outcome = undefined;
   if (!['running', 'waiting', 'queued'].includes(run.status)) {
     run.activity = undefined;
     run.monitoringWakeAt = undefined;
@@ -1024,6 +1055,15 @@ export class RunStore extends EventEmitter {
       delete run.referencedIssueNumberSeeded;
     }
     const normalized = { ...patch };
+    if (normalized.status && ['queued', 'running', 'waiting', 'review'].includes(normalized.status)) {
+      normalized.outcome = undefined;
+    } else if (normalized.status && normalized.outcome === undefined) {
+      normalized.outcome = normalized.status === 'done'
+        ? { kind: 'completed', reasonCode: 'workflow_completed' }
+        : normalized.status === 'cancelled'
+          ? { kind: 'cancelled', reasonCode: 'user_cancelled' }
+          : { kind: 'unclassified_failure', reasonCode: 'unclassified_failure' };
+    }
     if (normalized.status && !['running', 'waiting', 'queued'].includes(normalized.status)) {
       normalized.activity = undefined;
       normalized.monitoringWakeAt = undefined;
@@ -1090,6 +1130,13 @@ export class RunStore extends EventEmitter {
       const value = out[field];
       if (typeof value === 'string') out[field] = this.redactText(value, runId);
     }
+    if (out.finalization && process.env.CEZ_REDACT_SECRETS !== '0') {
+      out.finalization = {
+        ...out.finalization,
+        ...(out.finalization.error ? { error: this.redactText(out.finalization.error, runId) } : {}),
+        ...(out.finalization.cleanupError ? { cleanupError: this.redactText(out.finalization.cleanupError, runId) } : {}),
+      };
+    }
     return out;
   }
 
@@ -1101,9 +1148,22 @@ export class RunStore extends EventEmitter {
    * The remaining fields are ids, enums, counters and timestamps.
    */
   private redactStepPatch(patch: Partial<Omit<StepState, 'id'>>, runId: string): Partial<Omit<StepState, 'id'>> {
-    if (process.env.CEZ_REDACT_SECRETS === '0') return patch;
-    if (typeof patch.error !== 'string') return patch;
-    return { ...patch, error: this.redactText(patch.error, runId) };
+    const out = { ...patch };
+    if (process.env.CEZ_REDACT_SECRETS !== '0' && typeof out.error === 'string') out.error = this.redactText(out.error, runId);
+    if (out.output !== undefined) {
+      try {
+        const json = JSON.stringify(out.output);
+        if (json === undefined) throw new Error('output is not JSON serializable');
+        out.output = JSON.parse(process.env.CEZ_REDACT_SECRETS === '0' ? json : this.redactText(json, runId));
+        out.outputDigest = createHash('sha256').update(JSON.stringify(out.output)).digest('hex');
+      } catch {
+        delete out.output;
+        delete out.outputAttempt;
+        delete out.outputDigest;
+        delete out.outputSourceDigest;
+      }
+    }
+    return out;
   }
 
   /** Append a step to an existing run (used by "Continue" — spec 003). */
@@ -1679,14 +1739,69 @@ export class RunStore extends EventEmitter {
   private saveNow(throwOnError = false): void {
     const indexPath = join(this.dataDir, 'runs.json');
     const tmpPath = `${indexPath}.tmp`;
+    const lockPath = `${indexPath}.lock`;
+    let lockFd: number | undefined;
     try {
+      lockFd = this.acquireIndexLock(lockPath);
       writeFileSync(tmpPath, JSON.stringify(this.mergeWithIndexOnDisk(indexPath), null, 2), 'utf8');
       renameSync(tmpPath, indexPath);
     } catch (err) {
       if (throwOnError) throw new Error('Could not persist automation run provenance; the launch was not confirmed.');
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[cez] failed to save runs.json: ${message}`);
+    } finally {
+      if (lockFd !== undefined) {
+        try { closeSync(lockFd); } catch { /* best effort release */ }
+        try { rmSync(lockPath, { force: true }); } catch { /* a stale lock is reclaimed on the next save */ }
+      }
     }
+  }
+
+  /** Serialize read/merge/rename across the cockpit and headless Cezar writers. */
+  private acquireIndexLock(lockPath: string): number {
+    const deadline = Date.now() + 15_000;
+    const pause = new Int32Array(new SharedArrayBuffer(4));
+    while (Date.now() < deadline) {
+      try {
+        const fd = openSync(lockPath, 'wx', 0o600);
+        try {
+          writeFileSync(fd, `${process.pid}\n${Date.now()}\n`, 'utf8');
+          fsyncSync(fd);
+          return fd;
+        } catch (error) {
+          try { closeSync(fd); } catch { /* best effort cleanup */ }
+          try { rmSync(lockPath, { force: true }); } catch { /* next save reclaims a stale lock */ }
+          throw error;
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+
+      try {
+        const stat = statSync(lockPath);
+        if (Date.now() - stat.mtimeMs > 30_000) {
+          const owner = Number(readFileSync(lockPath, 'utf8').split(/\s+/, 1)[0]);
+          let ownerAlive = Number.isInteger(owner) && owner > 0;
+          if (ownerAlive) {
+            try { process.kill(owner, 0); }
+            catch (error) { ownerAlive = (error as NodeJS.ErrnoException).code === 'EPERM'; }
+          }
+          if (!ownerAlive) {
+            // Rename, rather than unlink, so two waiters cannot both remove a
+            // stale file and then delete the next writer's newly-created lock.
+            const stalePath = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+            renameSync(lockPath, stalePath);
+            rmSync(stalePath, { force: true });
+            continue;
+          }
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+      Atomics.wait(pause, 0, 0, 25);
+    }
+    throw new Error('Timed out waiting for the shared run-index writer lock.');
   }
 
   /**
@@ -1699,10 +1814,10 @@ export class RunStore extends EventEmitter {
    * its next save and left an orphaned `.ndjson` behind.
    *
    * Ours wins for an id we hold (we know more about it than the file does), an unknown id is
-   * adopted verbatim, and one `forget` recorded is never re-adopted. Best-effort, not a lock: two
-   * writers can still interleave between this read and the `rename`, so a foreign record updated
-   * inside the same debounce window can still lose that update. That residual race costs a field;
-   * the overwrite it replaces cost the whole record.
+   * adopted verbatim, and one `forget` recorded is never re-adopted. `saveNow` holds the shared
+   * index lock across this read/merge and the atomic rename, so current cockpit and headless
+   * writers cannot overwrite each other's intervening updates. An older process that does not
+   * honor the lock can still race it during an upgrade.
    *
    * Adopted records are written back but deliberately NOT loaded into `this.runs` — showing a
    * foreign run in an already-live cockpit is a separate change. They are equally deliberately not

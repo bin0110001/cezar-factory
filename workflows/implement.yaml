@@ -3,10 +3,33 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,factory/test-changed.ps1,factory/test-full.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,factory/test-changed.ps1,factory/test-full.ps1,factory/run-verification.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    outputSchema:
+      type: object
+      required: [status, issue]
+      properties:
+        status:
+          type: string
+          enum: [open, already-resolved]
+        issue:
+          type: integer
+        reason:
+          type: string
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action:
+              type: string
+              const: no_work
+            reasonCode:
+              type: string
+              const: no_work
+          additionalProperties: false
+      additionalProperties: false
   - id: prepare
     name: Prepare issue and environment context
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/prepare-implementation.ps1 -Task "{{task}}" -OutputPath .factory/implementation-context.json
@@ -48,15 +71,93 @@ steps:
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1
+    outputSchema:
+      type: object
+      required: [status, level, reason]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, skipped, unavailable, no_matching_tests]
+        level:
+          type: string
+          enum: [targeted, full]
+        reason:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+        category:
+          type: string
+          enum: [work_verdict, test_regression, configuration, missing_command, authentication, provider_unavailable, provider_quota, transient_transport, timeout, cancelled, malformed_result, unknown]
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action:
+              type: string
+              enum: [no_work, skip_step, blocked]
+            reasonCode:
+              type: string
+              enum: [no_work, precondition_not_met, policy_blocked, dependency_unavailable, provider_quota, human_input_required]
+          additionalProperties: false
     onFail:
       retry: implement
       max: 2
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "2": configuration
+      "3": timeout
+      "4": missing_command
+      "5": authentication
+      "6": provider_unavailable
+      "7": transient_transport
+      "8": cancelled
+      "9": malformed_result
+      "10": unknown
   - id: full-verification
     name: Run required verification
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1
+    outputSchema:
+      type: object
+      required: [status, level, reason]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, skipped, unavailable, no_matching_tests]
+        level:
+          type: string
+          enum: [targeted, full]
+        reason:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+        category:
+          type: string
+          enum: [work_verdict, test_regression, configuration, missing_command, authentication, provider_unavailable, provider_quota, transient_transport, timeout, cancelled, malformed_result, unknown]
+        $cezar:
+          type: object
+          required: [action, reasonCode]
+          properties:
+            action:
+              type: string
+              enum: [no_work, skip_step, blocked]
+            reasonCode:
+              type: string
+              enum: [no_work, precondition_not_met, policy_blocked, dependency_unavailable, provider_quota, human_input_required]
+          additionalProperties: false
     onFail:
       retry: implement
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "2": configuration
+      "3": timeout
+      "4": missing_command
+      "5": authentication
+      "6": provider_unavailable
+      "7": transient_transport
+      "8": cancelled
+      "9": malformed_result
+      "10": unknown
   - id: validate
     name: Validate implementation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -RouteOnFailure -FailureContextPath .factory/implementation-context.json -Task "{{task}}"

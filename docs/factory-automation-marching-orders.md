@@ -1,4 +1,10 @@
-# Factory Automation Marching Orders
+# Historical Factory Automation Marching Orders
+
+> Historical proposal. This document is not the current execution plan or an
+> authorization to change automations. Follow the repository's current
+> AGENTS.md, policies, Cezar workflows, and the active
+> skills-automation-polish-plan for current work and release gates. The OpenHands
+> provider and human-merge steps below are superseded.
 
 ## Purpose
 
@@ -7,9 +13,8 @@ tools first, bounded local models second, and premium coding/reasoning agents
 only when the earlier layers cannot safely complete the work. The system must
 reuse durable memory without treating memory as authoritative requirements.
 
-This is the current execution plan. It supplements the historical integrated
-workplan: completed entries there remain evidence, while this document orders
-the remaining work and defines the implementation contracts.
+This file records an earlier execution plan. Completed entries remain historical
+evidence; open entries must be re-evaluated against current policies before use.
 
 ## Operating model
 
@@ -27,7 +32,7 @@ bounded local utility model (advisory JSON only)
         +-- valid and sufficient --> deterministic consumer applies policy
         |
         v
-premium agent in OpenHands worktree
+agent runner through Cezar in an isolated task worktree
         |
         v
 deterministic validation, independent review, human gate where required
@@ -44,7 +49,7 @@ change GitHub state, retain a memory, merge a PR, or override a risk gate.
 | Work truth, requirements, PRs, approvals | GitHub | GitHub remains the durable record of intent and review. |
 | Legal lifecycle transitions | Factory scripts/Cezar | `route-state.ps1` is the state authority; no agent edits `factory:*` labels directly. |
 | Workflow initiation, retry and escalation | Cezar | Cezar decides when a legal workflow can run. |
-| Isolated coding session and worktree | OpenHands | Do not recreate a custom worktree or premium-agent runtime. |
+| Isolated coding session and worktree | Cezar | Use configured agent runners and Cezar's task worktree lifecycle. |
 | Bounded local inference | LiteLLM + vLLM | Local jobs are advisory, JSON-constrained, temperature-zero utility work. |
 | Durable operational memory | Hindsight | Memory informs work; it does not replace Git documentation or issue requirements. |
 | Normative architecture, policies and skills | Version-controlled repository | Changes require an ordinary reviewed PR. |
@@ -338,7 +343,7 @@ or persistence merely because they score well on summaries or classification.
 
 ### External gates
 
-- Create authenticated Codex and Claude profiles compatible with OpenHands.
+- Configure authenticated Codex and Claude runners directly in Cezar.
 - Confirm a single low-risk issue run for each provider before concurrent runs.
 - Confirm branch/PR lifecycle with real GitHub credentials and a bounded issue.
 - Confirm a provider failure leaves an actionable compact record and does not
@@ -351,7 +356,7 @@ or persistence merely because they score well on summaries or classification.
 3. Hindsight recall/approved retain pilot.
 4. Read-only backlog reconciliation against one project.
 5. One low-risk issue through plan, implementation, validation, review and
-   human merge.
+   independent review and GitHub auto-merge into dev after required risk gates.
 6. One provider-recovery case.
 7. One concurrent, isolated two-agent run after the two single-provider paths
    have independently passed.
@@ -410,8 +415,8 @@ blocked by external credentials or infrastructure.
 
 ## Definition of success
 
-The Factory is ready for broader rollout when a low- or medium-risk issue can
-move from `factory:needs-plan` to a reviewed, human-merged PR with no manual
+The historical proposal described readiness when a low- or medium-risk issue can
+move from factory:needs-plan to a reviewed PR with auto-merge requested for dev and no manual
 orchestration beyond required approval gates; all state changes are
 deterministically validated; memory recall and retention are bounded and
 auditable; local work is measurably useful without having authority it should

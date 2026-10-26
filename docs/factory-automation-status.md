@@ -1,5 +1,9 @@
 # Factory automation implementation status
 
+> Historical status snapshot for factory-automation-marching-orders.md. It is
+> not current deployment or authorization state. Use current AGENTS.md,
+> policies, configured-target registry, and Cezar runtime evidence.
+
 This is the factual companion to `factory-automation-marching-orders.md`.
 “Implemented” means the repository contract and its fixture coverage exist; it
 does not claim that an external service has run a workflow.
@@ -96,8 +100,14 @@ The deploy profile now caps `factory-small` output at 512 tokens; this workload
 only emits a compact audit record, so the lower completion budget restores safe
 input headroom without changing the model or broadening the audit.
 
-The stalled-run fix is now implemented in `scripts/watchdog-automations.ps1`:
-it cancels running jobs older than 15 minutes through Cezar’s run API. The Qwen
-deployment example now requests a 32K context; the host service must be restarted
-and validated before treating that setting as production-proven.
+The watchdog in `scripts/watchdog-automations.ps1` now parses the live run-array
+response, records per-run decisions, and refuses to cancel from elapsed runtime
+alone. Cancellation requires positive Factory/issue ownership plus explicit
+stalled-runner, expired lease, stale heartbeat/progress, and expired-deadline
+evidence; it re-reads the run before acting. The current Cezar run API does not
+provide those liveness fields, so runs without them are logged and skipped. Do
+not treat the watchdog as active stale-run recovery until the Cezar contract and
+runtime evidence are implemented and verified. The Qwen deployment example now
+requests a 32K context; the host service must be restarted and validated before
+treating that setting as production-proven.
 

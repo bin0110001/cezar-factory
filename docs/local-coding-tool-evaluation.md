@@ -1,6 +1,10 @@
-# Local coding-tool evaluation
+# Historical: local coding-tool evaluation
 
-Evaluated on 2026-10-03 from the Factory operator workstation.
+Evaluated on 2026-10-03 from the Factory operator workstation. This is a
+historical decision record, not current runner configuration. Factory
+automations now execute directly through Cezar; OpenHands is not an active
+execution dependency. See `docs/execution-inventory.md` and the current
+configured workflow profiles for operating behavior.
 
 ## Aider
 

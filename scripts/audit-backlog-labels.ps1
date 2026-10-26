@@ -4,9 +4,9 @@
 Builds the bounded input for the legacy backlog-label audit.
 
 .DESCRIPTION
-Ensures the Factory taxonomy exists, then fetches only open issues that do not
-already have a Factory label. A Factory label is the durable audit marker: the
-agent must put one on every candidate it considers, including skipped work.
+Reads only open issues without a Factory label and emits a bounded proposal
+input. It makes no GitHub changes; a separate workflow consumer validates and
+applies deterministic classifications and audit reservations.
 #>
 [CmdletBinding()]
 param(
@@ -39,33 +39,9 @@ function Get-IssueBody([int]$IssueNumber) {
     [string]$view.body
 }
 
-function Add-AuditReservation([int]$IssueNumber) {
-    $marker = "<!-- factory-audit-reservation:$IssueNumber -->"
-    $reservation = [ordered]@{
-        issue = $IssueNumber
-        owner = if ($env:CEZAR_PROJECT_ID) { [string]$env:CEZAR_PROJECT_ID } else { 'factory-maintenance' }
-        createdAt = [DateTimeOffset]::UtcNow.ToString('o')
-        expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(90).ToString('o')
-    }
-    $temp = Join-Path ([IO.Path]::GetTempPath()) "factory-audit-$([guid]::NewGuid()).md"
-    try {
-        "$marker`n$($reservation | ConvertTo-Json -Compress)" | Set-Content -NoNewline $temp
-        Invoke-Gh @('issue', 'comment', [string]$IssueNumber, '--body-file', $temp) | Out-Null
-    } finally {
-        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
-    }
-}
-
-# Use the installed script beside this one, not FACTORY_RUNTIME_ROOT. The
-# latter is only available to Cezar check steps and was absent in the pilot.
-$labelArgs = @{ GhCommand = $GhCommand }
-if ($Repo) { $labelArgs.Repo = $Repo }
-if ($DryRun) { $labelArgs.DryRun = $true }
-& (Join-Path $PSScriptRoot 'create-labels.ps1') @labelArgs
-
 $factoryMarkers = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate', 'factory:auditing', 'factory:tracking')
 $search = 'is:open ' + (($factoryMarkers | ForEach-Object { "-label:`"$_`"" }) -join ' ')
-$raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', $search, '--limit', '1000', '--json', 'number,title,labels')
+$raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', $search, '--limit', '1000', '--json', 'number,title,labels,updatedAt')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
 $unmarked = @($issues |
     Where-Object {
@@ -86,33 +62,42 @@ $unmarked = @($issues |
             number = [int]$_.number
             title = [string]$_.title
             labels = $labels
+            updatedAt = $_.updatedAt
             typeHint = $typeHint
             riskHint = $riskHint
         }
     })
 
-# Close every classification that can be made entirely from existing labels
-# before handing anything to an agent. The LLM limit applies only to the
-# ambiguous remainder; it must never prevent static normalization of later
-# issues in the fetched backlog.
+# Build deterministic proposals for clear legacy markers; a downstream
+# consumer owns all label edits and reservations. The LLM limit applies only
+# to the ambiguous remainder.
 $resolved = @()
 $remainingCandidates = @()
 $staged = @()
+$ruleHits = [ordered]@{
+    legacy_blocked_marker = 0
+    legacy_decomposition_marker = 0
+    legacy_type_marker = 0
+}
 foreach ($candidate in $unmarked) {
     $legacyLabels = @($candidate.labels)
     $state = $null
     $reason = $null
+    $ruleId = $null
     $add = @()
     if ($legacyLabels -contains 'blocked' -or $legacyLabels -contains 'blocker') {
         $state = 'factory:blocked'
         $reason = 'legacy blocked marker'
+        $ruleId = 'legacy_blocked_marker'
     } elseif ($legacyLabels -contains 'needs-decomp' -or $legacyLabels -contains 'needs-decomposition') {
         $state = 'factory:needs-plan'
         $reason = 'legacy decomposition marker'
+        $ruleId = 'legacy_decomposition_marker'
         $add += 'complexity:large'
     } elseif ($candidate.typeHint) {
         $state = 'factory:new'
         $reason = 'unambiguous legacy type marker'
+        $ruleId = 'legacy_type_marker'
     }
 
     if ($state) {
@@ -120,8 +105,8 @@ foreach ($candidate in $unmarked) {
         if ($candidate.typeHint) { $add += "type:$($candidate.typeHint)" }
         if ($candidate.riskHint) { $add += "risk:$($candidate.riskHint)" }
         $add = @($add | Select-Object -Unique)
-        if (-not $DryRun) { Invoke-Gh (@('issue', 'edit', [string]$candidate.number) + ($add | ForEach-Object { @('--add-label', $_) })) | Out-Null }
-        $resolved += [ordered]@{ issue = $candidate.number; added = $add; reason = $reason }
+        $ruleHits[$ruleId]++
+        $resolved += [ordered]@{ issue = $candidate.number; added = $add; reason = $reason; ruleId = $ruleId; sourceLabels = @($candidate.labels) }
         continue
     }
 
@@ -129,14 +114,14 @@ foreach ($candidate in $unmarked) {
     # only the first requested number of unresolved issues. Fetch their bodies
     # here, before the LLM step, so the LLM never performs issue discovery.
     if ($remainingCandidates.Count -ge $Limit) { continue }
-    $candidate.body = Get-IssueBody ([int]$candidate.number)
-    if (-not $DryRun) {
-        Invoke-Gh @('issue', 'edit', [string]$candidate.number, '--add-label', 'factory:auditing') | Out-Null
-        Add-AuditReservation ([int]$candidate.number)
-    }
+        $detail = Invoke-Gh @('issue', 'view', [string]$candidate.number, '--json', 'body,labels,updatedAt') | Out-String | ConvertFrom-Json
+        $detailLabels = @(Get-LabelNames $detail)
+        if ([string]$detail.updatedAt -ne [string]$candidate.updatedAt -or (@($detailLabels | Sort-Object) -join "`n") -ne (@($candidate.labels | Sort-Object) -join "`n")) {
+            throw "Issue $($candidate.number) changed while the audit snapshot was being collected (list revision '$($candidate.updatedAt)' vs detail '$($detail.updatedAt)'). Rerun the collector."
+        }
+        $candidate.body = [string]$detail.body
     $staged += [ordered]@{
         issue = $candidate.number
-        added = @('factory:auditing')
         sourceLabels = @($candidate.labels)
         reservation = 'factory:auditing'
     }
@@ -152,6 +137,13 @@ $result = [ordered]@{
     candidates = $remainingCandidates
     resolved = $resolved
     staged = $staged
+    classificationMetrics = [ordered]@{
+        eligibleIssues = @($unmarked).Count
+        deterministicRuleHits = @($resolved).Count
+        ambiguousIssues = [Math]::Max(0, @($unmarked).Count - @($resolved).Count)
+        ambiguousIssuesSelectedForReview = @($remainingCandidates).Count
+        ruleHits = $ruleHits
+    }
     unreviewedAmbiguousCount = [Math]::Max(0, @($unmarked).Count - @($resolved).Count - @($remainingCandidates).Count)
     terminalReason = if ($remainingCandidates.Count) { 'candidates-staged' } elseif ($resolved.Count) { 'candidates-resolved' } else { 'no-unmarked-open-issues' }
 }

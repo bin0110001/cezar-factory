@@ -69,12 +69,14 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1',
-'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/factory/run-verification.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
+'docs/execution-inventory.md', 'docs/agent-invocation-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json',
+'tests/fixtures/watchdog-runs.json', 'tests/fixtures/watchdog-runs-envelope.json', 'tests/fixtures/watchdog-runs-malformed.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'docs/shared-factory.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
+Assert 'Godot verification template distinguishes test regressions from other exit codes' ((Get-Content -Raw (Join-Path $factory 'templates/factory.config.yaml')) -match '(?s)godot:\s+testCommand:\s*""\s+testRegressionExitCodes:\s*\[1\]')
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
  $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
@@ -84,11 +86,20 @@ Assert 'complexity routes small to gateway, medium to Luna, and large to premium
 Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automationProfiles.'factory-plan'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:small'.runner -eq 'claude' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:medium'.model -eq 'sonnet' -and $catalog.automationProfiles.'factory-plan'.complexityVariants.'complexity:large'.model -eq 'sonnet')
 Assert 'maintenance is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-maintenance'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-maintenance'.model -eq 'factory-gateway/factory-code')
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
-Assert 'backlog audit requires the stable Cezar candidate script' ($backlogAuditSkill -match 'installed audit script' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
-Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
+Assert 'backlog audit documents read-only collector and deterministic preparation' ($backlogAuditSkill -match 'read-only collector' -and $backlogAuditSkill -match 'deterministic preparation consumer' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
+Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
+Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
+$maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
+Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
+Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
+$planSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
+$fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
+Assert 'issue workflows validate resolved preflight output before honoring no-work' ($implementWorkflow -match '(?s)id: resolved.*?outputSchema:.*?\$cezar:.*?const: no_work' -and $planWorkflow -match '(?s)id: resolved.*?outputSchema:.*?\$cezar:.*?const: no_work' -and $investigateWorkflow -match '(?s)id: resolved.*?outputSchema:.*?\$cezar:.*?const: no_work' -and $fixReviewWorkflow -match '(?s)id: resolved.*?outputSchema:.*?\$cezar:.*?const: no_work')
+Assert 'planner and investigator skip deterministic follow-up when issue is resolved' ($planWorkflow -match '(?s)id: recall.*?when:.*?outputs:.*?resolved:.*?status: \{ const: open \}.*?id: plan.*?when:' -and $investigateWorkflow -match '(?s)id: recall.*?when:.*?outputs:.*?resolved:.*?status: \{ const: open \}.*?id: investigate.*?when:')
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
 $ensureImplementationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensure-implementation-result.ps1')
@@ -97,14 +108,19 @@ $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implement
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
+Assert 'planner proposes a result and workflow owns plan posting and routing' ($planSkill -match 'Do not post comments, create issues, or edit lifecycle labels' -and $planSkill -notmatch 'Post the plan as a comment|Update the issue with the plan|Route to:' -and $planWorkflow -match 'id: route' -and $planWorkflow -match 'route-plan-or-default\.ps1')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'implementation validation failure routes through a structured failure' ($implementWorkflow -match 'validate-result\.ps1 .*RouteOnFailure' -and (Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'validate-result\.ps1 .*RouteOnFailure' -and $implementWorkflow -match 'FailureContextPath')
+Assert 'verification retries only test verdict failures and classifies unavailable/timeout' ($implementWorkflow -match '(?s)id: targeted-tests.*?retryOn: \[1\].*?failureReasons:\s*"1": test_regression\s*"2": configuration\s*"3": timeout\s*"4": missing_command' -and $implementWorkflow -match '(?s)id: full-verification.*?retryOn: \[1\].*?failureReasons:' -and (Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match '(?s)id: targeted-tests.*?retryOn: \[1\].*?failureReasons:')
+Assert 'verification check schemas capture structured results and skip controls' ($implementWorkflow -match '(?s)id: targeted-tests.*?outputSchema:.*?\$cezar:.*?skip_step' -and $implementWorkflow -match '(?s)id: full-verification.*?outputSchema:' -and (Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match '(?s)id: targeted-tests.*?outputSchema:')
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
 Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
+$godotUpgradeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/godot-upgrade.yaml')
+Assert 'Godot upgrade agent and publish are gated by structured check results' ($godotUpgradeWorkflow -match '(?s)id: check.*?outputSchema:.*?id: baseline-tests.*?outputSchema:.*?id: fix.*?when:.*?baseline-tests:.*?category: \{ const: test_regression \}.*?id: tests.*?retryOn: \[1\].*?failureReasons:.*?"10": unknown.*?id: publish.*?when:.*?anyOf:')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
@@ -113,9 +129,35 @@ Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -ma
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
+Assert 'maintenance passes Cezar environment variables through the workflow shell' ($maintenanceWorkflow -match '\-ApiUrl "\$CEZAR_API_URL"' -and $maintenanceWorkflow -match '\-ProjectId "\$CEZAR_PROJECT_ID"' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_')
 Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
 $auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
 Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
+$watchdogScript = Get-Content -Raw (Join-Path $scripts 'watchdog-automations.ps1')
+Assert 'watchdog accepts the current top-level array and known compatibility envelopes' ($watchdogScript -match 'Payload -is \[System.Array\]' -and $watchdogScript -match 'data\.runs' -and $watchdogScript -match 'Runs response must be')
+Assert 'watchdog cancellation requires owner, runner, lease, heartbeat, progress, and deadline evidence' ($watchdogScript -match '\$factoryWorkflows' -and $watchdogScript -match 'issueNumber' -and $watchdogScript -match "runner -ne 'stalled'" -and $watchdogScript -match 'lease\.expiresAt' -and $watchdogScript -match 'heartbeatAt' -and $watchdogScript -match 'lastProgressAt' -and $watchdogScript -match 'deadlineAt')
+$watchdogTemp = Join-Path $env:TEMP ('factory-watchdog-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $watchdogTemp -Force | Out-Null
+try {
+    $watchdogReportPath = Join-Path $watchdogTemp 'report.json'
+    $watchdogFixturePath = Join-Path $factory 'tests/fixtures/watchdog-runs.json'
+    $watchdogRun = Run 'watchdog-automations.ps1' @{ ApiUrl = 'http://127.0.0.1:1'; ProjectId = 'fixture'; DryRun = $true; RunsFixturePath = $watchdogFixturePath; OutputPath = $watchdogReportPath }
+    $watchdogReport = if (Test-Path $watchdogReportPath) { Get-Content -Raw $watchdogReportPath | ConvertFrom-Json } else { $null }
+    Assert 'watchdog fixture selects only positively owned stalled work' ($watchdogRun.Code -eq 0 -and @($watchdogReport.decisions | Where-Object { $_.id -eq 'stalled-owned-run' -and $_.decision -eq 'would-cancel' }).Count -eq 1 -and @($watchdogReport.decisions | Where-Object { $_.id -eq 'unrelated-run' -and $_.decision -eq 'skipped' }).Count -eq 1)
+    Assert 'watchdog protects a legitimate long-running job with active runner evidence' (@($watchdogReport.decisions | Where-Object { $_.id -eq 'legitimate-long-run' -and $_.decision -eq 'skipped' -and $_.reason -eq 'runner-not-confirmed-stalled' }).Count -eq 1)
+    Assert 'watchdog does not cancel legacy Cezar records without explicit liveness fields' (@($watchdogReport.decisions | Where-Object { $_.id -eq 'current-cezar-record' -and $_.decision -eq 'skipped' }).Count -eq 1)
+
+    $envelopeReportPath = Join-Path $watchdogTemp 'envelope.json'
+    $envelopeRun = Run 'watchdog-automations.ps1' @{ ApiUrl = 'http://127.0.0.1:1'; ProjectId = 'fixture'; DryRun = $true; RunsFixturePath = (Join-Path $factory 'tests/fixtures/watchdog-runs-envelope.json'); OutputPath = $envelopeReportPath }
+    $envelopeReport = if (Test-Path $envelopeReportPath) { Get-Content -Raw $envelopeReportPath | ConvertFrom-Json } else { $null }
+    Assert 'watchdog accepts the explicit data.runs compatibility envelope' ($envelopeRun.Code -eq 0 -and $envelopeReport.status -eq 'complete' -and @($envelopeReport.decisions).Count -eq 0)
+
+    $malformedReportPath = Join-Path $watchdogTemp 'malformed.json'
+    $malformedRun = Run 'watchdog-automations.ps1' @{ ApiUrl = 'http://127.0.0.1:1'; ProjectId = 'fixture'; DryRun = $true; RunsFixturePath = (Join-Path $factory 'tests/fixtures/watchdog-runs-malformed.json'); OutputPath = $malformedReportPath }
+    $malformedReport = if (Test-Path $malformedReportPath) { Get-Content -Raw $malformedReportPath | ConvertFrom-Json } else { $null }
+    Assert 'watchdog rejects and records malformed response shapes' ($malformedRun.Code -ne 0 -and $malformedReport.status -eq 'failed' -and @($malformedReport.failures).Count -gt 0)
+}
+finally { Remove-Item -LiteralPath $watchdogTemp -Recurse -Force -ErrorAction SilentlyContinue }
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -144,6 +186,8 @@ Assert 'Mac vLLM trusted proxy is allowlisted and authenticated' ((Get-Content -
 $remoteScript = Get-Content -Raw (Join-Path $factory 'scripts/deploy/validate-remote.sh')
 Assert 'deployment scripts avoid unsafe unquoted remote paths' ($remoteScript.Contains("cd '`$MODEL_HOST_FACTORY_DIR'"))
 Assert 'credential rotation helper avoids token-status output' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/rotate-cezar-github-token.bat')) -match 'read -r -s' -and (Get-Content -Raw (Join-Path $factory 'scripts/deploy/rotate-cezar-github-token.bat')) -match 'gh auth login' -and (Get-Content -Raw (Join-Path $factory 'scripts/deploy/rotate-cezar-github-token.bat')) -notmatch 'gh auth status')
+$cezarDockerfile = Get-Content -Raw (Join-Path $factory 'cezar/Dockerfile')
+Assert 'cezar image pushes over https through the gh credential helper' ($cezarDockerfile -match 'credential\.https://github\.com\.helper' -and $cezarDockerfile -match '!gh auth git-credential' -and $cezarDockerfile -match 'GIT_TERMINAL_PROMPT=0')
 Assert 'remote validation reads named Podman connection from topology' ($remoteScript -match 'FACTORY_CONTROL_PLANE_PODMAN_CONNECTION' -and $remoteScript -match 'FACTORY_CONTROL_PLANE_HEALTH_BASE_URL')
 Assert 'control-plane deployment targets named Podman connection' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')) -match 'FACTORY_CONTROL_PLANE_PODMAN_CONNECTION' -and (Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')) -match 'podman --connection')
 Assert 'control-plane validation supports topology health URL' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/validate-deployment.sh')) -match 'base_url' -and (Get-Content -Raw (Join-Path $factory 'config/server-topology.env.example')) -match 'FACTORY_CONTROL_PLANE_HEALTH_BASE_URL')
@@ -201,9 +245,10 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'schemas') -Filter *.json) {
     $ok = $true; try { Get-Content -Raw $f.FullName | ConvertFrom-Json | Out-Null } catch { $ok = $false }
     Assert "valid JSON schemas/$($f.Name)" $ok
 }
-foreach ($f in Get-ChildItem $factory -Recurse -Include *.yaml -File | Where-Object { $_.FullName -notmatch 'tests|node_modules' }) {
-    $t = Get-Content -Raw $f.FullName
-    Assert "yaml sane $($f.Name)" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
+foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
+    $file = Join-Path $factory $path
+    $t = Get-Content -Raw $file
+    Assert "yaml sane $path" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
 }
 foreach ($d in Get-ChildItem (Join-Path $factory 'skills') -Directory) {
     $p = Join-Path $d.FullName 'SKILL.md'
@@ -253,6 +298,95 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    $verificationProject = Join-Path $tmp 'verification-contract'
+    New-Item -ItemType Directory -Force (Join-Path $verificationProject '.ai/factory') | Out-Null
+    @'
+project:
+  type: fixture
+validation:
+  quick:
+    command: ""
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 5
+    evidencePath: ".factory/artifacts/quick.json"
+    appliesTo:
+      - "*"
+  targeted:
+    command: "Write-Output (@{status='passed'; reason='fixture_pass'} | ConvertTo-Json -Compress)"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 5
+    evidencePath: ".factory/artifacts/targeted.json"
+    appliesTo:
+      - "*"
+  full:
+    command: "Write-Output (@{status='failed'; reason='fixture_failure'; category='test_regression'; evidence='fixture.json'; detail='token=fixture-secret'} | ConvertTo-Json -Compress)"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: []
+    timeoutSeconds: 5
+    evidencePath: ".factory/artifacts/full.json"
+    appliesTo:
+      - "*"
+'@ | Set-Content -LiteralPath (Join-Path $verificationProject '.ai/factory/factory.config.yaml')
+    Push-Location $verificationProject
+    try {
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level targeted 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'verification contract runs the declared project command' ($verifyExit -eq 0 -and $verifyResult.status -eq 'passed' -and $verifyResult.reason -eq 'fixture_pass' -and (Test-Path '.factory/artifacts/targeted.log'))
+
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level full 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'verification contract preserves typed project failure and redacts diagnostics' ($verifyExit -eq 1 -and $verifyResult.status -eq 'failed' -and $verifyResult.reason -eq 'fixture_failure' -and $verifyResult.category -eq 'test_regression' -and $verifyResult.projectEvidence -eq 'fixture.json' -and $verifyResult.outputSummary -match 'token=\[redacted\]')
+
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level quick 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'missing verification command is unavailable and not a pass' ($verifyExit -eq 4 -and $verifyResult.status -eq 'unavailable' -and $verifyResult.reason -eq 'verification_command_missing')
+
+        $contractPath = Join-Path $verificationProject '.ai/factory/factory.config.yaml'
+        $contractText = [IO.File]::ReadAllText($contractPath).Replace('command: ""', 'command: "Write-Output (@{status=''no_matching_tests''; reason=''no_matching_tests''} | ConvertTo-Json -Compress)"')
+        [IO.File]::WriteAllText($contractPath, $contractText)
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level quick 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'no matching tests has an explicit non-passing verdict' ($verifyExit -eq 2 -and $verifyResult.status -eq 'no_matching_tests' -and $verifyResult.reason -eq 'no_matching_tests')
+
+        $contractText = [IO.File]::ReadAllText($contractPath).Replace('status=''no_matching_tests''; reason=''no_matching_tests''', 'status=''skipped''; reason=''project_not_applicable''; category=''configuration''')
+        [IO.File]::WriteAllText($contractPath, $contractText)
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level quick 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'skipped validation uses the Cezar skip control' ($verifyExit -eq 0 -and $verifyResult.status -eq 'skipped' -and $verifyResult.'$cezar'.action -eq 'skip_step')
+
+        $contractText = [IO.File]::ReadAllText($contractPath).Replace('status=''skipped''; reason=''project_not_applicable''; category=''configuration''', 'status=''no_matching_tests''; reason=''no_matching_tests''').Replace('command: "Write-Output (@{status=''no_matching_tests''; reason=''no_matching_tests''} | ConvertTo-Json -Compress)"', 'command: "Write-Output not-json"')
+        [IO.File]::WriteAllText($contractPath, $contractText)
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level quick 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'malformed project result is an explicit non-retryable failure' ($verifyExit -eq 9 -and $verifyResult.status -eq 'failed' -and $verifyResult.reason -eq 'verification_result_malformed' -and $verifyResult.category -eq 'malformed_result')
+
+        $contractText = [IO.File]::ReadAllText($contractPath).Replace("command: `"Write-Output (@{status='failed'; reason='fixture_failure'; category='test_regression'; evidence='fixture.json'; detail='token=fixture-secret'} | ConvertTo-Json -Compress)`"", 'command: "Start-Sleep -Seconds 4"').Replace('timeoutSeconds: 5', 'timeoutSeconds: 1')
+        [IO.File]::WriteAllText($contractPath, $contractText)
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level full 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'verification command timeout is enforced' ($verifyExit -eq 3 -and $verifyResult.status -eq 'failed' -and $verifyResult.reason -eq 'verification_timeout')
+
+        $contractText = [IO.File]::ReadAllText($contractPath) -replace 'prerequisites: \[\]', "prerequisites:`n      - command-that-does-not-exist-fixture"
+        [IO.File]::WriteAllText($contractPath, $contractText)
+        $verifyOutput = @(& pwsh -NoProfile -File (Join-Path $factory 'scripts/factory/run-verification.ps1') -Level targeted 2>&1)
+        $verifyExit = $LASTEXITCODE
+        $verifyResult = ($verifyOutput -join "`n") | ConvertFrom-Json
+        Assert 'missing verification prerequisite is unavailable' ($verifyExit -eq 4 -and $verifyResult.status -eq 'unavailable' -and $verifyResult.reason -eq 'prerequisite_missing')
+    }
+    finally { Pop-Location }
+
     foreach ($fx in Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory) {
         Write-Host "== fixture $($fx.Name) =="
         $proj = Join-Path $tmp $fx.Name
@@ -461,6 +595,12 @@ try {
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
+    Set-Gh @('factory:needs-plan')
+    $null = Invoke-Route 'plan-result' $plan
+    $retryState = Get-Gh; $retryState.labels = @('factory:needs-plan'); $retryState | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: plan-result retry reuses matching comment receipt' ((Invoke-Route 'plan-result' $plan) -eq 0 -and @((Get-Gh).comments).Count -eq 1)
+    $retryState = Get-Gh; $retryState.labels = @('factory:needs-plan'); $retryState | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: plan-result refuses changed content after prior receipt' ((Invoke-Route 'plan-result' (With $plan @{ objective = 'changed' })) -ne 0 -and @((Get-Gh).comments).Count -eq 1)
     Set-Gh @('factory:needs-plan', 'risk:high')
     Assert 'route: risk:high plan held for approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Set-Gh @('factory:needs-plan')
@@ -471,7 +611,7 @@ try {
     Set-Gh @('factory:ready')
     Assert 'route: start -> working' ((Invoke-Route 'start' $null 7) -eq 0 -and (Get-Gh).labels -contains 'factory:working' -and (Get-Gh).labels -notcontains 'factory:ready')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
-    Assert 'route: selected worker recorded' ($execution.execution.provider -eq 'openhands' -and $execution.execution.agent -eq 'codex' -and $execution.execution.status -eq 'selected')
+    Assert 'route: selected worker recorded' ($execution.execution.provider -eq 'cezar' -and $execution.execution.agent -eq 'codex' -and $execution.execution.status -eq 'selected')
     Set-Gh @('factory:ready', 'complexity:medium', 'agent:local')
     Assert 'route: medium complexity cannot select local worker' ((Invoke-Route 'start' $null 7) -eq 0 -and (Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json).execution.agent -eq 'codex')
     Assert 'route: start is idempotent while working' ((Invoke-Route 'start' $null 7) -eq 0)
@@ -480,12 +620,14 @@ try {
     # already-resolved: closed issues finish early, reconcile to factory:done, and later steps no-op
     $resolvedScript = Join-Path $rp '.ai/factory/scripts/check-already-resolved.ps1'
     $marker = Join-Path $tmp '.factory/already-resolved.json'
-    function Invoke-Resolved { Push-Location $tmp; try { $global:LASTEXITCODE = 0; & pwsh -NoProfile -File $resolvedScript -Task 'GitHub issue #7 (x) at https://github.com/o/r/issues/7' -GhCommand $gh *>&1 | Out-Null; $global:LASTEXITCODE } finally { Pop-Location } }
+    function Invoke-Resolved { Push-Location $tmp; try { $global:LASTEXITCODE = 0; $global:resolvedOutput = & pwsh -NoProfile -File $resolvedScript -Task 'GitHub issue #7 (x) at https://github.com/o/r/issues/7' -GhCommand $gh *>&1 | Out-String; $global:LASTEXITCODE } finally { Pop-Location } }
     function Set-IssueState([string]$S) { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable; $o.issueState = $S; $o | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE }
     Set-Gh @('factory:ready'); Set-IssueState 'OPEN'
-    Assert 'resolved: open issue writes no marker' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:ready')
+    $openExit = Invoke-Resolved; $openOutput = $resolvedOutput | ConvertFrom-Json -AsHashtable
+    Assert 'resolved: open issue writes no marker and returns ordinary preflight output' ($openExit -eq 0 -and -not (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:ready' -and $openOutput.status -eq 'open' -and -not $openOutput.ContainsKey('$cezar'))
     Set-IssueState 'CLOSED'
-    Assert 'resolved: closed issue writes marker and reconciles to factory:done' ((Invoke-Resolved) -eq 0 -and (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).labels -notcontains 'factory:ready')
+    $closedExit = Invoke-Resolved; $closedOutput = $resolvedOutput | ConvertFrom-Json -AsHashtable
+    Assert 'resolved: closed issue writes marker, reconciles, and returns typed no-work' ($closedExit -eq 0 -and (Test-Path $marker) -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).labels -notcontains 'factory:ready' -and $closedOutput.status -eq 'already-resolved' -and $closedOutput['$cezar'].action -eq 'no_work' -and $closedOutput['$cezar'].reasonCode -eq 'no_work')
     Push-Location $tmp
     try {
         Set-Gh @('factory:done'); Set-IssueState 'CLOSED'
@@ -551,12 +693,12 @@ Assert 'route: failed execution records bounded failure evidence' ((Get-Content 
     Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & pwsh -NoProfile -File $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
 
     $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'
-    @{ labels = @(); comments = @(); created = @(); issues = @(
-        @{ number = 3; title = 'Unmarked test'; labels = @(@{ name = 'test' }) },
-        @{ number = 2; title = 'Already audited'; labels = @(@{ name = 'factory:needs-help' }) },
-        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) },
-        @{ number = 4; title = 'Blocked legacy work'; labels = @(@{ name = 'blocker' }) },
-        @{ number = 5; title = 'Ambiguous legacy work'; labels = @(@{ name = 'question' }) }
+    @{ labels = @(); comments = @(); created = @(); issueState = 'OPEN'; issues = @(
+        @{ number = 3; title = 'Unmarked test'; body = ''; labels = @(@{ name = 'test' }) },
+        @{ number = 2; title = 'Already audited'; body = ''; labels = @(@{ name = 'factory:needs-help' }) },
+        @{ number = 1; title = 'Unmarked docs'; body = ''; labels = @(@{ name = 'documentation' }) },
+        @{ number = 4; title = 'Blocked legacy work'; body = ''; labels = @(@{ name = 'blocker' }) },
+        @{ number = 5; title = 'Ambiguous legacy work'; body = ''; labels = @(@{ name = 'question' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
     & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
@@ -566,12 +708,52 @@ Assert 'route: failed execution records bounded failure evidence' ((Get-Content 
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
     Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
     Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
-    Assert 'backlog audit input: clear markers resolve without human escalation' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -notcontains 'factory:needs-help')
+    Assert 'backlog audit collector performs no issue-label or comment effects' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
-    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit input: rule hits and ambiguity are recorded' ($auditCandidates.classificationMetrics.deterministicRuleHits -eq 3 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousIssuesSelectedForReview -eq 1 -and $auditCandidates.classificationMetrics.ruleHits.legacy_blocked_marker -eq 1)
+    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
-    Assert 'backlog audit input: reservation marker is durable' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
-    Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
+    $auditPreparationPath = Join-Path $tmp 'backlog-label-audit-preparation.json'
+    $auditApplyScript = Join-Path $scripts 'apply-backlog-label-audit.ps1'
+    $prepareAudit = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true }
+    $preparation = Get-Content -Raw $auditPreparationPath | ConvertFrom-Json
+    Assert 'backlog audit preparation applies deterministic labels and reserves bounded candidates' ($prepareAudit.Code -eq 0 -and $preparation.status -eq 'prepared' -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'factory:blocked' -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit preparation creates one durable reservation marker' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
+    Assert 'backlog audit preparation ensures taxonomy through its installed sibling script' (@((Get-Gh).created).Count -gt 0)
+    $prepareAgain = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true }
+    Assert 'backlog audit preparation recognizes static labels and reservation on retry' ($prepareAgain.Code -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
+    $emptyAuditInput = Join-Path $tmp 'backlog-label-audit-empty.json'
+    $emptyAudit = Get-Content -Raw $auditInput | ConvertFrom-Json -AsHashtable
+    $emptyAudit.candidates = @(); $emptyAudit.staged = @()
+    $emptyAudit | ConvertTo-Json -Depth 10 | Set-Content $emptyAuditInput
+    $emptyPrep = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $emptyAuditInput; OutputPath = (Join-Path $tmp 'backlog-label-audit-empty-prep.json'); GhCommand = $gh; Prepare = $true; WorkflowContract = $true }
+    $emptySummaryLine = $emptyPrep.Out -split "`r?`n" | Where-Object { $_ -match '^\s*\{"status":"prepared"' } | Select-Object -Last 1
+    $emptySummary = $emptySummaryLine | ConvertFrom-Json
+    Assert 'backlog audit has typed no-work after deterministic preparation when no candidates remain' ($emptyPrep.Code -eq 0 -and $emptySummary.status -eq 'prepared' -and $emptySummary.candidateCount -eq 0 -and $emptySummary.resolvedCount -eq 3 -and $emptySummary.'$cezar'.action -eq 'no_work')
+
+    $auditProposalPath = Join-Path $tmp 'backlog-label-audit.json'
+    $auditApplicationPath = Join-Path $tmp 'backlog-label-audit-application.json'
+    @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium'); reason = 'No objective legacy type marker; routine maintenance classification.' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $auditProposalPath
+    $state = Get-Gh; $state.labels = @($state.labels) + 'factory:ready'; $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels) + 'factory:ready'; $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer refuses changed live labels' ($staleApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -contains 'factory:auditing')
+    $state = Get-Gh; $state.labels = @($state.labels | Where-Object { $_ -ne 'factory:ready' }); $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels | Where-Object { $_ -ne 'factory:ready' }); $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $badProposalPath = Join-Path $tmp 'backlog-label-audit-invalid.json'
+    @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium', 'factory:done'); reason = 'invalid multiple states' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $badProposalPath
+    $invalidApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $badProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $candidateIssueState = @((Get-Gh).issues | Where-Object { $_.number -eq 5 })[0]
+    Assert 'backlog audit consumer rejects unsupported or conflicting proposal before mutation' ($invalidApply.Code -ne 0 -and $candidateIssueState.labels -contains 'factory:auditing' -and $candidateIssueState.labels -notcontains 'factory:new')
+    $revisionState = Get-Gh; $revisionIssue = @($revisionState.issues | Where-Object { $_.number -eq 5 })[0]; $preparedRevision = @((Get-Content -Raw $auditPreparationPath | ConvertFrom-Json).receipts | Where-Object { $_.issue -eq 5 })[0].revision
+    $revisionIssue.updatedAt = '2026-10-25T12:34:56.0000000Z'; $revisionState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleRevisionApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer rejects changed issue revision with unchanged labels' ($staleRevisionApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:auditing')
+    $revisionState = Get-Gh; $revisionIssue = @($revisionState.issues | Where-Object { $_.number -eq 5 })[0]; $revisionIssue.updatedAt = $preparedRevision; $revisionState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $apply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer applies and verifies the allowlisted proposal' ($apply.Code -eq 0 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'type:maintenance' -and (Get-Gh).labels -contains 'risk:medium' -and (Get-Gh).labels -notcontains 'factory:auditing')
+    $applyAgain = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $receipt = Get-Content -Raw $auditApplicationPath | ConvertFrom-Json
+    $candidateReceipt = @($receipt.receipts | Where-Object { $_.issue -eq 5 })[0]
+    Assert 'backlog audit consumer recognizes an already-applied effect on retry' ($applyAgain.Code -eq 0 -and $candidateReceipt.alreadyApplied -and $candidateReceipt.status -eq 'verified')
 
     $recoveryOutput = Join-Path $tmp 'audit-reservation-recovery.json'
     $expired = @{ issue = 5; owner = 'test'; createdAt = '2020-01-01T00:00:00Z'; expiresAt = '2020-01-01T01:00:00Z' } | ConvertTo-Json -Compress
@@ -745,13 +927,19 @@ try {
     Assert 'godot apply pins the version on a pushed branch' ($r.Code -eq 0 -and (Get-Content -Raw .godot-version).Trim() -eq '4.8-stable' -and (& git ls-remote --heads origin factory/godot-4.8))
     $r = GodotStep test @('-AllowFailure')
     Assert 'godot test passes with the project command' ($r.Code -eq 0 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
-    Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 3`"`n"
+    Set-Content '.ai/factory/factory.config.yaml' (@('godot:', '  testCommand: exit 3', '  testRegressionExitCodes: [3]') -join [Environment]::NewLine)
     $r = GodotStep test @('-AllowFailure')
-    Assert 'godot test -AllowFailure records a failure without failing the step' ($r.Code -eq 0 -and -not (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed)
+    Assert 'godot baseline test preserves an explicitly classified regression' ($r.Code -eq 0 -and -not (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).passed -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).category -eq 'test_regression')
     $r = GodotStep test
-    Assert 'godot test fails the step when tests fail (drives the fix retry)' ($r.Code -ne 0)
+    Assert 'godot test normalizes a regression for the bounded fix retry' ($r.Code -eq 1)
     $r = GodotStep publish
     Assert 'godot publish refuses when tests failed' ($r.Code -ne 0)
+    Set-Content '.ai/factory/factory.config.yaml' (@('godot:', '  testCommand: exit 2', '  testRegressionExitCodes: [3]') -join [Environment]::NewLine)
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot unknown test exit is not sent back to the repair agent' ($r.Code -eq 10 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).category -eq 'unknown')
+    Set-Content '.ai/factory/factory.config.yaml' (@('godot:', '  testCommand: ') -join [Environment]::NewLine)
+    $r = GodotStep test @('-AllowFailure')
+    Assert 'godot missing test command is classified and not treated as a patch failure' ($r.Code -eq 4 -and (Get-Content -Raw .factory/godot-test.json | ConvertFrom-Json).category -eq 'missing_command')
     Set-Content '.ai/factory/factory.config.yaml' "godot:`n  testCommand: `"exit 0`"`n"
     Set-Content 'fix.gd' 'extends Node'
     GodotStep test | Out-Null

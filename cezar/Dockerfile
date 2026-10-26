@@ -92,6 +92,15 @@ ENV HOME=/home/cezar \
 WORKDIR /workspace
 # Trust bind-mounted repos whose owner differs from the container uid.
 RUN git config --global --add safe.directory '*'
+# HTTPS pushes authenticate through the persistent `gh` login (cezar-gh-config volume) instead of
+# prompting for a username. Without this helper `git push` dies with "could not read Username".
+# Written directly rather than via `gh auth setup-git`, which refuses to run before a login exists.
+RUN git config --global credential.https://github.com.helper '' \
+ && git config --global --add credential.https://github.com.helper '!gh auth git-credential' \
+ && git config --global credential.https://gist.github.com.helper '' \
+ && git config --global --add credential.https://gist.github.com.helper '!gh auth git-credential'
+# Fail fast instead of hanging on a prompt nobody can answer inside an agent run.
+ENV GIT_TERMINAL_PROMPT=0
 
 EXPOSE 4321
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

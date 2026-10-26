@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { runnerSchema } from './health.ts';
 
+const checkFailureCategorySchema = z.enum([
+  'work_verdict', 'test_regression', 'configuration', 'missing_command', 'authentication',
+  'provider_unavailable', 'provider_quota', 'transient_transport', 'timeout', 'cancelled',
+  'malformed_result', 'unknown',
+]);
+
 /**
  * The WORKFLOWS family: the chain catalog, the save/parse routes, and the planner.
  *
@@ -33,6 +39,19 @@ export const workflowStepDefSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Standard JSON Schema contracts for structured check data. */
+    inputSchema: z.record(z.string(), z.any()).optional(),
+    outputSchema: z.record(z.string(), z.any()).optional(),
+    /** Standard JSON Schema over `{ task, outputs }`; a mismatch skips this step. */
+    when: z.record(z.string(), z.any()).optional(),
+    /** Normalized nonzero check exit classification, keyed by exit code string. */
+    failureReasons: z.record(z.string(), checkFailureCategorySchema).optional(),
+    /** Cleanup command run after the ordinary workflow reaches any terminal path. */
+    finalizer: z.boolean().optional(),
+    /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
+    idempotent: z.literal(true).optional(),
+    /** Hard upper bound for a finalizer command, in seconds. */
+    timeoutSeconds: z.number().int().positive().max(300).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -44,6 +63,18 @@ export const workflowStepDefSchema = z
   })
   .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
     message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  })
+  .refine((s) => !s.failureReasons || Boolean(s.command), {
+    message: 'failureReasons can only be declared on a check step',
+  })
+  .refine((s) => !s.timeoutSeconds || Boolean(s.command), {
+    message: 'timeoutSeconds can only be declared on a check step',
+  })
+  .refine((s) => !s.finalizer || (Boolean(s.command) && s.timeoutSeconds !== undefined && s.idempotent === true && !s.onFail && !s.when && !s.inputSchema && !s.outputSchema && !s.failureReasons), {
+    message: 'a finalizer must be bounded and explicitly idempotent, and cannot have conditions, contracts, failure maps, or retries',
+  })
+  .refine((s) => !s.failureReasons || Object.keys(s.failureReasons).every((code) => /^-?\d+$/.test(code)), {
+    message: 'failureReasons keys must be numeric exit codes',
   });
 export type WorkflowStepDef = z.infer<typeof workflowStepDefSchema>;
 

@@ -136,13 +136,33 @@ switch ($Step) {
     'test' {
         # Project-owned command first (factory.config.yaml `godot.testCommand`), else the gdUnit4 runner.
         $command = $null
+        $regressionExitCodes = @(1)
         $config = '.ai/factory/factory.config.yaml'
         if (Test-Path -LiteralPath $config) {
-            $match = [regex]::Match((Get-Content -Raw -LiteralPath $config), '(?m)^\s*testCommand:\s*"?([^"\r\n]+?)"?\s*$')
-            if ($match.Success) { $command = $match.Groups[1].Value }
+            $configText = Get-Content -Raw -LiteralPath $config
+            $match = [regex]::Match($configText, '(?m)^\s*testCommand:\s*"?([^"\r\n]+?)"?\s*$')
+            if ($match.Success) {
+                $command = $match.Groups[1].Value.Trim()
+                if ([string]::IsNullOrWhiteSpace($command)) { $command = $null }
+            }
+            $exitCodes = [regex]::Match($configText, '(?m)^\s*testRegressionExitCodes:\s*\[([^\]]*)\]\s*$')
+            if ($exitCodes.Success) {
+                $parsedCodes = @($exitCodes.Groups[1].Value -split ',' | ForEach-Object {
+                    $value = 0
+                    if (-not [int]::TryParse($_.Trim(), [ref]$value) -or $value -le 0) { throw 'godot.testRegressionExitCodes must contain positive integer exit codes.' }
+                    $value
+                } | Select-Object -Unique)
+                if (-not $parsedCodes.Count) { throw 'godot.testRegressionExitCodes cannot be empty when configured.' }
+                $regressionExitCodes = $parsedCodes
+            }
         }
         if (-not $command -and (Test-Path 'addons/gdUnit4/runtest.sh')) { $command = 'bash addons/gdUnit4/runtest.sh -a test --continue' }
-        if (-not $command) { throw "No Godot test command: set godot.testCommand in $config or install gdUnit4 (addons/gdUnit4/runtest.sh)." }
+        if (-not $command) {
+            $result = [ordered]@{ passed = $false; status = 'unavailable'; category = 'missing_command'; reason = 'godot_test_command_missing'; exitCode = 4; command = ''; godot = $state.to; logTail = '' }
+            Write-Json $TestResultPath $result
+            Write-Output (@{ step = 'test'; status = $result.status; passed = $false; category = $result.category; exitCode = 4; log = $TestLogPath } | ConvertTo-Json -Compress)
+            exit 4
+        }
 
         # The pin file already selects the target version; the override just makes that explicit.
         $env:GODOT_VERSION_OVERRIDE = [string]$state.to
@@ -152,10 +172,13 @@ switch ($Step) {
         $code = $LASTEXITCODE
         Remove-Item Env:GODOT_VERSION_OVERRIDE -ErrorAction SilentlyContinue
         $tail = @(Get-Content -LiteralPath $TestLogPath -Tail 40 -ErrorAction SilentlyContinue) -join "`n"
-        $result = [ordered]@{ passed = ($code -eq 0); exitCode = $code; command = $command; godot = $state.to; logTail = $tail }
+        $category = if ($code -eq 0) { 'none' } elseif ($regressionExitCodes -contains $code) { 'test_regression' } else { 'unknown' }
+        $status = if ($code -eq 0) { 'passed' } else { 'failed' }
+        $result = [ordered]@{ passed = ($code -eq 0); status = $status; category = $category; reason = if ($code -eq 0) { 'tests_passed' } elseif ($category -eq 'test_regression') { 'test_regression' } else { 'unclassified_test_exit_code' }; exitCode = $code; command = $command; godot = $state.to; logTail = $tail }
         Write-Json $TestResultPath $result
-        Write-Output (@{ step = 'test'; passed = $result.passed; exitCode = $code; log = $TestLogPath } | ConvertTo-Json -Compress)
-        if ($code -ne 0 -and -not $AllowFailure) { exit 1 }
+        $normalizedExitCode = if ($category -eq 'test_regression') { 1 } elseif ($code -eq 0) { 0 } else { 10 }
+        Write-Output (@{ step = 'test'; status = $status; passed = $result.passed; category = $category; exitCode = $code; log = $TestLogPath } | ConvertTo-Json -Compress)
+        if ($normalizedExitCode -ne 0 -and -not ($AllowFailure -and $category -eq 'test_regression')) { exit $normalizedExitCode }
     }
     'publish' {
         if (-not (Test-Path -LiteralPath $TestResultPath) -or -not (Get-Content -Raw -LiteralPath $TestResultPath | ConvertFrom-Json).passed) {

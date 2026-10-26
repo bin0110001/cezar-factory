@@ -700,9 +700,19 @@ describe('RunManager.settleSuccess — optional review gate', () => {
     manager = new RunManager(store, repoRoot);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    // Windows can briefly hold the just-settled run-store directory while
+    // finishing synchronous file watchers; retry only that transient lock.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(repoRoot, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EBUSY' || attempt >= 5) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
     if (savedGate === undefined) delete process.env.CEZ_REVIEW_GATE;
     else process.env.CEZ_REVIEW_GATE = savedGate;
     if (savedAutoname === undefined) delete process.env.CEZ_AUTONAME;
@@ -801,14 +811,22 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     manager = new RunManager(store, repoRoot);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     manager.dispose(); // see DISPOSE at the top of this file
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(repoRoot, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EBUSY' || attempt >= 5) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
   });
 
   it('runs both skill steps to completion, and the second step\'s prompt carries the chain guard', async () => {
@@ -860,6 +878,303 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(notes.length).toBe(2);
     expect(notes[0]).toContain('you are running step 1 of 2');
     expect(notes[1]).toContain('you are running step 2 of 2');
+  }, 30_000);
+
+  it('skips a conditional agent step before dispatch when its typed preflight output is absent', async () => {
+    const notesPath = join(repoRoot, 'notes.md');
+    const before = existsSync(notesPath) ? readFileSync(notesPath, 'utf8') : undefined;
+    const workflow: WorkflowDef = {
+      name: '(planned)',
+      source: 'built-in',
+      steps: [{
+        id: 'implement',
+        name: 'Implement only when preflight found work',
+        skill: 'factory-implement',
+        prompt: 'mock:done this must not be dispatched',
+        when: {
+          type: 'object',
+          required: ['outputs'],
+          properties: {
+            outputs: {
+              type: 'object',
+              required: ['preflight'],
+              properties: { preflight: { type: 'object', required: ['hasWork'], properties: { hasWork: { const: true } } } },
+            },
+          },
+        },
+      }],
+    };
+    const record = manager.startRun(workflow, { task: 'conditional run', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('conditional run did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    expect(store.getRun(record.id)?.steps).toMatchObject([{ id: 'implement', status: 'skipped', skipReason: 'precondition_not_met' }]);
+    expect(store.getRun(record.id)?.status).toBe('done');
+    expect(existsSync(notesPath) ? readFileSync(notesPath, 'utf8') : undefined).toBe(before);
+  }, 30_000);
+
+  it('runs the bounded finalizer after success and records completion', async () => {
+    const calls: string[] = [];
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      return { ok: true, output: 'passed', exitCode: 0 };
+    };
+    const workflow: WorkflowDef = {
+      name: 'finalizer-success',
+      source: 'built-in',
+      steps: [
+        { id: 'work', command: 'test-command' },
+        { id: 'cleanup', command: 'cleanup-command', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'finalizer success', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('finalized run did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    managerInternals.runCheckStep = originalRunCheckStep;
+    expect(calls).toEqual(['work', 'cleanup']);
+    expect(store.getRun(record.id)).toMatchObject({
+      status: 'done',
+      finalization: { status: 'complete', terminal: 'success' },
+      steps: [{ id: 'work', status: 'done' }, { id: 'cleanup', status: 'done' }],
+    });
+  }, 30_000);
+
+  it('runs cleanup after failure and preserves the original failure when cleanup also fails', async () => {
+    const calls: string[] = [];
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      return step.finalizer
+        ? { ok: false, output: 'cleanup failed', exitCode: 9 }
+        : { ok: false, output: 'original-failure', exitCode: 7 };
+    };
+    const workflow: WorkflowDef = {
+      name: 'finalizer-failure',
+      source: 'built-in',
+      steps: [
+        { id: 'work', command: 'failing-command' },
+        { id: 'cleanup', command: 'cleanup-command', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'finalizer failure', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('failed run finalization did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    managerInternals.runCheckStep = originalRunCheckStep;
+    const finished = store.getRun(record.id);
+    expect(calls).toEqual(['work', 'cleanup']);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.error).toBe('check "work" failed');
+    expect(finished?.finalization).toMatchObject({ status: 'failed', terminal: 'failed', cleanupError: 'cleanup: cleanup failed' });
+  }, 30_000);
+
+  it('restart recovery resumes only unfinished finalizers and settles the recorded terminal intent', async () => {
+    const calls: string[] = [];
+    const workflow: WorkflowDef = {
+      name: 'finalizer-recovery',
+      source: 'built-in',
+      steps: [
+        { id: 'work', command: 'must-not-replay' },
+        { id: 'cleanup', command: 'cleanup-command', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = store.createRun({
+      title: 'finalizer recovery',
+      workflow: workflow.name,
+      task: 'recover cleanup',
+      worktree: false,
+      steps: [
+        { id: 'work', name: 'work', kind: 'check' },
+        { id: 'cleanup', name: 'cleanup', kind: 'check' },
+      ],
+    });
+    store.updateRun(record.id, {
+      workflowDef: workflow,
+      status: 'running',
+      finalization: { status: 'running', terminal: 'success', startedAt: new Date().toISOString() },
+    });
+    store.updateStep(record.id, 'work', { status: 'done' });
+    store.updateStep(record.id, 'cleanup', { status: 'running' });
+
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      return { ok: true, output: 'passed', exitCode: 0 };
+    };
+
+    await manager.recover();
+
+    managerInternals.runCheckStep = originalRunCheckStep;
+    expect(calls).toEqual(['cleanup']);
+    expect(store.getRun(record.id)).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'completed', reasonCode: 'workflow_completed' },
+      finalization: { status: 'complete', terminal: 'success' },
+      steps: [{ id: 'work', status: 'done' }, { id: 'cleanup', status: 'done' }],
+    });
+  });
+
+  it('does not replay a finalizer whose failure was already durably recorded', async () => {
+    const calls: string[] = [];
+    const workflow: WorkflowDef = {
+      name: 'finalizer-known-failure',
+      source: 'built-in',
+      steps: [
+        { id: 'work', command: 'already-complete' },
+        { id: 'cleanup', command: 'idempotent-cleanup', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = store.createRun({
+      title: 'known cleanup failure',
+      workflow: workflow.name,
+      task: 'reconcile cleanup',
+      worktree: false,
+      steps: [
+        { id: 'work', name: 'work', kind: 'check' },
+        { id: 'cleanup', name: 'cleanup', kind: 'check' },
+      ],
+    });
+    store.updateRun(record.id, {
+      workflowDef: workflow,
+      status: 'running',
+      finalization: { status: 'running', terminal: 'success', startedAt: new Date().toISOString() },
+    });
+    store.updateStep(record.id, 'work', { status: 'done' });
+    store.updateStep(record.id, 'cleanup', { status: 'failed', error: 'persisted cleanup error' });
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      return { ok: true, output: 'must not run', exitCode: 0 };
+    };
+
+    await manager.recover();
+
+    managerInternals.runCheckStep = originalRunCheckStep;
+    expect(calls).toEqual([]);
+    expect(store.getRun(record.id)).toMatchObject({
+      status: 'failed',
+      error: 'workflow cleanup failed: cleanup: persisted cleanup error',
+      outcome: { kind: 'infrastructure_failure', reasonCode: 'cleanup_failed' },
+      finalization: { status: 'failed', terminal: 'success', cleanupError: 'cleanup: persisted cleanup error' },
+      steps: [{ id: 'work', status: 'done' }, { id: 'cleanup', status: 'failed', error: 'persisted cleanup error' }],
+    });
+  });
+
+  it('still runs finalizers when a preflight check returns no_work', async () => {
+    const calls: string[] = [];
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{
+        ok: boolean; output: string; exitCode: number;
+        control?: { action: 'no_work'; reasonCode: 'no_work' };
+      }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      return step.id === 'preflight'
+        ? { ok: true, output: '{}', exitCode: 0, control: { action: 'no_work', reasonCode: 'no_work' } }
+        : { ok: true, output: 'cleaned', exitCode: 0 };
+    };
+    const workflow: WorkflowDef = {
+      name: 'finalizer-no-work',
+      source: 'built-in',
+      steps: [
+        { id: 'preflight', command: 'preflight', outputSchema: { type: 'object' } },
+        { id: 'agent', prompt: 'must not run' },
+        { id: 'cleanup', command: 'cleanup', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'no work', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('no-work finalizer did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    managerInternals.runCheckStep = originalRunCheckStep;
+    expect(calls).toEqual(['preflight', 'cleanup']);
+    expect(store.getRun(record.id)).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'no_work', reasonCode: 'no_work', stepId: 'preflight' },
+      steps: [
+        { id: 'preflight', status: 'done' },
+        { id: 'agent', status: 'skipped', skipReason: 'no_work' },
+        { id: 'cleanup', status: 'done' },
+      ],
+      finalization: { status: 'complete', terminal: 'success' },
+    });
+  }, 30_000);
+
+  it('records cancellation durably and runs cleanup without changing the cancelled terminal state', async () => {
+    const calls: string[] = [];
+    let releaseCheck!: () => void;
+    const held = new Promise<void>((resolve) => { releaseCheck = resolve; });
+    const managerInternals = manager as unknown as {
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
+    managerInternals.runCheckStep = async (_state, step) => {
+      calls.push(step.id);
+      if (!step.finalizer) await held;
+      return { ok: true, output: 'passed', exitCode: 0 };
+    };
+    const workflow: WorkflowDef = {
+      name: 'finalizer-cancelled',
+      source: 'built-in',
+      steps: [
+        { id: 'work', command: 'held-command' },
+        { id: 'cleanup', command: 'cleanup-command', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'cancel with cleanup', worktree: false });
+    const startDeadline = Date.now() + 10_000;
+    while (!calls.includes('work')) {
+      if (Date.now() > startDeadline) throw new Error('ordinary check did not start');
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(manager.cancel(record.id)).toBe(true);
+    releaseCheck();
+
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('cancelled run cleanup did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    managerInternals.runCheckStep = originalRunCheckStep;
+    expect(manager.isActive(record.id)).toBe(false);
+    expect(calls).toEqual(['work', 'cleanup']);
+    expect(store.getRun(record.id)).toMatchObject({
+      status: 'cancelled',
+      finalization: { status: 'complete', terminal: 'cancelled' },
+      steps: [{ id: 'work', status: 'cancelled' }, { id: 'cleanup', status: 'done' }],
+    });
   }, 30_000);
 });
 
@@ -1633,6 +1948,7 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
 
     await waitFor(record.id, (r) => r?.status === 'failed');
     expect(store.getRun(record.id)?.error).toContain('after inactivity');
+    expect(store.getRun(record.id)?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'idle_timeout' });
     // The rail must agree with the run: a failed run never shows its final step `done`.
     expect(store.getRun(record.id)?.steps[0]?.status).toBe('failed');
     expect(readEvents(record.id).some((e) => e.type === 'step-end' && e.status === 'done')).toBe(false);

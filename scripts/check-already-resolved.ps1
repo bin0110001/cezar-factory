@@ -50,4 +50,9 @@ $directory = Split-Path -Parent $OutputPath
 if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
 $marker = [ordered]@{ resolved = $true; issue = $Issue; reason = $reason; checkedAt = (Get-Date).ToUniversalTime().ToString('o') }
 $marker | ConvertTo-Json | Set-Content -Path $OutputPath -Encoding utf8
-Write-Output (@{ status = 'already-resolved'; issue = $Issue; reason = $reason } | ConvertTo-Json -Compress)
+Write-Output (@{
+    status = 'already-resolved'
+    issue = $Issue
+    reason = $reason
+    '$cezar' = @{ action = 'no_work'; reasonCode = 'no_work' }
+} | ConvertTo-Json -Compress)

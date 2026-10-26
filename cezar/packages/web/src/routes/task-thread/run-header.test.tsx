@@ -153,6 +153,27 @@ describe('monitoring schedule', () => {
   })
 })
 
+describe('workflow finalization status', () => {
+  it.each([
+    ['running', 'Cleanup running'],
+    ['complete', 'Cleanup complete'],
+    ['failed', 'Cleanup finished with errors'],
+  ] as const)('shows %s cleanup state in the task header', (status, label) => {
+    stubFetch()
+    renderHeader(run('running', {
+      finalization: {
+        status,
+        terminal: 'success',
+        startedAt: '2026-10-25T12:00:00.000Z',
+        ...(status === 'failed' ? { cleanupError: 'remove temporary branch failed' } : {}),
+      },
+    }))
+    const statusLine = document.querySelector('[data-slot="run-finalization"]')
+    expect(statusLine?.textContent).toContain(label)
+    if (status === 'failed') expect(statusLine?.textContent).toContain('remove temporary branch failed')
+  })
+})
+
 describe('editable title (#389)', () => {
   it('pencil flips the h1 into an input; Enter PATCHes the trimmed title exactly once', async () => {
     const sent = stubFetch()
@@ -333,6 +354,15 @@ describe('action bar visibility per status (the legacy rules, rendered)', () => 
     stubFetch()
     renderHeader(run('running'))
     expect(screen.getByRole('button', { name: 'Run actions' })).not.toBeNull()
+  })
+})
+
+describe('typed outcome explanation in the run header', () => {
+  it('exposes a human explanation of the terminal reason on the status pill', () => {
+    stubFetch()
+    renderHeader(run('failed', { outcome: { kind: 'blocked', reasonCode: 'policy_blocked', stepId: 'preflight' } }))
+    expect(document.querySelector('[data-slot="pill"]')?.getAttribute('title')).toBe('Blocked — policy blocked at preflight')
+    expect(document.querySelector('[data-slot="pill"]')?.getAttribute('aria-label')).toBe('failed: Blocked — policy blocked at preflight')
   })
 })
 

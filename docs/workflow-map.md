@@ -44,9 +44,12 @@ executable state.
 implementation or fix workflow sets it first, then emits `factory:review` or
 `factory:investigate` when its run completes.
 
-The `[factory] maintenance` automation runs only fixed script steps plus the
-capped legacy-label audit: backlog-label audit, `refresh-stale-workable`, and
-`maintain-repository.ps1`. It does not select or classify issues for intake;
+The `[factory] maintenance` automation first runs independent stale-work
+refresh and deterministic repository housekeeping, then runs bounded read-only candidate
+collection, a deterministic preparation consumer for clear legacy-label
+classifications and candidate reservations, a proposal-only audit of at most
+three ambiguous issues, deterministic state-checked proposal application,
+`refresh-stale-workable`, and `maintain-repository.ps1`. It does not select or classify issues for intake;
 `[factory] intake` is the only intake path. `refresh-stale-workable` is a
 repair loop, not a new lifecycle state. It selects at most two open
 issues older than 24 hours in `factory:new`, `factory:needs-plan`,

@@ -138,6 +138,64 @@ When a check step (shell command) fails (non-zero exit):
   - The retry count is tracked and limited by the `max` value
   - After `max` retries, the workflow fails
 
+### Typed step conditions and structured artifacts
+
+Steps may declare standard JSON Schema under `when`. Cezar evaluates it against
+the same `{ task, outputs }` object used by `inputSchema`. A match runs the
+step; a value mismatch records the step as `skipped` with reason
+`precondition_not_met`, before invoking its agent or command. Invalid condition
+schemas are rejected as workflow-definition errors. No custom expression syntax
+or free-form evaluation is introduced.
+
+```yaml
+- id: implement
+  skill: factory-implement
+  when:
+    type: object
+    required: [outputs]
+    properties:
+      outputs:
+        type: object
+        required: [preflight]
+        properties:
+          preflight:
+            type: object
+            required: [hasWork]
+            properties:
+              hasWork: { const: true }
+```
+
+The condition can only use outputs from completed, committed prior steps. Those
+artifacts are checked against their attempt, content digest and source-step
+digest before the condition is evaluated. A mismatch fails closed as an
+infrastructure integrity failure; absent data simply fails the condition and
+skips the step.
+
+### Finalizers
+
+Cleanup steps use a bounded, idempotent command suffix. They run after the
+ordinary workflow reaches success, failure, no-work, or cancellation. Each step
+must declare finalizer: true, idempotent: true, and timeoutSeconds; the sum
+of finalizer timeouts in a workflow cannot exceed 300 seconds. Finalizers
+cannot declare conditions, structured input/output contracts, failure maps, or
+retry loops.
+
+```yaml
+- id: cleanup
+  name: Remove temporary resources
+  command: ./scripts/cleanup-task.ps1
+  finalizer: true
+  idempotent: true
+  timeoutSeconds: 30
+```
+
+Cezar persists terminal intent before starting cleanup. After a restart, it
+replays a finalizer whose status was still running, skips completed finalizers,
+and does not replay a failure already durably recorded. A command interrupted
+before its result was stored can run again, so finalizer commands must be
+safe to repeat. Cleanup failure is recorded separately; it does not replace an
+existing task failure, and it fails an otherwise successful run.
+
 ### Child-task/dispatch behavior
 
 > Owner-approved exception (2026-09-12): task dispatch (`cez task create`, spec `.ai/specs/2026-09-10-dispatch.md`) is default-on; `CEZ_DISPATCH=0` turns it off. Its brakes live in the engine — four children in flight, a child's budget carved out of its parent's — and with dispatch off the agent fanned out through its own sub-agents instead (unbudgeted and invisible (live run 3f7eaf02, 4.3M tokens).
@@ -208,9 +266,10 @@ legacy integration and must not be used to diagnose current automation runs.
 - **Install locations.** Workflows go to `.ai/cezar/workflows/factory-*.yaml` and skills to `.ai/skills/factory-*/`. Both are committable (Cezar's own `.ai/cezar/.gitignore` only ignores runtime state). Check-step scripts are not assumed to be present in an isolated worktree: they run from the version-pinned `FACTORY_RUNTIME_ROOT` registered in the Cezar service.
 - **Never bypass isolation for Factory assets.** `worktree: false` is an emergency/manual mode, not a Factory deployment mechanism. If a workflow cannot find a script, schema, or policy in a worktree, register or mount the Factory runtime and repair the workflow command; do not disable the worktree.
 - **Automations are not files.** Cezar stores them in gitignored `.ai/cezar/automations.json` behind an HTTP API (`CEZ_AUTOMATIONS=1`), so the factory ships JSON definitions in Cezar's own schema and reconciles them with `sync-automations.ps1`. They are GitHub polls on `issue.labeled` with `changedLabels`, every five minutes, `maxRecords: 1` (also the only available throttle; Cezar has no per-automation concurrency setting).
-- **Model-pinned automations.** Every Factory automation declares a Cezar `runner` and `model`, and `routing/automation-catalog.json` is the authority for that mapping. Planning uses Claude `sonnet` for every complexity tier. Implementation uses the configured Factory gateway for small work, GPT-5.6 Luna for medium work, and the configured premium large-work model for large work. The bounded local model is reserved for advisory utility jobs and cannot own implementation. Review uses Claude `sonnet`; the combined bounded maintenance workflow and investigation use Codex `factory-gateway/factory-code`. Maintenance combines script-driven backlog normalization, stale-workable refresh, existing-issue intake, and deterministic repository lifecycle hygiene in one hourly feature-gated automation. The model sees only the at-most-three ambiguous legacy-label candidates produced by `audit-backlog-labels.ps1`; it does not discover issues or run the sweep. The Bazzite deployment must mount the version-pinned Factory checkout at `/projects/cezar-factory` and set `FACTORY_RUNTIME_ROOT` accordingly. It adds `factory:new` plus type/risk labels for classifiable issues, `factory:tracking` for an epic/tracking parent, `factory:blocked` for blocked work, or `factory:needs-help` for another deliberate skip, and preserves project labels. The catalog validator rejects drift. Synchronization creates automations paused, so a model mapping never begins polling or spending until an operator explicitly enables it.
-- **Retry exhaustion cannot trigger an automation.** Cezar has no "workflow failed" event. When an implementation check exhausts `onFail.max`, the issue is recoverable through the watchdog's explicit `-RouteCancelledRuns` mode (which removes `factory:working`, adds `factory:investigate`, and comments the run id), with the maintenance workflow as a bounded 24-hour fallback. Without either scheduled recovery path, the failed run remains visible in the cockpit and is not silently retried.
-- **Run liveness watchdog.** Scheduled Factory deployments should invoke `scripts/watchdog-automations.ps1` at least every 10 minutes with a 15-minute wall-clock budget and `-RouteCancelledRuns`. It cancels only runs still marked `running` beyond that budget, records the terminal reason, and routes a run with a known issue id to `factory:investigate`; it never retries automatically.
+- **Model-pinned automations.** Every Factory automation declares a Cezar `runner` and `model`, and `routing/automation-catalog.json` is the authority for that mapping. Planning uses Claude `sonnet` for every complexity tier. Implementation uses the configured Factory gateway for small work, GPT-5.6 Luna for medium work, and the configured premium large-work model for large work. The bounded local model is reserved for advisory utility jobs and cannot own implementation. Review uses Claude `sonnet`; the combined bounded maintenance workflow and investigation use Codex `factory-gateway/factory-code`. Maintenance combines script-driven backlog normalization, stale-workable refresh, existing-issue intake, and deterministic repository lifecycle hygiene in one hourly feature-gated automation. `audit-backlog-labels.ps1` is read-only and emits deterministic classifications plus at most three ambiguous candidates. A pre-agent consumer ensures the taxonomy, applies static classifications, and reserves those candidates after live state checks. The model sees only the bounded candidate bodies; it does not discover issues, execute Factory scripts, or run the sweep. It writes a candidate-only proposal, then the final consumer validates coverage and allowlists, rechecks lifecycle state, the prepared label snapshot, and the issue's GitHub `updatedAt` revision, applies labels, verifies results, and persists receipts as effects complete. The Bazzite deployment must mount the version-pinned Factory checkout at `/projects/cezar-factory` and set `FACTORY_RUNTIME_ROOT` accordingly. The catalog validator rejects drift. Synchronization creates automations paused, so a model mapping never begins polling or spending until an operator explicitly enables it.
+- **Retry exhaustion cannot trigger an automation.** Cezar has no "workflow failed" event. A failed run remains visible in the cockpit; the existing watchdog must not be treated as a retry-exhaustion recovery path. The bounded stale-workable refresh is a separate maintenance operation and does not prove that a failed run was recovered.
+- **Run liveness watchdog.** `scripts/watchdog-automations.ps1` accepts the live top-level run array and two explicit compatibility envelopes. It cancels only a positively identified Factory issue run when the runner is explicitly stalled, the run-owned lease has expired, heartbeat and progress are stale, and the run deadline has passed. It logs every decision and re-reads the run before cancellation. Current Cezar run records do not expose all required liveness fields, so they are skipped with an evidence reason; elapsed time alone never triggers cancellation. Do not rely on this as active recovery until Cezar exposes and verifies those fields.
+- **Typed outcomes, workflow contracts and artifact provenance (partial FND-01/02/RUN-02).** Run records carry optional outcome kinds and stable reason codes alongside status; legacy records map conservatively, and the task header explains outcomes. Workflow steps can declare JSON Schema input/output contracts. Inputs validate before dispatch. Validated check outputs are tagged with their step attempt, content digest and producing step-definition digest, secret-scrubbed, and committed with the completed step before downstream dispatch. Consumers ignore stale attempts and fail closed on digest or source mismatches. Check controls support no-work, step skip and typed block outcomes. Contract failures have their own typed reason codes. Checks may map exit codes to normalized failure categories; when taxonomy is declared, only mapped work-verdict/test-regression codes can enter an agent repair loop, while infrastructure, provider, timeout and malformed-result categories stop with typed outcomes. Multi-process index-writer races, bounded artifact-retention policy, restart/concurrent replay on a supported Linux/Bazzite Cezar host, agent-produced output contracts and broader Factory workflow adoption remain outstanding.
 - **Independent review.** Every Cezar run starts a fresh agent session in its own worktree, so the review workflow does not share context with implementation. Use `agent:*` labels or a workflow override to pin a different runner.
 - **Polling latency.** Automations poll, so a label change is picked up within the interval (five minutes by default).
 

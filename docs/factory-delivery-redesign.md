@@ -1,5 +1,10 @@
 # Factory delivery redesign: self-healing releases
 
+> Historical proposal. Current release behavior is governed by AGENTS.md,
+> docs/shared-factory.md, skills/factory-release, and
+> skills/factory-finish-release. Do not apply the channel or recovery proposals
+> below without reconciling them with those current instructions.
+
 Status: proposed. Audience: Factory contributors.
 
 Goal: Factory changes (scripts, skills, workflows, policies, templates,

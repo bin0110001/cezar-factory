@@ -21,30 +21,29 @@ if cross-repository tracking is required.
 - The script may normalize every deterministically classifiable open issue in
   one run. Process **at most three** genuinely ambiguous issues in the LLM
   session.
-- Consider only the candidates emitted by the installed audit script. The
-  workflow must invoke the mounted runtime directly at
-  `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` before this skill
-  is given to the LLM. The script is mandatory; it
-  fetches, filters, reserves, and retrieves the bodies for the bounded
-  candidates.
-- This is a single bounded pass: consume the candidate source run performed
+- Consider only the candidates emitted by the read-only collector. The
+  workflow invokes the mounted runtime collector and then a deterministic
+  preparation consumer before this skill is given to the LLM. The collector
+  selects candidates and fetches their bounded bodies; the consumer applies
+  deterministic labels and creates reservations.
+- This is a single bounded pass: consume the collector artifact performed
   before the LLM step, process only its emitted candidates, and write one
-  result. Do not run the candidate source, list issues again, create a
-  temporary audit script, or retry with a different shell command. If the
-  pre-LLM source command fails, stop and report the failure.
+  result. Do not run the collector, list issues again, create a temporary
+  audit script, or retry with a different shell command. If a pre-LLM step
+  fails, the workflow stops before this skill.
 - The workflow validates the handoff before this skill starts. If reading the
   validated artifact fails for any reason, make one concise failure report and
   stop immediately. Do not try another path, shell, tool, or equivalent
   existence check.
-- If neither registered script path exists or the selected command fails, stop the run as failed. Do not search the filesystem, call `gh issue list`, switch shells, call MCP/resource discovery, install tools, or reconstruct the candidate list manually.
 - Do not read, print, parse, lint, or judge the script source. A displayed or serialized script body is not an audit result; only its exit status and the emitted input artifact are valid evidence. Never replace it because it appears incomplete.
-- `create-labels.ps1` is an internal sibling of the audit script; never run it.
+- The workflow's preparation consumer may call the installed sibling
+  `create-labels.ps1` to ensure the taxonomy. The skill must not run scripts.
 - Preserve every existing non-Factory label. Never remove a legacy/project label.
-- You never execute or resolve any Factory script. The workflow runs `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` directly; it ensures Factory labels using its own installed location and writes `.factory/backlog-label-audit-input.json`. The candidate's `labels` are the pre-audit source snapshot; the `staged` entry records the post-fetch `factory:auditing` reservation. Do not treat that source snapshot as the issue's current labels.
-- For each selected issue, add exactly `factory:new`, one `type:*`, and one `risk:*` label. Use the candidate's `typeHint` and `riskHint` when present; `test` is `type:test`, never `type:maintenance`. Do not add
+- You never execute or resolve any Factory script. The workflow runs `/projects/cezar-factory/scripts/audit-backlog-labels.ps1` as a read-only collector, then a deterministic preparation consumer applies static classifications and reserves ambiguous candidates before this skill starts. The worktree-local `.factory/backlog-label-audit-input.json` preserves collection-time `labels`; `staged` records the reservation the workflow applied. Do not treat the source snapshot as the issue's current labels.
+- For each selected issue, propose exactly `factory:new`, one `type:*`, and one `risk:*` label. Use the candidate's `typeHint` and `riskHint` when present; `test` is `type:test`, never `type:maintenance`. Do not add
   `agent:*` labels.
 - Never use `factory:needs-help` for work that can proceed autonomously. It is reserved for a genuine human decision, missing external input, or conflicting requirement. The candidate script's temporary `factory:auditing` reservation is the sole audit exception.
-- The candidate script resolves every clear legacy marker it fetched: `blocked`/`blocker` becomes `factory:blocked`; `needs-decomp` becomes `factory:needs-plan` plus `complexity:large`; and an unambiguous legacy type becomes `factory:new`, `type:*`, and `risk:*`. Only genuinely ambiguous items are left in `candidates` and reserved with `factory:auditing`; the LLM sees at most the requested three. Do not reconsider entries in `resolved`; record them exactly as emitted. If an issue is an epic or tracking parent, replace an `factory:auditing` reservation with `factory:tracking` and record the reason. Retain `factory:needs-help` only for a genuine human escalation. Each outcome prevents repeat evaluation without changing the issue body or adding a comment. A skipped issue without one of these durable closing labels is an audit failure, never a valid skip.
+- The collector classifies clear legacy markers in the input artifact: `blocked`/`blocker` proposes `factory:blocked`; `needs-decomp` proposes `factory:needs-plan` plus `complexity:large`; and an unambiguous legacy type proposes `factory:new`, `type:*`, and `risk:*`. The workflow-owned preparation consumer validates and applies these entries and reserves only the genuinely ambiguous candidates. The LLM sees at most the requested three candidates. Do not reconsider or copy `resolved` entries into the candidate proposal. If a candidate is an epic or tracking parent, propose `factory:tracking` and record the reason. Retain `factory:needs-help` only for a genuine human escalation. Every proposal must include a durable closing label; a bare skipped outcome is invalid. The deterministic consumer applies candidate edits after the proposal and verifies them without changing issue bodies or adding comments.
 
 ## Classification
 
@@ -59,23 +58,21 @@ documentation, or non-production maintenance. When uncertain, skip.
 
 ## Procedure
 
-1. The workflow's pre-LLM step has already run the candidate script exactly
-   once from the scheduled worktree. You must not run it, or any other Factory
+1. The workflow's pre-LLM steps have already run the read-only collector exactly
+   once and applied its deterministic classifications/reservations. You must not run it, or any other Factory
    script, and must not add a resolver, shell wrapper, fallback search, or
-   retry. If that step failed, the workflow stops before this skill. Do not
+   retry. If a pre-LLM step failed, the workflow stops before this skill. Do not
    search for scripts or inspect source. Read the exact `outputPath` reported in the emitted JSON. It must be
    under the current scheduled worktree; never read a project-root or prior-run
    `.factory/backlog-label-audit-input.json`. This is the only issue-discovery
    operation. Do not call `gh issue list`, inspect raw issue-list JSON, or
    list additional issues.
-2. Copy `resolved` entries directly into the result; do not inspect or alter
-   them. Choose only from the remaining at-most-three `candidates`, using the
+2. Choose only from the remaining at-most-three `candidates`, using the
    pre-fetched `body` included for each candidate. Do not retrieve issue bodies,
    fetch, or inspect any other issue.
-3. Re-read each candidate's labels immediately before writing, to avoid racing a human or another run. The expected audit reservation is `factory:auditing`; if any other Factory label has appeared, record it as skipped without editing.
-4. For every candidate, execute and re-read one closing label edit before reporting it. For classifiable work, replace the reservation with `factory:new`, one `type:*`, and one `risk:*`. For decomposition-needed work, replace it with `factory:needs-plan`, one `type:*`, one `risk:*`, and `complexity:large`; this routes it to autonomous large-model planning. For an epic or tracking parent, replace it with `factory:tracking`; for blocked work, replace it with `factory:blocked`; retain `factory:needs-help` only for a genuine human escalation.
-5. If the closing edit or re-read fails, stop the audit as failed. Do not call the issue skipped and do not emit a successful audit record. A `skipped` entry is valid only when its `added` array names the durable closing label visible in the re-read.
-6. Re-read labels after each edit and write `.factory/backlog-label-audit.json`:
+3. Do not read GitHub state or apply any changes. The deterministic workflow consumer owns live state checks, label edits, and verification after this proposal is written.
+4. For every candidate, propose exactly one durable closing Factory state label. For classifiable work, use `factory:new`, one `type:*`, and one `risk:*`. For decomposition-needed work, use `factory:needs-plan`, one `type:*`, one `risk:*`, and `complexity:large`; this routes it to autonomous large-model planning. For an epic or tracking parent, use `factory:tracking`; for blocked work, use `factory:blocked`; use `factory:needs-help` only for a genuine human escalation. Include a concise rationale. Do not use a bare skipped outcome.
+5. Write `.factory/backlog-label-audit.json` as a proposal for the deterministic consumer:
 
 The result file must contain only the candidates from the input file. Never add
 issues discovered in a later listing or from a prior audit artifact. Use the
@@ -85,7 +82,9 @@ heredocs or create files outside the repository.
 ```json
 {
   "considered": [123],
-  "changed": [{"issue": 123, "added": ["factory:new", "type:bug", "risk:medium"]}],
+  "changed": [{"issue": 123, "added": ["factory:new", "type:bug", "risk:medium"], "reason": "legacy bug label"}],
   "skipped": [{"issue": 124, "reason": "tracking parent", "added": ["factory:tracking"]}]
 }
 ```
+
+The workflow consumer validates that every candidate appears exactly once, rejects unsupported labels, rechecks the open issue's current labels against the collected snapshot and reservation, applies the proposal, and verifies the result. If current state changed, the consumer fails closed; do not retry with a new issue listing or edit labels manually.

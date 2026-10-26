@@ -19,10 +19,6 @@ source: skills/factory-plan/SKILL.md
 - Identify risks.
 - Estimate delivery complexity.
 - Decide whether decomposition is needed.
-- Update the issue with the plan.
-- Route to:
-  - `factory:ready`
-  - `factory:needs-help`
 
 ## Must not
 
@@ -103,17 +99,11 @@ source: skills/factory-plan/SKILL.md
 - Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
 - In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
 
-### 10. Update the Issue with the Plan
+### 10. Write the Plan Result
 
-- Post the plan as a comment on the issue.
-- Use a structured format that includes all required fields from the plan schema.
-- Reference the plan schema fields explicitly.
-
-### 11. Route the Issue
-
-- Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise `not-ready` with the questions in `unresolvedQuestions`.
-- Do **not** edit `factory:*` labels. Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
-- The workflow posts the plan to the issue and routes to `factory:ready` or `factory:needs-help` (and holds `risk:high` issues for human plan approval). For `decomposed` it creates and queues the sub-issues, comments the list, and keeps the parent as a tracking review record.
+- Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise use `not-ready` and record the questions in `unresolvedQuestions`.
+- Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in the `issue` field.
+- Do not post comments, create issues, or edit lifecycle labels. The workflow validates the artifact, posts the plan, creates any declared sub-issues, and routes the issue state. High-risk plan approval remains a separate human gate.
 
 ## Output Format
 

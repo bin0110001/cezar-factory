@@ -79,6 +79,31 @@ describe('StepRail', () => {
     expect(document.querySelector('[data-slot="step-row"] svg')?.getAttribute('class')).toContain('text-danger')
   })
 
+  it('exposes the stable reason for a skipped step on hover', () => {
+    render(<StepRail steps={[step('preflight', 'skipped', { skipReason: 'precondition_not_met' })]} />)
+    expect(document.querySelector('[data-slot="step-row"] span')?.getAttribute('title')).toBe('Skipped: precondition not met')
+  })
+
+  it('exposes a persisted structured result with attempt and content/source provenance', () => {
+    render(<StepRail steps={[step('verify', 'done', {
+      kind: 'check',
+      output: { verdict: 'passed' },
+      outputAttempt: 2,
+      outputDigest: 'a'.repeat(64),
+      outputSourceDigest: 'b'.repeat(64),
+    })]} />)
+    const artifact = document.querySelector('[data-slot="step-artifact"]')!
+    expect(artifact.textContent).toContain('attempt 2')
+    expect(artifact.textContent).toContain('Content SHA-256:')
+    expect(artifact.textContent).toContain('Workflow step SHA-256:')
+    expect(artifact.textContent).toContain('"verdict": "passed"')
+  })
+
+  it('does not render legacy output without its integrity digest', () => {
+    render(<StepRail steps={[step('verify', 'done', { output: { verdict: 'passed' } })]} />)
+    expect(document.querySelector('[data-slot="step-artifact"]')).toBeNull()
+  })
+
   it('shows ×N only when a step actually iterated', () => {
     render(
       <StepRail

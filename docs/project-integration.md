@@ -1,8 +1,10 @@
 # Project Integration Model
 
-This document describes the optional local project integration layer. The
-default Factory release path synchronizes automations directly to Cezar and
-does not require this checkout layout.
+This document describes the optional local project integration layer. Cezar
+uses the shared, version-pinned Factory runtime mount for workflow scripts;
+configured automation definitions are synchronized through the Cezar API.
+This checkout layout is needed only when a project requires a full local
+`.ai/factory` installation.
 
 ## Project Structure
 
@@ -67,9 +69,37 @@ project:
   type: your-project-type   # e.g., godot, dotnet, web
 
 validation:
-  changed: ./scripts/factory/test-changed.ps1
-  full: ./scripts/factory/test-full.ps1
-  verify: ./scripts/factory/verify.ps1
+  quick:
+    command: "./scripts/verify-quick.ps1"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites:
+      - pwsh
+    timeoutSeconds: 120
+    evidencePath: ".factory/artifacts/verification-quick.json"
+    appliesTo:
+      - "*"
+  targeted:
+    command: "./scripts/verify-changed.ps1"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites:
+      - pwsh
+    timeoutSeconds: 600
+    evidencePath: ".factory/artifacts/verification-targeted.json"
+    appliesTo:
+      - "*"
+  full:
+    command: "./scripts/verify-full.ps1"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites:
+      - pwsh
+    timeoutSeconds: 1800
+    evidencePath: ".factory/artifacts/verification-full.json"
+    appliesTo:
+      - "*"
+  verify: "./scripts/factory/verify.ps1"
 `
 
 ## Issue repository routing
@@ -136,11 +166,18 @@ Workflow `onFail.max` retry counts live in the workflow files; change them with 
 
 ## Validation Interface
 
-Projects provide three standard validation scripts:
+Projects declare project-owned quick, targeted, and full commands under
+`validation:`. Each command must write exactly one JSON object to standard
+output with a stable `status` and machine-readable `reason`; failure verdicts
+also name a `category`. The Factory runtime executes only those commands and enforces
+their working directory, prerequisites, timeout, evidence path, and project
+applicability. The values above are examples; each project must point to
+commands its toolchain actually supports.
 
 ### test-changed.ps1
 
-Tests only files changed in the current workitem:
+The configured `targeted` command selects relevant tests using project-owned
+rules. Factory does not discover test files or guess how to run them.
 - Fast execution
 - Focused on relevant tests
 - Produce compact output
@@ -149,7 +186,7 @@ Tests only files changed in the current workitem:
 
 ### `test-full`
 
-Runs the complete test suite:
+The configured `full` command runs the project's complete required suite:
 - Comprehensive validation
 - Longer execution time
 - Store full artifacts separately
@@ -173,24 +210,31 @@ Performs factory-specific validation:
 
 ### Output Format
 
-All validation scripts produce structured JSON output for LLM-friendly consumption:
+The Factory wrapper writes a structured result for the configured command.
+Missing configuration or prerequisites produce `unavailable`, project
+non-applicability produces `skipped`, timeout or nonzero exit produces
+`failed`, and only a zero exit from an applicable configured command produces
+`passed`. A skipped result uses Cezar's typed `skip_step` control and is
+preserved on the workflow step. Unavailable, no-matching-tests, malformed
+results, and failures return mapped nonzero process exits so workflow gates
+cannot mistake them for passing tests. A result resembles:
 
 ```json
 {
-  "status": "passed|failed|warning",
-  "stage": "test|verify",
-  "passed": 42,
-  "failed": 0,
-  "warnings": 1,
-  "total": 43,
-  "errors": [...],
-  "failures": [...],
-  "checks": [...],
-  "artifact": "artifacts/verify-results.json"
+  "status": "passed|failed|unavailable|skipped",
+  "level": "targeted",
+  "reason": "tests_passed",
+  "category": null,
+  "command": "./scripts/verify-changed.ps1",
+  "durationSeconds": 12.4,
+  "exitCode": 0,
+  "evidence": ".factory/artifacts/verification-targeted.json",
+  "log": ".factory/artifacts/verification-targeted.log"
 }
 ```
 
-Results are also written to `artifacts/` subdirectory as timestamped JSON files, with verbose logs stored separately.
+The configured evidence file is stable per level for downstream consumers; its
+paired log contains bounded, sanitized command output.
 
 ## Runtime Content
 

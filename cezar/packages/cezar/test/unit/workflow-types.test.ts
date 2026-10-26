@@ -62,6 +62,25 @@ test('retry targets must refer to an earlier unique step', () => {
   );
 });
 
+test('finalizers are bounded command steps in a contiguous suffix', () => {
+  const cleanup: WorkflowStepDef = { id: 'cleanup', command: 'rm -f marker', finalizer: true, idempotent: true, timeoutSeconds: 20 };
+  assert.equal(workflowFileSchema.safeParse({ name: 'cleanup', steps: [{ id: 'work', prompt: 'do it' }, cleanup] }).success, true);
+  assert.equal(workflowFileSchema.safeParse({ name: 'cleanup', steps: [{ ...cleanup, timeoutSeconds: undefined }] }).success, false);
+  assert.equal(workflowFileSchema.safeParse({ name: 'cleanup', steps: [{ ...cleanup, idempotent: undefined }] }).success, false);
+  assert.equal(workflowFileSchema.safeParse({ name: 'cleanup', steps: [{ ...cleanup, onFail: { retry: 'work', max: 2 } }] }).success, false);
+  assert.equal(stepsIssue([{ id: 'work', prompt: 'do it' }, cleanup, { id: 'later', command: 'echo later' }]),
+    'finalizer steps must form a contiguous suffix of the workflow');
+  assert.equal(stepsIssue([
+    { id: 'work', prompt: 'do it' },
+    { id: 'cleanup', command: 'echo cleanup', finalizer: true, idempotent: true, timeoutSeconds: 10 },
+    { id: 'verify', command: 'echo verify', onFail: { retry: 'cleanup', max: 2 } },
+  ]), 'finalizer steps must form a contiguous suffix of the workflow');
+  assert.equal(stepsIssue([
+    { id: 'cleanup-a', command: 'echo a', finalizer: true, idempotent: true, timeoutSeconds: 180 },
+    { id: 'cleanup-b', command: 'echo b', finalizer: true, idempotent: true, timeoutSeconds: 121 },
+  ]), 'combined finalizer timeout budget cannot exceed 300 seconds');
+});
+
 test('only plain agent skill steps compact back to a portable stack', () => {
   assert.deepEqual(skillStackOf(skillsToSteps(['implement', 'review'])), ['implement', 'review']);
   assert.equal(skillStackOf([{ id: 'verify', command: 'npm test' }]), null);
@@ -155,6 +174,7 @@ test('retryableExit loops only on the listed codes', () => {
   assert.equal(retryableExit([1], 1), true);
   for (const code of [2, 3, 4, 130, -1]) assert.equal(retryableExit([1], code), false);
 });
+
 
 test('a retryOn of 0 is a load-time error, not a silent no-op', () => {
   const file = (retryOn: number[]) => ({
