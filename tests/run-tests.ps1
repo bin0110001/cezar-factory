@@ -1160,6 +1160,10 @@ $godotDockerfile = Get-Content -Raw (Join-Path $factory 'cezar/Dockerfile')
 Assert 'Cezar image maps GODOT_BIN to the version selector' ($godotDockerfile -match 'GODOT_BIN=/usr/local/bin/godot' -and $godotDockerfile -match 'godot-select\.sh' -and $godotDockerfile -match 'GODOT_VERSIONS_DIR')
 Assert 'Godot versions live on a persistent volume in both compose files' ((Get-Content -Raw (Join-Path $factory 'cezar/compose.yaml')) -match 'godot-versions:/opt/godot-versions' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'godot-versions:/opt/godot-versions')
 Assert 'godot-upgrade automation is gated to Godot projects' ((Get-Content -Raw (Join-Path $factory 'automations/godot-upgrade.json')) -match '"projectType":\s*"godot"')
+$godotUpgradeSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-godot-upgrade/SKILL.md')
+$godotUpgradeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/godot-upgrade.yaml')
+$godotFixPrompt = [regex]::Match($godotUpgradeWorkflow, '(?s)id: fix.*?prompt:\s*\|\r?\n(?<prompt>.*?)(?=\r?\n  - id: tests)').Groups['prompt'].Value
+Assert 'Godot upgrade skill uses the bounded regression artifact and leaves tests and publishing to workflow steps' ($godotUpgradeSkill -match 'test_regression' -and $godotUpgradeSkill -match '\.factory/godot-test\.json' -and $godotUpgradeSkill -match '\.factory/godot-test\.log' -and $godotUpgradeSkill -match 'Do not run project tests or Factory scripts' -and $godotUpgradeSkill -notmatch 'Re-run the failing tests yourself|workflow commits and publishes' -and $godotFixPrompt -match 'Workflow command steps own tests,\s+retries, and pull-request publication' -and $godotFixPrompt -notmatch '(?i)run (?:Factory )?scripts')
 
 $gd = Join-Path $tmp 'godot'
 New-Item -ItemType Directory $gd | Out-Null

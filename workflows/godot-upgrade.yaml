@@ -80,13 +80,11 @@ steps:
     prompt: |
       {{task}}
 
-      The workflow already looked for a new Godot release, installed it, pinned it on the
-      upgrade branch, and ran the project's tests. Do not run any Factory script and do not
-      look for releases, create branches, or open pull requests yourself.
-
-      The workflow has already confirmed a new stable upgrade and that baseline tests fail on
-      it. Follow the Factory Godot Upgrade skill to fix the regression. Do not run Factory
-      scripts, look for releases, create branches, or open pull requests.
+      The workflow selected and installed a newer stable Godot version, pinned it on the
+      upgrade branch, and recorded a `test_regression` baseline in
+      `.factory/godot-test.json` and `.factory/godot-test.log`. Follow the Factory Godot
+      Upgrade skill to make a focused compatibility fix. Workflow command steps own tests,
+      retries, and pull-request publication.
   - id: tests
     name: Re-run the project's Godot tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step test
