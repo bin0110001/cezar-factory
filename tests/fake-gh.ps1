@@ -61,13 +61,25 @@ elseif ($a[0] -eq 'pr' -and $a[1] -eq 'view') {
     if (-not $pr) { $pr = @{} }
     $pr.state = if ($state.prMerged) { 'MERGED' } else { $(if ($pr.state) { $pr.state } else { 'OPEN' }) }
     $pr.headRefOid = if ($state.prHeadSha) { $state.prHeadSha } else { $pr.headRefOid }
+    $pr.updatedAt = if ($pr.updatedAt) { $pr.updatedAt } else { '2026-10-25T00:00:00.0000000Z' }
     $pr | ConvertTo-Json -Depth 8 -Compress
 }
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'edit') {
     $pr = @($state.prs | Where-Object { $_.url -eq [string]$a[2] -or $_.number -eq [int]$a[2] }) | Select-Object -First 1
+    if ($state.ContainsKey('failNextPrEditBeforeWrite') -and $state.failNextPrEditBeforeWrite) {
+        $state.failNextPrEditBeforeWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
     $body = [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1])
     $pr.body = $body
+    $pr.updatedAt = '2026-10-26T00:00:00.0000000Z'
     $state.prs = @($state.prs)
+    if ($state.ContainsKey('failNextPrEditAfterWrite') -and $state.failNextPrEditAfterWrite) {
+        $state.failNextPrEditAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
 }
 elseif ($a[0] -eq 'api' -and $a[1] -eq 'repos/example/project') { $state.repoSettings | ConvertTo-Json -Depth 8 -Compress }
 elseif ($a[0] -eq 'api' -and $a[1] -eq 'repos/example/project/rules/branches/dev') { @($state.rules) | ConvertTo-Json -Depth 8 -Compress -AsArray }

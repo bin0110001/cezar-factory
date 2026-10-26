@@ -108,6 +108,39 @@ steps:
   - id: ensure-pr-closes-issue
     name: Ensure successful PR closes the issue on merge
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json
+    outputSchema:
+      type: object
+      required: [status, issue, pr, action, observedRevision]
+      properties:
+        status: { type: string, enum: [linked, already-linked, reconciled] }
+        issue: { type: integer, minimum: 1 }
+        pr: { type: string, minLength: 1 }
+        observedRevision: { type: string, minLength: 1 }
+        action:
+          type: object
+          required: [schemaVersion, target, expectedRevision, operation, arguments, rationale, operationKey]
+          properties:
+            schemaVersion: { type: integer, const: 1 }
+            target:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: { type: string, const: pull_request }
+                id: { type: string, minLength: 1 }
+              additionalProperties: false
+            expectedRevision: { type: string, minLength: 1 }
+            operation: { type: string, const: pull_request.closing_reference.ensure }
+            arguments:
+              type: object
+              required: [issue, reference]
+              properties:
+                issue: { type: integer, minimum: 1 }
+                reference: { type: string, minLength: 1 }
+              additionalProperties: false
+            rationale: { type: string, minLength: 1 }
+            operationKey: { type: string, minLength: 1 }
+          additionalProperties: false
+      additionalProperties: false
     when:
       type: object
       required: [outputs]

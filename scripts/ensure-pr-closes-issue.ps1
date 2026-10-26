@@ -25,6 +25,34 @@ function Invoke-Gh([string[]]$Arguments) {
     [string]::Join("`n", [string[]]$output)
 }
 
+function Get-PrView([string]$Url) {
+    $raw = Invoke-Gh @('pr', 'view', $Url, '--json', 'body,updatedAt')
+    try { return ($raw | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw "GitHub returned malformed PR state for $Url : $($_.Exception.Message)" }
+}
+
+function Test-ClosingReference([string]$Body, [int]$IssueNumber) {
+    return $Body -match "(?im)\b(close[sd]?|resolve[sd]?|fix(e[sd])?)\s+#$IssueNumber\b"
+}
+
+function New-EffectAction([string]$Url, [string]$Revision, [int]$IssueNumber, [string]$Reference) {
+    $identity = [Text.Encoding]::UTF8.GetBytes("ensure-pr-closes-issue`n$Url`n$IssueNumber")
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($identity)).ToLowerInvariant()
+    return [ordered]@{
+        schemaVersion = 1
+        target = @{ kind = 'pull_request'; id = $Url }
+        expectedRevision = $Revision
+        operation = 'pull_request.closing_reference.ensure'
+        arguments = @{ issue = $IssueNumber; reference = $Reference }
+        rationale = 'Ensure a successful implementation PR closes its source issue when merged.'
+        operationKey = "factory:ensure-pr-closes-issue:$key"
+    }
+}
+
+function Write-EffectResult([string]$Status, [int]$IssueNumber, [string]$Url, $Action, [string]$ObservedRevision) {
+    Write-Output (@{ status = $Status; issue = $IssueNumber; pr = $Url; action = $Action; observedRevision = $ObservedRevision } | ConvertTo-Json -Depth 8 -Compress)
+}
+
 if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
     throw "Implementation result was not found: $Path"
 }
@@ -39,20 +67,37 @@ if ($issue -lt 1) { throw 'Implementation result must contain a positive issue n
 $pr = [string]$result.pr
 if ([string]::IsNullOrWhiteSpace($pr)) { throw 'Successful implementation result must contain a PR URL.' }
 
-$view = Invoke-Gh @('pr', 'view', $pr, '--json', 'body') | ConvertFrom-Json
+$view = Get-PrView $pr
 $body = [string]$view.body
+$revision = [string]$view.updatedAt
+if ([string]::IsNullOrWhiteSpace($revision)) { throw "GitHub did not return a PR revision for $pr; refusing an unbound body edit." }
 $closingReference = "Closes #$issue"
-if ($body -match "(?im)\b(close[sd]?|resolve[sd]?|fix(e[sd])?)\s+#$issue\b") {
-    Write-Output (@{ status = 'ok'; issue = $issue; pr = $pr; action = 'already-linked' } | ConvertTo-Json -Compress)
+if (Test-ClosingReference $body $issue) {
+    $action = New-EffectAction $pr $revision $issue $closingReference
+    Write-EffectResult 'already-linked' $issue $pr $action $revision
     exit 0
 }
 
+$action = New-EffectAction $pr $revision $issue $closingReference
 $temp = [IO.Path]::GetTempFileName()
 try {
     [IO.File]::WriteAllText($temp, (($body.TrimEnd() + "`r`n`r`n" + $closingReference + "`r`n")), [Text.UTF8Encoding]::new($false))
-    Invoke-Gh @('pr', 'edit', $pr, '--body-file', $temp) | Out-Null
+    try { Invoke-Gh @('pr', 'edit', $pr, '--body-file', $temp) | Out-Null }
+    catch {
+        $editError = $_.Exception.Message
+        # GitHub may have accepted the edit even when the CLI lost its response.
+        $afterFailure = Get-PrView $pr
+        $observedBody = [string]$afterFailure.body
+        if (-not (Test-ClosingReference $observedBody $issue)) { throw $editError }
+        Write-EffectResult 'reconciled' $issue $pr $action ([string]$afterFailure.updatedAt)
+        exit 0
+    }
 } finally {
     Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue
 }
 
-Write-Output (@{ status = 'ok'; issue = $issue; pr = $pr; action = 'linked'; reference = $closingReference } | ConvertTo-Json -Compress)
+$verified = Get-PrView $pr
+if (-not (Test-ClosingReference ([string]$verified.body) $issue)) {
+    throw "GitHub PR body verification did not find '$closingReference' after edit: $pr"
+}
+Write-EffectResult 'linked' $issue $pr $action ([string]$verified.updatedAt)

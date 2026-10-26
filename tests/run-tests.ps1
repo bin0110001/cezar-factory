@@ -146,7 +146,7 @@ Assert 'review typed resolved preflight gates all downstream work without duplic
 Assert 'fix-review typed resolved preflight owns early exit without duplicate agent instructions' ($fixReviewWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $fixReviewWorkflow -match '(?s)id: fix\s+name:.*?when:.*?resolved.*?const: open' -and $fixReviewWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $fixSkill -notmatch 'already-resolved\.json|Already-resolved issues')
 Assert 'implementation typed resolved preflight owns early exit without skill duplication' ($implementWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $implementWorkflow -notmatch 'already-resolved\.json' -and $implementSkill -notmatch 'Already-resolved issues|already-resolved\.json')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
-Assert 'implement workflow enforces a PR closing reference only after an open-issue result exists' ($implementWorkflow -match '(?s)id: ensure-pr-closes-issue\s+name:.*?ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json\s+when:.*?resolved.*?const: open')
+Assert 'implement workflow enforces a PR closing reference only after an open-issue result exists' ($implementWorkflow -match '(?s)id: ensure-pr-closes-issue\s+name:.*?ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json.*?outputSchema:.*?observedRevision.*?when:.*?resolved.*?const: open')
 Assert 'implementation result is typed, identity-bound, and has failure/cancellation-safe finalizers' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[issue, status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -notmatch 'id: ensure-result' -and $implementWorkflow -match '(?s)id: recover-implementation-contract-failure.*?finalizer: true.*?idempotent: true.*?timeoutSeconds: 20' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'implementation verification retries only normalized test regressions' (@([regex]::Matches($implementWorkflow, '(?s)onFail:\s+retry: implement\s+max: [12]\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 4 -and $implementWorkflow -match '"11": missing_command' -and $implementWorkflow -match '"16": timeout' -and $implementWorkflow -match '"18": unknown' -and $implementWorkflow -match '(?s)id: validate\s+name: Validate implementation result.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration')
 Assert 'planner, reviewer and investigator retry agents only for malformed result code 1' ($planWorkflow -match '(?s)id: validate-plan.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $reviewWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $investigateWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $planMaterializeStep -notmatch 'onFail:')
@@ -155,7 +155,7 @@ Assert 'intake skill documents its script-only workflow and bounded manual input
 Assert 'intake skill follows the typed result schema and forbids side effects' ($intakeSkill -match 'schemas/intake-result\.schema\.json' -and $intakeSkill -match 'unresolvedQuestions' -and $intakeSkill -match 'Do not edit labels or comments' -and $intakeSkill -match 'Do not run Factory scripts')
 Assert 'merge eligibility failure never re-invokes the reviewer' ($mergeEligibilityStep -and $mergeEligibilityStep -notmatch 'onFail:')
 Assert 'fix-review retries only normalized tests and malformed results' ((@([regex]::Matches($fixReviewWorkflow, '(?s)onFail:\s+retry: fix\s+max: 1\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 2) -and $fixReviewWorkflow -match '"1": test_regression' -and $fixReviewWorkflow -match '(?s)id: validate\s+name: Validate fix result.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $fixReviewWorkflow -match '"18": unknown')
-Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
+Assert 'PR close guard returns a versioned revision-bound action receipt' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'pull_request\.closing_reference\.ensure' -and $closePrScript -match 'expectedRevision' -and $implementWorkflow -match '(?s)id: ensure-pr-closes-issue.*?outputSchema:.*?observedRevision')
 Assert 'implementation preparation fetches issue and captures environment plus baseline SHA' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md' -and $prepareScript -match 'repositoryHeadSha')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('backlog-reconciliation','failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
@@ -644,6 +644,30 @@ try {
     }
     function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments); updatedAt = '2026-10-25T00:00:00.0000000Z'; prMerged = $false; prs = @() } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
+    $closingPrUrl = 'https://github.com/x/y/pull/99'
+    $closingResultPath = Join-Path $tmp 'closing-reference-result.json'
+    @{ issue = 7; status = 'success'; pr = $closingPrUrl } | ConvertTo-Json | Set-Content $closingResultPath
+    Set-Gh @()
+    $closingState = Get-Gh
+    $closingState.prs = @(@{ number = 99; url = $closingPrUrl; body = 'Implementation summary'; updatedAt = 'rev-1' })
+    $closingState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $closingArgs = @{ Path = $closingResultPath; GhCommand = $gh }
+    $closingFirst = Run 'ensure-pr-closes-issue.ps1' $closingArgs
+    $closingReceipt = $null
+    try { $closingReceipt = $closingFirst.Out | ConvertFrom-Json } catch { }
+    Assert 'PR close guard emits normalized action receipt and verifies the remote edit' ($closingFirst.Code -eq 0 -and $closingReceipt.status -eq 'linked' -and $closingReceipt.action.schemaVersion -eq 1 -and $closingReceipt.action.operation -eq 'pull_request.closing_reference.ensure' -and $closingReceipt.action.expectedRevision -eq 'rev-1' -and -not [string]::IsNullOrWhiteSpace([string]$closingReceipt.observedRevision) -and (Get-Gh).prs[0].body -match 'Closes #7')
+    $closingReplay = Run 'ensure-pr-closes-issue.ps1' $closingArgs
+    $closingReplayReceipt = $null
+    try { $closingReplayReceipt = $closingReplay.Out | ConvertFrom-Json } catch { }
+    Assert 'PR close guard replay reuses the existing closing reference' ($closingReplay.Code -eq 0 -and $closingReplayReceipt.status -eq 'already-linked' -and @([regex]::Matches((Get-Gh).prs[0].body, '(?im)Closes #7')).Count -eq 1)
+    $closingState = Get-Gh; $closingState.prs[0].body = 'Implementation summary'; $closingState | Add-Member -NotePropertyName failNextPrEditAfterWrite -NotePropertyValue $true -Force; $closingState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $closingAmbiguous = Run 'ensure-pr-closes-issue.ps1' $closingArgs
+    $closingAmbiguousReceipt = $null
+    try { $closingAmbiguousReceipt = $closingAmbiguous.Out | ConvertFrom-Json } catch { }
+    Assert 'PR close guard reconciles a lost edit response from live remote state' ($closingAmbiguous.Code -eq 0 -and $closingAmbiguousReceipt.status -eq 'reconciled' -and @([regex]::Matches((Get-Gh).prs[0].body, '(?im)Closes #7')).Count -eq 1)
+    $closingState = Get-Gh; $closingState.prs[0].body = 'Implementation summary'; $closingState | Add-Member -NotePropertyName failNextPrEditBeforeWrite -NotePropertyValue $true -Force; $closingState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $closingUnavailable = Run 'ensure-pr-closes-issue.ps1' $closingArgs
+    Assert 'PR close guard fails closed when the edit did not reach GitHub' ($closingUnavailable.Code -ne 0 -and (Get-Gh).prs[0].body -eq 'Implementation summary')
     $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
     function Invoke-Lease([string]$Action, [string]$Owner = '') {
         $leaseArgs = @('-NoProfile','-File',$leaseScript,'-Action',$Action,'-Issue','7','-GhCommand',$gh)
