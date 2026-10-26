@@ -569,6 +569,11 @@ try {
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')
+    $ambiguousClassificationState = Get-Gh; $ambiguousClassificationState | Add-Member -NotePropertyName failNextEditAfterWrite -NotePropertyValue $true -Force; $ambiguousClassificationState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $ambiguousClassificationRoute = Invoke-Route 'intake-result' $intake
+    $ambiguousClassificationResult = Get-Gh
+    Assert 'route: ambiguous classification response is reconciled before later effects' ($ambiguousClassificationRoute -eq 0 -and $ambiguousClassificationResult.labels -contains 'type:bug' -and $ambiguousClassificationResult.labels -contains 'risk:low' -and $ambiguousClassificationResult.labels -contains 'factory:needs-plan' -and @($ambiguousClassificationResult.comments | Where-Object { $_ -match 'factory:route-effect:intake-result:7:' }).Count -eq 1)
+    Set-Gh @('factory:new')
     Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)
     $memoryPlan = With $plan @{ memoryRecall = @{ banksQueried = @('project-7'); memoryIds = @('m1'); memoryCount = 1; contextChars = 4200 } }

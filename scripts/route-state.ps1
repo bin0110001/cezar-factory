@@ -156,7 +156,17 @@ function Set-Classification([string]$Type, [string]$Risk) {
     Assert-EffectRevision $before $current
     $beforeLabels = @(Get-LabelNames $before)
     $add = @(); foreach ($label in @($Type, $Risk)) { if ($beforeLabels -notcontains $label) { $add += $label } }
-    if ($add.Count) { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
+    if ($add.Count) {
+        try { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
+        catch {
+            $afterAmbiguous = Get-LiveIssue
+            $afterAmbiguousLabels = @(Get-LabelNames $afterAmbiguous)
+            if (@($afterAmbiguousLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { throw }
+            $script:effectRevision = [string]$afterAmbiguous.updatedAt
+            $script:labels = $afterAmbiguousLabels
+            return
+        }
+    }
     $after = Get-LiveIssue
     $afterLabels = @(Get-LabelNames $after)
     if (@($afterLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { Fail 'classification label effect is unresolved' }
