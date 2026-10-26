@@ -1,8 +1,10 @@
 # Backlog reconciler
 
-`[factory] backlog-reconciliation` is the on-demand entry point. It is a
-paused scheduled automation so it does not run on a timer; `cez automation run
-<id>` queues one run. `workflows/backlog-reconciliation.yaml` owns both script
+`[factory] backlog-reconciliation` has a daily schedule at 00:00 and is
+created paused by synchronization. The live enabled/paused state must be
+checked in the project's Cezar configuration; the source definition alone
+does not prove whether it runs on a timer. `cez automation run <id>` queues one
+manual run. `workflows/backlog-reconciliation.yaml` owns both script
 calls: it collects the snapshot with `scripts/collect-backlog-snapshot.ps1`,
 then invokes `scripts/reconcile-backlog.ps1` with `-DryRun` and both caps set
 to one. The final report reads only `.factory/backlog-reconciliation.json`.

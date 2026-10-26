@@ -1,10 +1,10 @@
 # Factory agent invocation inventory
 
-Audit refreshed: 2026-10-25 from the current checkout. This is the Slice 0 / INV-01 inventory for [the skills and automation polish plan](skills-automation-polish-plan-2026-10-25.md). It describes configured behavior; it is not a live run baseline.
+Audit refreshed: 2026-10-26 from the current checkout. This is the Slice 0 / INV-01 inventory for [the skills and automation polish plan](skills-automation-polish-plan-2026-10-25.md). It describes configured behavior; it is not a live run baseline.
 
 ## Evidence limits
 
-- Source inventory: 17 skill directories, 10 workflow YAML files, 14 automation JSON files, and `routing/automation-catalog.json`.
+- Source inventory: 18 skill directories, 11 workflow YAML files, 15 automation JSON files, and `routing/automation-catalog.json`.
 - Automation definitions establish triggers and configured runner/model, but the source tree contains no per-invocation token or duration aggregates. Those measurements are **unavailable**, not zero.
 - Schedules show configured cadence (hourly maintenance, daily failure audit and Godot upgrade). GitHub event automations are trigger-driven; observed frequency is **unavailable** here.
 - The audit does not assert current enabled/paused state at Cezar, actual model resolution, subscription headroom, or accepted-work outcomes. Capture those from bounded run records before a pilot comparison.
@@ -15,6 +15,7 @@ Audit refreshed: 2026-10-25 from the current checkout. This is the Slice 0 / INV
 | Workflow step | Trigger and bounded input | Configured runner/model | Output and external effects | Disposition and rationale | Frequency / cost evidence; owner |
 | --- | --- | --- | --- | --- | --- |
 | `factory-intake` — none | Issue selection and classification are handled by `select-intake-issue.ps1`, `classify-intake.ps1`, validators and router. | None | Structured intake result; the deterministic router changes lifecycle state. | **Deterministic.** Classification currently uses code rules; no agent call exists to replace. Review rule precision separately before adding any model. | Issue-triggered configuration; run frequency and cost unavailable. Factory owns policy. |
+| `factory-backlog-reconciliation` — `report` | Deterministic issue snapshot and dry-run proposal in `.factory/backlog-reconciliation.json`; batch and project caps are one. | `codex / factory-gateway/factory-code` | Natural-language summary of proposed legal actions; workflow and script are read-only and do not claim or dispatch issues. | **Conditional presentation.** The snapshot and decisions are deterministic; retain the model only for a concise operator-facing explanation, and compare against a deterministic report before replacing it. | Daily configured schedule; actual enablement, invocations, tokens, duration and operator use unavailable. Factory policy + Cezar. |
 | `factory-plan` — `plan` | One selected issue (`{{task}}`), bounded Hindsight recall artifact, and repository context available to the skill. | `claude / sonnet` across the three complexity variants and the general `needs-plan` automation. | A Cezar-validated JSON proposal; the workflow materializes `.factory/plan-result.json` for semantic validation and the deterministic router. | **Agent-essential for open issues.** Ambiguity, dependencies, acceptance criteria, and implementation decomposition require judgment. A resolved-issue preflight is contract-validated and its no_work control skips the planner; supported-host replay and live avoided-call measurements remain open. | Issue-labeled; invocation count, tokens, duration unavailable. Factory skill; Cezar executes. |
 | `factory-implement` — `implement` | Prepared implementation context and approved issue plan; repository/worktree. | `codex / factory-gateway/factory-code` (small), `codex / gpt-5.6-luna` (medium), `codex / gpt-6.1-sol` (large). | Source changes and implementation result; workflow scripts validate and publish/route downstream effects. | **Agent-essential for eligible work.** Substantive code changes and project-specific reasoning cannot be replaced by deterministic checks. The resolved-issue preflight output is contract-validated and its no_work control skips the implementation agent; supported-runtime replay remains unverified. | Issue-labeled; configured complexity variants; invocation count, tokens, duration unavailable. Factory + project maintainers. |
 | `factory-review` — `review` | PR/issue context and changed code, with bounded workflow handoff. | `claude / sonnet` | `.factory/review-result.json`; workflow validates and routes findings. | **Agent-essential.** Independent substantive review requires judgment. Keep result validation and routing deterministic and preserve reviewer independence. | Issue-labeled; invocation count, tokens, duration unavailable. Factory review policy. |
@@ -28,7 +29,7 @@ Audit refreshed: 2026-10-25 from the current checkout. This is the Slice 0 / INV
 
 `onFail` retry blocks in plan, implement, review, fix-review, investigate, and Godot-upgrade can repeat the associated agent step. Current retry counts and categorized causes were not derivable from workflow definitions alone. Do not infer token savings or repairable-failure rates from the configured maximums.
 
-## Skill coverage (all 17 current skill directories)
+## Skill coverage (all 18 current skill directories)
 
 | Skill | Workflow invocation / use | Classification |
 | --- | --- | --- |
@@ -45,19 +46,21 @@ Audit refreshed: 2026-10-25 from the current checkout. This is the Slice 0 / INV
 | `factory-investigate` | Investigate `investigate` | Agent-essential for novel diagnosis; known signatures can be rules-first. |
 | `factory-learn` | No workflow `skill:` reference found | Human-directed memory/lesson reasoning; no automated call found. |
 | `factory-plan` | Plan `plan` | Agent-essential planning; workflow owns posting and routing. |
+| `factory-project-onboarding` | Operator-directed onboarding entry point | Human-directed setup and verification; no scheduled Cezar invocation identified. |
 | `factory-release` | Called by finish-release procedure, not an automation workflow | Deterministic synchronization/release operations. |
 | `factory-review` | Review `review` | Agent-essential independent review. |
 | `factory-work-backlog` | No workflow `skill:` reference found | Human-directed interpretation of deterministic dry-run output; no autonomous dispatch. |
 | `interactive-github-backlog` | No Cezar workflow reference found | Human-directed GitHub backlog operations; not part of scheduled agent-call inventory. |
 
-## Automation trigger and profile inventory (all 14 current definitions)
+## Automation trigger and profile inventory (all 15 current definitions)
 
 | Definition | Trigger / cadence | Workflow | Runner / model | Call implication |
 | --- | --- | --- | --- | --- |
 | `changes-requested` | GitHub `issue.labeled` | `factory-fix-review` | Codex / `factory-gateway/factory-code` | Conditional repair agent; frequency unavailable. |
+| `backlog-reconciliation` | Daily schedule (00:00) | `factory-backlog-reconciliation` | Codex / `factory-gateway/factory-code` | Read-only snapshot and proposal, followed by a report step; live enablement unavailable. |
 | `failure-audit` | Daily schedule | `factory-failure-audit` | Codex / `factory-gateway/factory-code` | Workflow has no skill step; internal script agent calls unknown. |
 | `godot-upgrade` | Daily schedule | `factory-godot-upgrade` | Codex / `factory-gateway/factory-code` | Agent only if upgrade tests fail. |
-| `intake` | GitHub `issue.opened`, `issue.labeled` | `factory-intake` | Codex / `factory-gateway/factory-code` | Workflow is deterministic; configured runner may be unused. Confirm runtime dispatch semantics. |
+| `intake` | GitHub `issue.opened`, `issue.labeled` | `factory-intake` | Codex / `factory-gateway/factory-code` | Workflow is script-only; configured runner may be unused. Confirm runtime dispatch semantics. |
 | `investigate` | GitHub `issue.labeled` | `factory-investigate` | Codex / `factory-gateway/factory-code` | Diagnosis agent. |
 | `maintenance` | Hourly schedule | `factory-maintenance` | Codex / `factory-gateway/factory-code` | At most one bounded audit call; independent stale-work refresh and repository maintenance run before the agent. |
 | `needs-plan-large` | GitHub `issue.labeled`, complexity large | `factory-plan` | Claude / Sonnet | Planning agent. |
@@ -69,7 +72,7 @@ Audit refreshed: 2026-10-25 from the current checkout. This is the Slice 0 / INV
 | `ready-to-implement-small` | GitHub `issue.labeled`, complexity small | `factory-implement` | Codex / Factory gateway | Implementation agent. |
 | `ready-to-review` | GitHub `issue.labeled` | `factory-review` | Claude / Sonnet | Independent review agent. |
 
-The plan/frequency rows are source-configured only. They do not prove that all 14 definitions are enabled, synchronized, or non-overlapping on any project.
+The plan/frequency rows are source-configured only. They do not prove that all 15 definitions are enabled, synchronized, or non-overlapping on any project.
 
 ## Prioritized replacement matrix
 

@@ -1,6 +1,6 @@
 {
   "name": "[factory] backlog-reconciliation",
-  "description": "On-demand read-only backlog proposal (managed by cezar-factory; created paused)",
+  "description": "Daily read-only backlog proposal (managed by cezar-factory; created paused)",
   "kind": "schedule",
   "schedule": {
     "type": "daily",
