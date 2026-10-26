@@ -40,9 +40,6 @@ steps:
   - id: merge-eligibility
     name: Verify live PR, review, validation and repository gates
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verify-merge-eligibility.ps1 -ReviewPath .factory/review-result.json -OutputPath .factory/merge-eligibility.json
-    onFail:
-      retry: validate
-      max: 1
   - id: route
     name: Post findings and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json -GatePath .factory/merge-eligibility.json
