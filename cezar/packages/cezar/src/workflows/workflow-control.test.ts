@@ -79,7 +79,7 @@ describe('workflow control outputs', () => {
     return { repo, run: store.getRun(record.id)! };
   }
 
-  async function runInvalidOutput(reason: 'output_missing' | 'output_malformed' | 'output_invalid') {
+  async function runInvalidOutput(reason: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid') {
     const repo = mkdtempSync(join(tmpdir(), 'cez-invalid-output-'));
     roots.push(repo);
     await exec('git', ['init', '-q', '-b', 'main'], { cwd: repo });
@@ -93,7 +93,7 @@ describe('workflow control outputs', () => {
     const internal = manager as unknown as {
       runCheckStep: (_state: unknown, step: { id: string }) => Promise<{
         ok: boolean; output: string; exitCode: number; contractError?: boolean;
-        contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid';
+        contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid';
       }>;
     };
     internal.runCheckStep = async (_state, step) => step.id === 'preflight'
@@ -115,6 +115,40 @@ describe('workflow control outputs', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     return { repo, run: store.getRun(record.id)! };
+  }
+
+  async function runInvalidInput(schema: Record<string, unknown>) {
+    const repo = mkdtempSync(join(tmpdir(), 'cez-invalid-input-'));
+    roots.push(repo);
+    await exec('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n');
+    await exec('git', ['add', '-A'], { cwd: repo });
+    await exec('git', [...gitIdentity, 'commit', '-q', '-m', 'base'], { cwd: repo });
+    const store = RunStore.open(join(repo, '.ai/cezar'));
+    stores.push(store);
+    const manager = new RunManager(store, repo);
+    managers.push(manager);
+    let dispatchCount = 0;
+    const internal = manager as unknown as {
+      runCheckStep: () => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    internal.runCheckStep = async () => {
+      dispatchCount++;
+      return { ok: true, output: 'unexpected dispatch', exitCode: 0 };
+    };
+    const record = manager.startRun({
+      name: 'invalid-input-fixture', source: 'file',
+      steps: [
+        { id: 'preflight', command: 'preflight', inputSchema: schema },
+        { id: 'consumer', command: 'consumer' },
+      ],
+    }, { task: 'validate required workflow input', worktree: false });
+    const deadline = Date.now() + 10_000;
+    while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('invalid-input workflow did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return { run: store.getRun(record.id)!, dispatchCount };
   }
 
   async function runConcurrentOutputs() {
@@ -156,7 +190,17 @@ describe('workflow control outputs', () => {
       name: 'concurrent-output-fixture', source: 'file' as const,
       steps: [
         { id: 'collect', command: 'collect', outputSchema: { type: 'object' } },
-        { id: 'consume', command: 'consume' },
+        {
+          id: 'consume', command: 'consume',
+          inputSchema: {
+            type: 'object',
+            required: ['task', 'outputs'],
+            properties: {
+              task: { type: 'string' },
+              outputs: { type: 'object', required: ['collect'], properties: { collect: { type: 'object' } } },
+            },
+          },
+        },
       ],
     };
     const records = ['alpha', 'beta'].map((name) => manager.startRun(workflow, { task: `run-${name}`, worktree: true }));
@@ -247,6 +291,7 @@ describe('workflow control outputs', () => {
       'output_missing',
       'output_malformed',
       'output_invalid',
+      'output_schema_invalid',
     ] as const;
     for (const reason of cases) {
       const { repo, run } = await runInvalidOutput(reason);
@@ -254,6 +299,23 @@ describe('workflow control outputs', () => {
       expect(run.outcome).toMatchObject({ kind: 'contract_failure', reasonCode: reason, stepId: 'preflight' });
       expect(run.steps.map((step) => step.status)).toEqual(['failed', 'pending']);
       expect(existsSync(join(repo, 'consumer-ran'))).toBe(false);
+    }
+  });
+
+  it('rejects missing required input and invalid input schemas before command dispatch', async () => {
+    const cases = [
+      {
+        schema: { type: 'object', required: ['projectId'], properties: { projectId: { type: 'string' } } },
+        reason: 'input_invalid',
+      },
+      { schema: { type: 'unsupported-schema-type' }, reason: 'input_schema_invalid' },
+    ] as const;
+    for (const { schema, reason } of cases) {
+      const { run, dispatchCount } = await runInvalidInput(schema);
+      expect(run.status, run.error).toBe('failed');
+      expect(run.outcome).toMatchObject({ kind: 'contract_failure', reasonCode: reason, stepId: 'preflight' });
+      expect(run.steps.map((step) => step.status)).toEqual(['failed', 'pending']);
+      expect(dispatchCount).toBe(0);
     }
   });
 

@@ -140,13 +140,18 @@ describe('deriveAttention', () => {
 })
 
 describe('typed run outcome explanation', () => {
-  it('explains no-work, blocked, failure, and timeout semantics while retaining the stable code wording', () => {
+  it('explains every terminal outcome while retaining the stable code wording', () => {
+    expect(outcomeExplanation({ outcome: { kind: 'completed', reasonCode: 'workflow_completed' } })).toBe('Completed — workflow completed')
     expect(outcomeExplanation({ outcome: { kind: 'no_work', reasonCode: 'no_work' } })).toBe('No work — no work')
+    expect(outcomeExplanation({ outcome: { kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'implement' } })).toBe('Skipped — precondition not met at implement')
+    expect(outcomeExplanation({ outcome: { kind: 'task_failure', reasonCode: 'test_regression', stepId: 'verify' } })).toBe('Task failure — test regression at verify')
     expect(outcomeExplanation({ outcome: { kind: 'contract_failure', reasonCode: 'output_malformed', stepId: 'check' } })).toBe('Contract failure — output malformed at check')
     expect(outcomeExplanation({ outcome: { kind: 'blocked', reasonCode: 'policy_blocked', stepId: 'preflight' } })).toBe('Blocked — policy blocked at preflight')
     expect(outcomeExplanation({ outcome: { kind: 'infrastructure_failure', reasonCode: 'engine_interrupted' } })).toBe('Infrastructure failure — engine interrupted')
     expect(outcomeExplanation({ outcome: { kind: 'infrastructure_failure', reasonCode: 'artifact_integrity_failed', stepId: 'consumer' } })).toBe('Infrastructure failure — artifact integrity failed at consumer')
     expect(outcomeExplanation({ outcome: { kind: 'timeout', reasonCode: 'deadline_exceeded' } })).toBe('Timed out — deadline exceeded')
+    expect(outcomeExplanation({ outcome: { kind: 'cancelled', reasonCode: 'user_cancelled' } })).toBe('Cancelled — user cancelled')
+    expect(outcomeExplanation({ outcome: { kind: 'unclassified_failure', reasonCode: 'legacy_unclassified' } })).toBe('Unclassified failure — legacy unclassified')
     expect(outcomeExplanation({})).toBeUndefined()
   })
 })
