@@ -6277,6 +6277,7 @@ export function createApp(deps: ServerDeps) {
     ...(run.titleSummary !== undefined ? { titleSummary: run.titleSummary } : {}),
     ...(run.titleOrigin !== undefined ? { titleOrigin: run.titleOrigin } : {}),
     status: run.status,
+    ...(run.outcome !== undefined ? { outcome: run.outcome } : {}),
     ...(run.activity !== undefined ? { activity: run.activity } : {}),
     createdAt: run.createdAt,
     ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),

@@ -399,6 +399,8 @@ export const runIndexEntrySchema = z.object({
   titleSummary: z.string().optional(),
   titleOrigin: z.enum(['user', 'auto', 'marker']).optional(),
   status: runStatusSchema,
+  /** Typed terminal meaning for compact status labels in workspace task lists. */
+  outcome: runOutcomeSchema.optional(),
   activity: runActivitySchema.optional(),
   createdAt: z.string(),
   finishedAt: z.string().optional(),

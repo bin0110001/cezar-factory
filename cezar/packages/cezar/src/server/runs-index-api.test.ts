@@ -123,6 +123,7 @@ describe('workspace runs index API', () => {
         title: 'raw title',
         titleSummary: 'Nice summary',
         titleOrigin: 'auto',
+        outcome: { kind: 'no_work', reasonCode: 'no_work' },
         finishedAt: '2026-07-14T11:00:00Z',
         seenAt: '2026-07-14T12:00:00Z',
       }),
@@ -138,6 +139,7 @@ describe('workspace runs index API', () => {
       titleSummary: 'Nice summary',
       titleOrigin: 'auto',
       status: 'done',
+      outcome: { kind: 'no_work', reasonCode: 'no_work' },
       createdAt: '2026-07-14T10:00:00Z',
       finishedAt: '2026-07-14T11:00:00Z',
       // The read receipt and the archive flag ride along so the palette can compute `isUnread`

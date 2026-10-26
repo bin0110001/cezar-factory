@@ -155,6 +155,23 @@ describe('TasksOverview — the table', () => {
     expect(pillOf('d')?.querySelector('[data-slot="status-dot"]')?.getAttribute('data-tone')).toBe('success')
   })
 
+  it('shows the typed terminal meaning and detailed reason in the status pill', () => {
+    renderOverview({
+      runs: [
+        run({ id: 'empty', status: 'done', outcome: { kind: 'no_work', reasonCode: 'no_work' } }),
+        run({ id: 'skip', status: 'done', outcome: { kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'implement' } }),
+        run({ id: 'block', status: 'failed', outcome: { kind: 'blocked', reasonCode: 'dependency_unavailable', stepId: 'preflight' } }),
+      ],
+    })
+    const pillOf = (id: string) => tableRow(id)?.querySelector('[data-slot="pill"]')
+    expect(pillOf('empty')?.textContent).toBe('no work')
+    expect(pillOf('empty')?.getAttribute('title')).toBe('No work — no work')
+    expect(pillOf('skip')?.textContent).toBe('skipped')
+    expect(pillOf('skip')?.getAttribute('title')).toBe('Skipped — precondition not met at implement')
+    expect(pillOf('block')?.textContent).toBe('blocked')
+    expect(pillOf('block')?.getAttribute('title')).toBe('Blocked — dependency unavailable at preflight')
+  })
+
   it('shows a usage-limit wait as "scheduled" with its time, not as a red failure', () => {
     // The record is `failed`, but the task has an appointment (spec
     // 2026-08-03-auto-resume-after-usage-limit): amber, still, and carrying the instant the way

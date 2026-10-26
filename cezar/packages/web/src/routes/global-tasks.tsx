@@ -36,7 +36,7 @@ import { SubtaskToggle } from '@/components/subtask-toggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from '@/components/ui/toaster'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { deriveAttention } from '@/lib/attention'
+import { deriveAttention, outcomeExplanation, outcomeStatusLabel } from '@/lib/attention'
 import { shortAge } from '@/lib/format'
 import {
   formatCost,
@@ -846,8 +846,8 @@ function TaskRow({
       className="hover:bg-muted"
     >
       <td className={TD_BASE}>
-        <Pill dot={attention.tone} pulse={attention.pulse}>
-          {attention.label}
+        <Pill dot={attention.tone} pulse={attention.pulse} title={outcomeExplanation(run) ?? attention.label}>
+          {outcomeStatusLabel(run, attention.label)}
         </Pill>
       </td>
       {/* The one column with no fixed width, so every pixel the others give up lands here — and

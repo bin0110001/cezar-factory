@@ -7,6 +7,7 @@ import {
   budgetStop,
   deriveAttention,
   outcomeExplanation,
+  outcomeStatusLabel,
   wantsAttention,
   type Attention,
   type AttentionTone,
@@ -153,6 +154,15 @@ describe('typed run outcome explanation', () => {
     expect(outcomeExplanation({ outcome: { kind: 'cancelled', reasonCode: 'user_cancelled' } })).toBe('Cancelled — user cancelled')
     expect(outcomeExplanation({ outcome: { kind: 'unclassified_failure', reasonCode: 'legacy_unclassified' } })).toBe('Unclassified failure — legacy unclassified')
     expect(outcomeExplanation({})).toBeUndefined()
+  })
+
+  it('uses distinct compact labels for terminal outcomes in task lists', () => {
+    expect(outcomeStatusLabel({ outcome: { kind: 'no_work', reasonCode: 'no_work' } }, 'done')).toBe('no work')
+    expect(outcomeStatusLabel({ outcome: { kind: 'skipped', reasonCode: 'precondition_not_met' } }, 'done')).toBe('skipped')
+    expect(outcomeStatusLabel({ outcome: { kind: 'blocked', reasonCode: 'policy_blocked' } }, 'failed')).toBe('blocked')
+    expect(outcomeStatusLabel({ outcome: { kind: 'task_failure', reasonCode: 'test_regression' } }, 'failed')).toBe('task failed')
+    expect(outcomeStatusLabel({ outcome: { kind: 'infrastructure_failure', reasonCode: 'unknown' } }, 'failed')).toBe('infra failed')
+    expect(outcomeStatusLabel({}, 'done')).toBe('done')
   })
 })
 

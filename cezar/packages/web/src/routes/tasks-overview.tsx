@@ -41,7 +41,7 @@ import { SubtaskToggle } from '@/components/subtask-toggle'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toaster'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { deriveAttention } from '@/lib/attention'
+import { deriveAttention, outcomeExplanation, outcomeStatusLabel } from '@/lib/attention'
 import { shortAge } from '@/lib/format'
 import { isReadDoneItem, isUnread, unreadDoneCount } from '@/lib/read-state'
 import {
@@ -682,8 +682,8 @@ function TaskTableCell({
         <td data-column-id={column.id} className={TD_BASE}>
           {/* A scheduled run wears its appointment in the pill, the way a queued one wears its
               queue position — the row's whole answer to "what is this waiting for?". */}
-          <Pill dot={attention.tone} pulse={attention.pulse} title={scheduled?.title}>
-            {attention.label}
+          <Pill dot={attention.tone} pulse={attention.pulse} title={outcomeExplanation(run) ?? scheduled?.title ?? attention.label}>
+            {outcomeStatusLabel(run, attention.label)}
             {scheduled ? <span className="tabular-nums">{scheduled.label}</span> : null}
           </Pill>
         </td>
@@ -996,8 +996,8 @@ function TaskCard({
       className="cursor-pointer rounded-lg border border-border bg-card px-3.5 py-3 shadow-xs"
     >
       <div className="flex items-start gap-2.5">
-        <Pill dot={attention.tone} pulse={attention.pulse} className="mt-px shrink-0" title={scheduled?.title}>
-          {attention.label}
+        <Pill dot={attention.tone} pulse={attention.pulse} className="mt-px shrink-0" title={outcomeExplanation(run) ?? scheduled?.title ?? attention.label}>
+          {outcomeStatusLabel(run, attention.label)}
           {scheduled ? <span className="tabular-nums">{scheduled.label}</span> : null}
         </Pill>
         <Link

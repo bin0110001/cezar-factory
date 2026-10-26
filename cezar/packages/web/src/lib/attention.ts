@@ -62,6 +62,24 @@ export function outcomeExplanation(run: Pick<RunRecord, 'outcome'>): string | un
   return `${label} — ${reason}${outcome.stepId ? ` at ${outcome.stepId}` : ''}`
 }
 
+/** Compact terminal outcome label for task lists; the full reason stays in the title/details. */
+export function outcomeStatusLabel(run: Pick<RunRecord, 'outcome'>, fallback: string): string {
+  const outcome = run.outcome
+  if (!outcome) return fallback
+  switch (outcome.kind) {
+    case 'completed': return fallback
+    case 'no_work': return 'no work'
+    case 'skipped': return 'skipped'
+    case 'blocked': return 'blocked'
+    case 'task_failure': return 'task failed'
+    case 'contract_failure': return 'contract failed'
+    case 'infrastructure_failure': return 'infra failed'
+    case 'timeout': return 'timed out'
+    case 'cancelled': return 'cancelled'
+    case 'unclassified_failure': return 'unclassified'
+  }
+}
+
 /**
  * Whether a run is blocked on a permission prompt.
  *

@@ -274,6 +274,25 @@ describe('global tasks page', () => {
     )
   })
 
+  it('shows typed terminal outcomes in the status column and keeps the reason on hover', async () => {
+    const runs: RunIndexEntry[] = [
+      { ...RUNS[0]!, status: 'done', outcome: { kind: 'no_work', reasonCode: 'no_work' } },
+      { ...RUNS[1]!, status: 'done', outcome: { kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'implement' } },
+      { ...RUNS[2]!, status: 'failed', outcome: { kind: 'blocked', reasonCode: 'dependency_unavailable', stepId: 'preflight' } },
+    ]
+    stubFetch({ runs })
+    renderPage()
+
+    await screen.findByText('Add checkout endpoint')
+    const pill = (id: string) => document.querySelector(`[data-run-id="${id}"] [data-slot="pill"]`)
+    expect(pill('a1')?.textContent).toContain('no work')
+    expect(pill('a1')?.getAttribute('title')).toBe('No work — no work')
+    expect(pill('w1')?.textContent).toContain('skipped')
+    expect(pill('w1')?.getAttribute('title')).toBe('Skipped — precondition not met at implement')
+    expect(pill('i1')?.textContent).toContain('blocked')
+    expect(pill('i1')?.getAttribute('title')).toBe('Blocked — dependency unavailable at preflight')
+  })
+
   it('filters by tag across projects, and toggles back off', async () => {
     stubFetch()
     renderPage()
