@@ -88,6 +88,13 @@ describe('workflow control outputs', () => {
     expect(existsSync(join(repo, 'tail-ran'))).toBe(true);
   });
 
+  it.skipIf(!bashAvailable)('records a terminal skipped outcome when every work step is skipped', async () => {
+    const { run } = await runControl('skip_step', 'precondition_not_met');
+    expect(run.status).toBe('done');
+    expect(run.outcome).toMatchObject({ kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'preflight' });
+    expect(run.steps.map((step) => step.status)).toEqual(['skipped']);
+  });
+
   it.skipIf(!bashAvailable)('settles blocked with its stable reason code', async () => {
     const { run } = await runControl('blocked', 'provider_quota');
     expect(run.status).toBe('failed');

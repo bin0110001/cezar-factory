@@ -4681,7 +4681,15 @@ export class RunManager {
     } else {
       // Includes `askPark === 'abandoned'`: Finish on a parked run ends it the
       // way Finish always does, with the later steps left honestly at `pending`.
-      await this.settleSuccess(runId, terminalOutcome?.kind === 'no_work' ? terminalOutcome : undefined);
+      const workSteps = workflow.steps.filter((step) => !step.finalizer);
+      if (!terminalOutcome && workSteps.length > 0) {
+        const settledSteps = this.store.getRun(runId)?.steps ?? [];
+        const skippedSteps = workSteps.filter((step) => settledSteps.find((item) => item.id === step.id)?.status === 'skipped');
+        if (skippedSteps.length === workSteps.length) {
+          terminalOutcome = { kind: 'skipped', reasonCode: 'precondition_not_met', stepId: skippedSteps[0]?.id };
+        }
+      }
+      await this.settleSuccess(runId, terminalOutcome);
     }
     this.clearIdleTimer(state);
     this.dropActive(runId, state);

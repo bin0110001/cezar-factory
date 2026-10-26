@@ -364,6 +364,12 @@ describe('typed outcome explanation in the run header', () => {
     expect(document.querySelector('[data-slot="pill"]')?.getAttribute('title')).toBe('Blocked — policy blocked at preflight')
     expect(document.querySelector('[data-slot="pill"]')?.getAttribute('aria-label')).toBe('failed: Blocked — policy blocked at preflight')
   })
+
+  it('explains a workflow skipped by its precondition', () => {
+    stubFetch()
+    renderHeader(run('done', { outcome: { kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'preflight' } }))
+    expect(document.querySelector('[data-slot="pill"]')?.getAttribute('title')).toBe('Skipped — precondition not met at preflight')
+  })
 })
 
 describe('Mark unread (#775)', () => {
