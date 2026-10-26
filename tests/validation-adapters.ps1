@@ -227,6 +227,30 @@ validation:
     $run = Run-Stage full
     Check 'structured test regression returns the only repairable validation code' ($run.Code -eq 1 -and $run.Receipt.validationResult.reasonCode -eq 'test_regression')
     Remove-Item Env:ADAPTER_RESULT_FILE
+    foreach ($projectCase in @(
+        @{ Name = 'Node'; Fixture = 'validation-result-node-failure.json'; Diagnostic = 'test/unit/player.test.ts'; Failed = 1 },
+        @{ Name = 'Godot parser'; Fixture = 'validation-result-godot-parse-error.json'; Diagnostic = 'res://Scripts/Player.gd:12'; Failed = 1 },
+        @{ Name = 'GdUnit'; Fixture = 'validation-result-gdunit-failure.json'; Diagnostic = 'res://test/player_test.gd::test_jump'; Failed = 1 }
+    )) {
+        $fixturePath = Join-Path $PSScriptRoot "fixtures/$($projectCase.Fixture)"
+        $env:ADAPTER_RESULT_FILE = $fixturePath
+        $run = Run-Stage full
+        $capturedStdout = Get-Content -Raw (Join-Path $project $run.Receipt.artifactPaths[0])
+        $capturedBytes = (Get-Item (Join-Path $project $run.Receipt.artifactPaths[0])).Length
+        $started = [DateTimeOffset]::Parse($run.Receipt.startedAt)
+        $finished = [DateTimeOffset]::Parse($run.Receipt.finishedAt)
+        Check "$($projectCase.Name) failure maps to a work regression and preserves failing diagnostics" (
+            $run.Code -eq 1 -and $run.Receipt.status -eq 'failed' -and
+            $run.Receipt.validationResult.failedTests -eq $projectCase.Failed -and
+            $run.Receipt.validationResult.diagnostics[0].Contains($projectCase.Diagnostic) -and
+            $capturedStdout.Contains($projectCase.Diagnostic))
+        Check "$($projectCase.Name) failure receipt preserves bounded output and execution timestamps (bytes=$capturedBytes, start=$started, finish=$finished)" (
+            $capturedBytes -le 65536 -and $finished -ge $started)
+        $fixtureJson = Get-Content -Raw $fixturePath
+        Check "$($projectCase.Name) result fixture matches the project-validation schema" (
+            [bool](Test-Json -Json $fixtureJson -SchemaFile (Join-Path $factory 'schemas/project-validation-result.schema.json')))
+    }
+    Remove-Item Env:ADAPTER_RESULT_FILE
     $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot 'fixtures/validation-result-malformed.json'
     $run = Run-Stage full
     Check 'malformed structured result is a non-retryable contract error' ($run.Code -eq 17 -and $run.Receipt.status -eq 'error' -and $run.Receipt.reasonCode -eq 'validation_result_malformed')

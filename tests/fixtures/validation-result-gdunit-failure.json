@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "reasonCode": "test_regression",
+  "message": "GdUnit reported one failing test.",
+  "matchedTests": 4,
+  "passedTests": 3,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "diagnostics": ["res://test/player_test.gd::test_jump: Expected velocity 8.0, got 0.0"]
+}

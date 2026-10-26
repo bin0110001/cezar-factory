@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "reasonCode": "test_regression",
+  "message": "Godot script parsing failed.",
+  "matchedTests": 1,
+  "passedTests": 0,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "diagnostics": ["res://Scripts/Player.gd:12: Parse Error: Cannot infer the type of \"speed\" because the value is Variant."]
+}

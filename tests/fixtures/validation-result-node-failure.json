@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "reasonCode": "test_regression",
+  "message": "Node project verification reported one failing test.",
+  "matchedTests": 6,
+  "passedTests": 5,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "diagnostics": ["test/unit/player.test.ts: expected position.x to equal 4, received 3"]
+}
