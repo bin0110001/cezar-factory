@@ -127,6 +127,26 @@ describe('workflow JSON contracts', () => {
     }
   });
 
+  it('retries fix-review only for classified verification or agent-result defects', () => {
+    const parsed = workflowFileSchema.parse(parseYaml(readFileSync(join(factoryRoot, 'workflows', 'fix-review.yaml'), 'utf8')));
+    const steps = normalizeWorkflowDoc(parsed).steps;
+    const tests = steps.find((candidate) => candidate.id === 'targeted-tests')!;
+    expect(tests.onFail?.retryOn).toEqual([1]);
+    expect(tests.failureReasons).toMatchObject({
+      '1': 'test_regression', '10': 'configuration', '11': 'missing_command',
+      '12': 'authentication', '13': 'provider_unavailable', '14': 'provider_quota',
+      '15': 'transient_transport', '16': 'timeout', '17': 'malformed_result', '18': 'unknown',
+    });
+    expect(shouldRetryCheck(tests, 1)).toBe(true);
+    for (const code of [10, 11, 12, 13, 14, 15, 16, 17, 18]) expect(shouldRetryCheck(tests, code)).toBe(false);
+
+    const validate = steps.find((candidate) => candidate.id === 'validate')!;
+    expect(validate.onFail?.retryOn).toEqual([1]);
+    expect(validate.failureReasons).toEqual({ '1': 'work_verdict' });
+    expect(shouldRetryCheck(validate, 1)).toBe(true);
+    expect(checkFailureOutcome(validate, 1, true)).toMatchObject({ kind: 'task_failure', reasonCode: 'work_verdict' });
+  });
+
   it('recognizes only typed reserved control outcomes', () => {
     expect(workflowControlOf({ $cezar: { action: 'no_work', reasonCode: 'no_work' } })).toEqual({
       control: { action: 'no_work', reasonCode: 'no_work' },

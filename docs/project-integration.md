@@ -216,9 +216,11 @@ Factory wrappers normalize the structured verdict into an exit code for Cezar:
 | `17` | Malformed result or result/exit-code contradiction | No |
 | `18` | Unknown failure, no matching tests, or legacy exit-code-only failure without a typed verdict | No |
 
-The implementation workflow retries only code `1`. Project commands should use
-the structured JSON result contract when the failure can be classified; a legacy
-exit code does not prove the failure is repairable by a coding agent.
+The implementation and fix-review verification steps retry only code `1`.
+Fix-review retries result validation only for the explicit work-verdict code.
+Project commands should use the structured JSON result contract when the failure
+can be classified; a legacy exit code does not prove the failure is repairable
+by a coding agent.
 
 ## Runtime Content
 

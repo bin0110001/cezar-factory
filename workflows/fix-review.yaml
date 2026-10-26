@@ -68,6 +68,18 @@ steps:
     onFail:
       retry: fix
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "10": configuration
+      "11": missing_command
+      "12": authentication
+      "13": provider_unavailable
+      "14": provider_quota
+      "15": transient_transport
+      "16": timeout
+      "17": malformed_result
+      "18": unknown
   - id: validate
     name: Validate fix result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
@@ -82,6 +94,9 @@ steps:
     onFail:
       retry: fix
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": work_verdict
   - id: route
     name: Return issue to factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
