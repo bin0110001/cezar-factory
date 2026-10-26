@@ -1,8 +1,11 @@
 # Shared Factory: one place to update
 
-Projects no longer carry their own copy of the Factory. Cezar loads Factory workflows and skills
-straight from the Factory checkout mounted into the container, and Factory scripts already ran from
-that mount, so **updating that one checkout updates every project**.
+Shared mode is the standard delivery path. Cezar loads Factory workflows and skills from the Factory
+checkout mounted into the container, and workflow `command:` steps run Factory scripts from that
+mount. A project-local workflow or skill with the same name can override the shared copy; projects
+that still need a full local Factory installation receive it only through the configured-target
+release path. Updating the shared checkout affects projects using shared mode, subject to their
+local overrides and automation registration.
 
 ```
 dev work -> tests/run-tests.ps1 passes -> promote-stable.ps1 -> origin/stable
