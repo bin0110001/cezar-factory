@@ -36,8 +36,21 @@ if ($env:ADAPTER_COMMIT) {
     & git add -- adapter-commit.txt
     & git commit -qm runner-change
 }
+if ($env:ADAPTER_RESULT_FILE) {
+    $fixtureResult = Get-Content -Raw $env:ADAPTER_RESULT_FILE | ConvertFrom-Json
+    Write-Output ($fixtureResult | ConvertTo-Json -Compress)
+    exit 0
+}
+$status = if ($env:ADAPTER_RESULT_STATUS) { $env:ADAPTER_RESULT_STATUS } else { 'passed' }
+if ($env:ADAPTER_EXIT -and [int]$env:ADAPTER_EXIT -ne 0) { $status = 'failed' }
+if ($env:ADAPTER_MALFORMED) { Write-Output 'not-json'; exit 0 }
+$reason = @{ passed = 'tests_passed'; failed = 'test_failure'; skipped = 'not_applicable'; unavailable = 'tool_missing'; 'no-matching-tests' = 'no_matching_tests' }[$status]
+$result = [ordered]@{ schemaVersion = 1; status = $status; reasonCode = $reason; message = "fixture ${Stage}: $status"; matchedTests = 3; passedTests = 3; failedTests = 0; skippedTests = 0 }
+if ($status -eq 'no-matching-tests') { $result.matchedTests = 0; $result.passedTests = 0 }
+if ($status -eq 'failed') { $result.failedTests = 1; $result.passedTests = 2 }
+Write-Output ($result | ConvertTo-Json -Compress)
 if ($env:ADAPTER_EXIT) { exit [int]$env:ADAPTER_EXIT }
-Write-Output "ran $Stage"
+if ($status -eq 'failed') { exit 1 }
 exit 0
 '@
     $configPath = Join-Path $project '.ai/factory/factory.config.yaml'
@@ -90,7 +103,8 @@ validation:
     foreach ($stage in 'changed', 'full', 'verify') {
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
-        Check "$stage receipt carries a structured reason code" ($run.Receipt.reasonCode -eq 'validation_passed')
+        $expectedReason = if ($stage -eq 'verify') { 'validation_passed' } else { 'validation_result_passed' }
+        Check "$stage receipt carries a structured reason code" ($run.Receipt.reasonCode -eq $expectedReason)
         if ($stage -ne 'verify') {
             $expectedEvidence = ".factory/artifacts/verification/$stage.json"
             Check "$stage receipt reflects structured workdir/evidence metadata" ($run.Receipt.workingDirectory -eq '.' -and $run.Receipt.evidencePath -eq $expectedEvidence)
@@ -100,6 +114,27 @@ validation:
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
     }
     Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
+
+    foreach ($statusCase in @(
+        @{ Status = 'no-matching-tests'; Reason = 'validation_result_no_matching_tests'; Fixture = 'validation-result-no-matching-tests.json' },
+        @{ Status = 'unavailable'; Reason = 'validation_result_unavailable'; Fixture = 'validation-result-unavailable.json' },
+        @{ Status = 'skipped'; Reason = 'validation_result_skipped'; Fixture = 'validation-result-skipped.json' }
+    )) {
+        $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot "fixtures/$($statusCase.Fixture)"
+        $run = Run-Stage full
+        Check "structured $($statusCase.Status) is distinct and non-passing (code=$($run.Code), status=$($run.Receipt.status), reason=$($run.Receipt.reasonCode), message=$($run.Receipt.message))" ($run.Code -ne 0 -and $run.Receipt.status -eq $statusCase.Status -and $run.Receipt.reasonCode -eq $statusCase.Reason)
+    }
+    Remove-Item Env:ADAPTER_RESULT_FILE
+    $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot 'fixtures/validation-result-malformed.json'
+    $run = Run-Stage full
+    Check 'malformed structured result is an explicit contract error' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error' -and $run.Receipt.reasonCode -eq 'validation_result_malformed')
+    Remove-Item Env:ADAPTER_RESULT_FILE
+    $validResult = Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/validation-result-passed.json')
+    $invalidResult = Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/validation-result-malformed.json')
+    Check 'valid project result fixture matches its contract schema' ([bool](Test-Json -Json $validResult -SchemaFile (Join-Path $factory 'schemas/project-validation-result.schema.json')))
+    $invalidResultValid = $true
+    try { $invalidResultValid = [bool](Test-Json -Json $invalidResult -SchemaFile (Join-Path $factory 'schemas/project-validation-result.schema.json') -ErrorAction Stop) } catch { $invalidResultValid = $false }
+    Check 'malformed project result fixture fails contract schema' (-not $invalidResultValid)
     $priorValidationRoot = $env:FACTORY_VALIDATION_ROOT
     $env:FACTORY_VALIDATION_ROOT = $factory
     try { $otherWorktreeRun = Run-Stage full }
@@ -206,6 +241,7 @@ validation:
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_DIRTY -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_COMMIT -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_RESULT_FILE -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if ($peer -and (Test-Path -LiteralPath $peer)) {

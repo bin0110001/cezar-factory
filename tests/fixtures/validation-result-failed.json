@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "reasonCode": "test_regression",
+  "message": "One selected test failed.",
+  "matchedTests": 3,
+  "passedTests": 2,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "diagnostics": ["test/unit/example.test.ts: expected true, received false"]
+}

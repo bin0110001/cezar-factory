@@ -103,15 +103,37 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 public sealed class FactoryValidationCappedStream : Stream {
-    private readonly MemoryStream saved = new MemoryStream();
     private readonly int limit;
+    private readonly int firstLimit;
+    private readonly MemoryStream first = new MemoryStream();
+    private readonly byte[] tail;
+    private int tailCount;
+    private int tailNext;
     public long BytesSeen { get; private set; }
-    public FactoryValidationCappedStream(int limit) { this.limit = limit; }
-    public byte[] SavedBytes() { return saved.ToArray(); }
+    public FactoryValidationCappedStream(int limit) {
+        this.limit = limit;
+        firstLimit = limit / 2;
+        tail = new byte[limit - firstLimit];
+    }
+    public byte[] SavedBytes() {
+        byte[] output = new byte[(int)first.Length + tailCount];
+        byte[] prefix = first.ToArray();
+        Buffer.BlockCopy(prefix, 0, output, 0, prefix.Length);
+        int tailStart = tailCount == tail.Length ? tailNext : 0;
+        int firstPart = Math.Min(tailCount, tail.Length - tailStart);
+        if (firstPart > 0) Buffer.BlockCopy(tail, tailStart, output, prefix.Length, firstPart);
+        if (tailCount > firstPart) Buffer.BlockCopy(tail, 0, output, prefix.Length + firstPart, tailCount - firstPart);
+        return output;
+    }
     public override void Write(byte[] buffer, int offset, int count) {
         BytesSeen += count;
-        int keep = Math.Min(count, Math.Max(0, limit - (int)saved.Length));
-        if (keep > 0) saved.Write(buffer, offset, keep);
+        int prefixKeep = Math.Min(count, Math.Max(0, firstLimit - (int)first.Length));
+        if (prefixKeep > 0) first.Write(buffer, offset, prefixKeep);
+        for (int index = prefixKeep; index < count; index++) {
+            tail[tailNext] = buffer[offset + index];
+            tailNext = (tailNext + 1) % tail.Length;
+            if (tailCount < tail.Length) tailCount++;
+        }
     }
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken token) {
         Write(buffer, offset, count);
@@ -120,8 +142,8 @@ public sealed class FactoryValidationCappedStream : Stream {
     public override bool CanRead { get { return false; } }
     public override bool CanSeek { get { return false; } }
     public override bool CanWrite { get { return true; } }
-    public override long Length { get { return saved.Length; } }
-    public override long Position { get { return saved.Position; } set { throw new NotSupportedException(); } }
+    public override long Length { get { return Math.Min(BytesSeen, limit); } }
+    public override long Position { get { return Length; } set { throw new NotSupportedException(); } }
     public override void Flush() { }
     public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
@@ -160,6 +182,7 @@ function Invoke-FactoryValidation {
         reasonCode = 'validation_error'
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage); workingDirectory = '.'; evidencePath = ''
+        validationResult = $null
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
@@ -216,9 +239,11 @@ function Invoke-FactoryValidation {
         $command = ''
         $workingDirectory = '.'
         $prerequisites = @()
+        $resultFormat = 'exit-code'
         if ($stageConfig -is [System.Collections.IDictionary]) {
             if ($stageConfig.Contains('command')) { $command = [string]$stageConfig.command }
             if ($stageConfig.Contains('workingDirectory') -and $stageConfig.workingDirectory) { $workingDirectory = [string]$stageConfig.workingDirectory }
+            if ($stageConfig.Contains('resultFormat') -and $stageConfig.resultFormat) { $resultFormat = [string]$stageConfig.resultFormat }
             if ($stageConfig.Contains('timeoutSeconds')) {
                 $timeout = [int]$stageConfig.timeoutSeconds
                 if ($timeout -lt 1 -or $timeout -gt 7200) { throw "Configured validation.$Stage timeoutSeconds must be between 1 and 7200." }
@@ -229,6 +254,7 @@ function Invoke-FactoryValidation {
         } else {
             $command = [string]$stageConfig
         }
+        if ($resultFormat -notin 'json', 'exit-code') { throw "Configured validation.$Stage resultFormat must be json or exit-code." }
         $command = $command.Trim()
         if (-not $command) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
@@ -280,6 +306,7 @@ function Invoke-FactoryValidation {
         $start.RedirectStandardOutput = $true
         $start.RedirectStandardError = $true
         $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
+        $start.Environment['FACTORY_VALIDATION_RESULT_FORMAT'] = $resultFormat
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
@@ -293,8 +320,46 @@ function Invoke-FactoryValidation {
         $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
         $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
         $receipt.exitCode = [int]$process.ExitCode
-        $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
-        $receipt.reasonCode = if ($process.ExitCode -eq 0) { 'validation_passed' } else { 'validation_command_failed' }
+        if ($resultFormat -eq 'json') {
+            $outputText = [Text.Encoding]::UTF8.GetString($stdout)
+            $resultLine = @($outputText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+            $result = $null
+            $resultError = ''
+            try {
+                if ($resultLine.Count -eq 0) { throw 'No JSON result line was emitted.' }
+                $result = $resultLine[0] | ConvertFrom-Json -ErrorAction Stop
+                if (-not (Test-Json -Json ($result | ConvertTo-Json -Depth 10 -Compress) -SchemaFile (Join-Path $PSScriptRoot '../schemas/project-validation-result.schema.json') -ErrorAction Stop)) {
+                    throw 'Result does not match project-validation-result/v1.'
+                }
+            } catch { $resultError = $_.Exception.Message }
+            if ($resultError) {
+                $receipt.status = 'error'; $receipt.reasonCode = 'validation_result_malformed'
+                $receipt.exitCode = 1; $receipt.message = "Configured validation.$Stage emitted an invalid JSON result: $resultError"
+            } else {
+                $receipt.validationResult = $result
+                if ($result.message) { $receipt.message = [string]$result.message }
+                switch ([string]$result.status) {
+                    'passed' {
+                        if ($process.ExitCode -eq 0) {
+                            $receipt.status = 'passed'; $receipt.reasonCode = 'validation_result_passed'
+                        } else {
+                            $receipt.status = 'error'; $receipt.reasonCode = 'validation_result_contradicts_exit_code'
+                            $receipt.message = 'Structured result says passed while the command exited nonzero.'
+                        }
+                    }
+                    'failed' {
+                        $receipt.status = 'failed'; $receipt.reasonCode = 'validation_result_failed'
+                        if ($receipt.exitCode -eq 0) { $receipt.exitCode = 1 }
+                    }
+                    'skipped' { $receipt.status = 'skipped'; $receipt.reasonCode = 'validation_result_skipped' }
+                    'unavailable' { $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_result_unavailable'; $receipt.exitCode = 2 }
+                    'no-matching-tests' { $receipt.status = 'no-matching-tests'; $receipt.reasonCode = 'validation_result_no_matching_tests'; $receipt.exitCode = 2 }
+                }
+            }
+        } else {
+            $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
+            $receipt.reasonCode = if ($process.ExitCode -eq 0) { 'validation_passed' } else { 'validation_command_failed' }
+        }
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message

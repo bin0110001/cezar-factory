@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "status": "unavailable",
+  "reasonCode": "tool_missing",
+  "message": "The required project test tool is not installed."
+}

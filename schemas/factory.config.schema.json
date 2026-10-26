@@ -80,7 +80,7 @@
       "type": "object",
       "properties": {
         "command": { "type": "string" },
-        "resultFormat": { "type": "string", "enum": ["json"] },
+        "resultFormat": { "type": "string", "enum": ["json", "exit-code"] },
         "workingDirectory": { "type": "string" },
         "prerequisites": { "type": "array", "items": { "type": "string" } },
         "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },

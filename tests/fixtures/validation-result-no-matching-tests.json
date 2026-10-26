@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "status": "no-matching-tests",
+  "reasonCode": "no_tests_selected",
+  "message": "Changed files did not map to any project test.",
+  "matchedTests": 0,
+  "passedTests": 0,
+  "failedTests": 0,
+  "skippedTests": 0
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "status": "skipped",
+  "reasonCode": "not_applicable",
+  "message": "No configured applicability rule matched this change.",
+  "matchedTests": 0,
+  "passedTests": 0,
+  "failedTests": 0,
+  "skippedTests": 3
+}

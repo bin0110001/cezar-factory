@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProjectValidationResultV1",
+  "description": "Structured result emitted by an explicitly configured project verification command.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "status": { "type": "string", "enum": ["passed", "failed", "skipped", "unavailable", "no-matching-tests"] },
+    "reasonCode": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "message": { "type": "string", "maxLength": 2000 },
+    "matchedTests": { "type": "integer", "minimum": 0 },
+    "passedTests": { "type": "integer", "minimum": 0 },
+    "failedTests": { "type": "integer", "minimum": 0 },
+    "skippedTests": { "type": "integer", "minimum": 0 },
+    "diagnostics": { "type": "array", "maxItems": 100, "items": { "type": "string", "maxLength": 2000 } }
+  },
+  "required": ["schemaVersion", "status", "reasonCode"],
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "passed" } }, "required": ["status"] },
+      "then": { "properties": { "failedTests": { "maximum": 0 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "no-matching-tests" } }, "required": ["status"] },
+      "then": { "properties": { "matchedTests": { "maximum": 0 } } }
+    }
+  ]
+}

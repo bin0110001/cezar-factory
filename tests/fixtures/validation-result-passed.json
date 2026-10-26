@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "reasonCode": "tests_passed",
+  "message": "All selected tests passed.",
+  "matchedTests": 3,
+  "passedTests": 3,
+  "failedTests": 0,
+  "skippedTests": 0,
+  "diagnostics": []
+}
