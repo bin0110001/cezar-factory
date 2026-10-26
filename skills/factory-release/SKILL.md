@@ -1,6 +1,6 @@
 ---
 name: factory-release
-description: Validate and release Factory-managed assets to explicitly configured Cezar projects and the shared Bazzite runtime.
+description: Validate Factory-managed changes and hand off release work through reviewed repository gates and explicitly configured release automations.
 ---
 
 # Factory release
@@ -11,65 +11,62 @@ Use this skill after any change under `scripts/`, `skills/`, `workflows/`,
 ## Invariants
 
 - Read targets only from `config/factory-projects.json`; never scan for or
-  invent deployment targets. If the registry is absent or empty, stop after
+  invent deployment targets. If the registry is absent or empty, finish local
   validation, report that target configuration is needed, and make no external
-  changes.
-- For a configured registry, perform the required release action for every
-  listed target even when the Factory version is unchanged. A matching version
-  is not proof that the target is synchronized.
-- Run catalog/release validation before synchronization.
+  release changes.
+- For configured targets, every listed target must receive its required release
+  action even when the Factory version is unchanged. A matching version does
+  not prove synchronization.
+- Validate the changed assets and automation catalog before any release action.
 - Shared-mount promotion is allowed only after the validated implementation
-  commit has merged to `dev` through the reviewed PR path. Promote that merged
-  commit to `stable`; never promote a feature branch directly.
-- Synchronize explicitly configured project targets through
-  `scripts/push-factory-updates.ps1 -SyncAutomations`. The script follows each
-  registry entry's shared, remote-only, or full-install mode; remote-only
-  synchronization sends automation definitions, not Factory scripts or app
-  files.
-- Bazzite-hosted runtime changes also require the supported deployment flow
-  from the Bazzite Factory checkout. Factory workflow commands run inside
-  Cezar's Linux container; `/projects/cezar-factory` is an in-container mount,
-  never a Windows path.
-- Stop on a target failure and report the exact target; do not silently skip
-  it or redirect to another project.
+  commit has merged to `dev` through the reviewed PR path. A feature branch is
+  never promoted directly.
+- Remote-only synchronization updates Cezar automation definitions; it does
+  not deploy Factory scripts, skills, workflows, or application files. A full
+  `.ai/factory` installation requires an absolute, verified local `projectPath`
+  in the registry and a successful dry run.
+- Bazzite-hosted runtime changes require the supported host deployment path.
+  Cezar workflow commands run inside its Linux container, where
+  `/projects/cezar-factory` is a container mount, never a Windows path.
+- A skill or workflow prompt must not ask the model to run Factory scripts.
+  Script-backed release work belongs to workflow `command:` steps. If no
+  approved release automation is configured for the required action, report
+  that handoff gap instead of running scripts from the model session.
+- Stop on a failed target and report its exact configured identity; never
+  silently skip it or redirect it to another project.
 
-## Shared-mount release (default)
+## Shared-mount release
 
-Projects use the Factory checkout mounted into Cezar. Release the reviewed,
-tested merge commit, not an unmerged feature branch:
+Projects use the Factory checkout mounted into Cezar. The release candidate is
+the tested merge commit, never an unmerged feature branch.
 
 1. The implementation PR targets `dev` and has independent review plus the
-   high-risk plan-approval gate when applicable. GitHub auto-merge is requested
-   only after those gates pass. Release starts from the tested merged commit.
-2. The shared-mount promotion entry point is
-   `scripts/release/promote-stable.ps1`. It validates the automation catalog
-   and full test suite before fast-forwarding `origin/stable`; it must not be
-   invoked against an unmerged feature branch. On failure, stop and report the
-   failure; never bypass it.
-3. The configured-target synchronization procedure below follows promotion.
-   The Bazzite `factory-autodeploy` timer advances the mounted checkout and
-   reconciles automations. Immediate host deployment follows the `homelab-ssh`
-   instructions and supported deployment flow; report any BLOCKED exit (20
-   dirty, 21 diverged, 22 container/host version mismatch) without touching the
-   checkout.
+   high-risk plan-approval gate when applicable. Request GitHub auto-merge only
+   after those gates pass.
+2. After merge, stable promotion is performed by the approved post-merge
+   release process, which runs the catalog and full-suite gates before moving
+   `stable`. Do not ask the model to invoke a promotion script.
+3. The Bazzite `factory-autodeploy` timer advances the mounted checkout and
+   reconciles automations. For immediate host deployment, use the supported
+   host process and stop on a dirty checkout, divergence, or runtime mismatch.
 
-The configured-target procedure below covers every registry entry. Shared
-entries synchronize automation definitions while workflows, skills and
-scripts continue to come from the shared mount. A remote-only entry also
-synchronizes automation definitions; a local `projectPath` is used only when
-the target requires a full managed `.ai/factory` installation.
+Shared entries use the mounted checkout for Factory content. Remote-only
+entries receive automation synchronization. A local project path is used only
+when a target needs the full managed Factory layer.
 
 ## Procedure
 
-1. Validate the changed assets and automation catalog.
-2. Configured-target synchronization uses
-   `scripts/push-factory-updates.ps1` with automation synchronization enabled.
-   It follows each target's shared, remote-only, or full-install mode and stops
-   on a failed target.
-3. For Bazzite service/runtime changes, the supported deployment path comes
-   from the Bazzite checkout and verifies that Cezar sees
-   `/projects/cezar-factory/scripts/factory-startup.ps1`.
-4. Report successful targets and any configured target that failed because
-   its Cezar project folder or deployment configuration is absent. If there is
-   no registry, do not call the synchronization script; report that release is
-   ready but awaits explicit target configuration.
+1. Validate the changed assets, full Factory suite, automation catalog, and
+   release metadata. Preserve unrelated work and report any failed gate.
+2. Check the host-local target registry only. If it is missing or empty, report
+   that release is ready but needs explicit target configuration; perform no
+   promotion, synchronization, deployment, or target discovery.
+3. For each configured target, use its approved release automation if one is
+   present. Queue that automation with `cez automation run <id>`, report the
+   returned task ID, and stop. Do not inspect its worktree or create a
+   replacement task.
+4. If a configured target requires release work and no approved automation
+   exists, report the missing workflow-owned release path. Do not run a Factory
+   script directly from the skill.
+5. Report local validation, each configured target's result, runtime parity,
+   and any release handoff gap.

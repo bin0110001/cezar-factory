@@ -170,7 +170,7 @@ foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
         if ($inPrompt -and $line -match '(pwsh|powershell).*\.ps1|run `[^`]*\.ps1') { $scriptOwnershipViolations += "$($wf.Name): $($line.Trim())" }
     }
 }
-foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'factory-work-backlog', 'factory-release', 'factory-finish-release', 'factory-cezar-skill-operations' }) {
+foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'factory-work-backlog', 'factory-cezar-skill-operations' }) {
     foreach ($line in Get-Content (Join-Path $sk.FullName 'SKILL.md')) {
         if ($line -match '(pwsh|powershell)\s+.*\.ps1' -and $line -notmatch '(?i)\b(not|never|must not|do not)\b') { $scriptOwnershipViolations += "$($sk.Name): $($line.Trim())" }
     }
@@ -181,9 +181,9 @@ $finishReleaseSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-finis
 $skillOps = Get-Content -Raw (Join-Path $factory 'skills/factory-cezar-skill-operations/SKILL.md')
 $reviewGateIndex = $finishReleaseSkill.IndexOf('Require independent review')
 $mergeReleaseIndex = $finishReleaseSkill.IndexOf('After the reviewed PR has merged')
-Assert 'release documentation blocks promotion before reviewed dev merge' ($factoryReleaseSkill.Contains('tested merged commit') -and $factoryReleaseSkill.Contains('unmerged feature branch') -and $reviewGateIndex -ge 0 -and $mergeReleaseIndex -gt $reviewGateIndex)
-Assert 'release documentation makes no external changes without explicit targets' ($factoryReleaseSkill.Contains('registry is absent or empty') -and $factoryReleaseSkill.Contains('make no external') -and $finishReleaseSkill.Contains('registry is absent or empty') -and $finishReleaseSkill.Contains('make no external release changes') -and $skillOps.Contains('missing or empty') -and $skillOps.Contains('no external release changes'))
-Assert 'release skill references the correct stable promotion entry point' ($factoryReleaseSkill -match 'scripts/release/promote-stable\.ps1' -and $factoryReleaseSkill -notmatch 'scripts[\\/]release\s*\r?\n\s*elease')
+Assert 'release documentation blocks promotion before reviewed dev merge' ($factoryReleaseSkill.Contains('tested merge commit') -and $factoryReleaseSkill.Contains('unmerged feature branch') -and $reviewGateIndex -ge 0 -and $mergeReleaseIndex -gt $reviewGateIndex)
+Assert 'release documentation makes no external changes without explicit targets' ($factoryReleaseSkill -match 'registry is\s+absent or empty' -and $factoryReleaseSkill.Contains('make no external') -and $finishReleaseSkill -match 'registry is\s+absent or empty' -and $finishReleaseSkill.Contains('make no external release changes') -and $skillOps.Contains('missing or empty') -and $skillOps.Contains('no external release changes'))
+Assert 'release skills never ask the model to invoke Factory scripts and defer execution to an approved workflow' ($factoryReleaseSkill -notmatch '(pwsh|powershell).+\.ps1|run `[^`]*\.ps1|scripts/release/|scripts/push-factory-updates' -and $finishReleaseSkill -notmatch '(pwsh|powershell).+\.ps1|run `[^`]*\.ps1|scripts/release/|scripts/push-factory-updates' -and $factoryReleaseSkill.Contains('approved release automation') -and $finishReleaseSkill.Contains('workflow-owned release automation'))
 # Copyable result examples must remain valid JSON and satisfy their declared
 # schema. A missing required field is a real contract failure, not just prose
 # drift; #33 will extend this to the full workflow command inventory.
