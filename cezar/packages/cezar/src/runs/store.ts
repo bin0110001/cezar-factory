@@ -257,6 +257,9 @@ export const runRecordSchema = z.object({
   outcome: runOutcomeSchema.optional().catch(undefined),
   /** Number of check-to-agent repairs already consumed; never reset by worker restart. */
   repairAttemptsUsed: z.number().int().min(0).optional().catch(undefined),
+  /** Remaining active workflow budget and current absolute deadline, if configured. */
+  workflowBudgetRemainingMs: z.number().finite().min(0).optional().catch(undefined),
+  workflowDeadlineAt: z.string().datetime().optional().catch(undefined),
   /** Durable cleanup intent and receipt for restartable workflow finalizers. */
   finalization: z.object({
     status: z.enum(['running', 'complete', 'failed']),

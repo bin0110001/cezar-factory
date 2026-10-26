@@ -8,15 +8,20 @@ import { checkFailureOutcome, normalizeWorkflowDoc, shouldRetryCheck, stepsIssue
 const factoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 
 describe('workflow JSON contracts', () => {
-  it('carries the shared repair budget through file parsing and applies the three-repair default', () => {
+  it('carries repair and active-time budgets through workflow file parsing', () => {
     const steps = [{ id: 'implement', prompt: '{{task}}' }];
     const parsedDefault = workflowFileSchema.parse({ name: 'default-budget', steps });
-    const parsedConfigured = workflowFileSchema.parse({ name: 'configured-budget', maxRepairAttempts: 5, steps });
+    const parsedConfigured = workflowFileSchema.parse({
+      name: 'configured-budget', maxRepairAttempts: 5, maxRunDurationSeconds: 3_600, steps,
+    });
 
     expect(normalizeWorkflowDoc(parsedDefault).maxRepairAttempts).toBe(3);
     expect(workflowDefSchema.parse({ ...normalizeWorkflowDoc(parsedDefault), source: 'file' }).maxRepairAttempts).toBe(3);
     expect(normalizeWorkflowDoc(parsedConfigured).maxRepairAttempts).toBe(5);
-    expect(workflowDefSchema.parse({ ...normalizeWorkflowDoc(parsedConfigured), source: 'file' }).maxRepairAttempts).toBe(5);
+    expect(normalizeWorkflowDoc(parsedConfigured).maxRunDurationSeconds).toBe(3_600);
+    expect(workflowDefSchema.parse({ ...normalizeWorkflowDoc(parsedConfigured), source: 'file' })).toMatchObject({
+      maxRepairAttempts: 5, maxRunDurationSeconds: 3_600,
+    });
   });
 
   it.each(['plan.yaml', 'maintenance.yaml', 'implement.yaml', 'investigate.yaml', 'fix-review.yaml'])('loads Factory workflow %s output contracts as valid definitions', (file) => {

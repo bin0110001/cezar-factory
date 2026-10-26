@@ -929,6 +929,79 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
   }, 30_000);
 
+  it('enforces an opt-in active run deadline as distinct from the check timeout', async () => {
+    const workflow: WorkflowDef = {
+      name: 'active-run-deadline',
+      source: 'built-in',
+      maxRunDurationSeconds: 1,
+      steps: [{ id: 'long-check', command: 'while :; do :; done', timeoutSeconds: 10 }],
+    };
+    const internal = manager as unknown as {
+      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = internal.runCheckStep.bind(manager);
+    let interrupted = false;
+    internal.runCheckStep = async (state) => {
+      const activeState = state as { workflowBudgetExpired?: boolean; interrupt: () => void };
+      activeState.interrupt = () => { interrupted = true; };
+      const deadline = Date.now() + 5_000;
+      while (!activeState.workflowBudgetExpired) {
+        if (Date.now() > deadline) throw new Error('overall run budget did not fire');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return { ok: false, output: 'workflow deadline interrupted check', exitCode: -1 };
+    };
+    try {
+      const record = manager.startRun(workflow, { task: 'bounded active execution', worktree: false });
+      const deadline = Date.now() + 5_000;
+      while (manager.isActive(record.id)) {
+        if (Date.now() > deadline) throw new Error('overall run deadline did not finish in time');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const finished = store.getRun(record.id);
+      expect(interrupted).toBe(true);
+      expect(finished?.status).toBe('failed');
+      expect(finished?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'deadline_exceeded', stepId: 'long-check' });
+      expect(finished?.workflowBudgetRemainingMs).toBe(0);
+      expect(Date.parse(finished?.workflowDeadlineAt ?? '')).toBeLessThanOrEqual(Date.now());
+    } finally {
+      internal.runCheckStep = originalRunCheckStep;
+    }
+  }, 20_000);
+
+  it('persists remaining active time when an explicit human wait is paused and resumed', () => {
+    const record = store.createRun({
+      title: 'pause budget', workflow: 'pause-budget', task: 'wait for a person',
+      worktree: false, steps: [{ id: 'work', name: 'Work', kind: 'agent' }],
+    });
+    store.updateRun(record.id, {
+      workflowBudgetRemainingMs: 10_000,
+      workflowDef: {
+        name: 'pause-budget', source: 'file', maxRunDurationSeconds: 30,
+        steps: [{ id: 'work', prompt: '{{task}}' }],
+      },
+    });
+    type BudgetState = { workflowDeadlineAt?: number; workflowBudgetExpired?: boolean; workflowDeadlineTimer?: NodeJS.Timeout };
+    const state = {
+      ownerToken: Symbol('budget-test'), cancelled: false, interrupt: () => undefined, cwd: repoRoot,
+      workflowDeadlineAt: Date.now() + 10_000,
+    } as unknown as BudgetState;
+    const internal = manager as unknown as {
+      pauseWorkflowBudget(runId: string, state: BudgetState): void;
+      startWorkflowBudget(runId: string, state: BudgetState, maxRunDurationSeconds?: number): void;
+      clearWorkflowBudgetTimer(state: BudgetState): void;
+    };
+
+    internal.pauseWorkflowBudget(record.id, state);
+    const paused = store.getRun(record.id);
+    expect(paused?.workflowDeadlineAt).toBeUndefined();
+    expect(paused?.workflowBudgetRemainingMs).toBeGreaterThan(9_000);
+    internal.startWorkflowBudget(record.id, state, 30);
+    expect(state.workflowDeadlineAt).toBeDefined();
+    expect(store.getRun(record.id)?.workflowBudgetRemainingMs).toBe(paused?.workflowBudgetRemainingMs);
+    internal.clearWorkflowBudgetTimer(state);
+  });
+
   it('validates and publishes an agent output before dispatching its consumer', async () => {
     const priorOutput = process.env.CEZ_MOCK_OUTPUT_TEXT;
     const response = { proposal: 'defer', rationale: 'dependency is missing' };
@@ -2750,6 +2823,44 @@ describe('recover() over a mid-workflow ask park (#917)', () => {
     expect(raw.find((r) => r.id === id)).not.toHaveProperty('askParked');
     expect(RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true }).getRun(id)?.status).toBe('waiting');
   }, 30_000);
+
+  it('recovers an expired active run deadline and still runs the finalizer suffix', async () => {
+    const { id } = store.createRun({
+      title: 'expired workflow budget',
+      workflow: 'bounded-workflow',
+      task: 'do bounded work',
+      worktree: false,
+      steps: [
+        { id: 'implement', name: 'Implement', kind: 'agent' },
+        { id: 'cleanup', name: 'Cleanup', kind: 'check' },
+      ],
+    });
+    store.updateStep(id, 'implement', { status: 'running' });
+    store.updateRun(id, {
+      status: 'running',
+      currentStepId: 'implement',
+      workflowDeadlineAt: new Date(Date.now() - 1_000).toISOString(),
+      workflowBudgetRemainingMs: 0,
+      workflowDef: {
+        name: 'bounded-workflow',
+        source: 'file',
+        maxRunDurationSeconds: 30,
+        steps: [
+          { id: 'implement', prompt: '{{task}}' },
+          { id: 'cleanup', command: 'true', finalizer: true, idempotent: true, timeoutSeconds: 5 },
+        ],
+      },
+    });
+    store.flush();
+    const reopened = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
+    await recover(reopened);
+
+    const recovered = reopened.getRun(id);
+    expect(recovered?.status).toBe('failed');
+    expect(recovered?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'deadline_exceeded', stepId: 'implement' });
+    expect(recovered?.steps.map((step) => step.status)).toEqual(['failed', 'done']);
+    expect(recovered?.finalization?.status).toBe('complete');
+  }, 20_000);
 });
 
 /**

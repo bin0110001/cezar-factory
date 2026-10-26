@@ -84,6 +84,8 @@ export const workflowDefSchema = z.object({
   description: z.string().optional(),
   /** Shared cap across every check-to-agent repair loop in this run. */
   maxRepairAttempts: z.number().int().min(0).max(20).optional(),
+  /** Optional wall-clock cap for active workflow execution; human waits pause it. */
+  maxRunDurationSeconds: z.number().int().positive().max(86_400).optional(),
   steps: z.array(workflowStepDefSchema),
   source: z.enum(['built-in', 'file']),
   /** Absent on built-ins — which is exactly what makes them undeletable. */
@@ -121,6 +123,7 @@ export const saveWorkflowInputSchema = z
     name: z.string().trim().min(1).max(80),
     description: z.string().max(2_000, 'must be at most 2000 characters').optional(),
     maxRepairAttempts: z.number().int().min(0).max(20).optional(),
+    maxRunDurationSeconds: z.number().int().positive().max(86_400).optional(),
     steps: z.array(workflowStepDefSchema).min(1).max(8).optional(),
     skills: z.array(z.string().trim().min(1)).min(1).max(8).optional(),
     overwrite: z.boolean().optional(),

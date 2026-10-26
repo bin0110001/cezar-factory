@@ -379,6 +379,11 @@ interface ActiveRun {
   session?: AgentSession;
   currentStepId?: string;
   idleTimer?: NodeJS.Timeout;
+  workflowDeadlineTimer?: NodeJS.Timeout;
+  workflowDeadlineForceTimer?: NodeJS.Timeout;
+  workflowDeadlineAt?: number;
+  workflowBudgetExpired?: boolean;
+  forceInterrupt?: () => void;
   /** The inactivity watchdog closed this session; a plain final wait is not success evidence. */
   idleClosed?: boolean;
   monitoringWakeTimer?: NodeJS.Timeout;
@@ -1674,6 +1679,11 @@ export class RunManager {
         await this.resumeFinalizers(run);
         continue;
       }
+      const deadlineAt = run.workflowDeadlineAt ? Date.parse(run.workflowDeadlineAt) : Number.NaN;
+      if (run.workflowDef?.maxRunDurationSeconds && Number.isFinite(deadlineAt) && deadlineAt <= Date.now()) {
+        await this.settleWorkflowDeadline(run.id, run.currentStepId);
+        continue;
+      }
       if (run.status === 'queued') {
         await this.reviveQueuedRun(run, 'cezar restarted');
         continue;
@@ -1838,6 +1848,31 @@ export class RunManager {
     this.reportSettledChildToParent(run.id);
   }
 
+  /** Persist a timeout intent before running the independent, bounded finalizer suffix. */
+  private async settleWorkflowDeadline(runId: string, stepId?: string): Promise<void> {
+    const run = this.store.getRun(runId);
+    if (!run) return;
+    const now = new Date().toISOString();
+    const message = 'workflow active-time budget exceeded';
+    for (const step of run.steps) {
+      if (step.status === 'running' || step.status === 'waiting') {
+        this.store.updateStep(runId, step.id, { status: 'failed', error: message, finishedAt: now });
+      }
+    }
+    const outcome: RunOutcome = {
+      kind: 'timeout', reasonCode: 'deadline_exceeded', ...(stepId ? { stepId } : {}),
+    };
+    this.store.updateRun(runId, {
+      error: message,
+      currentStepId: undefined,
+      workflowBudgetRemainingMs: 0,
+      finalization: { status: 'running', terminal: 'failed', error: message, outcome, startedAt: now },
+    });
+    this.store.flush({ throwOnError: true });
+    const intent = this.store.getRun(runId);
+    if (intent) await this.resumeFinalizers(intent);
+  }
+
   /** The persisted definition when it looks sane, else the catalog by name. */
   private async reviveWorkflow(run: RunRecord): Promise<WorkflowDef | null> {
     // "Looks sane" is the STORE's job now: it parses `workflowDef` against the definition schema
@@ -1872,6 +1907,7 @@ export class RunManager {
     if (state) state.releaseRepoRoot = undefined;
     if (state?.cancellationTimer) clearTimeout(state.cancellationTimer);
     if (state) state.cancellationTimer = undefined;
+    if (state) this.clearWorkflowBudgetTimer(state);
     this.waiting.delete(runId);
     this.leaveMonitoring(runId);
     if (state) this.clearMonitoringWakeTimer(state, runId);
@@ -3379,6 +3415,7 @@ export class RunManager {
       // Clear any `monitoring` activity — the agent is actively working again
       // (spec 2026-07-18-subagent-monitoring-status, #490).
       this.store.updateRun(runId, { status: 'running', activity: undefined, askParked: undefined });
+      this.startWorkflowBudget(runId, state, this.store.getRun(runId)?.workflowDef?.maxRunDurationSeconds);
       if (state.currentStepId) {
         this.store.updateStep(runId, state.currentStepId, { status: 'running' });
       }
@@ -3442,7 +3479,7 @@ export class RunManager {
       return { ok: false, error: AGENT_MODELS_LOCKED_ERROR };
     }
     if (this.active.has(runId)) return { ok: false, error: 'run is still active' };
-    const run = this.store.getRun(runId);
+    let run = this.store.getRun(runId);
     if (!run) return { ok: false, error: 'not found' };
     // `review` is continuable too — that's the "Send back" path (spec 009).
     if (!['done', 'failed', 'cancelled', 'review'].includes(run.status)) {
@@ -3450,6 +3487,14 @@ export class RunManager {
     }
     const sessionStep = [...run.steps].reverse().find((s) => s.sessionId);
     if (!sessionStep?.sessionId) return { ok: false, error: 'no agent session to resume' };
+    const configuredRunSeconds = run.workflowDef?.maxRunDurationSeconds;
+    if (!deferForCapacity && configuredRunSeconds && run.awaitingAnswerSince === undefined) {
+      this.store.updateRun(runId, {
+        workflowDeadlineAt: undefined,
+        workflowBudgetRemainingMs: configuredRunSeconds * 1000,
+      });
+      run = this.store.getRun(runId) ?? run;
+    }
     const targetRunner = opts.runner ?? run.runner ?? 'claude';
     // Session ids are provider-owned opaque values. New records carry explicit
     // affinity; for legacy records, the run's current runner is the conservative
@@ -3654,6 +3699,7 @@ export class RunManager {
         }
       }
     }
+    this.startWorkflowBudget(runId, state, record?.workflowDef?.maxRunDurationSeconds);
     this.armAutosave(runId, state);
     if (record) seedHandoffFile(this.dataDir, record); // idempotent — normally already there
     // Registry snapshot for `/skill` expansion. `execute` loads this for the workflow's own
@@ -3976,6 +4022,10 @@ export class RunManager {
 
     const runner = createRunner(continueBackend);
     if (state.cancelled) return;
+    if (state.workflowBudgetExpired) {
+      await this.settleWorkflowDeadline(runId, stepId);
+      return;
+    }
     state.currentStepId = stepId;
     this.beginUsageInvocation(runId, state, stepId);
     // A continuation's opening message becomes the session's `userPrompt` and never passes
@@ -4037,6 +4087,14 @@ export class RunManager {
     const finishedAt = () => new Date().toISOString();
     try {
       await session.result;
+      if (state.workflowBudgetExpired && this.active.get(runId) === state) {
+        sink.sessionEnded('error', 'workflow active-time budget exceeded');
+        this.store.updateStep(runId, stepId, {
+          status: 'failed', error: 'workflow active-time budget exceeded', finishedAt: finishedAt(),
+        });
+        await this.settleWorkflowDeadline(runId, stepId);
+        return;
+      }
       if (sessionError) throw new Error(sessionError);
       sink.sessionEnded(state.cancelled ? 'cancelled' : 'end_turn');
       if (state.cancelled && this.active.get(runId) === state) {
@@ -4082,6 +4140,13 @@ export class RunManager {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       sink.sessionEnded('error', message);
+      if (state.workflowBudgetExpired && this.active.get(runId) === state) {
+        this.store.updateStep(runId, stepId, {
+          status: 'failed', error: 'workflow active-time budget exceeded', finishedAt: finishedAt(),
+        });
+        await this.settleWorkflowDeadline(runId, stepId);
+        return;
+      }
       if (!state.cancelled && this.active.get(runId) === state) {
         this.store.updateStep(runId, stepId, { status: 'failed', error: message, finishedAt: finishedAt() });
         appendHandoffHeartbeat(this.dataDir, runId, `step "${stepId}" complete — status=failed`);
@@ -4098,6 +4163,7 @@ export class RunManager {
       }
     } finally {
       this.recordUsagePeaks(runId, state);
+      this.pauseWorkflowBudget(runId, state);
       this.clearIdleTimer(state);
       this.clearAutosaveTimer(state);
       if (!state.cancelled && this.active.get(runId) === state && state.cwd !== this.repoRoot) {
@@ -4276,6 +4342,8 @@ export class RunManager {
       if (this.requeueWhileHeld(runId, workflow, input, taskBackend, state)) return;
     }
 
+    this.startWorkflowBudget(runId, state, workflow.maxRunDurationSeconds);
+
     // Handoff journal (spec 007) — seeded after the worktree exists so the
     // header can name the branch. Idempotent: an existing file stays as-is.
     const seeded = this.store.getRun(runId);
@@ -4327,6 +4395,12 @@ export class RunManager {
     let startImages: ContentBlock[] | undefined = startBlocks.length ? startBlocks : undefined;
 
     const lastAgentIdx = findLastAgentStepIndex(workflow);
+    const failForWorkflowDeadline = (stepId: string | undefined) => {
+      const message = 'workflow active-time budget exceeded';
+      if (stepId) this.finishStep(runId, stepId, 'failed', message, emit);
+      runError = message;
+      terminalOutcome = { kind: 'timeout', reasonCode: 'deadline_exceeded', ...(stepId ? { stepId } : {}) };
+    };
 
     if (state.cancelled) {
       this.dropActive(runId, state);
@@ -4335,6 +4409,10 @@ export class RunManager {
 
     let i = 0;
     while (i < workflow.steps.length && !workflow.steps[i]?.finalizer) {
+      if (state.workflowBudgetExpired) {
+        failForWorkflowDeadline(workflow.steps[i]?.id);
+        break;
+      }
       if (state.cancelled) break;
       const step = workflow.steps[i] as WorkflowStepDef;
       const kind = stepKind(step);
@@ -4424,6 +4502,10 @@ export class RunManager {
         startImages = undefined;
         startAttachments = [];
         checkFailure = null;
+        if (state.workflowBudgetExpired) {
+          failForWorkflowDeadline(step.id);
+          break;
+        }
         if (state.cancelled) break;
         if (agentResult.failure) {
           this.finishStep(runId, step.id, 'failed', agentResult.failure, emit);
@@ -4469,6 +4551,10 @@ export class RunManager {
       }
 
       const { ok, output, exitCode, structuredOutput, contractError, contractFailureReason, control, timedOut } = await this.runCheckStep(state, step, input.task, stepInput, emit);
+      if (state.workflowBudgetExpired) {
+        failForWorkflowDeadline(step.id);
+        break;
+      }
       if (state.cancelled) break;
       if (contractError) {
         this.finishStep(runId, step.id, 'failed', output, emit);
@@ -4604,6 +4690,8 @@ export class RunManager {
     const askPark = state.askPark;
     state.askPark = undefined;
 
+    this.pauseWorkflowBudget(runId, state);
+    this.clearWorkflowBudgetTimer(state);
     const finalizers = workflow.steps.filter((step) => step.finalizer);
     if (finalizers.length && this.active.get(runId) === state) {
       const terminal = state.cancelled ? 'cancelled' : runError || idleFailed || askPark === 'waiting' ? 'failed' : 'success';
@@ -5144,6 +5232,7 @@ export class RunManager {
     const runner = createRunner(stepBackend);
     let session: AgentSession;
     state.currentStepId = step.id;
+    if (state.workflowBudgetExpired) return { failure: 'workflow active-time budget exceeded' };
     this.beginUsageInvocation(runId, state, step.id);
     if (state.cancelled) return { failure: 'cancelled' };
     try {
@@ -5284,6 +5373,7 @@ export class RunManager {
     this.clearMonitoringWakeTimer(state, runId);
     this.waiting.add(runId);
     this.store.updateRun(runId, { status: 'waiting', activity: undefined });
+    this.pauseWorkflowBudget(runId, state);
     if (state.currentStepId) this.store.updateStep(runId, state.currentStepId, { status: 'waiting' });
     this.releaseSlot();
   }
@@ -5900,6 +5990,61 @@ export class RunManager {
     }
   }
 
+  /** Arm an explicit workflow-wide active-time budget from its durable deadline. */
+  private startWorkflowBudget(runId: string, state: ActiveRun, maxRunDurationSeconds?: number): void {
+    if (!maxRunDurationSeconds || state.workflowBudgetExpired) return;
+    const run = this.store.getRun(runId);
+    const now = Date.now();
+    const savedDeadline = run?.workflowDeadlineAt ? Date.parse(run.workflowDeadlineAt) : Number.NaN;
+    const remaining = Number.isFinite(savedDeadline)
+      ? Math.max(0, savedDeadline - now)
+      : run?.workflowBudgetRemainingMs ?? maxRunDurationSeconds * 1000;
+    const deadline = Number.isFinite(savedDeadline) ? savedDeadline : now + remaining;
+    state.workflowDeadlineAt = deadline;
+    state.workflowBudgetExpired = remaining <= 0;
+    this.store.updateRun(runId, {
+      workflowBudgetRemainingMs: remaining,
+      workflowDeadlineAt: new Date(deadline).toISOString(),
+    });
+    this.store.flush({ throwOnError: true });
+    state.workflowDeadlineTimer = setTimeout(() => {
+      state.workflowBudgetExpired = true;
+      this.store.updateRun(runId, { workflowBudgetRemainingMs: 0 });
+      this.store.flush({ throwOnError: true });
+      this.store.appendEvent(runId, {
+        type: 'note',
+        stepId: state.currentStepId,
+        message: 'workflow active-time budget expired; stopping the current step',
+      });
+      state.interrupt();
+      state.workflowDeadlineForceTimer = setTimeout(() => {
+        if (state.session?.hardStop) state.session.hardStop();
+        else if (state.session) state.session.end();
+        else state.forceInterrupt?.();
+      }, 1_000);
+      state.workflowDeadlineForceTimer.unref?.();
+    }, remaining);
+    state.workflowDeadlineTimer.unref?.();
+  }
+
+  /** User input pauses active-time accounting while an explicit ask is parked. */
+  private pauseWorkflowBudget(runId: string, state: ActiveRun): void {
+    if (state.workflowDeadlineAt === undefined || state.workflowBudgetExpired) return;
+    if (state.workflowDeadlineTimer) clearTimeout(state.workflowDeadlineTimer);
+    state.workflowDeadlineTimer = undefined;
+    const remaining = Math.max(0, state.workflowDeadlineAt - Date.now());
+    state.workflowDeadlineAt = undefined;
+    this.store.updateRun(runId, { workflowBudgetRemainingMs: remaining, workflowDeadlineAt: undefined });
+    this.store.flush({ throwOnError: true });
+  }
+
+  private clearWorkflowBudgetTimer(state: ActiveRun): void {
+    if (state.workflowDeadlineTimer) clearTimeout(state.workflowDeadlineTimer);
+    if (state.workflowDeadlineForceTimer) clearTimeout(state.workflowDeadlineForceTimer);
+    state.workflowDeadlineTimer = undefined;
+    state.workflowDeadlineForceTimer = undefined;
+  }
+
   private reconcileMonitoringWakeTimers(): void {
     for (const runId of this.monitoring) {
       const state = this.active.get(runId);
@@ -5995,6 +6140,9 @@ export class RunManager {
     control?: ReturnType<typeof workflowControlOf>['control'];
     timedOut?: boolean;
   }> {
+    if (state.workflowBudgetExpired) {
+      return Promise.resolve({ ok: false, output: 'workflow active-time budget exceeded', exitCode: 124, timedOut: true });
+    }
     // `{{task}}` in a command expands through an env var, never by pasting the
     // task text into the shell line, so task content cannot inject commands.
     const command = (step.command as string).replaceAll('{{task}}', '${CEZAR_TASK}');
@@ -6016,9 +6164,20 @@ export class RunManager {
             // The group may already have exited; fall through to the direct child.
           }
         }
+        if (signal === 'SIGKILL' && process.platform === 'win32' && child.pid) {
+          const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+            windowsHide: true,
+            stdio: 'ignore',
+          });
+          const forceRoot = () => child.kill('SIGKILL');
+          killer.once('error', forceRoot);
+          killer.once('close', (code) => { if (code !== 0) forceRoot(); });
+          return;
+        }
         child.kill(signal);
       };
       state.interrupt = () => signalCommand('SIGTERM');
+      state.forceInterrupt = () => signalCommand('SIGKILL');
       let timedOut = false;
       let timeoutTimer: NodeJS.Timeout | undefined;
       let forceKillTimer: NodeJS.Timeout | undefined;
@@ -6045,6 +6204,7 @@ export class RunManager {
         if (timeoutTimer) clearTimeout(timeoutTimer);
         if (forceKillTimer) clearTimeout(forceKillTimer);
         state.interrupt = () => undefined;
+        state.forceInterrupt = undefined;
         const message = `failed to spawn: ${err.message}`;
         emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: -1 });
         resolve({ ok: false, output: message, exitCode: -1 });
@@ -6053,6 +6213,7 @@ export class RunManager {
         if (timeoutTimer) clearTimeout(timeoutTimer);
         if (forceKillTimer) clearTimeout(forceKillTimer);
         state.interrupt = () => undefined;
+        state.forceInterrupt = undefined;
         const trimmed = output.trim() || '(no output)';
         // `code` is null when a signal killed the child; -1 then, the same value an
         // unspawnable command reports, and one no `retryOn` list can name — neither
