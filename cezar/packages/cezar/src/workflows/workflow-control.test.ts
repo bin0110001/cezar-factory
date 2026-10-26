@@ -141,7 +141,9 @@ describe('workflow control outputs', () => {
         activeCollectors++;
         peakConcurrentCollectors = Math.max(peakConcurrentCollectors, activeCollectors);
         try {
-          await new Promise((resolve) => setTimeout(resolve, task.endsWith('alpha') ? 40 : 10));
+          // Worktree preparation can take hundreds of milliseconds on Windows;
+          // hold the first collector long enough for the second run to enter it.
+          await new Promise((resolve) => setTimeout(resolve, task.endsWith('alpha') ? 1_000 : 500));
           return { ok: true, output: '{}', exitCode: 0, structuredOutput: { owner: task } };
         } finally {
           activeCollectors--;
