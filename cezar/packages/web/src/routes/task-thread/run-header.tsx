@@ -749,6 +749,35 @@ function MetaRow({
   // `workflowLabel` so an inline chain shows its first step's name, not the bare "(planned)"
   // placeholder — which reads like a status next to the live status pill.
   const parts: ReactNode[] = [<span key="workflow">{workflowLabel(run)}</span>]
+  const runCapSeconds = run.workflowDef?.maxRunDurationSeconds
+  const repairCap = run.workflowDef?.maxRepairAttempts
+  const repairUsage = run.repairAttemptsUsed
+  if (runCapSeconds !== undefined || repairCap !== undefined || repairUsage !== undefined) {
+    const limits: string[] = []
+    if (runCapSeconds !== undefined) limits.push(`run cap ${formatBudgetDuration(runCapSeconds * 1000)}`)
+    if (repairCap !== undefined || repairUsage !== undefined) {
+      limits.push(`repairs ${repairUsage ?? 0}/${repairCap ?? '—'}`)
+    }
+    parts.push(
+      <span key="execution-budget" data-slot="execution-budget" title="Configured workflow execution budget">
+        {limits.join(' · ')}
+      </span>,
+    )
+  }
+  const deadlineMs = run.workflowDeadlineAt ? Date.parse(run.workflowDeadlineAt) : Number.NaN
+  if (Number.isFinite(deadlineMs)) {
+    parts.push(
+      <time key="workflow-deadline" data-slot="workflow-deadline" dateTime={run.workflowDeadlineAt} title="Active workflow deadline">
+        deadline {new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(deadlineMs)}
+      </time>,
+    )
+  } else if (run.status === 'waiting' && run.workflowBudgetRemainingMs !== undefined) {
+    parts.push(
+      <span key="workflow-budget-paused" data-slot="workflow-budget-paused" title="Active-time budget paused while waiting">
+        paused · {formatBudgetDuration(run.workflowBudgetRemainingMs)} left
+      </span>,
+    )
+  }
   const branch = run.branch
   if (branch) {
     parts.push(<CopyBranchChip key="branch" branch={branch} />)
@@ -884,6 +913,16 @@ function MetaRow({
       </div>
     </ReferenceStatusProvider>
   )
+}
+
+function formatBudgetDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`
 }
 
 /**

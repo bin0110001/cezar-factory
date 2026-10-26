@@ -174,6 +174,35 @@ describe('workflow finalization status', () => {
   })
 })
 
+describe('workflow execution budget visibility', () => {
+  it('shows configured run/repair caps and an active deadline', () => {
+    stubFetch()
+    renderHeader(run('running', {
+      repairAttemptsUsed: 1,
+      workflowDeadlineAt: '2026-10-26T16:00:00.000Z',
+      workflowDef: {
+        name: 'budgeted',
+        maxRepairAttempts: 3,
+        maxRunDurationSeconds: 3_600,
+        steps: [],
+        source: 'file',
+      },
+    }))
+    expect(document.querySelector('[data-slot="execution-budget"]')?.textContent).toBe('run cap 1h · repairs 1/3')
+    expect(document.querySelector('[data-slot="workflow-deadline"]')?.getAttribute('datetime')).toBe('2026-10-26T16:00:00.000Z')
+  })
+
+  it('shows a persisted paused remainder during a human wait', () => {
+    stubFetch()
+    renderHeader(run('waiting', {
+      workflowBudgetRemainingMs: 15 * 60_000,
+      workflowDef: { name: 'paused', maxRunDurationSeconds: 3_600, steps: [], source: 'file' },
+    }))
+    expect(document.querySelector('[data-slot="workflow-budget-paused"]')?.textContent).toContain('paused · 15m left')
+    expect(document.querySelector('[data-slot="workflow-deadline"]')).toBeNull()
+  })
+})
+
 describe('editable title (#389)', () => {
   it('pencil flips the h1 into an input; Enter PATCHes the trimmed title exactly once', async () => {
     const sent = stubFetch()
