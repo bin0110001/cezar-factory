@@ -99,6 +99,21 @@ describe('StepRail', () => {
     expect(artifact.textContent).toContain('"verdict": "passed"')
   })
 
+  it('shows the resolved skill source and digest, with full path available on hover', () => {
+    render(<StepRail steps={[step('implement', 'done', {
+      skillProvenance: {
+        name: 'factory-implement',
+        source: 'ai',
+        path: 'D:/project/.ai/skills/factory-implement/SKILL.md',
+        contentDigest: 'a'.repeat(64),
+      },
+    })]} />)
+    const provenance = document.querySelector('[data-slot="step-skill-provenance"]')!
+    expect(provenance.textContent).toContain('Skill /factory-implement · ai · SHA-256')
+    expect(provenance.textContent).toContain('aaaaaaaaaaaa…')
+    expect(provenance.getAttribute('title')).toContain('D:/project/.ai/skills/factory-implement/SKILL.md')
+  })
+
   it('summarizes validation verdicts and diagnostic baseline counts while retaining the full receipt', () => {
     render(<StepRail steps={[step('full-validation', 'failed', {
       kind: 'check',

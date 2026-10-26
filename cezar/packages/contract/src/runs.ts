@@ -122,6 +122,14 @@ export const stepStateSchema = z.object({
   sessionId: z.string().optional(),
   /** Backend that owns `sessionId`; absent on records written before backend affinity. */
   backend: runnerSchema.optional(),
+  /** Resolved skill definition used by this agent step; absent on legacy or skill-less steps. */
+  skillProvenance: z.object({
+    name: z.string(),
+    source: z.enum(['ai', 'cezar', 'agents', 'global', 'team', 'builtin']),
+    path: z.string().optional(),
+    contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    teamCommit: z.string().optional(),
+  }).optional(),
   /** Agent account (spec 2026-07-29-agent-profiles) that owns `sessionId` — `default`, or a
    *  stored profile id. The two are a PAIR: a session id only resolves inside the config dir
    *  that created it, so resume and Continue read this rather than the project's current

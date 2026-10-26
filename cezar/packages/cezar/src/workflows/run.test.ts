@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -21,7 +22,8 @@ import { RunStore, type RunRecord, type StepState } from '../runs/store.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import { parseTaskMarkers } from '../runs/task-markers.ts';
 import { workflowDefinitionDigest } from './structured-artifacts.ts';
-import { appendTurnText, endsWithMonitoringMarker, RunManager, turnEndMarkerText } from './run.ts';
+import { appendTurnText, endsWithMonitoringMarker, RunManager, skillSystemPrompt, turnEndMarkerText } from './run.ts';
+import { discoverSkills } from '../skills.ts';
 import type { WorkflowDef } from './types.ts';
 
 type UsageAccountingHarness = {
@@ -1474,6 +1476,58 @@ describe('a single agent step plus a check step gets NO chain note (#410)', () =
     expect(notes[0]).not.toContain('chain of');
     expect(notes[0]).not.toContain('earlier step');
     expect(notes[0]).not.toContain('project-conventions');
+  }, 30_000);
+});
+
+describe('resolved skill provenance on workflow steps', () => {
+  let repoRoot: string;
+  let store: RunStore;
+  let manager: RunManager;
+  const savedDryRun = process.env.CEZ_DRY_RUN;
+
+  beforeEach(async () => {
+    process.env.CEZ_DRY_RUN = '1';
+    repoRoot = mkdtempSync(join(tmpdir(), 'cez-skill-provenance-'));
+    await run('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
+    writeFileSync(join(repoRoot, 'a.txt'), 'one\n');
+    await run('git', ['add', '-A'], { cwd: repoRoot });
+    await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
+    const skillDir = join(repoRoot, '.ai', 'skills', 'demo-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: demo-skill\ndescription: Provenance fixture\n---\n\nFollow this fixture.\n');
+    store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    manager = new RunManager(store, repoRoot);
+  });
+
+  afterEach(async () => {
+    manager.dispose();
+    store.flush();
+    if (savedDryRun === undefined) delete process.env.CEZ_DRY_RUN;
+    else process.env.CEZ_DRY_RUN = savedDryRun;
+    await removeFixtureDirectory(repoRoot);
+  });
+
+  it('persists the resolved path, source and digest of the exact skill prompt used', async () => {
+    const workflow: WorkflowDef = {
+      name: 'skill-provenance',
+      source: 'built-in',
+      steps: [{ id: 'work', skill: 'demo-skill', prompt: '{{task}}' }],
+    };
+    const record = manager.startRun(workflow, { task: 'mock:done verify skill provenance', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('skill provenance workflow did not finish in time');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const skill = (await discoverSkills(repoRoot)).find((item) => item.name === 'demo-skill')!;
+    const expectedDigest = createHash('sha256').update(skillSystemPrompt(skill)).digest('hex');
+    expect(store.getRun(record.id)?.steps[0]?.skillProvenance).toEqual({
+      name: 'demo-skill',
+      source: 'ai',
+      path: join(repoRoot, '.ai', 'skills', 'demo-skill', 'SKILL.md'),
+      contentDigest: expectedDigest,
+    });
   }, 30_000);
 });
 

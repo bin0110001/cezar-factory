@@ -96,6 +96,13 @@ const stepStateSchema = z.object({
   /** Backend that owns `sessionId`. Optional so pre-affinity runs.json files still parse;
    *  `storedRunnerSchema` so a legacy `claude-cli` folds to `claude` instead of failing (#547). */
   backend: storedRunnerSchema.optional(),
+  skillProvenance: z.object({
+    name: z.string(),
+    source: z.enum(['ai', 'cezar', 'agents', 'global', 'team', 'builtin']),
+    path: z.string().optional(),
+    contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    teamCommit: z.string().optional(),
+  }).optional(),
   /** Agent profile (account) this step actually spawned under — `default`, or a stored profile
    *  id (spec 2026-07-29-agent-profiles). Recorded rather than re-derived because a session id
    *  only means something inside the config dir that created it: `sessionId` and `profileId` are

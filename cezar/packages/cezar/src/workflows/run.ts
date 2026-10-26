@@ -1,6 +1,6 @@
 import type { TrackerAssociation } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -4883,6 +4883,15 @@ export class RunManager {
         // numeric task such as "432" still gives the model enough context to
         // describe the work — and therefore derive a useful title (#432).
         systemPrompt = skillSystemPrompt(skill);
+        this.store.updateStep(runId, step.id, {
+          skillProvenance: {
+            name: skill.name,
+            source: skill.source,
+            path: skill.path,
+            contentDigest: createHash('sha256').update(systemPrompt).digest('hex'),
+            ...(skill.team?.commit ? { teamCommit: skill.team.commit } : {}),
+          },
+        });
         // Directory team skills (SKILL.md + references/) get materialized
         // into <cwd>/.claude/skills/<name>/ — the run's worktree when there
         // is one — so claude sees the companion files on disk; the shared

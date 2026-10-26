@@ -72,6 +72,16 @@ export function StepRail({ steps }: { steps: StepState[] }) {
               {step.kind} · step {index + 1} of {steps.length}
             </span>
           </div>
+          {step.skillProvenance ? (
+            <p
+              data-slot="step-skill-provenance"
+              className="ml-5 break-all text-[10px] text-soft-foreground"
+              title={`${step.skillProvenance.source}${step.skillProvenance.path ? ` · ${step.skillProvenance.path}` : ''} · sha256 ${step.skillProvenance.contentDigest}${step.skillProvenance.teamCommit ? ` · team commit ${step.skillProvenance.teamCommit}` : ''}`}
+            >
+              Skill /{step.skillProvenance.name} · {step.skillProvenance.source} · SHA-256 <code>{step.skillProvenance.contentDigest.slice(0, 12)}…</code>
+              {step.skillProvenance.teamCommit ? <> · team commit <code>{step.skillProvenance.teamCommit.slice(0, 12)}</code></> : null}
+            </p>
+          ) : null}
           {step.output !== undefined && step.outputDigest ? (
             <details data-slot="step-artifact" className="ml-5 min-w-0 pb-1 text-xs">
               <summary className="w-fit cursor-pointer text-soft-foreground hover:text-foreground">
