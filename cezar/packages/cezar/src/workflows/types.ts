@@ -197,6 +197,12 @@ export function checkFailureOutcome(
 ): RunOutcome | undefined {
   const category = step.failureReasons?.[String(exitCode)];
   if (category) {
+    if (category === 'malformed_result') {
+      if (retriesExhausted || !step.onFail || !retryableExit(step.onFail.retryOn, exitCode)) {
+        return { kind: 'contract_failure', reasonCode: 'output_invalid', stepId: step.id };
+      }
+      return undefined;
+    }
     if (category === 'work_verdict' || category === 'test_regression') {
       if (retriesExhausted || !step.onFail || !retryableExit(step.onFail.retryOn, exitCode)) {
         return { kind: 'task_failure', reasonCode: category, stepId: step.id };
@@ -216,11 +222,11 @@ export function checkFailureOutcome(
   return undefined;
 }
 
-/** Explicit taxonomy mode retries only mapped work verdicts; omission preserves legacy numeric behavior. */
+/** Explicit taxonomy mode retries only mapped work verdicts or malformed agent results; omission preserves legacy numeric behavior. */
 export function shouldRetryCheck(step: Pick<WorkflowStepDef, 'onFail' | 'failureReasons'>, exitCode: number): boolean {
   if (step.failureReasons) {
     const category = step.failureReasons[String(exitCode)];
-    return Boolean(step.onFail) && (category === 'work_verdict' || category === 'test_regression')
+    return Boolean(step.onFail) && (category === 'work_verdict' || category === 'test_regression' || category === 'malformed_result')
       && retryableExit(step.onFail?.retryOn, exitCode);
   }
   if (!step.onFail) return false;

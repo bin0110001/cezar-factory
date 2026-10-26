@@ -3,8 +3,8 @@
 .SYNOPSIS
 Validate an agent result file against its factory schema plus the policy rules the schema cannot express.
 .DESCRIPTION
-Kinds: plan, implementation, review, investigation. Prints one compact JSON line and exits 1 on failure,
-so workflow check steps can feed the short error list back to the retried agent.
+Kinds: plan, implementation, review, investigation. Prints one compact JSON line and exits 1 for an
+invalid agent result or 10 for missing/unreadable validator policy or unreadable result files.
 #>
 [CmdletBinding()]
 param(
@@ -26,10 +26,18 @@ function Done {
     exit $(if ($errors.Count) { 1 } else { 0 })
 }
 
+function ConfigurationFailure([string]$Message) {
+    ([ordered]@{ status = 'error'; reasonCode = 'configuration'; message = $Message } | ConvertTo-Json -Compress) | Write-Output
+    exit 10
+}
+
 if (-not (Test-Path $Path)) { $errors.Add("result file not found: $Path"); Done }
-try { $result = Get-Content -Raw $Path | ConvertFrom-Json -AsHashtable } catch { $errors.Add("not valid JSON: $($_.Exception.Message)"); Done }
+try { $rawResult = Get-Content -Raw $Path } catch { ConfigurationFailure "could not read result file: $Path" }
+try { $result = $rawResult | ConvertFrom-Json -AsHashtable } catch { $errors.Add("not valid JSON: $($_.Exception.Message)"); Done }
 if ($result -isnot [hashtable]) { $errors.Add('result must be a JSON object'); Done }
-$schema = Get-Content -Raw (Join-Path $SchemaDir $schemaFile) | ConvertFrom-Json -AsHashtable
+$resolvedSchemaPath = Join-Path $SchemaDir $schemaFile
+if (-not (Test-Path $resolvedSchemaPath)) { ConfigurationFailure "result schema is missing: $resolvedSchemaPath" }
+try { $schema = Get-Content -Raw $resolvedSchemaPath | ConvertFrom-Json -AsHashtable } catch { ConfigurationFailure "result schema is unreadable or invalid: $resolvedSchemaPath" }
 
 # Minimal draft-07 subset: required, type, enum, minimum, minLength, array item type.
 foreach ($req in $schema.required) { if (-not $result.ContainsKey($req)) { $errors.Add("missing required field '$req'") } }
@@ -90,8 +98,14 @@ if (-not $errors.Count) {
         'plan' {
             if ($result.readyNotReadyStatus -eq 'decomposed') {
                 $policies = Join-Path $SchemaDir '../policies'
-                $labelText = Get-Content -Raw (Join-Path $policies 'labels.yaml')
-                $maxSub = if ((Get-Content -Raw (Join-Path $policies 'retry.yaml')) -match 'max_sub_issues:\s*(\d+)') { [int]$Matches[1] } else { 40 }
+                $labelsPath = Join-Path $policies 'labels.yaml'
+                $retryPolicyPath = Join-Path $policies 'retry.yaml'
+                if (-not (Test-Path $labelsPath) -or -not (Test-Path $retryPolicyPath)) { ConfigurationFailure "plan validation policy files are missing under $policies" }
+                try {
+                    $labelText = Get-Content -Raw $labelsPath
+                    $retryPolicy = Get-Content -Raw $retryPolicyPath
+                } catch { ConfigurationFailure "plan validation policies are unreadable under $policies" }
+                $maxSub = if ($retryPolicy -match 'max_sub_issues:\s*(\d+)') { [int]$Matches[1] } else { 40 }
                 $subs = @($result.subIssues)
                 if (-not $result.ContainsKey('subIssues') -or $subs.Count -eq 0) { $errors.Add('status is decomposed but subIssues is empty') }
                 elseif ($subs.Count -gt $maxSub) { $errors.Add("subIssues has $($subs.Count) entries; the limit is $maxSub (group related work or split across passes)") }

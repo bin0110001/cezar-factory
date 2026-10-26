@@ -116,6 +116,8 @@ $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlo
 Assert 'backlog audit is proposal-only and the workflow owns deterministic effects' ($backlogAuditSkill -match 'read-only collector' -and $backlogAuditSkill -match 'preparation consumer' -and $backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -match 'Do not run the collector, list issues again')
 Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'Every proposal must include a durable closing label' -and $backlogAuditSkill -match 'bare skipped outcome is invalid')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
+$planMaterializeStep = [regex]::Match($planWorkflow, '(?s)  - id: validate\r?\n(?<step>.*?)(?=  - id: )').Groups['step'].Value
+$reviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
@@ -132,6 +134,7 @@ Assert 'implement workflow prepares context before implementation' ($implementWo
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implementation result is typed, identity-bound, and has failure/cancellation-safe finalizers' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[issue, status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -notmatch 'id: ensure-result' -and $implementWorkflow -match '(?s)id: recover-implementation-contract-failure.*?finalizer: true.*?idempotent: true.*?timeoutSeconds: 20' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'implementation verification retries only normalized test regressions' (@([regex]::Matches($implementWorkflow, '(?s)onFail:\s+retry: implement\s+max: [12]\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 3 -and $implementWorkflow -match '"11": missing_command' -and $implementWorkflow -match '"16": timeout' -and $implementWorkflow -match '"18": unknown')
+Assert 'planner, reviewer and investigator retry agents only for malformed result code 1' ($planWorkflow -match '(?s)id: validate-plan.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $reviewWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $investigateWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $planMaterializeStep -notmatch 'onFail:')
 Assert 'fix-review retries only normalized test and repairable work verdicts' ((@([regex]::Matches($fixReviewWorkflow, '(?s)onFail:\s+retry: fix\s+max: 1\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 2) -and $fixReviewWorkflow -match '"1": test_regression' -and $fixReviewWorkflow -match '"1": work_verdict' -and $fixReviewWorkflow -match '"18": unknown')
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
 Assert 'implementation preparation fetches issue and captures environment plus baseline SHA' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md' -and $prepareScript -match 'repositoryHeadSha')
@@ -805,6 +808,9 @@ try {
     } finally { Pop-Location }
     Set-IssueState 'OPEN'; Set-Gh @('factory:ready')
     Assert 'resolved: stale marker removed once issue is open' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker))
+    Set-Content -LiteralPath (Join-Path $tmp 'validator-input.json') -Value '{}'
+    $v = & pwsh -NoProfile -File (Join-Path $rp '.ai/factory/scripts/validate-result.ps1') -Kind implementation -Path (Join-Path $tmp 'validator-input.json') -SchemaDir (Join-Path $tmp 'missing-schema-dir') *>&1 | Out-String
+    Assert 'validate-result reports missing schema as configuration exit 10' ($LASTEXITCODE -eq 10 -and $v -match '"reasonCode":"configuration"')
     Set-Gh @('factory:working')
     Assert 'implementation finalizer leaves lifecycle untouched on cancellation' ((Invoke-ImplementationFinalizer $null @{ terminal = 'cancelled' }) -eq 0 -and (Get-Gh).labels -contains 'factory:working' -and @((Get-Gh).comments).Count -eq 0)
     Set-Gh @('factory:working')

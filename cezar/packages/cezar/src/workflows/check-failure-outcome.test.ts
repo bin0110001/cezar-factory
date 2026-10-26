@@ -42,6 +42,23 @@ describe('typed check failure outcomes', () => {
     });
   });
 
+  it('retries a malformed agent result within budget and classifies exhaustion as a contract failure', () => {
+    const malformed = {
+      id: 'validate-plan',
+      onFail: { retry: 'plan', max: 1, retryOn: [1] },
+      failureReasons: { '1': 'malformed_result' as const, '10': 'configuration' as const },
+    };
+    expect(shouldRetryCheck(malformed, 1)).toBe(true);
+    expect(shouldRetryCheck(malformed, 10)).toBe(false);
+    expect(checkFailureOutcome(malformed, 1, false)).toBeUndefined();
+    expect(checkFailureOutcome(malformed, 1, true)).toEqual({
+      kind: 'contract_failure', reasonCode: 'output_invalid', stepId: 'validate-plan',
+    });
+    expect(checkFailureOutcome(malformed, 10, false)).toEqual({
+      kind: 'infrastructure_failure', reasonCode: 'configuration', stepId: 'validate-plan',
+    });
+  });
+
   it('records timeout categories and validates the reason map vocabulary', () => {
     const timed = { id: 'e2e', onFail: { retry: 'implement', max: 1 }, failureReasons: { '124': 'timeout' as const } };
     expect(checkFailureOutcome(timed, 124, false)).toEqual({

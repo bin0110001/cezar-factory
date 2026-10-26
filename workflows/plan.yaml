@@ -111,9 +111,6 @@ steps:
               required: [status]
               properties: { status: { const: open } }
             plan: { type: object }
-    onFail:
-      retry: plan
-      max: 1
   - id: validate-plan
     name: Validate plan result and Definition of Ready
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
@@ -132,6 +129,10 @@ steps:
     onFail:
       retry: plan
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": malformed_result
+      "10": configuration
   - id: route
     name: Post plan to the issue and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-plan-or-default.ps1 -Path .factory/plan-result.json

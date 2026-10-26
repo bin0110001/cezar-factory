@@ -33,6 +33,10 @@ steps:
     onFail:
       retry: review
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": malformed_result
+      "10": configuration
   - id: merge-eligibility
     name: Verify live PR, review, validation and repository gates
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verify-merge-eligibility.ps1 -ReviewPath .factory/review-result.json -OutputPath .factory/merge-eligibility.json
