@@ -6,7 +6,8 @@ Persist one validated Cezar workflow output for legacy Factory consumers that re
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')][string]$OutputKey,
-    [Parameter(Mandatory)][string]$Path
+    [Parameter(Mandatory)][string]$Path,
+    [string]$ExpectedIssuePath = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -27,6 +28,17 @@ try {
     if ($value -isnot [System.Collections.IDictionary]) { throw "workflow output '$OutputKey' must be a JSON object" }
 
     $root = [IO.Path]::GetFullPath((Get-Location).Path).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if ($ExpectedIssuePath) {
+        $contextPath = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $ExpectedIssuePath))
+        if (-not $contextPath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'expected issue context must stay inside the workflow workspace' }
+        if (-not (Test-Path -LiteralPath $contextPath -PathType Leaf)) { throw "expected issue context was not found: $ExpectedIssuePath" }
+        $context = Get-Content -Raw -LiteralPath $contextPath | ConvertFrom-Json -AsHashtable -Depth 40
+        $expectedIssue = 0
+        if ($context.issue -and $context.issue.number) { $expectedIssue = [int]$context.issue.number }
+        if ($expectedIssue -lt 1 -or -not $value.Contains('issue') -or [int]$value.issue -ne $expectedIssue) {
+            throw "workflow output '$OutputKey' issue does not match the prepared issue context ($expectedIssue)"
+        }
+    }
     $target = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
     if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'output path must stay inside the workflow workspace'

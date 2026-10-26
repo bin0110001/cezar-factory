@@ -70,7 +70,7 @@ source: skills/factory-implement/SKILL.md
 - A non-zero command is evidence to inspect: capture its complete error, check
   the command help or manual, and retry at most once with corrected syntax. If
   the second attempt fails—or if two consecutive tool calls are spent cleaning
-  up the same command failure—stop and write a failure result immediately with
+  up the same command failure—stop and return a failure result immediately with
   the blocker. Do not list recursively, switch shells, delete/recreate paths,
   or spend the remaining run trying unrelated recovery commands. Repeating the
   same failed command is not a retry.
@@ -137,7 +137,8 @@ the Factory update has been released or delivered to targets at this stage.
 
 ## Output Format
 
-Produce an implementation result conforming to `implementation-result.schema.json`:
+Return one implementation result conforming to `implementation-result.schema.json` and the workflow's
+output contract. The workflow persists the validated value; do not write an artifact file yourself:
 
 ```json
 {
@@ -163,13 +164,12 @@ change.
 
 ## Workflow Contract
 
-- The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory scripts (`route-state.ps1`, `prepare-implementation.ps1`, `validate-result.ps1`, ...); the workflow owns every script step.
-- Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
+- The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory lifecycle, routing, or preparation commands; the workflow owns those steps.
+- Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return one JSON object matching the workflow's implementation output contract. Set `issue` to the number in the prepared context; the workflow validates the contract and materializes the result.
 - Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
-- Result files live under `.factory/`, which projects gitignore; never commit them.
+- The workflow owns result persistence under `.factory/`; never commit its generated artifacts.
 
 ## Already-resolved issues
 
-The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
-writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
-resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.
+The workflow's typed preflight finishes work on a closed or `factory:done` issue before this skill is
+dispatched. No implementation result is expected for that path.

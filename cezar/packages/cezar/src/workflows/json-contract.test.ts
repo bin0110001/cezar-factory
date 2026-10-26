@@ -17,8 +17,9 @@ describe('workflow JSON contracts', () => {
     expect(workflowDefSchema.safeParse({ ...normalized, source: 'file' }).success).toBe(true);
     const isPlanner = file === 'plan.yaml';
     const isMaintenance = file === 'maintenance.yaml';
+    const isImplementation = file === 'implement.yaml';
     const outputStep = normalized.steps.find((step) => step.outputSchema && (step.skill || step.prompt));
-    if (isPlanner || isMaintenance) {
+    if (isPlanner || isMaintenance || isImplementation) {
       expect(outputStep).toBeDefined();
       const value = isPlanner
         ? {
@@ -27,14 +28,22 @@ describe('workflow JSON contracts', () => {
           suggestedWorkBreakdown: 'Inspect, implement, verify', requiredProjectSkills: [],
           unresolvedQuestions: '', complexity: 'complexity:medium', readyNotReadyStatus: 'ready',
           }
-        : {
+        : isMaintenance
+          ? {
           considered: [12],
           changed: [{ issue: 12, added: ['factory:new', 'type:feature', 'risk:medium'], reason: 'feature request' }],
           skipped: [],
-          };
+            }
+          : {
+            issue: 12, status: 'failure', summary: 'implementation failed', filesChanged: [], testsRun: [],
+            testResult: 'not-run', acceptanceCriteriaStatus: 'Not met', documentationUpdated: false,
+            knownConcerns: 'missing prerequisite', followUpSuggestions: '', durableKnowledgeCandidates: '',
+            };
       const invalid = isPlanner
         ? { ...value, complexity: 'incorrect' }
-        : { ...value, changed: [{ issue: 12, added: ['factory:unsafe'], reason: 'invalid proposal' }] };
+        : isMaintenance
+          ? { ...value, changed: [{ issue: 12, added: ['factory:unsafe'], reason: 'invalid proposal' }] }
+          : { ...value, unexpected: true };
       const validResult = validateWorkflowContract(outputStep!.outputSchema!, value);
       expect(validResult, JSON.stringify(validResult)).toMatchObject({ success: true });
       expect(validateWorkflowContract(outputStep!.outputSchema!, invalid).success).toBe(false);

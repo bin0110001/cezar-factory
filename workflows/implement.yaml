@@ -3,7 +3,7 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/test-changed.ps1,factory/test-full.ps1,factory/verify.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,materialize-workflow-output.ps1,route-state.ps1,validate-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/test-changed.ps1,factory/test-full.ps1,factory/verify.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -47,6 +47,23 @@ steps:
   - id: implement
     name: Run factory-implement skill
     skill: factory-implement
+    outputSchema:
+      type: object
+      required: [issue, status, summary, filesChanged, testsRun, testResult, acceptanceCriteriaStatus, knownConcerns, followUpSuggestions, durableKnowledgeCandidates, documentationUpdated]
+      properties:
+        issue: { type: integer, minimum: 1 }
+        status: { type: string, enum: [success, failure] }
+        summary: { type: string }
+        filesChanged: { type: array, items: { type: string } }
+        testsRun: { type: array, items: { type: string } }
+        testResult: { type: string }
+        acceptanceCriteriaStatus: { type: string }
+        documentationUpdated: { type: boolean }
+        knownConcerns: { type: string }
+        followUpSuggestions: { type: string }
+        durableKnowledgeCandidates: { type: string }
+        pr: { type: string }
+      additionalProperties: false
     when:
       type: object
       required: [outputs]
@@ -57,9 +74,6 @@ steps:
           properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     prompt: |
       Implement this GitHub issue: {{task}}
-
-      If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
-      line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Before editing code, read the prepared .factory/implementation-context.json
       artifact, the nearest AGENTS.md/manual, and the issue body/comments recorded
@@ -73,22 +87,24 @@ steps:
       actual error and retry once with corrected syntax. Prefer structured file edits
       over shell heredocs or nested quoting for multiline files. If the corrected
       command also fails, or two consecutive calls are spent recovering the same
-      command failure, stop and write a failure result immediately; do not switch
+      command failure, stop and return a failure result immediately; do not switch
       shells, invent paths, recursively list directories, or delete/recreate files.
-      When done, open or update the PR, then write the structured
-      result as JSON to .factory/implement-result.json (create the directory) with the
-      issue number in "issue" and the PR URL in "pr".
-  - id: ensure-result
-    name: Preserve implementation handoff
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-implementation-result.ps1 -Path .factory/implement-result.json -ContextPath .factory/implementation-context.json
+      When done, open or update the PR if implementation succeeded, then return exactly one JSON object
+      matching this workflow's output contract. Do not write a result file. Set issue to the issue number
+      in the prepared context; the workflow checks that identity before materializing the validated output.
+  - id: materialize-result
+    name: Materialize the validated implementation result
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey implement -Path .factory/implement-result.json -ExpectedIssuePath .factory/implementation-context.json
     when:
       type: object
       required: [outputs]
       properties:
         outputs:
           type: object
-          required: [resolved]
-          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
+          required: [resolved, implement]
+          properties:
+            resolved: { type: object, required: [status], properties: { status: { const: open } } }
+            implement: { type: object }
   - id: ensure-pr-closes-issue
     name: Ensure successful PR closes the issue on merge
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json

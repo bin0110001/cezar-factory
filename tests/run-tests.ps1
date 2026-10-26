@@ -112,7 +112,6 @@ $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.y
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
-$ensureImplementationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensure-implementation-result.ps1')
 $investigateSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-investigate/SKILL.md')
 $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implementation.ps1')
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
@@ -122,7 +121,7 @@ Assert 'planner returns a schema-validated structured artifact for deterministic
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
-Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
+Assert 'implementation result is a typed agent output materialized only after prepared-issue identity validation' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[issue, status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -notmatch 'id: ensure-result|ensure-implementation-result\.ps1' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'implementation verification retries only normalized test regressions' (@([regex]::Matches($implementWorkflow, '(?s)onFail:\s+retry: implement\s+max: [12]\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 3 -and $implementWorkflow -match '"11": missing_command' -and $implementWorkflow -match '"16": timeout' -and $implementWorkflow -match '"18": unknown')
 Assert 'fix-review retries only normalized test and repairable work verdicts' ((@([regex]::Matches($fixReviewWorkflow, '(?s)onFail:\s+retry: fix\s+max: 1\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 2) -and $fixReviewWorkflow -match '"1": test_regression' -and $fixReviewWorkflow -match '"1": work_verdict' -and $fixReviewWorkflow -match '"18": unknown')
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
@@ -206,7 +205,7 @@ $investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/inv
 Assert 'startup manifest check detects a missing route script' (@(Missing-StartupScripts $investigateWithoutRouter) -contains 'route-state.ps1')
 Assert 'plan startup includes its routing helper' ((Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')) -match 'RequiredScripts[^\r\n]*route-state\.ps1')
 Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
-Assert 'implement skill prevents speculative recovery'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and write a failure result' -and $implementSkill -match 'Repeating the same failed command')
+Assert 'implement skill prevents speculative recovery and returns typed failure output'  ($implementSkill -match 'Do not dispatch a child Cezar task' -and $implementSkill -match 'Do not use anonymous GitHub.*curl' -and $implementSkill -match 'stop and return a failure result' -and $implementSkill -match 'Repeating the same failed command')
 Assert 'route-state tolerates pre-complexity installed layers' ($routeState -match 'Older installed Factory layers predate complexity labels' -and $routeState -match 'complexity:small.*complexity:medium.*complexity:large')
 Assert 'central route-state writes execution data to the current project' ($routeState -match '\[string\]\$ProjectPath = \(Get-Location\)\.Path' -and $routeState -match 'Join-Path \$ProjectPath ''.factory/execution.json''')
 Assert 'deployment env examples do not contain real secrets' ((Get-Content -Raw (Join-Path $factory 'integrations/bazzite/env.example')) -match 'change-me-on-host' -and (Get-Content -Raw (Join-Path $factory 'integrations/mac-mini/vllm/env.example')) -match 'REPLACE_ON_HOST')
@@ -512,6 +511,20 @@ try {
         finally { Pop-Location }
         $materializedPlan = Get-Content -Raw (Join-Path $rp '.factory/plan-result.json') | ConvertFrom-Json
         Assert 'workflow output materializer writes the selected structured output' ($materialized.Code -eq 0 -and $materializedPlan.issue -eq 123 -and $materializedPlan.objective -eq 'test')
+        New-Item -ItemType Directory -Force (Join-Path $rp '.factory') | Out-Null
+        @{ issue = @{ number = 123 } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $rp '.factory/implementation-context.json')
+        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ implement = @{ issue = 123; status = 'failure' } } } | ConvertTo-Json -Depth 8 -Compress)
+        Push-Location $rp
+        try { $implementationMaterialized = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'implement'; Path = '.factory/implement-result.json'; ExpectedIssuePath = '.factory/implementation-context.json' } }
+        finally { Pop-Location }
+        $implementationResult = Get-Content -Raw (Join-Path $rp '.factory/implement-result.json') | ConvertFrom-Json
+        Assert 'implementation output materializes only for the prepared issue' ($implementationMaterialized.Code -eq 0 -and $implementationResult.issue -eq 123)
+        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ implement = @{ issue = 124; status = 'failure' } } } | ConvertTo-Json -Depth 8 -Compress)
+        Push-Location $rp
+        try { $wrongImplementation = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'implement'; Path = '.factory/wrong-implement-result.json'; ExpectedIssuePath = '.factory/implementation-context.json' } }
+        finally { Pop-Location }
+        Assert 'implementation materializer refuses a mismatched issue identity' ($wrongImplementation.Code -ne 0 -and -not (Test-Path (Join-Path $rp '.factory/wrong-implement-result.json')))
+        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ plan = @{ issue = 123; objective = 'test'; acceptanceCriteria = 'test'; nonGoals = ''; risks = 'none'; dependencies = 'none'; suggestedWorkBreakdown = 'one step'; requiredProjectSkills = @(); unresolvedQuestions = ''; complexity = 'complexity:small'; readyNotReadyStatus = 'ready' } } } | ConvertTo-Json -Depth 8 -Compress)
         Push-Location $rp
         try { $pathEscape = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'plan'; Path = '..\outside.json' } }
         finally { Pop-Location }
