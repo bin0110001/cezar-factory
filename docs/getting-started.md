@@ -32,33 +32,23 @@ Use stable hostnames or documented addresses for the two hosts. Confirm that
 the operator can reach the control-plane host over SSH and that the
 control-plane host can reach the model endpoint over the trusted network.
 
-Do not expose model, gateway, Agent Server, database, or observability ports
+Do not expose model, gateway, Cezar API, database, or observability ports
 to the public Internet.
 
-## 2. Install Factory files into a project
+## 2. Use the shared Factory runtime
 
-From the Factory checkout:
+The standard deployment uses the version-pinned Factory checkout mounted
+read-only in Cezar at `/projects/cezar-factory`. Register only the intended
+project in the host-local `config/factory-projects.json` and use the shared
+mode unless the project needs its own complete `.ai/factory` layer. The
+Bazzite timer advances the shared checkout to the tested `stable` version and
+reconciles configured automations after promotion.
 
-```powershell
-./scripts/install.ps1 -ProjectPath ../my-project -ProjectType <project-type>
-```
-
-Add the project-specific validation scripts expected by the installed
-workflow, then ensure the project’s generated state directory is ignored by
-Git. Verify the installation:
-
-```powershell
-./scripts/verify.ps1 -ProjectPath ../my-project
-```
-
-Create the Factory labels and paused automations after Cezar is available:
-
-```powershell
-pwsh ../my-project/.ai/factory/scripts/create-labels.ps1
-pwsh ../my-project/.ai/factory/scripts/sync-automations.ps1
-```
-
-Keep automations paused until the deployment and provider smoke tests pass.
+Use a local Factory installation only when the explicitly configured target
+needs project-local workflows, skills, policies, scripts, or pinning. Its
+registry entry must contain an absolute, verified local `projectPath`; run the
+release dry run before installing. Keep automations paused until the Cezar
+runtime and selected runner pass the readiness checks below.
 
 ## 3. Configure secrets and host-local settings
 
@@ -73,9 +63,9 @@ Fill in host-local values for:
 
 - pinned container image references;
 - Cezar project and API settings;
-- OpenHands session authentication;
+- Cezar GitHub CLI authentication and explicitly configured project targets;
 - gateway and memory credentials;
-- model IDs, runtime paths, and context limits;
+- model IDs, runtime paths, runner authentication, and context limits;
 - trusted host addresses and allowed client ranges.
 
 Use a host secret manager, Podman secrets, or protected environment files.
@@ -147,15 +137,16 @@ Deploy and validate:
 ```
 
 The deployment should expose only the intended trusted-LAN operator surface.
-Keep OpenHands Canvas loopback-bound by default. For temporary configuration
-from another trusted workstation, set the host-local bind address to the
-trusted LAN interface, redeploy, configure the service, and restore loopback
-binding immediately afterward.
+Keep operator-only service surfaces bound to loopback by default. For
+temporary configuration from another trusted workstation, set the host-local
+bind address to the trusted LAN interface, redeploy, configure the service, and
+restore loopback binding immediately afterward.
 
-Validate the complete service set: Cezar, OpenHands, the gateway, memory,
-Langfuse, Prometheus, and Grafana. Confirm that the gateway can reach the
-model host and that the model host cannot be reached from outside the trusted
-network.
+Validate the complete service set: Cezar, the gateway, memory, Langfuse,
+Prometheus, and Grafana. Confirm that the gateway can reach the model host and
+that the model host cannot be reached from outside the trusted network. Cezar
+uses its supported configured runner/model routes directly; OpenHands is not a
+current Factory execution dependency.
 
 ### LiteLLM Admin UI access
 
@@ -288,25 +279,21 @@ The result should be compact, validation-backed, and include status, branch,
 attempt count, duration, model, and coarse usage when the provider supplies
 it. Inspect the event-backed validation and preserve failure artifacts.
 
-## 9. Connect Cezar and enable automation gradually
+## 9. Connect Cezar and verify the active workflow path
 
-Cezar should remain the lifecycle authority. The provider boundary should
-receive a validated issue, task, risk classification, branch, and bounded
-validation command, then return a compact result. OpenHands owns the session,
-worktree, tool trace, and provider-side artifacts.
+Cezar owns automation scheduling, isolated worktrees, workflow execution, and
+persisted run outcomes. Factory automation definitions select the configured
+runner/model routes; workflow `command:` steps own script execution, while
+agent steps receive only their declared task and validated prior outputs. The
+shared Factory checkout is mounted read-only at `/projects/cezar-factory` and
+exposed in Cezar as `FACTORY_RUNTIME_ROOT`.
 
-Enable automation in this order:
-
-1. Factory self-tests and schema validation.
-2. Local OpenHands read-only smoke test.
-3. Local bounded implementation test in an isolated worktree.
-4. Failed-task recovery and bounded retry test.
-5. Premium profile read-only test.
-6. One low-risk GitHub issue and its branch/PR lifecycle.
-7. Concurrent isolated jobs only after the single-job path is reliable.
-
-Do not enable unattended premium or GitHub-mutating automation until the
-previous stage has recorded evidence.
+Before enabling an explicitly configured project, validate the Factory suite,
+schemas, target synchronization, and Cezar runtime parity. Then verify the
+selected runner can authenticate and execute a bounded task with recorded
+validation and recovery evidence. Keep unattended automations paused until
+those checks pass. Do not infer live profile enablement or provider access
+from `routing/automation-catalog.json` alone.
 
 ## 10. Final validation checklist
 
@@ -333,8 +320,10 @@ for the connection setup and the `connections/SSH_into_Bazzite.bat` launcher.
 Confirm all of the following before calling the deployment ready:
 
 - health endpoints and authenticated model requests pass;
-- OpenHands persistence has a clean Git `HEAD`;
-- local adapter jobs succeed within configured bounds;
+- the Cezar runtime mount matches the tested Factory version and content
+  digest;
+- a configured Cezar workflow succeeds within its declared bounds and records
+  validation evidence;
 - failure and retry artifacts are actionable;
 - memory recall/retain and observability metadata are verified;
 - premium profiles reach the LLM before enabling GitHub tools;
@@ -346,17 +335,18 @@ Confirm all of the following before calling the deployment ready:
 
 Some workplan items cannot be completed by repository changes alone:
 
-1. Authenticate Codex through a supported OpenHands profile or ACP provider.
-2. Authenticate Claude Code through its supported profile or ACP provider.
-3. Configure and verify GitHub MCP or CLI credentials, then run a real
-   low-risk issue through branch, validation, and pull-request completion.
-4. Run Codex and Claude concurrently only after each single-provider path
-   succeeds.
-5. Add a second compatible GPU or node before testing tensor parallelism,
+1. Configure and verify the selected Cezar runner authentication for each
+   explicitly configured pilot project.
+2. Verify GitHub CLI credentials in Cezar, then run a low-risk issue through
+   branch, validation, independent review, and the `dev` auto-merge gate.
+3. Run multiple provider routes concurrently only after each single-run path
+   succeeds and isolated worktree behavior is verified.
+4. Add a second compatible GPU or node before testing tensor parallelism,
    replicas, Ray, multi-node serving, or node recovery.
-6. Revisit native editor/client integrations only if the measured workflow
+5. Revisit native editor/client integrations only if the measured workflow
    demonstrates a real context or throughput gap.
 
 Record the output of each manual gate beside the relevant workplan item. Do
 not mark a gate complete from configuration alone; require a successful,
-observable runtime result.
+observable runtime result. If the host-local target registry is absent, leave
+project-specific gates open and do not discover or enable a substitute target.

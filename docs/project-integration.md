@@ -30,10 +30,7 @@ project/
 │   └── ...                       # Other cezar configuration
 │
 ├── scripts/
-│   └── factory/                  # Factory-related scripts
-│       ├── test-changed.ps1      # Test changed files
-│       ├── test-full.ps1         # Full test suite
-│       └── verify.ps1            # Validation script
+│   └── ...                       # Optional project-owned validation commands
 │
 └── ...                           # Project source code
 
@@ -129,14 +126,19 @@ being audited. If a source repository is private and the Factory repository is
 public, do not copy issue bodies, links, or private operational details without
 explicit approval; ask whether a sanitized public issue is acceptable.
 
-## Version Pinning
+## Versioning and delivery
 
-Projects pin to specific factory versions to ensure reproducible builds:
+The shared-mount mode is the standard delivery path. Projects use the tested
+Factory checkout mounted into Cezar, and the Bazzite timer advances it only
+after a validated merge to `stable`. A project does not maintain a separate
+Factory version pin in this mode.
 
-1. Initial Installation: Project selects a factory version
-2. Version Factories: Each factory version is immutable
-3. Explicit Updates: Version changes require explicit action
-4. Rollback Capability: Projects can revert to previous versions
+Use a version pin only for a target that requires the optional full local
+`.ai/factory` layer. Register its absolute, verified local `projectPath`, run a
+release dry run, and keep the local pin aligned with the installed manifest.
+Updates and rollback then use the corresponding Factory checkout through the
+configured release flow; never write to a remote Cezar container path from
+`projectPath`.
 
 ## Override Mechanism
 
@@ -285,7 +287,8 @@ The shared Factory checkout provides:
 
 Projects must provide:
 
-- Factory Configuration: Version pinning and feature flags
+- Factory Configuration: Project validation, overrides, feature flags, and a
+  version pin only when the optional full local layer is installed
 - Project Skills: Domain-specific knowledge and guidelines
 - Validation Scripts: Custom test and verification logic
 - Secret Configuration: Securely managed secrets and credentials
