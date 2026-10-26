@@ -51,13 +51,19 @@ $unmarked = @($issues |
     Sort-Object number |
     ForEach-Object {
         $labels = @(Get-LabelNames $_)
-        $typeHint = if ($labels -contains 'bug') { 'bug' }
-            elseif ($labels -contains 'test') { 'test' }
-            elseif ($labels -contains 'enhancement') { 'feature' }
-            elseif ($labels -contains 'migration' -or $labels -contains 'architecture') { 'refactor' }
-            elseif ($labels -contains 'documentation' -or $labels -contains 'localization') { 'docs' }
-            else { $null }
-        $riskHint = if ($labels -contains 'test' -and $labels -notcontains 'bug') { 'low' } else { 'medium' }
+        $typeHints = @(
+            if ($labels -contains 'bug') { 'bug' }
+            if ($labels -contains 'test') { 'test' }
+            if ($labels -contains 'enhancement') { 'feature' }
+            if ($labels -contains 'migration' -or $labels -contains 'architecture') { 'refactor' }
+            if ($labels -contains 'documentation' -or $labels -contains 'localization') { 'docs' }
+        )
+        $typeHints = @($typeHints | Select-Object -Unique)
+        $typeHintConflict = $typeHints.Count -gt 1
+        $typeHint = if ($typeHints.Count -eq 1) { $typeHints[0] } else { $null }
+        $riskHint = if ($typeHintConflict) { $null }
+            elseif ($labels -contains 'test' -and $labels -notcontains 'bug') { 'low' }
+            else { 'medium' }
         [ordered]@{
             number = [int]$_.number
             title = [string]$_.title
@@ -65,6 +71,7 @@ $unmarked = @($issues |
             updatedAt = $_.updatedAt
             typeHint = $typeHint
             riskHint = $riskHint
+            ruleConflicts = if ($typeHintConflict) { @('legacy labels map to multiple issue types') } else { @() }
         }
     })
 
@@ -85,16 +92,20 @@ foreach ($candidate in $unmarked) {
     $reason = $null
     $ruleId = $null
     $add = @()
-    if ($legacyLabels -contains 'blocked' -or $legacyLabels -contains 'blocker') {
+    $hasBlockedMarker = $legacyLabels -contains 'blocked' -or $legacyLabels -contains 'blocker'
+    $hasDecompositionMarker = $legacyLabels -contains 'needs-decomp' -or $legacyLabels -contains 'needs-decomposition'
+    if ($hasBlockedMarker -and $hasDecompositionMarker) {
+        $candidate['ruleConflicts'] = @($candidate.ruleConflicts) + 'legacy labels imply conflicting lifecycle states'
+    } elseif ($hasBlockedMarker) {
         $state = 'factory:blocked'
         $reason = 'legacy blocked marker'
         $ruleId = 'legacy_blocked_marker'
-    } elseif ($legacyLabels -contains 'needs-decomp' -or $legacyLabels -contains 'needs-decomposition') {
+    } elseif ($hasDecompositionMarker) {
         $state = 'factory:needs-plan'
         $reason = 'legacy decomposition marker'
         $ruleId = 'legacy_decomposition_marker'
         $add += 'complexity:large'
-    } elseif ($candidate.typeHint) {
+    } elseif ($candidate.typeHint -and @($candidate.ruleConflicts).Count -eq 0) {
         $state = 'factory:new'
         $reason = 'unambiguous legacy type marker'
         $ruleId = 'legacy_type_marker'

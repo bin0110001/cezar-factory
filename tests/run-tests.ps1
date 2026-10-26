@@ -920,7 +920,7 @@ try {
         @{ number = 2; title = 'Already audited'; body = 'audited body'; labels = @(@{ name = 'factory:needs-help' }) },
         @{ number = 1; title = 'Unmarked docs'; body = 'docs body'; labels = @(@{ name = 'documentation' }) },
         @{ number = 4; title = 'Blocked legacy work'; body = 'blocked body'; labels = @(@{ name = 'blocker' }) },
-        @{ number = 5; title = 'Ambiguous legacy work'; body = 'candidate body'; labels = @(@{ name = 'question' }) }
+        @{ number = 5; title = 'Conflicting legacy types'; body = 'candidate body'; labels = @(@{ name = 'bug' }, @{ name = 'test' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
     & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
@@ -941,6 +941,7 @@ try {
     Assert 'backlog audit collector is read-only' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
     Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
+    Assert 'backlog audit input: conflicting legacy type labels receive no deterministic type or risk hint' ($auditCandidates.candidates[0].typeHint -eq $null -and $auditCandidates.candidates[0].riskHint -eq $null -and @($auditCandidates.candidates[0].ruleConflicts) -contains 'legacy labels map to multiple issue types')
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
     $auditGuardValid = Run 'validate-backlog-label-audit-input.ps1' @{ Path = $auditInput; MaxCandidates = 1 }
     Assert 'backlog audit handoff guard accepts only the bounded same-run candidate artifact' ($auditGuardValid.Code -eq 0 -and $auditGuardValid.Out -match '"candidates":1')
