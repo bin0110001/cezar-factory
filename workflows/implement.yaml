@@ -106,6 +106,18 @@ steps:
     onFail:
       retry: implement
       max: 2
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "10": configuration
+      "11": missing_command
+      "12": authentication
+      "13": provider_unavailable
+      "14": provider_quota
+      "15": transient_transport
+      "16": timeout
+      "17": malformed_result
+      "18": unknown
   - id: full-verification
     name: Run required verification
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
@@ -120,6 +132,18 @@ steps:
     onFail:
       retry: implement
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "10": configuration
+      "11": missing_command
+      "12": authentication
+      "13": provider_unavailable
+      "14": provider_quota
+      "15": transient_transport
+      "16": timeout
+      "17": malformed_result
+      "18": unknown
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
@@ -134,6 +158,18 @@ steps:
     onFail:
       retry: implement
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": test_regression
+      "10": configuration
+      "11": missing_command
+      "12": authentication
+      "13": provider_unavailable
+      "14": provider_quota
+      "15": transient_transport
+      "16": timeout
+      "17": malformed_result
+      "18": unknown
   - id: validate
     name: Validate implementation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json

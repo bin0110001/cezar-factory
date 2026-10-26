@@ -203,6 +203,23 @@ failed full or verify receipt into a pass. See
 [`validation-baseline-policy.md`](validation-baseline-policy.md) for merge-gate
 behavior and baseline provenance requirements.
 
+Factory wrappers normalize the structured verdict into an exit code for Cezar:
+
+| Exit code | Meaning | Agent retry |
+| --- | --- | --- |
+| `0` | Passed, or targeted validation explicitly skipped/not applicable | No |
+| `1` | Structured `failed` result with `test_regression`, `test_failure`, or `work_verdict` reason | Yes, bounded |
+| `10` | Invalid or missing validation configuration/baseline | No |
+| `11` | Missing command, working directory, or prerequisite | No |
+| `12`–`15` | Authentication, provider unavailable/quota, or transient transport | No |
+| `16` | Validation timeout | No |
+| `17` | Malformed result or result/exit-code contradiction | No |
+| `18` | Unknown failure, no matching tests, or legacy exit-code-only failure without a typed verdict | No |
+
+The implementation workflow retries only code `1`. Project commands should use
+the structured JSON result contract when the failure can be classified; a legacy
+exit code does not prove the failure is repairable by a coding agent.
+
 ## Runtime Content
 
 The following Cezar runtime and generated artifacts should **not** be version

@@ -26,6 +26,27 @@ function Run-Stage([string]$stage) {
 Check 'diagnostic fingerprints ignore project roots, line numbers, and case' (
     (Get-ValidationDiagnosticFingerprint 'C:\work\game\Scripts\Player.gd:21:4: Invalid call' 'C:\work\game') -eq
     (Get-ValidationDiagnosticFingerprint 'D:\other\game\scripts\player.gd:99:2: INVALID CALL' 'D:\other\game'))
+$exitCases = @(
+    @{ Name = 'test regression'; Status = 'failed'; Reason = 'test_regression'; Code = 1 },
+    @{ Name = 'configuration failure'; Status = 'unavailable'; Reason = 'validation_config_missing'; Code = 10 },
+    @{ Name = 'missing tool'; Status = 'unavailable'; Reason = 'tool_missing'; Code = 11 },
+    @{ Name = 'authentication failure'; Status = 'unavailable'; Reason = 'authentication_failed'; Code = 12 },
+    @{ Name = 'provider unavailable'; Status = 'unavailable'; Reason = 'provider_unavailable'; Code = 13 },
+    @{ Name = 'provider quota'; Status = 'unavailable'; Reason = 'provider_quota'; Code = 14 },
+    @{ Name = 'transient transport'; Status = 'error'; Reason = 'transient_transport'; Code = 15 },
+    @{ Name = 'timeout'; Status = 'error'; Reason = 'validation_timeout'; Code = 16 },
+    @{ Name = 'malformed result'; Status = 'error'; Reason = 'validation_result_malformed'; Code = 17 },
+    @{ Name = 'unknown failure'; Status = 'failed'; Reason = 'unknown_test_failure'; Code = 18 }
+)
+foreach ($case in $exitCases) {
+    $receipt = [pscustomobject]@{ status = $case.Status; reasonCode = $case.Reason; validationResult = $null }
+    if ($case.Status -eq 'failed' -and $case.Reason -eq 'test_regression') {
+        $receipt.validationResult = [pscustomobject]@{ status = 'failed'; reasonCode = $case.Reason }
+    }
+    Check "validation exit code classifies $($case.Name)" ((Get-FactoryValidationExitCode $receipt 'full') -eq $case.Code)
+}
+$legacyFailure = [pscustomobject]@{ status = 'failed'; reasonCode = 'validation_command_failed'; validationResult = $null }
+Check 'legacy exit-code failure is unknown and non-retryable' ((Get-FactoryValidationExitCode $legacyFailure 'full') -eq 18)
 try {
     New-Item -ItemType Directory -Path (Join-Path $project '.ai/factory') -Force | Out-Null
     Set-Content (Join-Path $project '.gitignore') ".factory/"
@@ -193,18 +214,22 @@ validation:
     $originalConfig | Set-Content $configPath
 
     foreach ($statusCase in @(
-        @{ Status = 'no-matching-tests'; Reason = 'validation_result_no_matching_tests'; Fixture = 'validation-result-no-matching-tests.json' },
-        @{ Status = 'unavailable'; Reason = 'validation_result_unavailable'; Fixture = 'validation-result-unavailable.json' },
-        @{ Status = 'skipped'; Reason = 'validation_result_skipped'; Fixture = 'validation-result-skipped.json' }
+        @{ Status = 'no-matching-tests'; Reason = 'validation_result_no_matching_tests'; Fixture = 'validation-result-no-matching-tests.json'; ExitCode = 18 },
+        @{ Status = 'unavailable'; Reason = 'validation_result_unavailable'; Fixture = 'validation-result-unavailable.json'; ExitCode = 11 },
+        @{ Status = 'skipped'; Reason = 'validation_result_skipped'; Fixture = 'validation-result-skipped.json'; ExitCode = 18 }
     )) {
         $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot "fixtures/$($statusCase.Fixture)"
         $run = Run-Stage full
-        Check "structured $($statusCase.Status) is distinct and non-passing (code=$($run.Code), status=$($run.Receipt.status), reason=$($run.Receipt.reasonCode), message=$($run.Receipt.message))" ($run.Code -ne 0 -and $run.Receipt.status -eq $statusCase.Status -and $run.Receipt.reasonCode -eq $statusCase.Reason)
+        Check "structured $($statusCase.Status) uses its normalized stop code (code=$($run.Code), status=$($run.Receipt.status), reason=$($run.Receipt.reasonCode))" ($run.Code -eq $statusCase.ExitCode -and $run.Receipt.status -eq $statusCase.Status -and $run.Receipt.reasonCode -eq $statusCase.Reason)
     }
+    Remove-Item Env:ADAPTER_RESULT_FILE
+    $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot 'fixtures/validation-result-failed.json'
+    $run = Run-Stage full
+    Check 'structured test regression returns the only repairable validation code' ($run.Code -eq 1 -and $run.Receipt.validationResult.reasonCode -eq 'test_regression')
     Remove-Item Env:ADAPTER_RESULT_FILE
     $env:ADAPTER_RESULT_FILE = Join-Path $PSScriptRoot 'fixtures/validation-result-malformed.json'
     $run = Run-Stage full
-    Check 'malformed structured result is an explicit contract error' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error' -and $run.Receipt.reasonCode -eq 'validation_result_malformed')
+    Check 'malformed structured result is a non-retryable contract error' ($run.Code -eq 17 -and $run.Receipt.status -eq 'error' -and $run.Receipt.reasonCode -eq 'validation_result_malformed')
     Remove-Item Env:ADAPTER_RESULT_FILE
     $validResult = Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/validation-result-passed.json')
     $invalidResult = Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/validation-result-malformed.json')
@@ -316,9 +341,9 @@ validation:
     Set-Content $configPath ($configText.Replace('__FACTORY_VERSION__', (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()).Replace('timeoutSeconds: 7200', 'timeoutSeconds: 1'))
     $env:ADAPTER_SLEEP = '3'
     $run = Run-Stage full
-    Check 'timed out verifier is an infrastructure error, not a passing or task-failure result' (
-        $run.Code -ne 0 -and $run.Receipt.status -eq 'error' -and
-        $run.Receipt.reasonCode -eq 'validation_infrastructure_error' -and $run.Receipt.message -match 'exceeded the 1-second limit')
+    Check 'timed out verifier uses the normalized non-retry timeout code' (
+        $run.Code -eq 16 -and $run.Receipt.status -eq 'error' -and
+        $run.Receipt.reasonCode -eq 'validation_timeout' -and $run.Receipt.message -match 'exceeded the 1-second limit')
     Remove-Item Env:ADAPTER_SLEEP -ErrorAction SilentlyContinue
 } finally {
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue

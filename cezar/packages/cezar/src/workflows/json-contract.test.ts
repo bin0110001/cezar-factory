@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { normalizeWorkflowDoc, stepsIssue, validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowDefSchema, workflowFileSchema, workflowStepSchema } from './types.ts';
+import { checkFailureOutcome, normalizeWorkflowDoc, shouldRetryCheck, stepsIssue, validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowDefSchema, workflowFileSchema, workflowStepSchema } from './types.ts';
 
 const factoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 
@@ -108,6 +108,23 @@ describe('workflow JSON contracts', () => {
 
   it('rejects an invalid condition schema at workflow definition validation', () => {
     expect(workflowStepSchema.safeParse({ id: 'implement', prompt: 'do it', when: { type: 'not-a-json-schema-type' } }).success).toBe(false);
+  });
+
+  it('retries implementation only for explicitly classified test regressions', () => {
+    const parsed = workflowFileSchema.parse(parseYaml(readFileSync(join(factoryRoot, 'workflows', 'implement.yaml'), 'utf8')));
+    const steps = normalizeWorkflowDoc(parsed).steps;
+    for (const id of ['targeted-tests', 'full-verification', 'verify-project']) {
+      const step = steps.find((candidate) => candidate.id === id)!;
+      expect(step.onFail?.retryOn).toEqual([1]);
+      expect(step.failureReasons).toMatchObject({
+        '1': 'test_regression', '10': 'configuration', '11': 'missing_command',
+        '12': 'authentication', '13': 'provider_unavailable', '14': 'provider_quota',
+        '15': 'transient_transport', '16': 'timeout', '17': 'malformed_result', '18': 'unknown',
+      });
+      expect(shouldRetryCheck(step, 1)).toBe(true);
+      for (const code of [10, 11, 12, 13, 14, 15, 16, 17, 18]) expect(shouldRetryCheck(step, code)).toBe(false);
+      expect(checkFailureOutcome(step, 18, false)).toMatchObject({ kind: 'infrastructure_failure', reasonCode: 'unknown' });
+    }
   });
 
   it('recognizes only typed reserved control outcomes', () => {

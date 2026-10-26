@@ -217,6 +217,35 @@ function Get-ValidationDiagnosticComparison($StageConfig, [string]$Root, [string
     }
 }
 
+function Get-FactoryValidationExitCode($Receipt, [string]$Stage) {
+    if ($Receipt.status -eq 'passed' -or ($Stage -eq 'changed' -and $Receipt.status -eq 'skipped')) { return 0 }
+
+    $reason = [string]$Receipt.reasonCode
+    $resultStatus = ''
+    if ($Receipt.validationResult) {
+        $resultStatus = [string]$Receipt.validationResult.status
+        if ($Receipt.validationResult.reasonCode) { $reason = [string]$Receipt.validationResult.reasonCode }
+    }
+    if ($Receipt.status -eq 'failed') {
+        if ($resultStatus -eq 'failed' -and $reason -in 'test_regression', 'test_failure', 'work_verdict') { return 1 }
+        # Legacy exit-code-only commands and unclassified failures lack enough
+        # evidence to spend another agent attempt safely.
+        return 18
+    }
+
+    switch -Regex ($reason) {
+        '^(validation_config_missing|validation_config_invalid|validation_recursive_wrapper|validation_applicability_rules_missing|validation_change_set_too_large|validation_head_changed|baseline_config_invalid|baseline_hash_mismatch)$' { return 10 }
+        '^(validation_command_missing|validation_working_directory_missing|validation_prerequisite_missing|missing_command|tool_missing)$' { return 11 }
+        '^(authentication_required|authentication_failed|auth_required)$' { return 12 }
+        '^(provider_unavailable|provider_unavailable_for_model)$' { return 13 }
+        '^(provider_quota|usage_limit)$' { return 14 }
+        '^(transient_transport|transport_unavailable)$' { return 15 }
+        '^(validation_timeout|timeout|timed_out)$' { return 16 }
+        '^(validation_result_malformed|malformed_result|validation_result_contradicts_exit_code)$' { return 17 }
+        default { return 18 }
+    }
+}
+
 function Invoke-FactoryValidation {
     param(
         [ValidateSet('changed', 'full', 'verify')][string]$Stage,
@@ -276,14 +305,14 @@ function Invoke-FactoryValidation {
         if (-not (Test-Path $configPath)) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_config_missing'
             $receipt.exitCode = 2; $receipt.message = "Project validation config is missing: $configPath"
-            return 1
+            return (Get-FactoryValidationExitCode $receipt $Stage)
         }
         $config = Read-FactoryConfig $configPath
         $configStage = @{ changed = 'targeted'; full = 'full'; verify = 'verify' }[$Stage]
         if (-not $config.Contains('validation') -or $null -eq $config.validation) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
             $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage command is missing from $configPath."
-            return 1
+            return (Get-FactoryValidationExitCode $receipt $Stage)
         }
         if (-not $config.validation.Contains($configStage)) {
             # Older project configs used `changed`; current templates call the
@@ -292,7 +321,7 @@ function Invoke-FactoryValidation {
             else {
                 $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
                 $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage command is missing from $configPath."
-                return 1
+                return (Get-FactoryValidationExitCode $receipt $Stage)
             }
         }
         $stageConfig = $config.validation[$configStage]
@@ -319,7 +348,7 @@ function Invoke-FactoryValidation {
         if (-not $command) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
             $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage command is empty."
-            return 1
+            return (Get-FactoryValidationExitCode $receipt $Stage)
         }
         if ($command -eq 'skip' -and $Stage -eq 'changed') {
             $receipt.status = 'skipped'; $receipt.reasonCode = 'targeted_validation_unsupported'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
@@ -359,7 +388,7 @@ function Invoke-FactoryValidation {
             $receipt.changedFilesKnown = $false
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_change_set_too_large'
             $receipt.exitCode = 2; $receipt.message = 'Changed-file evidence exceeds the 200-path limit; applicability cannot be decided safely.'
-            return 1
+            return (Get-FactoryValidationExitCode $receipt $Stage)
         }
         $receipt.changedFiles = @($changedFiles)
         $receipt.changedFilesKnown = $changeSetKnown
@@ -368,7 +397,7 @@ function Invoke-FactoryValidation {
             if ($patterns.Count -eq 0) {
                 $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_applicability_rules_missing'
                 $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage has no applicability patterns."
-                return 1
+                return (Get-FactoryValidationExitCode $receipt $Stage)
             }
             $applicable = $false
             foreach ($file in $changedFiles) {
@@ -381,8 +410,9 @@ function Invoke-FactoryValidation {
             if (-not $applicable) {
                 $receipt.status = 'skipped'
                 $receipt.reasonCode = if ($changedFiles.Count -eq 0) { 'validation_no_applicable_changes' } else { 'validation_not_applicable' }
-                $receipt.exitCode = 0; $receipt.message = "No changed file matched validation.$configStage appliesTo."
-                return $(if ($Stage -eq 'changed') { 0 } else { 1 })
+                $receipt.exitCode = if ($Stage -eq 'changed') { 0 } else { 2 }
+                $receipt.message = "No changed file matched validation.$configStage appliesTo."
+                return (Get-FactoryValidationExitCode $receipt $Stage)
             }
         }
         $workingPath = [IO.Path]::GetFullPath((Join-Path $root $workingDirectory))
@@ -397,13 +427,13 @@ function Invoke-FactoryValidation {
         if (-not (Test-Path -LiteralPath $workingPath -PathType Container)) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_working_directory_missing'
             $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage workingDirectory does not exist: $($receipt.workingDirectory)"
-            return 1
+            return (Get-FactoryValidationExitCode $receipt $Stage)
         }
         foreach ($prerequisite in $prerequisites) {
             if (-not (Get-Command ([string]$prerequisite) -ErrorAction SilentlyContinue)) {
                 $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_prerequisite_missing'
                 $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage prerequisite is unavailable: $prerequisite"
-                return 1
+                return (Get-FactoryValidationExitCode $receipt $Stage)
             }
         }
         foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
@@ -485,9 +515,12 @@ function Invoke-FactoryValidation {
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
-        $receipt.reasonCode = if ($receipt.message -match '^(Configured validation\.|Unsupported YAML indentation|Unexpected YAML list item|Unsupported factory\.config\.yaml syntax|Config not found:)' -and
-            $receipt.message -notmatch '^Configured validation\.(?:changed|full|verify) exceeded the [0-9]+-second limit') {
+        $receipt.reasonCode = if ($receipt.message -match '^Configured validation\.(?:changed|full|verify) exceeded the [0-9]+-second limit') {
+            'validation_timeout'
+        } elseif ($receipt.message -match '^(Configured validation\.|Unsupported YAML indentation|Unexpected YAML list item|Unsupported factory\.config\.yaml syntax|Config not found:)') {
             'validation_config_invalid'
+        } elseif ($receipt.message -match '^(Could not start configured validation\.|The system cannot find the file specified)') {
+            'validation_command_missing'
         } else { 'validation_infrastructure_error' }
     } finally {
         # A project runner can modify tracked files or create untracked files
@@ -511,8 +544,7 @@ function Invoke-FactoryValidation {
         $receipt | ConvertTo-Json -Depth 6 | Set-Content -Path $receiptPath -Encoding utf8
         if (-not $Quiet) { Write-Host ($receipt | ConvertTo-Json -Compress -Depth 6) }
     }
-    if ($receipt.status -eq 'passed' -or ($Stage -eq 'changed' -and $receipt.status -eq 'skipped')) { return 0 }
-    return 1
+    return (Get-FactoryValidationExitCode $receipt $Stage)
 }
 
 function Get-MarkerStyle([string]$RelPath) {
