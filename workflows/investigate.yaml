@@ -21,9 +21,6 @@ steps:
             action: { type: string, const: no_work }
             reasonCode: { type: string, const: no_work }
           additionalProperties: false
-      allOf:
-        - if: { properties: { status: { const: already-resolved } }, required: [status] }
-          then: { required: [$cezar] }
       additionalProperties: false
   - id: recall
     name: Create bounded memory-recall artifact

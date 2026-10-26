@@ -8,45 +8,49 @@ import { normalizeWorkflowDoc, stepsIssue, validateWorkflowContract, validateWor
 const factoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 
 describe('workflow JSON contracts', () => {
-  it.each(['plan.yaml', 'maintenance.yaml'])('loads Factory workflow %s output contracts as valid definitions', (file) => {
+  it.each(['plan.yaml', 'maintenance.yaml', 'implement.yaml', 'investigate.yaml', 'fix-review.yaml'])('loads Factory workflow %s output contracts as valid definitions', (file) => {
     const parsed = workflowFileSchema.safeParse(parseYaml(readFileSync(join(factoryRoot, 'workflows', file), 'utf8')));
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     const normalized = normalizeWorkflowDoc(parsed.data);
     expect(stepsIssue(normalized.steps)).toBeNull();
     expect(workflowDefSchema.safeParse({ ...normalized, source: 'file' }).success).toBe(true);
+    const isPlanner = file === 'plan.yaml';
+    const isMaintenance = file === 'maintenance.yaml';
     const outputStep = normalized.steps.find((step) => step.outputSchema && (step.skill || step.prompt));
-    expect(outputStep).toBeDefined();
-    const value = file === 'plan.yaml'
-      ? {
+    if (isPlanner || isMaintenance) {
+      expect(outputStep).toBeDefined();
+      const value = isPlanner
+        ? {
           issue: 12, objective: 'Bounded planning', acceptanceCriteria: 'The plan is actionable.',
           nonGoals: 'No implementation', risks: 'Review decomposition', dependencies: 'None',
           suggestedWorkBreakdown: 'Inspect, implement, verify', requiredProjectSkills: [],
           unresolvedQuestions: '', complexity: 'complexity:medium', readyNotReadyStatus: 'ready',
-        }
-      : {
+          }
+        : {
           considered: [12],
           changed: [{ issue: 12, added: ['factory:new', 'type:feature', 'risk:medium'], reason: 'feature request' }],
           skipped: [],
-        };
-    const invalid = file === 'plan.yaml'
-      ? { ...value, complexity: 'incorrect' }
-      : { ...value, changed: [{ issue: 12, added: ['factory:unsafe'], reason: 'invalid proposal' }] };
-    const validResult = validateWorkflowContract(outputStep!.outputSchema!, value);
-    expect(validResult, JSON.stringify(validResult)).toMatchObject({ success: true });
-    expect(validateWorkflowContract(outputStep!.outputSchema!, invalid).success).toBe(false);
+          };
+      const invalid = isPlanner
+        ? { ...value, complexity: 'incorrect' }
+        : { ...value, changed: [{ issue: 12, added: ['factory:unsafe'], reason: 'invalid proposal' }] };
+      const validResult = validateWorkflowContract(outputStep!.outputSchema!, value);
+      expect(validResult, JSON.stringify(validResult)).toMatchObject({ success: true });
+      expect(validateWorkflowContract(outputStep!.outputSchema!, invalid).success).toBe(false);
+    }
 
-    const preflightId = file === 'plan.yaml' ? 'resolved' : 'backlog-label-audit-prepare';
+    const preflightId = isMaintenance ? 'backlog-label-audit-prepare' : 'resolved';
     const preflightStep = normalized.steps.find((step) => step.id === preflightId);
     expect(preflightStep?.outputSchema).toBeDefined();
-    const preflightValues = file === 'plan.yaml'
+    const preflightValues = isMaintenance
       ? [
-          { status: 'open', issue: 12 },
-          { status: 'already-resolved', issue: 12, $cezar: { action: 'no_work', reasonCode: 'no_work' } },
-        ]
-      : [
           { status: 'prepared', candidateCount: 0, resolvedCount: 2, $cezar: { action: 'no_work', reasonCode: 'no_work' } },
           { status: 'prepared', candidateCount: 2, resolvedCount: 1 },
+        ]
+      : [
+          { status: 'open', issue: 12 },
+          { status: 'already-resolved', issue: 12, $cezar: { action: 'no_work', reasonCode: 'no_work' } },
         ];
     for (const preflightValue of preflightValues) {
       const result = validateWorkflowContract(preflightStep!.outputSchema!, preflightValue);
