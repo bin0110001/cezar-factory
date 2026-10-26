@@ -25,6 +25,5 @@ steps:
   - id: route
     name: Route intake to planning
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json
-    onFail:
-      retry: validate
-      max: 1
+    failureReasons:
+      "1": unknown

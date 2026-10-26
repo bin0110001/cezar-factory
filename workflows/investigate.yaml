@@ -85,6 +85,8 @@ steps:
   - id: route
     name: Route to retry or needs-help
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event investigate-result -Path .factory/investigate-result.json
+    failureReasons:
+      "1": unknown
     when:
       type: object
       required: [outputs]
@@ -97,6 +99,3 @@ steps:
               type: object
               required: [status]
               properties: { status: { const: open } }
-    onFail:
-      retry: validate
-      max: 1

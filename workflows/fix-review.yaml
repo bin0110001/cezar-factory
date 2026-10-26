@@ -98,6 +98,8 @@ steps:
   - id: route
     name: Return issue to factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    failureReasons:
+      "1": unknown
     when:
       type: object
       required: [outputs]
@@ -106,6 +108,3 @@ steps:
           type: object
           required: [resolved]
           properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
-    onFail:
-      retry: validate
-      max: 1

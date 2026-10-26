@@ -136,6 +136,8 @@ steps:
   - id: route
     name: Post plan to the issue and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-plan-or-default.ps1 -Path .factory/plan-result.json
+    failureReasons:
+      "1": unknown
     when:
       type: object
       required: [outputs]
@@ -148,6 +150,3 @@ steps:
               type: object
               required: [status]
               properties: { status: { const: open } }
-    onFail:
-      retry: validate-plan
-      max: 1

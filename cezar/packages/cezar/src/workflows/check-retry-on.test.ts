@@ -114,6 +114,33 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
   }, 30_000);
 
+  it('records an unknown route failure without replaying a preceding check or agent', async () => {
+    const workflow: WorkflowDef = {
+      name: 'route-effect',
+      source: 'file',
+      steps: [
+        { id: 'implement', name: 'Implement', prompt: '{{task}}' },
+        { id: 'validate', name: 'Validate result', command: 'exit 0' },
+        { id: 'route', name: 'Apply lifecycle effect', command: 'echo REMOTE_FAILURE >&2; exit 1', failureReasons: { '1': 'unknown' } },
+      ],
+    };
+    const record = manager.startRun(workflow, {
+      task: 'mock:done fix the login bug',
+      worktree: false,
+    });
+    await settle(record.id);
+
+    const finished = store.getRun(record.id);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.outcome).toMatchObject({ kind: 'infrastructure_failure', reasonCode: 'unknown', stepId: 'route' });
+    expect(finished?.steps.map((step) => ({ id: step.id, status: step.status, iterations: step.iterations }))).toEqual([
+      { id: 'implement', status: 'done', iterations: 1 },
+      { id: 'validate', status: 'done', iterations: 1 },
+      { id: 'route', status: 'failed', iterations: 1 },
+    ]);
+    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
+  }, 30_000);
+
   it('still loops back on a listed exit code', async () => {
     const record = manager.startRun(workflowFor([2]), {
       task: 'mock:done fix the login bug',

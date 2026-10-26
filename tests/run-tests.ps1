@@ -134,6 +134,16 @@ $intakeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/intake.yaml')
 $intakeSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-intake/SKILL.md')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
+$routeFailureContractsValid = $true
+$routeWorkflowCount = 0
+foreach ($routeWorkflowText in @($intakeWorkflow, $planWorkflow, $investigateWorkflow, $reviewWorkflow, $fixReviewWorkflow)) {
+    foreach ($routeStepMatch in [regex]::Matches($routeWorkflowText, '(?ms)^  - id: route\r?\n(?<step>.*?)(?=^  - id: |\z)')) {
+        $routeWorkflowCount++
+        $routeStepText = $routeStepMatch.Groups['step'].Value
+        if ($routeStepText -match '(?m)^    onFail:' -or $routeStepText -notmatch '(?ms)failureReasons:\s*"1": unknown') { $routeFailureContractsValid = $false }
+    }
+}
+Assert 'lifecycle route failures are typed unknown and never replay prior checks without evidence' ($routeWorkflowCount -eq 5 -and $routeFailureContractsValid)
 $staleWorkableScript = Get-Content -Raw (Join-Path $factory 'scripts/refresh-stale-workable.ps1')
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
