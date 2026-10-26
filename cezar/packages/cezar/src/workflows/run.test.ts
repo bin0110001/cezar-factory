@@ -1109,6 +1109,7 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
 
   it('restart recovery resumes only unfinished finalizers and settles the recorded terminal intent', async () => {
     const calls: string[] = [];
+    let finalizationContext: unknown;
     const workflow: WorkflowDef = {
       name: 'finalizer-recovery',
       source: 'built-in',
@@ -1130,17 +1131,21 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     store.updateRun(record.id, {
       workflowDef: workflow,
       status: 'running',
-      finalization: { status: 'running', terminal: 'success', startedAt: new Date().toISOString() },
+      finalization: {
+        status: 'running', terminal: 'failed', startedAt: new Date().toISOString(),
+        outcome: { kind: 'contract_failure', reasonCode: 'output_invalid', stepId: 'implement' },
+      },
     });
     store.updateStep(record.id, 'work', { status: 'done' });
     store.updateStep(record.id, 'cleanup', { status: 'running' });
 
     const managerInternals = manager as unknown as {
-      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }, task: string, input: { finalization?: unknown }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
     };
     const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
-    managerInternals.runCheckStep = async (_state, step) => {
+    managerInternals.runCheckStep = async (_state, step, _task, input) => {
       calls.push(step.id);
+      finalizationContext = input.finalization;
       return { ok: true, output: 'passed', exitCode: 0 };
     };
 
@@ -1148,10 +1153,11 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
 
     managerInternals.runCheckStep = originalRunCheckStep;
     expect(calls).toEqual(['cleanup']);
+    expect(finalizationContext).toEqual({ terminal: 'failed', outcome: { kind: 'contract_failure', reasonCode: 'output_invalid', stepId: 'implement' } });
     expect(store.getRun(record.id)).toMatchObject({
-      status: 'done',
-      outcome: { kind: 'completed', reasonCode: 'workflow_completed' },
-      finalization: { status: 'complete', terminal: 'success' },
+      status: 'failed',
+      outcome: { kind: 'contract_failure', reasonCode: 'output_invalid', stepId: 'implement' },
+      finalization: { status: 'complete', terminal: 'failed' },
       steps: [{ id: 'work', status: 'done' }, { id: 'cleanup', status: 'done' }],
     });
   });
@@ -1252,14 +1258,16 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
 
   it('records cancellation durably and runs cleanup without changing the cancelled terminal state', async () => {
     const calls: string[] = [];
+    let finalizationContext: unknown;
     let releaseCheck!: () => void;
     const held = new Promise<void>((resolve) => { releaseCheck = resolve; });
     const managerInternals = manager as unknown as {
-      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+      runCheckStep: (state: unknown, step: { id: string; finalizer?: boolean }, task: string, input: { finalization?: unknown }) => Promise<{ ok: boolean; output: string; exitCode: number }>;
     };
     const originalRunCheckStep = managerInternals.runCheckStep.bind(manager);
-    managerInternals.runCheckStep = async (_state, step) => {
+    managerInternals.runCheckStep = async (_state, step, _task, input) => {
       calls.push(step.id);
+      if (step.finalizer) finalizationContext = input.finalization;
       if (!step.finalizer) await held;
       return { ok: true, output: 'passed', exitCode: 0 };
     };
@@ -1289,6 +1297,7 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     managerInternals.runCheckStep = originalRunCheckStep;
     expect(manager.isActive(record.id)).toBe(false);
     expect(calls).toEqual(['work', 'cleanup']);
+    expect(finalizationContext).toEqual({ terminal: 'cancelled' });
     expect(store.getRun(record.id)).toMatchObject({
       status: 'cancelled',
       finalization: { status: 'complete', terminal: 'cancelled' },

@@ -11,7 +11,7 @@ review/fix rounds and investigation retries per policies/retry.yaml, and posts e
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'review-result', 'investigate-result', 'already-resolved')][string]$Event,
+    [Parameter(Mandatory)][ValidateSet('start', 'intake-result', 'plan-result', 'implement-result', 'implement-finalize', 'review-result', 'investigate-result', 'already-resolved')][string]$Event,
     [string]$Path,
     [string]$GatePath,
     [int]$Issue,
@@ -29,6 +29,24 @@ if ($Event -ne 'already-resolved' -and (Test-Path (Join-Path $ProjectPath '.fact
 
 function Fail([string]$Msg) { Write-Output (@{ status = 'refused'; event = $Event; reason = $Msg } | ConvertTo-Json -Compress); exit 1 }
 function Invoke-Gh { & $GhCommand @args; if ($LASTEXITCODE -ne 0) { throw "gh $($args -join ' ') failed ($LASTEXITCODE)" } }
+
+if ($Event -eq 'implement-finalize') {
+    try {
+        if ([string]::IsNullOrWhiteSpace($env:CEZAR_INPUT_JSON)) { throw 'finalizer input is missing' }
+        $finalizerInput = $env:CEZAR_INPUT_JSON | ConvertFrom-Json -AsHashtable -Depth 40
+        $finalization = $finalizerInput.finalization
+        $outcome = $finalization.outcome
+        $contractRecovery = $finalization.terminal -eq 'failed' -and $outcome.kind -eq 'contract_failure' -and $outcome.stepId -eq 'implement'
+        $completedImplementation = $finalization.terminal -eq 'success' -and $null -eq $outcome
+        if (-not $completedImplementation -and -not $contractRecovery) {
+            Write-Output (@{ status = 'skipped'; event = $Event; reason = 'terminal-outcome-does-not-route-implementation' } | ConvertTo-Json -Compress)
+            exit 0
+        }
+        $Event = 'implement-result'
+    } catch {
+        Fail "cannot classify implementation finalizer: $($_.Exception.Message)"
+    }
+}
 
 # Workflow commands pass the raw task text ("GitHub issue #N (...) at <url>") so no agent has to extract it.
 if ($Issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
@@ -262,6 +280,16 @@ function Write-ExecutionRecord([string]$Status, $Result = $null) {
     $record | ConvertTo-Json -Depth 5 | Set-Content -Path $path -Encoding utf8
 }
 function Text($v) { if ($v -is [array]) { ($v | ForEach-Object { "- $_" }) -join "`n" } else { "$v" } }
+function Get-ImplementationCommentBody($ImplementationResult) {
+    if ($ImplementationResult.status -ne 'success') {
+        return "## Factory implementation failed`n`n$(Text $ImplementationResult.summary)`n`nTests: $(Text $ImplementationResult.testResult)`nConcerns: $(Text $ImplementationResult.knownConcerns)"
+    }
+    "## Factory implementation`n`nPR: $($ImplementationResult.pr)`n`n$(Text $ImplementationResult.summary)`n`n**Tests run**`n$(Text $ImplementationResult.testsRun)`n`n**Result:** $(Text $ImplementationResult.testResult)`n`n**Acceptance criteria**`n$(Text $ImplementationResult.acceptanceCriteriaStatus)`n`n**Known concerns**`n$(Text $ImplementationResult.knownConcerns)"
+}
+function Get-RouteReceiptMarker([string]$Body) {
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
+    "<!-- factory:route-effect:${Event}:${Issue}:$hash -->"
+}
 function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence, [string]$Hypothesis, [string]$Decision) {
     "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended next step / major architectural decision**`n$Decision"
 }
@@ -337,14 +365,25 @@ switch ($Event) {
         Add-PlanCommentOnce $plan; Set-State 'factory:ready'; Done 'factory:ready'
     }
     'implement-result' {
+        $targetState = if ($result.status -eq 'success') { 'factory:review' } else { 'factory:investigate' }
+        $implementationBody = Get-ImplementationCommentBody $result
+        $receiptMarker = Get-RouteReceiptMarker $implementationBody
+        if ($current -notcontains 'factory:working') {
+            $matchingReceipt = @($comments | Where-Object { $_ -match [regex]::Escape($receiptMarker) }).Count -gt 0
+            if ($current.Count -eq 1 -and $current[0] -eq $targetState -and $matchingReceipt) {
+                Write-ExecutionRecord $(if ($result.status -eq 'success') { 'complete' } else { 'failed' }) $result
+                Done $targetState 'implementation routing receipt already applied'
+            }
+            if ($current -contains $targetState) { Fail "implementation routing state '$targetState' exists without this result's receipt; reconcile before retrying" }
+        }
         Assert-Source 'factory:working'
         if ($result.status -ne 'success') {
             Write-ExecutionRecord 'failed' $result
-            Add-Comment "## Factory implementation failed`n`n$(Text $result.summary)`n`nTests: $(Text $result.testResult)`nConcerns: $(Text $result.knownConcerns)"
+            Add-Comment $implementationBody
             Set-State 'factory:investigate'; Done 'factory:investigate' 'implementation failed'
         }
         Write-ExecutionRecord 'complete' $result
-        Add-Comment "## Factory implementation`n`nPR: $($result.pr)`n`n$(Text $result.summary)`n`n**Tests run**`n$(Text $result.testsRun)`n`n**Result:** $(Text $result.testResult)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaStatus)`n`n**Known concerns**`n$(Text $result.knownConcerns)"
+        Add-Comment $implementationBody
         Set-State 'factory:review'; Done 'factory:review'
     }
     'review-result' {

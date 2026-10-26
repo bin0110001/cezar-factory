@@ -90,15 +90,18 @@ describe('workflow control outputs', () => {
     stores.push(store);
     const manager = new RunManager(store, repo);
     managers.push(manager);
+    let finalizationContext: unknown;
     const internal = manager as unknown as {
-      runCheckStep: (_state: unknown, step: { id: string }) => Promise<{
+      runCheckStep: (_state: unknown, step: { id: string }, task: string, input: { finalization?: unknown }) => Promise<{
         ok: boolean; output: string; exitCode: number; contractError?: boolean;
         contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid';
       }>;
     };
-    internal.runCheckStep = async (_state, step) => step.id === 'preflight'
-      ? { ok: false, output: 'invalid structured output', exitCode: 1, contractError: true, contractFailureReason: reason }
-      : { ok: true, output: 'should not execute', exitCode: 0 };
+    internal.runCheckStep = async (_state, step, _task, input) => {
+      if (step.id === 'preflight') return { ok: false, output: 'invalid structured output', exitCode: 1, contractError: true, contractFailureReason: reason };
+      if (step.id === 'recover') { finalizationContext = input.finalization; return { ok: true, output: 'observed', exitCode: 0 }; }
+      return { ok: true, output: 'should not execute', exitCode: 0 };
+    };
     const record = manager.startRun({
       name: 'invalid-output-fixture', source: 'file',
       steps: [
@@ -107,6 +110,7 @@ describe('workflow control outputs', () => {
           outputSchema: { type: 'object', required: ['count'], properties: { count: { type: 'integer' } } },
         },
         { id: 'consumer', command: 'touch consumer-ran' },
+        { id: 'recover', command: 'observe-terminal', finalizer: true, idempotent: true, timeoutSeconds: 5 },
       ],
     }, { task: 'reject invalid structured output', worktree: false });
     const deadline = Date.now() + 10_000;
@@ -114,7 +118,7 @@ describe('workflow control outputs', () => {
       if (Date.now() > deadline) throw new Error('invalid-output workflow did not settle');
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    return { repo, run: store.getRun(record.id)! };
+    return { repo, run: store.getRun(record.id)!, finalizationContext };
   }
 
   async function runInvalidInput(schema: Record<string, unknown>) {
@@ -294,10 +298,13 @@ describe('workflow control outputs', () => {
       'output_schema_invalid',
     ] as const;
     for (const reason of cases) {
-      const { repo, run } = await runInvalidOutput(reason);
+      const { repo, run, finalizationContext } = await runInvalidOutput(reason);
       expect(run.status, run.error).toBe('failed');
       expect(run.outcome).toMatchObject({ kind: 'contract_failure', reasonCode: reason, stepId: 'preflight' });
-      expect(run.steps.map((step) => step.status)).toEqual(['failed', 'pending']);
+      expect(run.steps.map((step) => step.status)).toEqual(['failed', 'pending', 'done']);
+      expect(finalizationContext).toMatchObject({
+        terminal: 'failed', outcome: { kind: 'contract_failure', reasonCode: reason, stepId: 'preflight' },
+      });
       expect(existsSync(join(repo, 'consumer-ran'))).toBe(false);
     }
   });

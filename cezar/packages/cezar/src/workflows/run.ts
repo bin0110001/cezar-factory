@@ -1801,7 +1801,13 @@ export class RunManager {
         }
         this.store.updateStep(run.id, step.id, { status: 'running', startedAt: new Date().toISOString() });
         this.store.flush({ throwOnError: true });
-        const result = await this.runCheckStep(state, step, run.task, { task: run.task, outputs: {} }, (event) => {
+        const result = await this.runCheckStep(state, step, run.task, {
+          task: run.task, outputs: {},
+          finalization: run.finalization ? {
+            terminal: run.finalization.terminal,
+            ...(run.finalization.outcome ? { outcome: run.finalization.outcome } : {}),
+          } : undefined,
+        }, (event) => {
           this.store.appendEvent(run.id, event);
         });
         this.store.updateStep(run.id, step.id, {
@@ -4608,7 +4614,13 @@ export class RunManager {
         this.store.updateStep(runId, step.id, { status: 'running', startedAt: new Date().toISOString() });
         this.store.flush({ throwOnError: true });
         state.currentStepId = step.id;
-        const result = await this.runCheckStep(state, step, input.task, { task: input.task, outputs: {} }, (event) => {
+        const result = await this.runCheckStep(state, step, input.task, {
+          task: input.task, outputs: {},
+          finalization: {
+            terminal,
+            ...(originalOutcome ? { outcome: originalOutcome } : {}),
+          },
+        }, (event) => {
           this.store.appendEvent(runId, event);
         });
         this.finishStep(runId, step.id, result.ok ? 'done' : 'failed', result.ok ? undefined : result.output, (event) => {
@@ -5952,7 +5964,11 @@ export class RunManager {
     state: ActiveRun,
     step: WorkflowStepDef,
     task: string,
-    stepInput: { task: string; outputs: Record<string, unknown> },
+    stepInput: {
+      task: string;
+      outputs: Record<string, unknown>;
+      finalization?: { terminal: 'success' | 'failed' | 'cancelled'; outcome?: RunOutcome };
+    },
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{
     ok: boolean; output: string; exitCode: number; structuredOutput?: unknown; contractError?: boolean;
