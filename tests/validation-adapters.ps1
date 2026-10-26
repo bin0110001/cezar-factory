@@ -33,6 +33,7 @@ try {
 param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
+if ($env:ADAPTER_SLEEP) { Start-Sleep -Seconds ([int]$env:ADAPTER_SLEEP) }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
 if ($env:ADAPTER_EXPECT_CHANGED_FILE) {
     $changedFiles = @((ConvertFrom-Json -InputObject $env:FACTORY_VALIDATION_CHANGED_FILES))
@@ -163,10 +164,18 @@ validation:
     Check 'known baseline diagnostics never turn a failing validation into a pass' (
         $run.Code -ne 0 -and $run.Receipt.status -eq 'failed' -and $run.Receipt.diagnosticComparison.knownFingerprints.Count -eq 1)
     Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
-    $env:ADAPTER_DIAGNOSTIC = 'src/new.ts:42:7: New fixture defect'
+    Remove-Item Env:ADAPTER_DIAGNOSTIC -ErrorAction SilentlyContinue
     $run = Run-Stage full
-    Check 'new diagnostic remains new without changing validation status' (
-        $run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.diagnosticComparison.newFingerprints.Count -eq 1)
+    Check 'resolved baseline diagnostic is absent from the current comparison' (
+        $run.Code -eq 0 -and $run.Receipt.diagnosticComparison.status -eq 'compared' -and
+        $run.Receipt.diagnosticComparison.knownFingerprints.Count -eq 0 -and
+        $run.Receipt.diagnosticComparison.newFingerprints.Count -eq 0)
+    $env:ADAPTER_DIAGNOSTIC = 'src/new.ts:42:7: New fixture defect'
+    $env:ADAPTER_RESULT_STATUS = 'failed'
+    $run = Run-Stage full
+    Check 'new regression remains visible and fails validation' (
+        $run.Code -ne 0 -and $run.Receipt.status -eq 'failed' -and $run.Receipt.diagnosticComparison.newFingerprints.Count -eq 1)
+    Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
     $env:ADAPTER_DIAGNOSTIC = $knownDiagnostic
     Add-Content -LiteralPath $baselineFile -Value 'tampered'
     $run = Run-Stage full
@@ -304,6 +313,13 @@ validation:
     Remove-Item $configPath
     $run = Run-Stage full
     Check 'missing config is unavailable without discovery fallback' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_config_missing')
+    Set-Content $configPath ($configText.Replace('__FACTORY_VERSION__', (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()).Replace('timeoutSeconds: 7200', 'timeoutSeconds: 1'))
+    $env:ADAPTER_SLEEP = '3'
+    $run = Run-Stage full
+    Check 'timed out verifier is an infrastructure error, not a passing or task-failure result' (
+        $run.Code -ne 0 -and $run.Receipt.status -eq 'error' -and
+        $run.Receipt.reasonCode -eq 'validation_infrastructure_error' -and $run.Receipt.message -match 'exceeded the 1-second limit')
+    Remove-Item Env:ADAPTER_SLEEP -ErrorAction SilentlyContinue
 } finally {
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
@@ -313,6 +329,7 @@ validation:
     Remove-Item Env:ADAPTER_RESULT_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_DIAGNOSTIC -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_SLEEP -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if ($peer -and (Test-Path -LiteralPath $peer)) {

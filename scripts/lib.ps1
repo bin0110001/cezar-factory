@@ -485,7 +485,8 @@ function Invoke-FactoryValidation {
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
-        $receipt.reasonCode = if ($receipt.message -match '^(Configured validation\.|Unsupported YAML indentation|Unexpected YAML list item|Unsupported factory\.config\.yaml syntax|Config not found:)') {
+        $receipt.reasonCode = if ($receipt.message -match '^(Configured validation\.|Unsupported YAML indentation|Unexpected YAML list item|Unsupported factory\.config\.yaml syntax|Config not found:)' -and
+            $receipt.message -notmatch '^Configured validation\.(?:changed|full|verify) exceeded the [0-9]+-second limit') {
             'validation_config_invalid'
         } else { 'validation_infrastructure_error' }
     } finally {
