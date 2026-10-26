@@ -28,6 +28,10 @@ request. If GitHub queues auto-merge but has not reported completion, the issue
 stays in `factory:review`; an approved review without a PR URL returns to
 implementation through `factory:changes-requested`.
 
+Diagnostic baselines classify pre-existing project failures for investigation;
+they never waive the required passing full and verify receipts. See
+[`validation-baseline-policy.md`](validation-baseline-policy.md).
+
 Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the
 filter envelope.

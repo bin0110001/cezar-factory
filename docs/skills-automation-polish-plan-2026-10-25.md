@@ -215,7 +215,7 @@ verification:
 - [ ] Map changed files to relevant tests using explicit project-owned rules; run focused tests during iteration and required broader gates before merge.
 - [ ] Normalize diagnostic identity; compare results against a pinned baseline to separate existing defects from new defects.
 - [ ] Track baseline provenance/expiry and prevent agents from silently expanding the accepted baseline.
-- [ ] Define merge/review gate policy for pre-existing failures; never hide new regressions.
+- [x] Define merge/review gate policy for pre-existing failures; never hide new regressions. Known failures remain visible for diagnosis but do not waive a failed full/verify receipt; new or unclassified diagnostics remain visible and blocking.
 Acceptance: Fixtures cover known-old failure, new regression, removed failure, missing tools, zero matching tests, task failure and infrastructure failure; gates follow actual outcomes.
 
 [VER-03] Cross-project fixture coverage — Owner: Factory. Depends: VER-01/02.
