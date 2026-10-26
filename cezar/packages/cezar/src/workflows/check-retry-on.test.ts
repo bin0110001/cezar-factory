@@ -68,7 +68,7 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     await rm(repoRoot, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   }, 30_000);
 
-  const workflowFor = (retryOn: number[]): WorkflowDef => ({
+  const workflowFor = (retryOn: number[], exitCode = 2, category?: 'provider_quota' | 'test_regression'): WorkflowDef => ({
     name: 'implement-and-check',
     source: 'file',
     steps: [
@@ -77,8 +77,9 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
       {
         id: 'verify',
         name: 'Verify',
-        command: 'echo CONFIG_NOT_FOUND >&2; exit 2',
+        command: `echo CONFIG_NOT_FOUND >&2; exit ${exitCode}`,
         onFail: { retry: 'implement', max: 2, retryOn },
+        ...(category ? { failureReasons: { [String(exitCode)]: category } } : {}),
       },
     ],
   });
@@ -125,5 +126,49 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     // The gate is a filter, not a switch: 2 is listed, so the loop ran its `max`.
     expect(finished?.steps.find((s) => s.id === 'implement')?.iterations).toBe(3);
     expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(3);
+  }, 40_000);
+
+  it('does not retry a classified provider failure even when retryOn lists its code', async () => {
+    const record = manager.startRun(workflowFor([2], 2, 'provider_quota'), {
+      task: 'mock:done fix the login bug',
+      worktree: false,
+    });
+    await settle(record.id);
+
+    const finished = store.getRun(record.id);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.outcome).toMatchObject({
+      kind: 'infrastructure_failure', reasonCode: 'provider_quota', stepId: 'verify',
+    });
+    expect(finished?.steps.map((step) => ({ id: step.id, status: step.status, iterations: step.iterations }))).toEqual([
+      { id: 'implement', status: 'done', iterations: 1 },
+      { id: 'verify', status: 'failed', iterations: 1 },
+    ]);
+    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
+  }, 30_000);
+
+  it('retries a classified test regression within budget and records the exhausted task outcome', async () => {
+    const record = manager.startRun(workflowFor([1], 1, 'test_regression'), {
+      task: 'mock:done fix the login bug',
+      worktree: false,
+    });
+    await settle(record.id);
+
+    const finished = store.getRun(record.id);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.outcome).toMatchObject({
+      kind: 'task_failure', reasonCode: 'test_regression', stepId: 'verify',
+    });
+    expect(finished?.steps.map((step) => ({ id: step.id, status: step.status, iterations: step.iterations }))).toEqual([
+      { id: 'implement', status: 'done', iterations: 3 },
+      { id: 'verify', status: 'failed', iterations: 3 },
+    ]);
+    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(3);
+    const retryNotes = store.readEvents(record.id)
+      .filter((event) => event.type === 'note' && typeof event.message === 'string' && event.message.includes('retrying from "implement"'));
+    expect(retryNotes.map((event) => String(event.message))).toEqual([
+      'check failed — retrying from "implement" (attempt 1/2)',
+      'check failed — retrying from "implement" (attempt 2/2)',
+    ]);
   }, 40_000);
 });
