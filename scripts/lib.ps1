@@ -166,6 +166,7 @@ function Get-ValidationDiagnosticFingerprint([string]$Diagnostic, [string]$Proje
     }
     $normalized = $normalized -replace '(?i)(\.(?:gd|cs|ps1|py|ts|tsx|js|jsx|go|rs|cpp|h)):\d+(?::\d+)?', '$1:#'
     $normalized = ($normalized -replace '\s+', ' ').Trim().ToLowerInvariant()
+    if (-not $normalized) { return $null }
     $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
 }
@@ -198,10 +199,17 @@ function Get-ValidationDiagnosticComparison($StageConfig, [string]$Root, [string
         & git -C $Root merge-base --is-ancestor ([string]$baseline.sourceHeadSha) $BaseSha 2>$null
         if ($LASTEXITCODE -ne 0) { throw 'baseline_source_not_ancestor' }
         $known = @($baseline.diagnosticFingerprints | ForEach-Object { ([string]$_).ToLowerInvariant() })
-        $fingerprints = @($Diagnostics | ForEach-Object { Get-ValidationDiagnosticFingerprint ([string]$_) $Root } | Sort-Object -Unique)
+        $fingerprintSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $unclassified = 0
+        foreach ($diagnostic in $Diagnostics) {
+            $fingerprint = Get-ValidationDiagnosticFingerprint ([string]$diagnostic) $Root
+            if ($fingerprint) { [void]$fingerprintSet.Add($fingerprint) } else { $unclassified++ }
+        }
+        $fingerprints = @($fingerprintSet | Sort-Object -Unique)
         $comparison.status = 'compared'; $comparison.reasonCode = 'baseline_compared'; $comparison.baselineSha256 = $actual
         $comparison.knownFingerprints = @($fingerprints | Where-Object { $_ -in $known })
         $comparison.newFingerprints = @($fingerprints | Where-Object { $_ -notin $known })
+        $comparison.unclassifiedCount = $unclassified
         return $comparison
     } catch {
         $comparison.status = 'unavailable'; $comparison.reasonCode = 'baseline_provenance_invalid'

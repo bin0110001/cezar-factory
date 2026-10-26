@@ -53,6 +53,7 @@ if ($env:ADAPTER_EXIT -and [int]$env:ADAPTER_EXIT -ne 0) { $status = 'failed' }
 if ($env:ADAPTER_MALFORMED) { Write-Output 'not-json'; exit 0 }
 $reason = @{ passed = 'tests_passed'; failed = 'test_failure'; skipped = 'not_applicable'; unavailable = 'tool_missing'; 'no-matching-tests' = 'no_matching_tests' }[$status]
 $result = [ordered]@{ schemaVersion = 1; status = $status; reasonCode = $reason; message = "fixture ${Stage}: $status"; matchedTests = 3; passedTests = 3; failedTests = 0; skippedTests = 0 }
+if ($env:ADAPTER_DIAGNOSTIC) { $result.diagnostics = @($env:ADAPTER_DIAGNOSTIC -split '\|\|') }
 if ($status -eq 'no-matching-tests') { $result.matchedTests = 0; $result.passedTests = 0 }
 if ($status -eq 'failed') { $result.failedTests = 1; $result.passedTests = 2 }
 Write-Output ($result | ConvertTo-Json -Compress)
@@ -93,9 +94,25 @@ validation:
     & git -C $project remote add origin https://github.com/example/project.git
     & git -C $project add .
     & git -C $project commit -qm init
+    $baselineSourceHead = (& git -C $project rev-parse HEAD).Trim()
+    $knownDiagnostic = 'C:\fixture\src\legacy.ts:10:2: Known fixture defect'
+    $knownFingerprint = Get-ValidationDiagnosticFingerprint $knownDiagnostic $project
+    $baselinePath = '.factory/validation-baseline.json'
+    $baselineFile = Join-Path $project $baselinePath
+    New-Item -ItemType Directory -Path (Split-Path -Parent $baselineFile) -Force | Out-Null
+    @{ schemaVersion = 1; createdAt = [DateTimeOffset]::UtcNow.ToString('o'); expiresAt = [DateTimeOffset]::UtcNow.AddDays(30).ToString('o'); sourceHeadSha = $baselineSourceHead; reason = 'Adapter test fixture'; diagnosticFingerprints = @($knownFingerprint) } |
+        ConvertTo-Json -Depth 4 | Set-Content $baselineFile
+    & git -C $project add -f -- $baselinePath
+    & git -C $project commit -qm 'add pinned validation baseline'
+    $baselineHash = (Get-FileHash -LiteralPath $baselineFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    $configText = $configText.Replace('    appliesTo:' + "`n" + '      - "src/**"', "    baselinePath: `"$baselinePath`"`n    baselineSha256: `"$baselineHash`"`n    appliesTo:`n      - `"src/**`"")
+    $configText = $configText.Replace('    command: "pwsh ./runner.ps1 full"', "    command: `"pwsh ./runner.ps1 full`"`n    baselinePath: `"$baselinePath`"`n    baselineSha256: `"$baselineHash`"")
+    Set-Content $configPath ($configText.Replace('__FACTORY_VERSION__', (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()))
+    & git -C $project add -- .ai/factory/factory.config.yaml
+    & git -C $project commit -qm 'pin validation baseline'
     $baselineHead = (& git -C $project rev-parse HEAD).Trim()
     New-Item -ItemType Directory -Path (Join-Path $project '.factory') -Force | Out-Null
-    @{ schemaVersion = 1; environment = @{ repositoryHeadSha = $baselineHead } } |
+    @{ schemaVersion = 1; environment = @{ repositoryHeadSha = $baselineHead; projectFactoryConfigSha256 = (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash.ToLowerInvariant() } } |
         ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
     New-Item -ItemType Directory -Path (Join-Path $project 'src') -Force | Out-Null
     Set-Content (Join-Path $project 'src/fixture.ts') 'export const validationFixture = true'
@@ -133,13 +150,38 @@ validation:
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
     }
     Remove-Item Env:ADAPTER_EXPECT_CHANGED_FILE
+    Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
+    $env:ADAPTER_DIAGNOSTIC = $knownDiagnostic + '||   '
+    $run = Run-Stage full
+    Check 'pinned baseline classifies a known diagnostic in the receipt' (
+        $run.Code -eq 0 -and $run.Receipt.diagnosticComparison.status -eq 'compared' -and
+        $run.Receipt.diagnosticComparison.knownFingerprints.Count -eq 1 -and
+        $run.Receipt.diagnosticComparison.newFingerprints.Count -eq 0 -and $run.Receipt.diagnosticComparison.unclassifiedCount -eq 1)
+    $env:ADAPTER_RESULT_STATUS = 'failed'
+    $env:ADAPTER_DIAGNOSTIC = $knownDiagnostic
+    $run = Run-Stage full
+    Check 'known baseline diagnostics never turn a failing validation into a pass' (
+        $run.Code -ne 0 -and $run.Receipt.status -eq 'failed' -and $run.Receipt.diagnosticComparison.knownFingerprints.Count -eq 1)
+    Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
+    $env:ADAPTER_DIAGNOSTIC = 'src/new.ts:42:7: New fixture defect'
+    $run = Run-Stage full
+    Check 'new diagnostic remains new without changing validation status' (
+        $run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.diagnosticComparison.newFingerprints.Count -eq 1)
+    $env:ADAPTER_DIAGNOSTIC = $knownDiagnostic
+    Add-Content -LiteralPath $baselineFile -Value 'tampered'
+    $run = Run-Stage full
+    Check 'modified baseline is unavailable and cannot classify defects as known' (
+        $run.Receipt.diagnosticComparison.status -eq 'unavailable' -and
+        $run.Receipt.diagnosticComparison.reasonCode -eq 'baseline_hash_mismatch' -and
+        $run.Receipt.diagnosticComparison.knownFingerprints.Count -eq 0)
+    Remove-Item Env:ADAPTER_DIAGNOSTIC -ErrorAction SilentlyContinue
+
     $originalConfig = Get-Content -Raw $configPath
     $originalConfig.Replace('- "src/**"', '- "docs/**"') | Set-Content $configPath
     $beforeCount = @(Get-Content (Join-Path $project '.factory/counter.txt')).Count
     $run = Run-Stage changed
     Check 'non-applicable targeted changes skip without running tests' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped' -and $run.Receipt.reasonCode -eq 'validation_not_applicable' -and @(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq $beforeCount)
     $originalConfig | Set-Content $configPath
-    Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
 
     foreach ($statusCase in @(
         @{ Status = 'no-matching-tests'; Reason = 'validation_result_no_matching_tests'; Fixture = 'validation-result-no-matching-tests.json' },
@@ -269,6 +311,8 @@ validation:
     Remove-Item Env:ADAPTER_COMMIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_EXPECT_CHANGED_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_RESULT_FILE -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_DIAGNOSTIC -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if ($peer -and (Test-Path -LiteralPath $peer)) {
