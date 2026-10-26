@@ -181,6 +181,9 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     ]);
     const prompts = readFileSync(stdinFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line).userText as string);
     expect(prompts).toHaveLength(3);
+    expect(prompts[0]).toMatch(/Active workflow time remaining: \d+s\./);
+    expect(prompts[0]).toContain('Shared repair budget: 0 of 2 attempts used; 2 remain.');
+    expect(prompts[0]).toContain('Checks that can retry this agent: verify (up to 2 repairs).');
     expect(prompts[1]).toContain('Repair attempt 1 of 2 for check "verify" (exit 1).');
     expect(prompts[1]).toContain('Shared repair budget: 1 of 2 attempts used; 1 remain.');
     expect(prompts[1]).toMatch(/Active workflow time remaining: \d+s\./);

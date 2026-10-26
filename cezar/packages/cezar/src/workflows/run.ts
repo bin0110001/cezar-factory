@@ -4973,6 +4973,25 @@ export class RunManager {
     // `execute`. Expand before the chain/check/attachment prefixes so the leading slash still
     // matches; a leading `/name` that is not a known skill passes through byte-for-byte.
     userPrompt = expandRegistrySlashSkillText(userPrompt, state.skills ?? []);
+    const currentRun = this.store.getRun(runId);
+    const repairChecks = currentRun?.workflowDef?.steps?.filter((candidate) => candidate.onFail?.retry === step.id) ?? [];
+    const remainingRunSeconds = state.workflowDeadlineAt === undefined
+      ? null
+      : Math.max(0, Math.ceil((state.workflowDeadlineAt - Date.now()) / 1000));
+    if (remainingRunSeconds !== null || repairChecks.length) {
+      const budgetLines = [
+        `Active workflow time remaining: ${remainingRunSeconds === null ? 'not configured' : `${remainingRunSeconds}s`}.`,
+      ];
+      if (repairChecks.length) {
+        const maxRepairAttempts = currentRun?.workflowDef?.maxRepairAttempts ?? 3;
+        const repairAttemptsUsed = currentRun?.repairAttemptsUsed ?? 0;
+        budgetLines.push(`Shared repair budget: ${repairAttemptsUsed} of ${maxRepairAttempts} attempts used; ${Math.max(0, maxRepairAttempts - repairAttemptsUsed)} remain.`);
+        budgetLines.push(`Checks that can retry this agent: ${repairChecks.map((candidate) => `${candidate.id} (up to ${candidate.onFail?.max ?? 2} repairs)`).join(', ')}.`);
+      } else {
+        budgetLines.push('No check-to-agent repair loop is configured for this step.');
+      }
+      userPrompt += `\n\nExecution budget:\n${budgetLines.map((line) => `- ${line}`).join('\n')}`;
+    }
     if (chainNote) userPrompt = `${chainNote}\n\n---\n\n${userPrompt}`;
     // A commander recovered after a restart opens its first session holding whatever its children
     // reported while it was gone (spec Q7). Prepended and cleared here, after the slash expansion
