@@ -28,8 +28,9 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $f = $a[$a.IndexOf('--body-file') + 1]
-    $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
+    $state.lastCommentExpectedRevision = if ($issue) { [string]$issue.updatedAt } else { [string]$state.updatedAt }
+    $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
     else { $state.updatedAt = [DateTime]::UtcNow.ToString('o') }
     if ($state.ContainsKey('failNextCommentAfterWrite') -and $state.failNextCommentAfterWrite) {

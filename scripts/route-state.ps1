@@ -195,7 +195,6 @@ function Add-Comment([string]$Body) {
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
     $operation = "factory:route-effect:${Event}:${Issue}:$hash"
     $marker = "<!-- $operation -->"
-    $markedBody = $Body + "`n`n" + $marker
     $before = Get-LiveIssue
     $prior = @($before.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
     if ($prior.Count) {
@@ -203,6 +202,25 @@ function Add-Comment([string]$Body) {
         return
     }
     Assert-EffectRevision $before $current
+    $action = [ordered]@{
+        schemaVersion = 1
+        target = [ordered]@{ kind = 'github_issue'; id = $Issue }
+        # ConvertFrom-Json may materialize ISO timestamps as DateTime values;
+        # normalize those to a culture-independent ISO representation for the
+        # persisted action contract.
+        expectedRevision = ([DateTimeOffset]$before.updatedAt).ToUniversalTime().ToString('o')
+        operation = 'github.issue.add_comment'
+        arguments = [ordered]@{ bodySha256 = $hash }
+        rationale = [string]$Event
+        operationKey = $operation
+    }
+    if (-not $action.expectedRevision -or $action.rationale.Length -gt 500 -or $action.operationKey.Length -gt 256) {
+        Fail 'comment action is missing a bounded revision, rationale or operation key'
+    }
+    $actionJson = $action | ConvertTo-Json -Compress -Depth 6
+    $actionPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($actionJson))
+    $actionMarker = "<!-- factory:effect-action:v1:$actionPayload -->"
+    $markedBody = $Body + "`n`n" + $marker + "`n" + $actionMarker
     $f = [IO.Path]::GetTempFileName()
     try {
         [IO.File]::WriteAllText($f, $markedBody)

@@ -594,7 +594,7 @@ try {
         $output = & pwsh -NoProfile -File $val -Kind implementation -Path $f | ConvertFrom-Json
         @($output.errors)
     }
-    function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments); prMerged = $false; prs = @() } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
+    function Set-Gh($Labels, $Comments = @()) { @{ labels = @($Labels); comments = @($Comments); updatedAt = '2026-10-25T00:00:00.0000000Z'; prMerged = $false; prs = @() } | ConvertTo-Json -Depth 5 | Set-Content $env:FAKE_GH_STATE }
     function Get-Gh { $o = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json; if (-not $o.PSObject.Properties['created']) { $o | Add-Member created @() }; $o }
     $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
     function Invoke-Lease([string]$Action, [string]$Owner = '') {
@@ -751,6 +751,13 @@ try {
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
+    $planComment = [string]((Get-Gh).comments[0])
+    $actionMarkerMatch = [regex]::Match($planComment, 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
+    $planCommentAction = if ($actionMarkerMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($actionMarkerMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
+    $routeReceiptState = Get-Gh
+    $expectedRouteActionRevision = ([DateTimeOffset]$routeReceiptState.lastCommentExpectedRevision).ToUniversalTime().ToString('o')
+    Assert 'route comment receipt records a schema-shaped revision-bound action' ($null -ne $planCommentAction -and $planCommentAction.schemaVersion -eq 1 -and $planCommentAction.target.kind -eq 'github_issue' -and $planCommentAction.target.id -eq 7 -and $planCommentAction.expectedRevision -eq $expectedRouteActionRevision -and $planCommentAction.operation -eq 'github.issue.add_comment' -and $planCommentAction.arguments.bodySha256 -match '^[a-f0-9]{64}$' -and $planCommentAction.rationale -eq 'plan-result' -and $planCommentAction.operationKey -match '^factory:route-effect:plan-result:7:')
+    Assert 'route comment receipt satisfies the shared workflow effect action schema' (Test-Json -Json ($planCommentAction | ConvertTo-Json -Compress -Depth 6) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
     $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: plan-result retry reuses matching comment receipt' ((Invoke-Route 'plan-result' $plan) -eq 0 -and @((Get-Gh).comments).Count -eq 1)
     $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
