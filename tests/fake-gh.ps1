@@ -20,6 +20,11 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     if ($issue) { $issue.labels = @($issueLabels | Sort-Object -Unique) }
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
     else { $state.updatedAt = [DateTime]::UtcNow.ToString('o') }
+    if ($state.ContainsKey('failNextEditAfterWrite') -and $state.failNextEditAfterWrite) {
+        $state.failNextEditAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $f = $a[$a.IndexOf('--body-file') + 1]
@@ -27,6 +32,11 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
     else { $state.updatedAt = [DateTime]::UtcNow.ToString('o') }
+    if ($state.ContainsKey('failNextCommentAfterWrite') -and $state.failNextCommentAfterWrite) {
+        $state.failNextCommentAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
     $state.issueCloseRequested = $true

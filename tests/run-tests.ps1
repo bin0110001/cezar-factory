@@ -703,10 +703,19 @@ try {
     Assert 'resolved: stale marker removed once issue is open' ((Invoke-Resolved) -eq 0 -and -not (Test-Path $marker))
     Set-Gh @('factory:working')
     Assert 'route: implement success -> review' ((Invoke-Route 'implement-result' $impl) -eq 0 -and (Get-Gh).labels -contains 'factory:review')
+    Set-Gh @('factory:working')
+    $ambiguousLabelState = Get-Gh; $ambiguousLabelState | Add-Member -NotePropertyName failNextEditAfterWrite -NotePropertyValue $true -Force; $ambiguousLabelState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $ambiguousLabelRoute = Invoke-Route 'implement-result' $impl
+    Assert 'route: ambiguous lifecycle response is reconciled from live state' ($ambiguousLabelRoute -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and (Get-Gh).labels -notcontains 'factory:working')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
     Assert 'route: execution completion recorded' ($execution.execution.status -eq 'complete' -and $execution.execution.result -eq 'success' -and $execution.execution.pr -eq $impl.pr)
     Set-Gh @('factory:working')
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
+    Set-Gh @('factory:working')
+    $ambiguousCommentState = Get-Gh; $ambiguousCommentState | Add-Member -NotePropertyName failNextCommentAfterWrite -NotePropertyValue $true -Force; $ambiguousCommentState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $ambiguousCommentRoute = Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })
+    $ambiguousCommentResult = Get-Gh
+    Assert 'route: ambiguous comment response is reconciled without duplicate effect' ($ambiguousCommentRoute -eq 0 -and @($ambiguousCommentResult.comments | Where-Object { $_ -match 'factory:route-effect:implement-result:7:' }).Count -eq 1 -and $ambiguousCommentResult.labels -contains 'factory:investigate')
     Set-Gh @('factory:review')
     Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = '' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')

@@ -69,11 +69,23 @@ if ($Event -notin 'start', 'already-resolved') {
 if ($Issue -lt 1) { Fail 'issue number required' }
 
 # --- GitHub helpers ---------------------------------------------------------
-$view = Invoke-Gh issue view $Issue --json 'labels,comments' | ConvertFrom-Json
+$view = Invoke-Gh issue view $Issue --json 'labels,comments,updatedAt' | ConvertFrom-Json
 $labels = @($view.labels | ForEach-Object { $_.name })
 $comments = @($view.comments | ForEach-Object { $_.body })
 $current = @($labels | Where-Object { $stateLabels -contains $_ })
 $currentComplexity = @($labels | Where-Object { $complexityLabels -contains $_ })
+$script:effectRevision = [string]$view.updatedAt
+
+function Get-LiveIssue { Invoke-Gh issue view $Issue --json 'labels,comments,updatedAt' | ConvertFrom-Json }
+function Get-LabelNames($IssueView) { @($IssueView.labels | ForEach-Object { [string]$_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) }
+function Get-StateNames([string[]]$IssueLabels) { @($IssueLabels | Where-Object { $stateLabels -contains $_ } | Sort-Object) }
+function Assert-EffectRevision($IssueView, [string[]]$ExpectedStates) {
+    if ([string]$IssueView.updatedAt -ne $script:effectRevision) { Fail 'issue revision changed before the side effect; refusing stale workflow action' }
+    $liveStates = @(Get-StateNames (Get-LabelNames $IssueView))
+    if (($liveStates -join "`n") -ne (@($ExpectedStates | Sort-Object) -join "`n")) {
+        Fail "issue lifecycle state changed before the side effect; found [$($liveStates -join ', ')]"
+    }
+}
 
 function Assert-Source([string[]]$Allowed) {
     if ($current.Count -eq 0 -or -not ($current | Where-Object { $Allowed -contains $_ })) {
@@ -81,43 +93,121 @@ function Assert-Source([string[]]$Allowed) {
     }
 }
 function Set-State([string]$Target) {
-    $remove = @($current | Where-Object { $_ -ne $Target })
+    $before = Get-LiveIssue
+    Assert-EffectRevision $before $current
+    $beforeLabels = @(Get-LabelNames $before)
+    $beforeStates = @(Get-StateNames $beforeLabels)
+    $remove = @($beforeStates | Where-Object { $_ -ne $Target })
     $ghArgs = @('issue', 'edit', $Issue)
-    if ($current -notcontains $Target) { $ghArgs += '--add-label', $Target }
+    if ($beforeStates -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
-    if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
+    if ($ghArgs.Count -gt 3) {
+        try { Invoke-Gh @ghArgs | Out-Null }
+        catch {
+            $afterAmbiguous = Get-LiveIssue
+            $ambiguousStates = @(Get-StateNames (Get-LabelNames $afterAmbiguous))
+            if ($ambiguousStates.Count -ne 1 -or $ambiguousStates[0] -ne $Target) { throw }
+            $script:effectRevision = [string]$afterAmbiguous.updatedAt
+            $script:current = @($ambiguousStates)
+            $script:labels = @(Get-LabelNames $afterAmbiguous)
+            return
+        }
+    }
+    $after = Get-LiveIssue
+    $afterStates = @(Get-StateNames (Get-LabelNames $after))
+    if ($afterStates.Count -ne 1 -or $afterStates[0] -ne $Target) { Fail "lifecycle label effect is unresolved; expected only '$Target'" }
+    $script:effectRevision = [string]$after.updatedAt
+    $script:current = @($afterStates)
+    $script:labels = @(Get-LabelNames $after)
 }
 function Set-Complexity([string]$Target) {
     if ($complexityLabels -notcontains $Target) { Fail "unknown complexity label '$Target'" }
-    $remove = @($currentComplexity | Where-Object { $_ -ne $Target })
+    $before = Get-LiveIssue
+    Assert-EffectRevision $before $current
+    $beforeLabels = @(Get-LabelNames $before)
+    $liveComplexity = @($beforeLabels | Where-Object { $complexityLabels -contains $_ })
+    if ((@($liveComplexity | Sort-Object) -join "`n") -ne (@($currentComplexity | Sort-Object) -join "`n")) { Fail 'issue complexity changed before the side effect' }
+    $remove = @($liveComplexity | Where-Object { $_ -ne $Target })
     $ghArgs = @('issue', 'edit', $Issue)
-    if ($currentComplexity -notcontains $Target) { $ghArgs += '--add-label', $Target }
+    if ($liveComplexity -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
-    if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
+    if ($ghArgs.Count -gt 3) {
+        try { Invoke-Gh @ghArgs | Out-Null }
+        catch {
+            $afterAmbiguous = Get-LiveIssue
+            $afterComplexity = @(Get-LabelNames $afterAmbiguous | Where-Object { $complexityLabels -contains $_ })
+            if ($afterComplexity.Count -ne 1 -or $afterComplexity[0] -ne $Target) { throw }
+            $script:effectRevision = [string]$afterAmbiguous.updatedAt
+            $script:currentComplexity = @($afterComplexity)
+            $script:labels = @(Get-LabelNames $afterAmbiguous)
+            return
+        }
+    }
+    $after = Get-LiveIssue
+    $afterComplexity = @(Get-LabelNames $after | Where-Object { $complexityLabels -contains $_ })
+    if ($afterComplexity.Count -ne 1 -or $afterComplexity[0] -ne $Target) { Fail "complexity label effect is unresolved; expected only '$Target'" }
+    $script:effectRevision = [string]$after.updatedAt
+    $script:currentComplexity = @($afterComplexity)
+    $script:labels = @(Get-LabelNames $after)
 }
 function Set-Classification([string]$Type, [string]$Risk) {
     if ($Type -notmatch '^type:' -or $Risk -notmatch '^risk:') { Fail 'intake classification labels are invalid' }
-    $add = @(); foreach ($label in @($Type, $Risk)) { if ($labels -notcontains $label) { $add += $label } }
+    $before = Get-LiveIssue
+    Assert-EffectRevision $before $current
+    $beforeLabels = @(Get-LabelNames $before)
+    $add = @(); foreach ($label in @($Type, $Risk)) { if ($beforeLabels -notcontains $label) { $add += $label } }
     if ($add.Count) { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
+    $after = Get-LiveIssue
+    $afterLabels = @(Get-LabelNames $after)
+    if (@($afterLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { Fail 'classification label effect is unresolved' }
+    $script:effectRevision = [string]$after.updatedAt
+    $script:labels = $afterLabels
 }
 function Add-Comment([string]$Body) {
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
+    $operation = "factory:route-effect:${Event}:${Issue}:$hash"
+    $marker = "<!-- $operation -->"
+    $markedBody = $Body + "`n`n" + $marker
+    $before = Get-LiveIssue
+    $prior = @($before.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+    if ($prior.Count) {
+        $script:effectRevision = [string]$before.updatedAt
+        return
+    }
+    Assert-EffectRevision $before $current
     $f = [IO.Path]::GetTempFileName()
-    try { [IO.File]::WriteAllText($f, $Body); Invoke-Gh issue comment $Issue --body-file $f | Out-Null } finally { Remove-Item $f -ErrorAction SilentlyContinue }
+    try {
+        [IO.File]::WriteAllText($f, $markedBody)
+        try { Invoke-Gh issue comment $Issue --body-file $f | Out-Null }
+        catch {
+            $afterAmbiguous = Get-LiveIssue
+            $found = @($afterAmbiguous.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+            if (-not $found.Count) { throw }
+            $script:effectRevision = [string]$afterAmbiguous.updatedAt
+            return
+        }
+        $after = Get-LiveIssue
+        $found = @($after.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+        if (-not $found.Count) { Fail "comment side effect is unresolved for $operation" }
+        $script:effectRevision = [string]$after.updatedAt
+    } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
 function Add-PlanCommentOnce([string]$Body) {
     $prefix = "<!-- factory:plan-result:${Issue}:"
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
     $receipt = "$prefix$hash -->"
-    $fresh = Invoke-Gh issue view $Issue --json 'labels,comments' | ConvertFrom-Json
-    $freshStates = @($fresh.labels | ForEach-Object { [string]$_.name } | Where-Object { $stateLabels -contains $_ })
+    $fresh = Get-LiveIssue
+    $freshStates = @(Get-StateNames (Get-LabelNames $fresh))
     if ($freshStates.Count -ne 1 -or $freshStates[0] -notin @('factory:needs-plan', 'factory:new') -or $current -notcontains $freshStates[0]) {
         Fail 'issue state changed before the plan-result comment could be applied'
     }
     $prior = @($fresh.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($prefix) })
     if ($prior.Count -gt 0) {
         if ($prior | Where-Object { $_ -notmatch [regex]::Escape($receipt) }) { Fail 'a prior plan-result comment has different content; reconcile the issue before retrying' }
+        $script:effectRevision = [string]$fresh.updatedAt
         return
     }
+    Assert-EffectRevision $fresh $current
     Add-Comment ($Body + "`n`n$receipt")
 }
 function Get-SelectedWorker([string[]]$IssueLabels) {
