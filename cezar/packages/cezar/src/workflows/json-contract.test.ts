@@ -8,6 +8,17 @@ import { checkFailureOutcome, normalizeWorkflowDoc, shouldRetryCheck, stepsIssue
 const factoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 
 describe('workflow JSON contracts', () => {
+  it('carries the shared repair budget through file parsing and applies the three-repair default', () => {
+    const steps = [{ id: 'implement', prompt: '{{task}}' }];
+    const parsedDefault = workflowFileSchema.parse({ name: 'default-budget', steps });
+    const parsedConfigured = workflowFileSchema.parse({ name: 'configured-budget', maxRepairAttempts: 5, steps });
+
+    expect(normalizeWorkflowDoc(parsedDefault).maxRepairAttempts).toBe(3);
+    expect(workflowDefSchema.parse({ ...normalizeWorkflowDoc(parsedDefault), source: 'file' }).maxRepairAttempts).toBe(3);
+    expect(normalizeWorkflowDoc(parsedConfigured).maxRepairAttempts).toBe(5);
+    expect(workflowDefSchema.parse({ ...normalizeWorkflowDoc(parsedConfigured), source: 'file' }).maxRepairAttempts).toBe(5);
+  });
+
   it.each(['plan.yaml', 'maintenance.yaml', 'implement.yaml', 'investigate.yaml', 'fix-review.yaml'])('loads Factory workflow %s output contracts as valid definitions', (file) => {
     const parsed = workflowFileSchema.safeParse(parseYaml(readFileSync(join(factoryRoot, 'workflows', file), 'utf8')));
     expect(parsed.success).toBe(true);

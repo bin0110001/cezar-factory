@@ -913,16 +913,9 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
       source: 'built-in',
       steps: [
         { id: 'implement', name: 'implement', skill: 'implement', prompt: '{{task}}' },
-        { id: 'verify', command: 'sleep 10', timeoutSeconds: 1, onFail: { retry: 'implement', max: 2 } },
+        { id: 'verify', command: "exec node -e 'setTimeout(() => {}, 10000)'", timeoutSeconds: 1, onFail: { retry: 'implement', max: 2 } },
       ],
     };
-    const internal = manager as unknown as {
-      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number; timedOut?: boolean }>;
-    };
-    const originalRunCheckStep = internal.runCheckStep.bind(manager);
-    internal.runCheckStep = async (_state, step) => (step as { id: string }).id === 'verify'
-      ? { ok: false, output: 'check timed out after 1s', exitCode: 124, timedOut: true }
-      : originalRunCheckStep(_state, step);
     const record = manager.startRun(workflow, { task: 'mock:done check timeout', worktree: false });
     const deadline = Date.now() + 15_000;
     while (manager.isActive(record.id)) {
@@ -934,7 +927,6 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(finished?.outcome).toMatchObject({ kind: 'timeout', reasonCode: 'check_timeout', stepId: 'verify' });
     expect(finished?.steps.map((step) => step.status)).toEqual(['done', 'failed']);
     expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(1);
-    internal.runCheckStep = originalRunCheckStep;
   }, 30_000);
 
   it('validates and publishes an agent output before dispatching its consumer', async () => {

@@ -78,7 +78,7 @@ export const runOutcomeSchema = z.discriminatedUnion('kind', [
   outcomeWithStep('completed', ['workflow_completed', 'explicit_finish', 'legacy_completed']),
   outcomeWithStep('no_work', ['no_work']),
   outcomeWithStep('skipped', ['precondition_not_met']),
-  outcomeWithStep('blocked', ['precondition_not_met', 'policy_blocked', 'dependency_unavailable', 'provider_quota', 'human_input_required']),
+  outcomeWithStep('blocked', ['precondition_not_met', 'policy_blocked', 'dependency_unavailable', 'provider_quota', 'human_input_required', 'attempt_budget_exhausted']),
   outcomeWithStep('task_failure', ['task_failed', 'work_verdict', 'test_regression']),
   outcomeWithStep('contract_failure', ['input_invalid', 'input_schema_invalid', 'condition_schema_invalid', 'output_missing', 'output_malformed', 'output_invalid', 'output_schema_invalid']),
   outcomeWithStep('infrastructure_failure', ['infrastructure_failed', 'engine_interrupted', 'artifact_integrity_failed', 'cleanup_failed', 'configuration', 'missing_command', 'authentication', 'provider_unavailable', 'provider_quota', 'transient_transport', 'malformed_result', 'unknown']),
@@ -246,6 +246,8 @@ export const runRecordSchema = z.object({
   status: runStatusSchema,
   /** Typed meaning of the terminal state; absent while non-terminal and on old records. */
   outcome: runOutcomeSchema.optional(),
+  /** Number of check-to-agent repairs already consumed; never reset by worker restart. */
+  repairAttemptsUsed: z.number().int().min(0).optional(),
   /** Durable cleanup intent and receipt for restartable workflow finalizers. */
   finalization: z.object({
     status: z.enum(['running', 'complete', 'failed']),

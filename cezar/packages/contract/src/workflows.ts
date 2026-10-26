@@ -82,6 +82,8 @@ export type WorkflowStepDef = z.infer<typeof workflowStepDefSchema>;
 export const workflowDefSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  /** Shared cap across every check-to-agent repair loop in this run. */
+  maxRepairAttempts: z.number().int().min(0).max(20).optional(),
   steps: z.array(workflowStepDefSchema),
   source: z.enum(['built-in', 'file']),
   /** Absent on built-ins — which is exactly what makes them undeletable. */
@@ -118,6 +120,7 @@ export const saveWorkflowInputSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     description: z.string().max(2_000, 'must be at most 2000 characters').optional(),
+    maxRepairAttempts: z.number().int().min(0).max(20).optional(),
     steps: z.array(workflowStepDefSchema).min(1).max(8).optional(),
     skills: z.array(z.string().trim().min(1)).min(1).max(8).optional(),
     overwrite: z.boolean().optional(),

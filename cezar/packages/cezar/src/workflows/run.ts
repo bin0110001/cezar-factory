@@ -4555,8 +4555,13 @@ export class RunManager {
       }
 
       const used = retriesUsed.get(step.id) ?? 0;
-      if (step.onFail && used < step.onFail.max) {
+      const repairAttemptsUsed = this.store.getRun(runId)?.repairAttemptsUsed ?? 0;
+      const maxRepairAttempts = workflow.maxRepairAttempts ?? 3;
+      if (step.onFail && used < step.onFail.max && repairAttemptsUsed < maxRepairAttempts) {
         retriesUsed.set(step.id, used + 1);
+        this.store.updateRun(runId, { repairAttemptsUsed: repairAttemptsUsed + 1 });
+        // Reserve the shared repair before looping. A process restart cannot reset the budget.
+        this.store.flush({ throwOnError: true });
         checkFailure = output;
         this.finishStep(runId, step.id, 'failed', 'check failed — looping back', emit);
         const retryIdx = workflow.steps.findIndex((s) => s.id === step.onFail?.retry);
@@ -4572,6 +4577,13 @@ export class RunManager {
         }
         i = retryIdx;
         continue;
+      }
+      if (step.onFail && used < step.onFail.max && repairAttemptsUsed >= maxRepairAttempts) {
+        const message = `check "${step.id}" failed; shared repair budget exhausted (${repairAttemptsUsed}/${maxRepairAttempts})`;
+        this.finishStep(runId, step.id, 'failed', message, emit);
+        runError = message;
+        terminalOutcome = { kind: 'blocked', reasonCode: 'attempt_budget_exhausted', stepId: step.id };
+        break;
       }
 
       this.finishStep(runId, step.id, 'failed', `\`${step.command}\` exited non-zero`, emit);

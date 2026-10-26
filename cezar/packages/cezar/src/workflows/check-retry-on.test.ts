@@ -171,4 +171,40 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
       'check failed — retrying from "implement" (attempt 2/2)',
     ]);
   }, 40_000);
+
+  it('shares and persists one repair budget across multiple check retry loops', async () => {
+    const workflow: WorkflowDef = {
+      name: 'shared-repair-budget',
+      source: 'file',
+      maxRepairAttempts: 2,
+      steps: [
+        { id: 'implement', name: 'Implement', prompt: '{{task}}' },
+        {
+          id: 'first-check',
+          command: 'if [ ! -f .first-check-ran ]; then touch .first-check-ran; exit 1; fi; exit 0',
+          onFail: { retry: 'implement', max: 2, retryOn: [1] },
+        },
+        {
+          id: 'second-check',
+          command: 'echo regression >&2; exit 1',
+          onFail: { retry: 'implement', max: 2, retryOn: [1] },
+        },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'mock:done repair budget', worktree: false });
+    await settle(record.id);
+
+    const finished = store.getRun(record.id);
+    expect(finished?.status).toBe('failed');
+    expect(finished?.outcome).toMatchObject({
+      kind: 'blocked', reasonCode: 'attempt_budget_exhausted', stepId: 'second-check',
+    });
+    expect(finished?.repairAttemptsUsed).toBe(2);
+    expect(finished?.steps.map((step) => step.iterations)).toEqual([3, 3, 2]);
+    expect(readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n')).toHaveLength(3);
+
+    store.flush();
+    const reopenedStore = RunStore.open(join(repoRoot, '.ai/cezar'));
+    expect(reopenedStore.getRun(record.id)?.repairAttemptsUsed).toBe(2);
+  }, 40_000);
 });

@@ -255,6 +255,8 @@ export const runRecordSchema = z.object({
   status: z.enum(['queued', 'running', 'waiting', 'review', 'done', 'failed', 'cancelled']),
   /** Additive typed terminal semantics. An invalid legacy value is dropped without losing its run. */
   outcome: runOutcomeSchema.optional().catch(undefined),
+  /** Number of check-to-agent repairs already consumed; never reset by worker restart. */
+  repairAttemptsUsed: z.number().int().min(0).optional().catch(undefined),
   /** Durable cleanup intent and receipt for restartable workflow finalizers. */
   finalization: z.object({
     status: z.enum(['running', 'complete', 'failed']),
@@ -1029,6 +1031,7 @@ export class RunStore extends EventEmitter {
       status: 'queued',
       createdAt: new Date().toISOString(),
       tokensUsed: 0,
+      repairAttemptsUsed: 0,
       archived: false,
       steps: input.steps.map((s) => ({
         ...s,

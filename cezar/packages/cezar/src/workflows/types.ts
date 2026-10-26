@@ -110,6 +110,7 @@ export const workflowFileSchema = z
   .object({
     name: z.string().min(1),
     description: z.string().optional(),
+    maxRepairAttempts: z.number().int().min(0).max(20).optional(),
     steps: z.array(workflowStepSchema).min(1).optional(),
     skills: z.array(z.string().trim().min(1)).min(1).optional(),
   })
@@ -235,6 +236,8 @@ export function shouldRetryCheck(step: Pick<WorkflowStepDef, 'onFail' | 'failure
 export const workflowDefSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  /** Aggregate retry-to-agent ceiling shared across all checks in the run. */
+  maxRepairAttempts: z.number().int().min(0).max(20).optional(),
   steps: z.array(workflowStepSchema),
   source: z.enum(['built-in', 'file']),
   path: z.string().optional(),
@@ -262,11 +265,13 @@ export function skillsToSteps(skills: string[]): WorkflowStepDef[] {
 export function normalizeWorkflowDoc(doc: WorkflowDoc): {
   name: string;
   description?: string;
+  maxRepairAttempts?: number;
   steps: WorkflowStepDef[];
 } {
   return {
     name: doc.name,
     ...(doc.description ? { description: doc.description } : {}),
+    maxRepairAttempts: doc.maxRepairAttempts ?? 3,
     steps: doc.steps ?? skillsToSteps(doc.skills ?? []),
   };
 }
