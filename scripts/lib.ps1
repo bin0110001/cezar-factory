@@ -113,6 +113,7 @@ function Invoke-FactoryValidation {
     $receipt = [ordered]@{
         schemaVersion = 1; issue = 0; repository = ''; pr = ''; headSha = ''
         stage = $Stage; status = 'error'; exitCode = 1
+        reasonCode = 'validation_error'
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -141,22 +142,34 @@ function Invoke-FactoryValidation {
         }
         if ($Task -match '(?:issues/|#)?([1-9][0-9]*)$') { $receipt.issue = [int]$Matches[1] }
         if (Test-Path (Join-Path $root '.factory/already-resolved.json')) {
-            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Issue already resolved.'
+            $receipt.status = 'skipped'; $receipt.reasonCode = 'issue_already_resolved'; $receipt.exitCode = 0; $receipt.message = 'Issue already resolved.'
             return 0
         }
         $configPath = Join-Path $root '.ai/factory/factory.config.yaml'
+        if (-not (Test-Path $configPath)) {
+            $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_config_missing'
+            $receipt.exitCode = 2; $receipt.message = "Project validation config is missing: $configPath"
+            return 1
+        }
         $config = Read-FactoryConfig $configPath
         if (-not $config.Contains('validation') -or $null -eq $config.validation -or -not $config.validation.Contains($Stage)) {
-            throw "Configured validation.$Stage command is missing from $configPath."
+            $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
+            $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage command is missing from $configPath."
+            return 1
         }
         $command = ([string]$config.validation[$Stage]).Trim()
-        if (-not $command) { throw "Configured validation.$Stage command is empty." }
+        if (-not $command) {
+            $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
+            $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage command is empty."
+            return 1
+        }
         if ($command -eq 'skip' -and $Stage -eq 'changed') {
-            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
+            $receipt.status = 'skipped'; $receipt.reasonCode = 'targeted_validation_unsupported'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
             return 0
         }
         if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
         $receipt.command = $command
+        $receipt.reasonCode = 'validation_completed'
         foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
             $candidate = $match.Value.Trim('"', "'")
             $candidatePath = if ([IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $root $candidate }
@@ -188,9 +201,11 @@ function Invoke-FactoryValidation {
         $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
         $receipt.exitCode = [int]$process.ExitCode
         $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
+        $receipt.reasonCode = if ($process.ExitCode -eq 0) { 'validation_passed' } else { 'validation_command_failed' }
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
+        $receipt.reasonCode = 'validation_infrastructure_error'
     } finally {
         # A project runner can modify tracked files or create untracked files
         # after the initial snapshot. Keep the receipt clean only if both the
@@ -204,6 +219,7 @@ function Invoke-FactoryValidation {
             $postRunStatus.Count -eq 0 -and $headUnchanged)
         if ($receipt.headSha -and -not $headUnchanged) {
             $receipt.status = 'error'; $receipt.exitCode = 1
+            $receipt.reasonCode = 'validation_head_changed'
             $receipt.message = 'Project HEAD changed during validation.'
         }
         [IO.File]::WriteAllBytes($stdoutPath, $stdout)

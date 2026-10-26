@@ -62,6 +62,7 @@ validation:
     foreach ($stage in 'changed', 'full', 'verify') {
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
+        Check "$stage receipt carries a structured reason code" ($run.Receipt.reasonCode -eq 'validation_passed')
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
         $expectedTimeout = if ($stage -eq 'changed') { 1200 } else { 7200 }
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
@@ -152,10 +153,10 @@ validation:
     Check 'explicit unsupported targeted stage is skipped, not passed' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped')
     $configText.Replace('  full: "pwsh ./runner.ps1 full"', '') | Set-Content $configPath
     $run = Run-Stage full
-    Check 'missing full command fails explicitly' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error')
+    Check 'missing full command is unavailable and fails closed' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_command_missing')
     Remove-Item $configPath
     $run = Run-Stage full
-    Check 'missing config fails without discovery fallback' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error')
+    Check 'missing config is unavailable without discovery fallback' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_config_missing')
 } finally {
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
