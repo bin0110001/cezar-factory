@@ -108,6 +108,14 @@ steps:
   - id: ensure-pr-closes-issue
     name: Ensure successful PR closes the issue on merge
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved]
+          properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
