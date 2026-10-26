@@ -82,6 +82,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
  $integrationGuide = Get-Content -Raw (Join-Path $factory 'docs/project-integration.md')
  $sharedFactoryGuide = Get-Content -Raw (Join-Path $factory 'docs/shared-factory.md')
+ $operationsReadinessGuide = Get-Content -Raw (Join-Path $factory 'docs/operations-readiness.md')
  $cezarIntegrationGuide = Get-Content -Raw (Join-Path $factory 'docs/cezar-integration.md')
  $agentInvocationInventory = Get-Content -Raw (Join-Path $factory 'docs/agent-invocation-inventory.md')
  $backlogReconciliationGuide = Get-Content -Raw (Join-Path $factory 'docs/backlog-reconciler.md')
@@ -89,6 +90,7 @@ foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f
 Assert 'project integration guide documents current validation receipts and stages' ($integrationGuide -match 'versioned receipt' -and $integrationGuide -match '`targeted`, `full`, and `verify`' -and $integrationGuide -match 'no_matching_tests' -and $integrationGuide -notmatch 'Projects provide three standard validation scripts')
 Assert 'project integration guide documents shared checkout instead of per-project version pins' ($integrationGuide -match 'shared Factory checkout' -and $integrationGuide -notmatch 'Pin to Specific Versions')
 Assert 'shared Factory release docs require independent review and tested post-merge promotion' ($sharedFactoryGuide -match 'independent' -and $sharedFactoryGuide -match 'After merge' -and $sharedFactoryGuide -match 'full Factory suite')
+Assert 'operations readiness uses the active Cezar runtime and distinguishes source profiles from live enablement' ($operationsReadinessGuide -match 'Factory automations execute through Cezar' -and $operationsReadinessGuide -match 'routing/automation-catalog\.json' -and $operationsReadinessGuide -match 'source profiles do not prove live enablement' -and $operationsReadinessGuide -match '/projects/cezar-factory' -and $operationsReadinessGuide -notmatch 'default:openhands|OpenHands proof of concept|ACP readiness')
 $ciWorkflow = Get-Content -Raw (Join-Path $factory '.github/workflows/ci.yml')
 Assert 'project-owned verification stays on the configured local adapter path, not hosted CI' ($ciWorkflow -notmatch '(?i)test-changed\.ps1|test-full\.ps1|factory/verify\.ps1|godot(\.exe)?\s+--headless|gdunit|dotnet test')
 $riskPolicy = Get-Content -Raw (Join-Path $factory 'policies/risk.yaml')
