@@ -116,12 +116,19 @@ import {
   DEFAULT_ALLOWED_TOOLS,
   shouldRetryCheck,
   stepKind,
+  stepsIssue,
   type WorkflowDef,
+  type WorkflowOutputFailure,
   type WorkflowStepDef,
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
+type AgentStepResult = {
+  failure?: string;
+  contractFailureReason?: WorkflowOutputFailure;
+  structuredOutput?: unknown;
+};
 
 async function configuredModelProvider(
   backend: RunnerId,
@@ -1244,6 +1251,8 @@ export class RunManager {
     input: StartRunInput,
     group?: { groupId: string; variant: string },
   ): RunRecord {
+    const workflowIssue = stepsIssue(workflow.steps);
+    if (workflowIssue) throw new Error(`invalid workflow "${workflow.name}": ${workflowIssue}`);
     // Sanitize at the manager boundary so CLI runs, workflows, variants, and
     // direct callers cannot bypass the HTTP policy.
     const effectiveInput = {
@@ -4378,6 +4387,10 @@ export class RunManager {
         iterations: iteration,
         startedAt: new Date().toISOString(),
         error: undefined,
+        output: undefined,
+        outputAttempt: undefined,
+        outputDigest: undefined,
+        outputSourceDigest: undefined,
       });
       emit({ type: 'step-start', stepId: step.id, name: step.name ?? step.id, kind, iteration });
 
@@ -4385,7 +4398,7 @@ export class RunManager {
         // The last agent step of the workflow is interactive: after its turn
         // the session stays open for follow-ups until finish/idle/cancel.
         const interactive = i === lastAgentIdx && i === workflow.steps.length - 1;
-        const failure = await this.runAgentStep(
+        const agentResult = await this.runAgentStep(
           runId,
           state,
           step,
@@ -4406,9 +4419,16 @@ export class RunManager {
         startAttachments = [];
         checkFailure = null;
         if (state.cancelled) break;
-        if (failure) {
-          this.finishStep(runId, step.id, 'failed', failure, emit);
-          runError = `step "${step.id}" failed: ${failure}`;
+        if (agentResult.failure) {
+          this.finishStep(runId, step.id, 'failed', agentResult.failure, emit);
+          runError = `step "${step.id}" failed: ${agentResult.failure}`;
+          if (agentResult.contractFailureReason) {
+            terminalOutcome = {
+              kind: 'contract_failure',
+              reasonCode: agentResult.contractFailureReason,
+              stepId: step.id,
+            };
+          }
           break;
         }
         // This step parked the workflow on a `CEZ:ASK` (#917) and its session
@@ -4430,6 +4450,14 @@ export class RunManager {
           break;
         }
         this.finishStep(runId, step.id, 'done', undefined, emit);
+        if (agentResult.structuredOutput !== undefined) {
+          this.store.updateStep(runId, step.id, {
+            output: agentResult.structuredOutput,
+            outputAttempt: iteration,
+            outputSourceDigest: workflowStepDigest(step),
+          });
+          this.store.flush({ throwOnError: true });
+        }
         i++;
         continue;
       }
@@ -4696,7 +4724,7 @@ export class RunManager {
     this.dropActive(runId, state);
   }
 
-  /** Returns an error message, or null on success. */
+  /** Returns a failure or a schema-validated structured result on success. */
   private async runAgentStep(
     runId: string,
     state: ActiveRun,
@@ -4716,7 +4744,7 @@ export class RunManager {
      *  paths are appended to `userPrompt` so the agent can operate on the
      *  real files, not just view the inline image blocks. */
     attachments: PersistedAttachment[] = [],
-  ): Promise<string | null> {
+  ): Promise<AgentStepResult> {
     let systemPrompt: string | undefined;
     if (step.skill) {
       const skill = skills.find((s) => s.name === step.skill);
@@ -4785,6 +4813,9 @@ export class RunManager {
     if (attachments.length) {
       userPrompt += `\n\n${pastedAttachmentsText(attachments, this.attachmentLibraryHint(attachments))}`;
     }
+    if (step.outputSchema) {
+      userPrompt += `\n\nFinish this workflow step by replying with exactly one JSON value matching this JSON Schema. Do not add a Markdown fence or surrounding prose:\n${JSON.stringify(step.outputSchema)}`;
+    }
 
     const sessionId = randomUUID();
     const backend = step.runner ?? taskBackend;
@@ -4794,6 +4825,7 @@ export class RunManager {
     const startTokens = stepRecord?.tokensUsed ?? 0;
     let stepCost = stepRecord?.costUsd ?? 0;
     let turnText = '';
+    let completedTurnText = '';
     let sessionError: string | undefined;
     const sink = this.makeUiSink(runId, step.id);
     const onEvent = (event: AgentEvent) => {
@@ -4836,6 +4868,7 @@ export class RunManager {
         // boundary flushes again (idempotent) as a backstop.
         sink.flushAll();
         turnText = this.store.redactRunText(runId, turnText);
+        completedTurnText = turnText;
         void this.recordTurnEnd(runId, turnText, state); // titleSummary + diffStat (#389)
         const sessionOpen = !state.cancelled && state.session?.open;
         // The twin of `runContinuation`'s read — see there for why the field is absent on
@@ -5058,7 +5091,7 @@ export class RunManager {
         modelIdentity: normalized ? formatModelIdentity(normalized.identity) : undefined,
       });
     } catch (err) {
-      if (err instanceof ModelIdentityError) return err.message;
+      if (err instanceof ModelIdentityError) return { failure: err.message };
       throw err;
     }
     // Which agent account this step spawns under, and — recorded on the step before the spawn —
@@ -5072,7 +5105,7 @@ export class RunManager {
         generateFollowups: followupsEnabled() && input.generateFollowups !== false,
       });
     } catch (err) {
-      if (err instanceof AgentTempDirError || err instanceof TrackerAgentBindingError) return err.message;
+      if (err instanceof AgentTempDirError || err instanceof TrackerAgentBindingError) return { failure: err.message };
       throw err;
     }
     this.store.updateStep(runId, step.id, { profileId: stepProfile.profileId });
@@ -5081,7 +5114,7 @@ export class RunManager {
     let session: AgentSession;
     state.currentStepId = step.id;
     this.beginUsageInvocation(runId, state, step.id);
-    if (state.cancelled) return 'cancelled';
+    if (state.cancelled) return { failure: 'cancelled' };
     try {
       session = runner.startSession(
         {
@@ -5138,7 +5171,7 @@ export class RunManager {
       );
     } catch (err) {
       state.currentStepId = undefined;
-      return err instanceof Error ? err.message : String(err);
+      return { failure: err instanceof Error ? err.message : String(err) };
     }
     state.session = session;
     state.sessionEverOpened = true;
@@ -5151,7 +5184,7 @@ export class RunManager {
       const result = await session.result;
       if (sessionError) {
         sink.sessionEnded('error', sessionError);
-        return sessionError;
+        return { failure: sessionError };
       }
       // v2 counterpart of v1's `done` (spec: the mappers leave session-close
       // events to the RunManager — only it knows how the session settled).
@@ -5159,11 +5192,25 @@ export class RunManager {
       if (!state.cancelled && this.active.get(runId) === state) {
         this.store.updateStep(runId, step.id, { tokensUsed: startTokens + result.tokensUsed });
       }
-      return null;
+      if (step.outputSchema) {
+        if (completedTurnText.length > CHECK_OUTPUT_CAP) {
+          return {
+            failure: `agent output contract failed: response exceeded ${CHECK_OUTPUT_CAP} characters`,
+            contractFailureReason: 'output_invalid',
+          };
+        }
+        const parsed = validateWorkflowOutput(completedTurnText, step.outputSchema);
+        if (!parsed.success) return { failure: parsed.message, contractFailureReason: parsed.failure };
+        if (parsed.control) {
+          return { failure: 'agent output cannot issue workflow control actions', contractFailureReason: 'output_invalid' };
+        }
+        return { structuredOutput: parsed.data };
+      }
+      return {};
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       sink.sessionEnded('error', message); // alongside v1's fatal `error`
-      return message;
+      return { failure: message };
     } finally {
       this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);

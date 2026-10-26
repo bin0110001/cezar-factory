@@ -51,7 +51,7 @@ export const workflowStepSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
-    /** Standard JSON Schema contracts for structured check data. */
+    /** Standard JSON Schema contracts for structured workflow input/output. */
     inputSchema: z.record(z.string(), z.any()).optional(),
     outputSchema: z.record(z.string(), z.any()).optional(),
     /** Standard JSON Schema over `{ task, outputs }`; a mismatch skips this step. */
@@ -166,22 +166,22 @@ export type WorkflowOutputValidation =
 /** Parse stdout against the declared output schema before exposing it downstream. */
 export function validateWorkflowOutput(raw: string, schema: Record<string, unknown>): WorkflowOutputValidation {
   if (raw.trim().length === 0) {
-    return { success: false, failure: 'output_missing', message: 'check output contract failed: stdout was empty' };
+    return { success: false, failure: 'output_missing', message: 'step output contract failed: stdout was empty' };
   }
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw.trim());
   } catch {
-    return { success: false, failure: 'output_malformed', message: 'check output contract failed: stdout was not valid JSON' };
+    return { success: false, failure: 'output_malformed', message: 'step output contract failed: stdout was not valid JSON' };
   }
   const parsed = validateWorkflowContract(schema, decoded);
   if (!parsed.success) {
     const failure = parsed.failure === 'schema_invalid' ? 'output_schema_invalid' : 'output_invalid';
-    return { success: false, failure, message: `check output contract failed: ${parsed.message}` };
+    return { success: false, failure, message: `step output contract failed: ${parsed.message}` };
   }
   const control = workflowControlOf(parsed.data);
   if (control.error) {
-    return { success: false, failure: 'output_invalid', message: `check output contract failed: ${control.error}` };
+    return { success: false, failure: 'output_invalid', message: `step output contract failed: ${control.error}` };
   }
   return { success: true, data: parsed.data, ...(control.control ? { control: control.control } : {}) };
 }
@@ -238,6 +238,11 @@ export const workflowDefSchema = z.object({
   steps: z.array(workflowStepSchema),
   source: z.enum(['built-in', 'file']),
   path: z.string().optional(),
+}).refine((definition) => {
+  const last = definition.steps.at(-1);
+  return !(last?.outputSchema && stepKind(last) === 'agent');
+}, {
+  message: 'an agent output contract requires a later workflow step to close the agent session',
 });
 
 export type WorkflowDef = z.infer<typeof workflowDefSchema>;
@@ -356,6 +361,10 @@ export function stepsIssue(steps: WorkflowStepDef[]): string | null {
   const ids = steps.map((s) => s.id);
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup) return `duplicate step id "${dup}"`;
+  const last = steps.at(-1);
+  if (last?.outputSchema && stepKind(last) === 'agent') {
+    return 'an agent output contract requires a later workflow step to close the agent session';
+  }
   const finalizerIndex = steps.findIndex((step) => step.finalizer === true);
   if (finalizerIndex >= 0 && steps.slice(finalizerIndex).some((step) => step.finalizer !== true)) {
     return 'finalizer steps must form a contiguous suffix of the workflow';

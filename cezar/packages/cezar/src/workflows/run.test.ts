@@ -907,6 +907,98 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     expect(notes[1]).toContain('you are running step 2 of 2');
   }, 60_000);
 
+  it('validates and publishes an agent output before dispatching its consumer', async () => {
+    const priorOutput = process.env.CEZ_MOCK_OUTPUT_TEXT;
+    const response = { proposal: 'defer', rationale: 'dependency is missing' };
+    process.env.CEZ_MOCK_OUTPUT_TEXT = JSON.stringify(response);
+    let consumed: unknown;
+    const internal = manager as unknown as {
+      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = internal.runCheckStep.bind(manager);
+    internal.runCheckStep = async (_state, step, _task, input) => {
+      if ((step as { id: string }).id === 'consume') {
+        consumed = (input as { outputs: Record<string, unknown> }).outputs.proposal;
+      }
+      return { ok: true, output: 'consumed', exitCode: 0 };
+    };
+    try {
+      const workflow: WorkflowDef = {
+        name: 'agent-output-contract',
+        source: 'built-in',
+        steps: [
+          {
+            id: 'proposal',
+            prompt: 'Return JSON.',
+            outputSchema: {
+              type: 'object', required: ['proposal', 'rationale'],
+              properties: { proposal: { type: 'string' }, rationale: { type: 'string' } },
+              additionalProperties: false,
+            },
+          },
+          { id: 'consume', command: 'consume' },
+        ],
+      };
+      const record = manager.startRun(workflow, { task: 'mock structured agent output', worktree: false });
+      const deadline = Date.now() + 15_000;
+      while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+        if (Date.now() > deadline) throw new Error('agent output workflow did not finish in time');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const finished = store.getRun(record.id)!;
+      const produced = finished.steps.find((step) => step.id === 'proposal');
+      expect(finished.status, finished.error).toBe('done');
+      expect(consumed).toEqual(response);
+      expect(produced).toMatchObject({ id: 'proposal', status: 'done', outputAttempt: 1, output: response });
+      expect(produced?.outputDigest ?? '').toMatch(/^[a-f0-9]{64}$/);
+      expect(produced?.outputSourceDigest ?? '').toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      internal.runCheckStep = originalRunCheckStep;
+      if (priorOutput === undefined) delete process.env.CEZ_MOCK_OUTPUT_TEXT;
+      else process.env.CEZ_MOCK_OUTPUT_TEXT = priorOutput;
+    }
+  }, 30_000);
+
+  it('fails a malformed agent output contract before running a consumer', async () => {
+    const priorOutput = process.env.CEZ_MOCK_OUTPUT_TEXT;
+    process.env.CEZ_MOCK_OUTPUT_TEXT = '{not-json';
+    let consumerRan = false;
+    const internal = manager as unknown as {
+      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    const originalRunCheckStep = internal.runCheckStep.bind(manager);
+    internal.runCheckStep = async () => {
+      consumerRan = true;
+      return { ok: true, output: 'must not run', exitCode: 0 };
+    };
+    try {
+      const workflow: WorkflowDef = {
+        name: 'malformed-agent-output-contract',
+        source: 'built-in',
+        steps: [
+          { id: 'proposal', prompt: 'Return JSON.', outputSchema: { type: 'object' } },
+          { id: 'consume', command: 'consume' },
+        ],
+      };
+      const record = manager.startRun(workflow, { task: 'mock malformed agent output', worktree: false });
+      const deadline = Date.now() + 15_000;
+      while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+        if (Date.now() > deadline) throw new Error('malformed agent output workflow did not finish in time');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(store.getRun(record.id)).toMatchObject({
+        status: 'failed',
+        outcome: { kind: 'contract_failure', reasonCode: 'output_malformed', stepId: 'proposal' },
+        steps: [{ id: 'proposal', status: 'failed' }, { id: 'consume', status: 'pending' }],
+      });
+      expect(consumerRan).toBe(false);
+    } finally {
+      internal.runCheckStep = originalRunCheckStep;
+      if (priorOutput === undefined) delete process.env.CEZ_MOCK_OUTPUT_TEXT;
+      else process.env.CEZ_MOCK_OUTPUT_TEXT = priorOutput;
+    }
+  }, 30_000);
+
   it('skips a conditional agent step before dispatch when its typed preflight output is absent', async () => {
     const notesPath = join(repoRoot, 'notes.md');
     const before = existsSync(notesPath) ? readFileSync(notesPath, 'utf8') : undefined;

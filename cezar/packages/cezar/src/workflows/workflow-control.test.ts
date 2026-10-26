@@ -166,6 +166,52 @@ describe('workflow control outputs', () => {
     return { consumed, records: records.map((record) => store.getRun(record.id)), peakConcurrentCollectors };
   }
 
+  async function runAgentOutput() {
+    const repo = mkdtempSync(join(tmpdir(), 'cez-agent-output-'));
+    roots.push(repo);
+    await exec('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n');
+    await exec('git', ['add', '-A'], { cwd: repo });
+    await exec('git', [...gitIdentity, 'commit', '-q', '-m', 'base'], { cwd: repo });
+    const store = RunStore.open(join(repo, '.ai/cezar'));
+    stores.push(store);
+    const manager = new RunManager(store, repo);
+    managers.push(manager);
+    expect(() => manager.startRun({
+      name: 'interactive-agent-output-fixture', source: 'file',
+      steps: [{ id: 'proposal', prompt: 'Return JSON.', outputSchema: { type: 'object' } }],
+    }, { task: 'invalid interactive output contract', worktree: false })).toThrow(/requires a later workflow step/);
+    let consumed: unknown;
+    const internal = manager as unknown as {
+      runAgentStep: (...args: unknown[]) => Promise<{ structuredOutput?: unknown }>;
+      runCheckStep: (...args: unknown[]) => Promise<{ ok: boolean; output: string; exitCode: number }>;
+    };
+    internal.runAgentStep = async () => ({ structuredOutput: { decision: 'defer', rationale: 'missing evidence' } });
+    internal.runCheckStep = async (_state, step, _task, input) => {
+      if ((step as { id: string }).id === 'consume') consumed = (input as { outputs: Record<string, unknown> }).outputs.proposal;
+      return { ok: true, output: 'passed', exitCode: 0 };
+    };
+    const workflow = {
+      name: 'agent-output-fixture', source: 'file' as const,
+      steps: [
+        {
+          id: 'proposal', prompt: 'Return a structured proposal.',
+          outputSchema: { type: 'object', required: ['decision', 'rationale'], properties: {
+            decision: { type: 'string' }, rationale: { type: 'string' },
+          }, additionalProperties: false },
+        },
+        { id: 'consume', command: 'consume' },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'propose', worktree: false });
+    const deadline = Date.now() + 10_000;
+    while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('agent output workflow did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return { run: store.getRun(record.id)!, consumed };
+  }
+
   it('settles no-work and marks unvisited steps skipped', async () => {
     const { repo, run } = await runControl('no_work', 'no_work', true);
     expect(run.status, run.error).toBe('done');
@@ -217,5 +263,18 @@ describe('workflow control outputs', () => {
     });
     expect(peakConcurrentCollectors).toBe(2);
     expect(records.map((record) => record?.status)).toEqual(['done', 'done']);
+  });
+
+  it('publishes an agent output contract before dispatching its downstream consumer', async () => {
+    const { run, consumed } = await runAgentOutput();
+    const produced = run.steps.find((step) => step.id === 'proposal');
+    expect(run.status).toBe('done');
+    expect(consumed).toEqual({ decision: 'defer', rationale: 'missing evidence' });
+    expect(produced).toMatchObject({
+      id: 'proposal', status: 'done', outputAttempt: 1,
+      output: { decision: 'defer', rationale: 'missing evidence' },
+    });
+    expect(produced?.outputDigest ?? '').toMatch(/^[a-f0-9]{64}$/);
+    expect(produced?.outputSourceDigest ?? '').toMatch(/^[a-f0-9]{64}$/);
   });
 });

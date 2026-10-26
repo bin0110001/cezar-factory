@@ -39,7 +39,7 @@ export const workflowStepDefSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
-    /** Standard JSON Schema contracts for structured check data. */
+    /** Standard JSON Schema contracts for structured workflow input/output. */
     inputSchema: z.record(z.string(), z.any()).optional(),
     outputSchema: z.record(z.string(), z.any()).optional(),
     /** Standard JSON Schema over `{ task, outputs }`; a mismatch skips this step. */
@@ -86,6 +86,11 @@ export const workflowDefSchema = z.object({
   source: z.enum(['built-in', 'file']),
   /** Absent on built-ins — which is exactly what makes them undeletable. */
   path: z.string().optional(),
+}).refine((definition) => {
+  const last = definition.steps.at(-1);
+  return !(last?.outputSchema && Boolean(last.prompt ?? last.skill));
+}, {
+  message: 'an agent output contract requires a later workflow step to close the agent session',
 });
 export type WorkflowDef = z.infer<typeof workflowDefSchema>;
 

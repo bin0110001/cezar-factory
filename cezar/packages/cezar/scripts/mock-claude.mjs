@@ -123,6 +123,16 @@ function writeHandoffAndTodo() {
 async function respond(userText, imageCount) {
   turn += 1;
   await sleep(250);
+  if (process.env.CEZ_MOCK_OUTPUT_TEXT) {
+    const text = process.env.CEZ_MOCK_OUTPUT_TEXT;
+    emit({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text }], usage: { input_tokens: 20, output_tokens: 10 } },
+    });
+    await sleep(100);
+    emit({ type: 'result', subtype: 'success', result: text, usage: { input_tokens: 20, output_tokens: 10 }, total_cost_usd: 0.001 });
+    return;
+  }
   // `mock:done` anywhere in the message → the reply ends with the CEZ:DONE
   // completion marker (#347), so the auto-close path is testable dry. `mock:report` implies it:
   // a unit that has reported is finished, and a report with no done marker would leave the child

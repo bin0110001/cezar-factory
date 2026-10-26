@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowStepSchema } from './types.ts';
+import { validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowDefSchema, workflowStepSchema } from './types.ts';
 
 describe('workflow JSON contracts', () => {
   it('accepts values matching a standard JSON Schema', () => {
@@ -24,6 +24,18 @@ describe('workflow JSON contracts', () => {
       outputSchema: { type: 'object', required: ['items'], properties: { items: { type: 'array' } } },
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it('requires an agent output contract to be followed by a step that closes its session', () => {
+    const outputSchema = { type: 'object', required: ['proposal'], properties: { proposal: { type: 'string' } } };
+    expect(workflowDefSchema.safeParse({
+      name: 'interactive-agent-output', source: 'file',
+      steps: [{ id: 'proposal', prompt: 'return JSON', outputSchema }],
+    }).success).toBe(false);
+    expect(workflowDefSchema.safeParse({
+      name: 'agent-output', source: 'file',
+      steps: [{ id: 'proposal', prompt: 'return JSON', outputSchema }, { id: 'apply', command: 'apply' }],
+    }).success).toBe(true);
   });
 
   it('uses a standard JSON Schema condition to select whether a step applies', () => {
