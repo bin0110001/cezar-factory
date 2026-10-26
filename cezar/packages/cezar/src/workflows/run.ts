@@ -2499,7 +2499,7 @@ export class RunManager {
       return;
     }
     const wakeAt = new Date(limit.resetAt.getTime() + AUTO_RESUME_GRACE_MS);
-    this.armAutoResume(runId, wakeAt.getTime());
+    this.armAutoResume(runId, wakeAt.getTime(), limit.evidence);
     this.store.appendEvent(runId, {
       type: 'lifecycle',
       message: `usage limit reached — resuming automatically at ${formatWakeInstant(wakeAt)}`,
@@ -2507,8 +2507,15 @@ export class RunManager {
   }
 
   /** Publish the deadline on the record (the cockpit's only source) and arm the timer for it. */
-  private armAutoResume(runId: string, deadline: number): void {
-    this.store.updateRun(runId, { autoResumeAt: new Date(deadline).toISOString() });
+  private armAutoResume(
+    runId: string,
+    deadline: number,
+    evidence?: NonNullable<RunRecord['autoResumeEvidence']>,
+  ): void {
+    this.store.updateRun(runId, {
+      autoResumeAt: new Date(deadline).toISOString(),
+      ...(evidence !== undefined ? { autoResumeEvidence: evidence } : {}),
+    });
     const timer = setTimeout(() => this.fireAutoResume(runId), Math.max(0, deadline - Date.now()));
     timer.unref?.();
     this.autoResumeTimers.set(runId, timer);
@@ -2619,7 +2626,7 @@ export class RunManager {
         });
         continue;
       }
-      this.armAutoResume(run.id, deadline);
+      this.armAutoResume(run.id, deadline, run.autoResumeEvidence);
     }
   }
 

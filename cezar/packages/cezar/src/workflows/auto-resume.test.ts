@@ -130,6 +130,7 @@ describe('a run stopped by a usage limit resumes itself', () => {
     const epochSeconds = Number(/usage limit reached\|(\d+)/.exec(failed?.error ?? '')?.[1]);
     expect(Number.isFinite(epochSeconds)).toBe(true);
     expect(Date.parse(failed?.autoResumeAt ?? '')).toBe(epochSeconds * 1_000 + AUTO_RESUME_GRACE_MS);
+    expect(failed?.autoResumeEvidence).toBe('claude-marker');
     // The transcript says so too — the cockpit is not the only place this is auditable.
     const events = store.readEvents(record.id);
     expect(events.some((event) => String(event.message ?? '').includes('resuming automatically at'))).toBe(true);

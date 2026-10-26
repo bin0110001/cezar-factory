@@ -307,6 +307,7 @@ export const runRecordSchema = z.object({
    * it is what lets `recover()` re-arm a wait that may be hours long.
    */
   autoResumeAt: z.string().datetime().optional().catch(undefined),
+  autoResumeEvidence: z.enum(['claude-marker', 'timestamp', 'clock', 'delay']).optional().catch(undefined),
   /** Consecutive automatic resumes since the last human turn — the safety cap's counter.
    *  Persisted so a restart cannot reset a loop back to zero. */
   autoResumeAttempts: z.number().int().min(0).optional().catch(undefined),
@@ -509,6 +510,7 @@ function isRepoScopedRef(url: string, task: string, handle?: RepoHandle | null):
  */
 function clearPendingAutoResume(run: RunRecord): void {
   run.autoResumeAt = undefined;
+  run.autoResumeEvidence = undefined;
   run.autoResumeAttempts = undefined;
 }
 
@@ -832,7 +834,10 @@ export function reconcileLoadedRun(run: RunRecord, opts?: { keepLive?: boolean }
   // A pending usage-limit resume survives the restart on purpose (the wait can be
   // hours) — `RunManager.recover()` re-arms it from this field. It can only mean
   // anything on a `failed` run, so anywhere else it is stale bookkeeping.
-  if (run.status !== 'failed') run.autoResumeAt = undefined;
+  if (run.status !== 'failed') {
+    run.autoResumeAt = undefined;
+    run.autoResumeEvidence = undefined;
+  }
   // Likewise an unanswered question only means anything on the `failed` run it stopped.
   if (run.status !== 'failed') run.awaitingAnswerSince = undefined;
   // The wake counter is intentionally process-local, so a restarted process
@@ -1082,6 +1087,10 @@ export class RunStore extends EventEmitter {
     // The manager's timer re-checks the record before it fires, so a cleared field is enough.
     if (normalized.status && ['running', 'waiting', 'queued'].includes(normalized.status)) {
       normalized.autoResumeAt = undefined;
+      normalized.autoResumeEvidence = undefined;
+    }
+    if (Object.hasOwn(patch, 'autoResumeAt') && patch.autoResumeAt === undefined) {
+      normalized.autoResumeEvidence = undefined;
     }
     // The mid-workflow ask park (#917) is a flavour of `waiting` and nothing else:
     // answering it (`running`), cancelling, failing and settling all retire it, so

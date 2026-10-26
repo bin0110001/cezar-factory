@@ -50,6 +50,14 @@ export function AutoResumeHint({ run }: { run: ApiRun }) {
   const at = new Date(run.autoResumeAt)
   if (!Number.isFinite(at.getTime())) return null
   const label = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'long' }).format(at)
+  const evidenceLabel = run.autoResumeEvidence
+    ? ({
+        'claude-marker': 'Claude reset marker',
+        timestamp: 'provider timestamp',
+        clock: 'provider reset time',
+        delay: 'provider retry delay',
+      } as const)[run.autoResumeEvidence]
+    : undefined
   return (
     <div
       data-slot="auto-resume-hint"
@@ -63,6 +71,7 @@ export function AutoResumeHint({ run }: { run: ApiRun }) {
           {label}
         </time>
       </span>
+      {evidenceLabel && <span className="text-muted-foreground">Reset source: {evidenceLabel}</span>}
       <button
         type="button"
         data-action="auto-resume-cancel"

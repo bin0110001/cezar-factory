@@ -272,6 +272,8 @@ export const runRecordSchema = z.object({
    *  (spec 2026-08-03-auto-resume-after-usage-limit). Present only on a `failed` run with a
    *  pending automatic resume — its absence is what "no resume is scheduled" looks like. */
   autoResumeAt: z.string().optional(),
+  /** Provider response shape used to derive the reset deadline; absent on legacy records. */
+  autoResumeEvidence: z.enum(['claude-marker', 'timestamp', 'clock', 'delay']).optional(),
   /** Consecutive automatic resumes since the last human turn, against the safety cap. */
   autoResumeAttempts: z.number().optional(),
   /** ISO-8601 instant the run's session ended (inactivity, a crash, a restart) while a `CEZ:ASK`

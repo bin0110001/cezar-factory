@@ -1889,10 +1889,11 @@ describe('RunStore — read receipts (#unread-done-items)', () => {
     // indistinguishable from "never stamp a failed run", which is a different (wrong) rule.
     const store = RunStore.open(dataDir);
     const id = finishedRun(store, 'failed');
-    store.updateRun(id, { autoResumeAt: '2026-08-03T18:41:48.000Z' });
+    store.updateRun(id, { autoResumeAt: '2026-08-03T18:41:48.000Z', autoResumeEvidence: 'delay' });
     expect(store.markAllRead()).toBe(0);
 
     store.updateRun(id, { autoResumeAt: undefined });
+    expect(store.getRun(id)?.autoResumeEvidence).toBeUndefined();
     expect(store.markAllRead()).toBe(1);
     expect(store.getRun(id)?.seenAt).toBeDefined();
   });

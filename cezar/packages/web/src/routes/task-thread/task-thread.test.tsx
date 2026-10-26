@@ -286,12 +286,14 @@ describe('ThreadView', () => {
         run={run('failed', {
           error: 'step "work" failed: Claude AI usage limit reached|1754236800',
           autoResumeAt: '2026-08-03T17:00:30.000Z',
+          autoResumeEvidence: 'claude-marker',
         })}
         thread={reduceThread(EVENTS)}
       />,
     )
     const hint = document.querySelector('[data-slot="thread-dock"] [data-slot="auto-resume-hint"]')
     expect(hint?.textContent).toContain('Usage limit reached — this task resumes automatically at')
+    expect(hint?.textContent).toContain('Reset source: Claude reset marker')
     // To the SECOND: "6:41 PM" cannot tell a wait that is nearly over from one that just
     // started. Matched as a pattern because the rendered zone is the reader's own.
     expect(hint?.querySelector('time')?.textContent).toMatch(/:\d{2}:30\b/)
