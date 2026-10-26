@@ -419,6 +419,7 @@ export const runRecordSchema = z.object({
    *  `workflowStepSchema` only with that in mind: a narrowing here silently eats
    *  queued runs rather than degrading them. */
   workflowDef: workflowDefSchema.optional().catch(undefined),
+  workflowDefDigest: z.string().regex(/^[a-f0-9]{64}$/).optional().catch(undefined),
 });
 
 export type StepState = z.infer<typeof stepStateSchema>;

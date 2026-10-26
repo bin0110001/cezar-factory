@@ -20,6 +20,7 @@ import { createWorktree } from '../git-worktree.ts';
 import { RunStore, type RunRecord, type StepState } from '../runs/store.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import { parseTaskMarkers } from '../runs/task-markers.ts';
+import { workflowDefinitionDigest } from './structured-artifacts.ts';
 import { appendTurnText, endsWithMonitoringMarker, RunManager, turnEndMarkerText } from './run.ts';
 import type { WorkflowDef } from './types.ts';
 
@@ -953,6 +954,7 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     };
     try {
       const record = manager.startRun(workflow, { task: 'bounded active execution', worktree: false });
+      expect(store.getRun(record.id)?.workflowDefDigest).toBe(workflowDefinitionDigest(workflow));
       const deadline = Date.now() + 5_000;
       while (manager.isActive(record.id)) {
         if (Date.now() > deadline) throw new Error('overall run deadline did not finish in time');

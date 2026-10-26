@@ -749,6 +749,21 @@ function MetaRow({
   // `workflowLabel` so an inline chain shows its first step's name, not the bare "(planned)"
   // placeholder — which reads like a status next to the live status pill.
   const parts: ReactNode[] = [<span key="workflow">{workflowLabel(run)}</span>]
+  if (run.workflowDef) {
+    const resolvedPath = run.workflowDef.path
+    const projectOverride = Boolean(resolvedPath && /(?:^|[\\/])\.ai[\\/](?:cezar|factory)[\\/](?:workflows|skills)[\\/]/i.test(resolvedPath))
+    const sourceLabel = projectOverride ? 'project override' : run.workflowDef.source === 'built-in' ? 'built-in definition' : 'file definition'
+    const digestLabel = run.workflowDefDigest ? ` · sha256 ${run.workflowDefDigest.slice(0, 12)}…` : ''
+    parts.push(
+      <span
+        key="workflow-provenance"
+        data-slot="workflow-provenance"
+        title={`${sourceLabel}${resolvedPath ? ` · ${resolvedPath}` : ''}${run.workflowDefDigest ? ` · sha256 ${run.workflowDefDigest}` : ''}`}
+      >
+        {sourceLabel}{digestLabel}
+      </span>,
+    )
+  }
   const runCapSeconds = run.workflowDef?.maxRunDurationSeconds
   const repairCap = run.workflowDef?.maxRepairAttempts
   const repairUsage = run.repairAttemptsUsed

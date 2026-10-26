@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { StepState } from '../runs/store.ts';
-import type { WorkflowStepDef } from './types.ts';
+import type { WorkflowDef, WorkflowStepDef } from './types.ts';
 
 export type StructuredStepArtifact = Pick<
   StepState,
@@ -9,6 +9,11 @@ export type StructuredStepArtifact = Pick<
 
 export function workflowStepDigest(step: WorkflowStepDef): string {
   return createHash('sha256').update(JSON.stringify(step)).digest('hex');
+}
+
+/** Identity of the resolved workflow definition persisted with a run. */
+export function workflowDefinitionDigest(workflow: WorkflowDef): string {
+  return createHash('sha256').update(JSON.stringify(workflow)).digest('hex');
 }
 
 /**

@@ -175,6 +175,23 @@ describe('workflow finalization status', () => {
 })
 
 describe('workflow execution budget visibility', () => {
+  it('shows the resolved workflow source, project override path, and content digest', () => {
+    stubFetch()
+    renderHeader(run('running', {
+      workflowDef: {
+        name: 'project-flow',
+        steps: [],
+        source: 'file',
+        path: 'D:/repo/.ai/cezar/workflows/factory-project-flow.yaml',
+      },
+      workflowDefDigest: 'a'.repeat(64),
+    }))
+    const provenance = document.querySelector('[data-slot="workflow-provenance"]')
+    expect(provenance?.textContent).toBe('project override · sha256 aaaaaaaaaaaa…')
+    expect(provenance?.getAttribute('title')).toContain('D:/repo/.ai/cezar/workflows/factory-project-flow.yaml')
+    expect(provenance?.getAttribute('title')).toContain(`sha256 ${'a'.repeat(64)}`)
+  })
+
   it('shows configured run/repair caps and an active deadline', () => {
     stubFetch()
     renderHeader(run('running', {

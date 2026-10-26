@@ -5,11 +5,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RunStore } from '../runs/store.ts';
-import { collectPriorStepOutputs, workflowStepDigest } from './structured-artifacts.ts';
+import { collectPriorStepOutputs, workflowDefinitionDigest, workflowStepDigest } from './structured-artifacts.ts';
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value) ?? '').digest('hex');
 
 describe('attempt-scoped structured outputs', () => {
+  it('fingerprints the complete resolved workflow definition', () => {
+    const workflow = {
+      name: 'project-flow',
+      steps: [{ id: 'verify', command: 'npm test' }],
+      source: 'file' as const,
+      path: '.ai/cezar/workflows/project-flow.yaml',
+    };
+    const expected = digest(workflow);
+    expect(workflowDefinitionDigest(workflow)).toBe(expected);
+    expect(workflowDefinitionDigest({ ...workflow, path: 'workflows/project-flow.yaml' })).not.toBe(expected);
+  });
+
   it('exposes only completed outputs from their current attempt', () => {
     const source = 'a'.repeat(64);
     const current = { id: 'collect', status: 'done', iterations: 2, output: { count: 3 }, outputAttempt: 2, outputDigest: digest({ count: 3 }), outputSourceDigest: source } as const;

@@ -359,6 +359,8 @@ export const runRecordSchema = z.object({
    * like every other key.
    */
   workflowDef: workflowDefSchema.optional(),
+  /** SHA-256 of the exact resolved workflow definition executed by this run. */
+  workflowDefDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 });
 export type RunRecord = z.infer<typeof runRecordSchema>;
 
