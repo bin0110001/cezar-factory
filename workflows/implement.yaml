@@ -200,6 +200,10 @@ steps:
     onFail:
       retry: implement
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": malformed_result
+      "10": configuration
   - id: recover-implementation-contract-failure
     name: Preserve malformed implementation handoff as a typed failure
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-implementation-result.ps1 -Path .factory/implement-result.json -ContextPath .factory/implementation-context.json -FinalizationRecovery
