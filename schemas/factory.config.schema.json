@@ -27,8 +27,9 @@
       "properties": {
         "knowledge_extraction": { "type": "boolean" },
         "maintenance": { "type": "boolean" },
-        "backlog_reconciliation": { "type": "boolean" }
-        ,"backlog_label_cleanup": { "type": "boolean" }
+        "backlog_reconciliation": { "type": "boolean" },
+        "backlog_label_cleanup": { "type": "boolean" },
+        "godot_upgrade": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -38,6 +39,15 @@
         "type": { "type": "string" }
       },
       "required": ["type"],
+      "additionalProperties": false
+    },
+    "godot": {
+      "type": "object",
+      "properties": {
+        "testCommand": { "type": "string" },
+        "testRegressionExitCodes": { "type": "array", "items": { "type": "integer" } }
+      },
+      "required": ["testCommand", "testRegressionExitCodes"],
       "additionalProperties": false
     },
     "execution": {
@@ -52,14 +62,50 @@
     "validation": {
       "type": "object",
       "properties": {
-        "changed": { "type": "string" },
-        "full": { "type": "string" },
-        "verify": { "type": "string" }
+        "quick": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/validationCommand" }] },
+        "targeted": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/validationCommand" }] },
+        "changed": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/validationCommand" }] },
+        "full": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/validationCommand" }] },
+        "verify": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/validationCommand" }] }
       },
-      "required": ["changed", "full", "verify"],
+      "required": ["full", "verify"],
+      "anyOf": [{ "required": ["changed"] }, { "required": ["targeted"] }],
       "additionalProperties": false
     }
   },
   "required": ["factory", "workflows", "skills", "features", "project", "validation"],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "validationCommand": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" },
+        "resultFormat": { "type": "string", "enum": ["json"] },
+        "workingDirectory": { "type": "string" },
+        "prerequisites": { "type": "array", "items": { "type": "string" } },
+        "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },
+        "evidencePath": { "type": "string" },
+        "appliesTo": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["command", "workingDirectory", "prerequisites", "timeoutSeconds", "evidencePath", "appliesTo"],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [{
+    "if": { "properties": { "project": { "properties": { "type": { "const": "godot" } } } } },
+    "then": {
+      "properties": {
+        "godot": {
+          "type": "object",
+          "properties": {
+            "testCommand": { "type": "string" },
+            "testRegressionExitCodes": { "type": "array", "items": { "type": "integer" } }
+          },
+          "required": ["testCommand", "testRegressionExitCodes"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["godot"]
+    }
+  }]
 }

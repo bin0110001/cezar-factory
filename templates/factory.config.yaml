@@ -75,4 +75,5 @@ validation:
     evidencePath: ".factory/artifacts/verification-full.json"
     appliesTo:
       - "*"
-  verify: "./scripts/factory/verify.ps1"
+  # Optional project integration verifier; an empty value is unavailable.
+  verify: ""

@@ -1,6 +1,8 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $factory 'scripts/lib.ps1')
+$peer = $null
 $project = Join-Path ([IO.Path]::GetTempPath()) "factory validation $([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $failures = 0
 function Check([string]$name, [bool]$condition) {
@@ -44,8 +46,24 @@ factory:
   source: "cezar-factory"
   version: "__FACTORY_VERSION__"
 validation:
-  changed: "pwsh ./runner.ps1 changed"
-  full: "pwsh ./runner.ps1 full"
+  targeted:
+    command: "pwsh ./runner.ps1 changed"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: ["pwsh"]
+    timeoutSeconds: 1200
+    evidencePath: ".factory/artifacts/verification/changed.json"
+    appliesTo:
+      - "*"
+  full:
+    command: "pwsh ./runner.ps1 full"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: ["pwsh"]
+    timeoutSeconds: 7200
+    evidencePath: ".factory/artifacts/verification/full.json"
+    appliesTo:
+      - "*"
   verify: "pwsh ./runner.ps1 verify"
 '@
     Set-Content $configPath ($configText.Replace('__FACTORY_VERSION__', (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()))
@@ -55,6 +73,16 @@ validation:
     & git -C $project remote add origin https://github.com/example/project.git
     & git -C $project add .
     & git -C $project commit -qm init
+    $templateConfig = Read-FactoryConfig (Join-Path $factory 'templates/factory.config.yaml')
+    Check 'factory template parser reads nested targeted verification contract' (
+        $templateConfig.validation.targeted.command -eq '' -and
+        $templateConfig.validation.targeted.timeoutSeconds -eq 600 -and
+        $templateConfig.validation.targeted.appliesTo.Count -eq 1 -and
+        $templateConfig.validation.targeted.appliesTo[0] -eq '*')
+    Check 'template does not point its verifier back at the Factory wrapper' ($templateConfig.validation.verify -eq '')
+    $templateJson = $templateConfig | ConvertTo-Json -Depth 12
+    Check 'factory template validates against the factory config schema' (
+        [bool](Test-Json -Json $templateJson -SchemaFile (Join-Path $factory 'schemas/factory.config.schema.json')))
     New-Item -ItemType Directory -Path (Join-Path $project '.factory') -Force | Out-Null
     @{ issue = 7; pr = 'https://github.com/example/project/pull/1' } |
         ConvertTo-Json | Set-Content (Join-Path $project '.factory/implement-result.json')
@@ -63,6 +91,10 @@ validation:
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
         Check "$stage receipt carries a structured reason code" ($run.Receipt.reasonCode -eq 'validation_passed')
+        if ($stage -ne 'verify') {
+            $expectedEvidence = ".factory/artifacts/verification/$stage.json"
+            Check "$stage receipt reflects structured workdir/evidence metadata" ($run.Receipt.workingDirectory -eq '.' -and $run.Receipt.evidencePath -eq $expectedEvidence)
+        }
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
         $expectedTimeout = if ($stage -eq 'changed') { 1200 } else { 7200 }
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
@@ -101,6 +133,18 @@ validation:
     $logPath = Join-Path $project $run.Receipt.artifactPaths[0]
     Check 'huge output is bounded and marked truncated' ($run.Code -eq 0 -and $run.Receipt.truncated -and (Get-Item $logPath).Length -le 65536)
     Remove-Item Env:ADAPTER_HUGE
+
+    $originalConfig = Get-Content -Raw $configPath
+    $originalConfig.Replace('prerequisites: ["pwsh"]', 'prerequisites: ["factory-missing-tool"]') | Set-Content $configPath
+    $beforeCount = @(Get-Content (Join-Path $project '.factory/counter.txt')).Count
+    $run = Run-Stage full
+    Check 'missing configured prerequisite is unavailable and never runs tests' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_prerequisite_missing' -and @(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq $beforeCount)
+    $originalConfig | Set-Content $configPath
+
+    $originalConfig.Replace('workingDirectory: "."', 'workingDirectory: "../outside"') | Set-Content $configPath
+    $run = Run-Stage full
+    Check 'validation working directory cannot escape its project worktree' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error' -and $run.Receipt.reasonCode -eq 'validation_config_invalid')
+    $originalConfig | Set-Content $configPath
 
     $env:ADAPTER_DIRTY = '1'
     $run = Run-Stage full
@@ -151,7 +195,7 @@ validation:
     $configText.Replace('pwsh ./runner.ps1 changed', 'skip') | Set-Content $configPath
     $run = Run-Stage changed
     Check 'explicit unsupported targeted stage is skipped, not passed' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped')
-    $configText.Replace('  full: "pwsh ./runner.ps1 full"', '') | Set-Content $configPath
+    [regex]::Replace($configText, '(?ms)^  full:\r?\n.*?(?=^  verify:)', '') | Set-Content $configPath
     $run = Run-Stage full
     Check 'missing full command is unavailable and fails closed' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_command_missing')
     Remove-Item $configPath

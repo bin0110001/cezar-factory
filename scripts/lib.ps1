@@ -15,22 +15,66 @@ function Get-FactoryVersion([string]$FactoryRoot) {
 
 function Test-SemVer([string]$Value) { $Value -match '^\d+\.\d+\.\d+$' }
 
-# Minimal YAML reader for factory.config.yaml: top-level lists and one nested level of scalars.
+# Parse the deliberately small YAML subset used by factory.config.yaml. Nested
+# maps and lists are supported because project validation entries carry their
+# own command, timeout, prerequisites and evidence path. This is not a general
+# YAML parser; unsupported syntax fails closed instead of being misread.
+function Convert-FactoryYamlScalar([string]$Text) {
+    $value = $Text.Trim()
+    if ($value -match '^"(.*)"$') { return $Matches[1] }
+    if ($value -match "^'(.*)'$") { return $Matches[1] }
+    if ($value -match '^\[(.*)\]$') {
+        $inner = $Matches[1].Trim()
+        if (-not $inner) { return ,@() }
+        return ,@($inner -split '\s*,\s*' | ForEach-Object { Convert-FactoryYamlScalar $_ })
+    }
+    if ($value -match '^(?i:true|false)$') { return [bool]::Parse($value) }
+    if ($value -match '^-?[0-9]+$') { return [int]$value }
+    if ($value -in 'null', '~') { return $null }
+    return $value
+}
+
 function Read-FactoryConfig([string]$Path) {
     if (-not (Test-Path $Path)) { throw "Config not found: $Path" }
     $cfg = [ordered]@{}
-    $section = $null
+    $stack = [System.Collections.Generic.List[object]]::new()
     foreach ($line in (Get-Content $Path)) {
         if ($line -match '^\s*(#.*)?$') { continue }
-        if ($line -match '^(\w+):\s*$') { $section = $Matches[1]; $cfg[$section] = $null; continue }
+        $indent = $line.Length - $line.TrimStart().Length
+        if (($indent % 2) -ne 0) { throw "Unsupported YAML indentation in ${Path}: $line" }
+        while ($stack.Count -gt 0 -and $indent -le [int]$stack[$stack.Count - 1].Indent) {
+            $stack.RemoveAt($stack.Count - 1)
+        }
+
+        $parent = $cfg
+        if ($stack.Count -gt 0) {
+            $entry = $stack[$stack.Count - 1]
+            if ($null -eq $entry.Node) {
+                if ($line.TrimStart().StartsWith('- ')) {
+                    $entry.Node = [System.Collections.Generic.List[object]]::new()
+                } else {
+                    $entry.Node = [ordered]@{}
+                }
+                $entry.Parent[$entry.Key] = $entry.Node
+            }
+            $parent = $entry.Node
+        }
+
         if ($line -match '^\s+-\s+(.+?)\s*$') {
-            if ($null -eq $cfg[$section]) { $cfg[$section] = @() }
-            $cfg[$section] = @($cfg[$section]) + ($Matches[1].Trim('"'))
+            if ($parent -isnot [System.Collections.IList]) { throw "Unexpected YAML list item in ${Path}: $line" }
+            $parent.Add((Convert-FactoryYamlScalar $Matches[1]))
             continue
         }
-        if ($line -match '^\s+(\w+):\s*(.*?)\s*$' -and $section) {
-            if ($null -eq $cfg[$section]) { $cfg[$section] = [ordered]@{} }
-            $cfg[$section][$Matches[1]] = $Matches[2].Trim('"')
+        if ($line -notmatch '^\s*([A-Za-z0-9_-]+):(?:\s*(.*?))?\s*$' -or $parent -isnot [System.Collections.IDictionary]) {
+            throw "Unsupported factory.config.yaml syntax in ${Path}: $line"
+        }
+        $key = $Matches[1]
+        $rawValue = [string]$Matches[2]
+        if ($rawValue.Trim()) {
+            $parent[$key] = Convert-FactoryYamlScalar $rawValue
+        } else {
+            $parent[$key] = $null
+            $stack.Add([pscustomobject]@{ Indent = $indent; Parent = $parent; Key = $key; Node = $null })
         }
     }
     $cfg
@@ -115,7 +159,7 @@ function Invoke-FactoryValidation {
         stage = $Stage; status = 'error'; exitCode = 1
         reasonCode = 'validation_error'
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
-        worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
+        worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage); workingDirectory = '.'; evidencePath = ''
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
@@ -152,12 +196,40 @@ function Invoke-FactoryValidation {
             return 1
         }
         $config = Read-FactoryConfig $configPath
-        if (-not $config.Contains('validation') -or $null -eq $config.validation -or -not $config.validation.Contains($Stage)) {
+        $configStage = @{ changed = 'targeted'; full = 'full'; verify = 'verify' }[$Stage]
+        if (-not $config.Contains('validation') -or $null -eq $config.validation) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
-            $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage command is missing from $configPath."
+            $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage command is missing from $configPath."
             return 1
         }
-        $command = ([string]$config.validation[$Stage]).Trim()
+        if (-not $config.validation.Contains($configStage)) {
+            # Older project configs used `changed`; current templates call the
+            # same targeted validation stage `targeted`.
+            if ($Stage -eq 'changed' -and $config.validation.Contains('changed')) { $configStage = 'changed' }
+            else {
+                $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
+                $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage command is missing from $configPath."
+                return 1
+            }
+        }
+        $stageConfig = $config.validation[$configStage]
+        $command = ''
+        $workingDirectory = '.'
+        $prerequisites = @()
+        if ($stageConfig -is [System.Collections.IDictionary]) {
+            if ($stageConfig.Contains('command')) { $command = [string]$stageConfig.command }
+            if ($stageConfig.Contains('workingDirectory') -and $stageConfig.workingDirectory) { $workingDirectory = [string]$stageConfig.workingDirectory }
+            if ($stageConfig.Contains('timeoutSeconds')) {
+                $timeout = [int]$stageConfig.timeoutSeconds
+                if ($timeout -lt 1 -or $timeout -gt 7200) { throw "Configured validation.$Stage timeoutSeconds must be between 1 and 7200." }
+                $receipt.timeoutSeconds = $timeout
+            }
+            if ($stageConfig.Contains('prerequisites')) { $prerequisites = @($stageConfig.prerequisites) }
+            if ($stageConfig.Contains('evidencePath')) { $receipt.evidencePath = [string]$stageConfig.evidencePath }
+        } else {
+            $command = [string]$stageConfig
+        }
+        $command = $command.Trim()
         if (-not $command) {
             $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_command_missing'
             $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage command is empty."
@@ -170,6 +242,27 @@ function Invoke-FactoryValidation {
         if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
         $receipt.command = $command
         $receipt.reasonCode = 'validation_completed'
+        $workingPath = [IO.Path]::GetFullPath((Join-Path $root $workingDirectory))
+        $rootPath = [IO.Path]::GetFullPath($root)
+        $rootPrefix = $rootPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if (-not [string]::Equals($workingPath, $rootPath, [StringComparison]::OrdinalIgnoreCase) -and
+            -not $workingPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configured validation.$Stage workingDirectory must stay inside the project worktree."
+        }
+        $receipt.workingDirectory = [IO.Path]::GetRelativePath($rootPath, $workingPath) -replace '\\', '/'
+        if ($receipt.workingDirectory -eq '') { $receipt.workingDirectory = '.' }
+        if (-not (Test-Path -LiteralPath $workingPath -PathType Container)) {
+            $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_working_directory_missing'
+            $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage workingDirectory does not exist: $($receipt.workingDirectory)"
+            return 1
+        }
+        foreach ($prerequisite in $prerequisites) {
+            if (-not (Get-Command ([string]$prerequisite) -ErrorAction SilentlyContinue)) {
+                $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_prerequisite_missing'
+                $receipt.exitCode = 2; $receipt.message = "Configured validation.$Stage prerequisite is unavailable: $prerequisite"
+                return 1
+            }
+        }
         foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
             $candidate = $match.Value.Trim('"', "'")
             $candidatePath = if ([IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $root $candidate }
@@ -182,7 +275,7 @@ function Invoke-FactoryValidation {
         $start.ArgumentList.Add('-NoProfile')
         $start.ArgumentList.Add('-EncodedCommand')
         $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
-        $start.WorkingDirectory = $root
+        $start.WorkingDirectory = $workingPath
         $start.UseShellExecute = $false
         $start.RedirectStandardOutput = $true
         $start.RedirectStandardError = $true
@@ -205,7 +298,9 @@ function Invoke-FactoryValidation {
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
-        $receipt.reasonCode = 'validation_infrastructure_error'
+        $receipt.reasonCode = if ($receipt.message -match '^(Configured validation\.|Unsupported YAML indentation|Unexpected YAML list item|Unsupported factory\.config\.yaml syntax|Config not found:)') {
+            'validation_config_invalid'
+        } else { 'validation_infrastructure_error' }
     } finally {
         # A project runner can modify tracked files or create untracked files
         # after the initial snapshot. Keep the receipt clean only if both the
