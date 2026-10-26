@@ -15,15 +15,11 @@
 
 ## Backlog-label audit
 
-The workflow command step (never the model) runs this entrypoint:
-
-```text
-pwsh -NoProfile -File /projects/cezar-factory/scripts/audit-backlog-labels.ps1
-```
-
-Do not add an inline PowerShell resolver, search for alternate scripts, inspect
-the script source, or call `gh issue list` after it runs. The script's JSON
-output is the sole candidate source.
+The maintenance workflow's `command:` step runs the collector before invoking
+the skill. The model reads only the worktree-local input artifact produced by
+that step; it does not invoke the collector, search for alternate scripts,
+inspect script source, or call `gh issue list`. The workflow artifact is the
+sole candidate source.
 
 The output's `candidates` array is the work awaiting classification; `staged`
 records the durable reservation already written to each issue. It is not merely
@@ -42,35 +38,20 @@ from another audit run without incorrectly escalating it to a human.
 - Route tracking parents to `factory:tracking` and external blocks to
   `factory:blocked`.
 
-Re-read the selected candidates' labels immediately before any closing edit.
-After closing every candidate, write `.factory/backlog-label-audit.json` in the
-same worktree. If an agent run is cancelled after the script stages candidates,
-finish or safely close only that emitted set; never launch another candidate
-discovery pass to compensate.
+The skill writes its bounded proposal to `.factory/backlog-label-audit.json`.
+The workflow's deterministic consumer rechecks current state and applies the
+proposal. If a run is cancelled after candidates are reserved, the maintenance
+recovery step reconciles those reservations; do not manually close issues or
+launch another candidate discovery pass.
 
-## Manual runs and diagnostics
+## Queueing and diagnostics
 
-The schedule automation supports:
+When the user asks to run an automation, queue it with
+`cez automation run <id>`, report the returned task ID, and stop. Do not poll,
+inspect its worktree or artifacts, or cancel it as a follow-up. Inspect run
+history only when the user explicitly asks for run diagnostics; use the Cezar
+run-history interface for that request.
 
-```text
-POST /api/v1/p/<project-id>/automations/<automation-id>/run
-```
-
-It returns a run ID and does not enable the schedule. Poll:
-
-```text
-GET /api/v1/p/<project-id>/runs/<run-id>
-GET /api/v1/p/<project-id>/runs/<run-id>/history
-```
-
-Use the history to distinguish a runtime failure from an agent-policy failure.
-If an agent begins re-running the candidate script, searching the filesystem,
-reading the script, or re-listing GitHub issues, cancel it through:
-
-```text
-POST /api/v1/p/<project-id>/runs/<run-id>/cancel
-```
-
-Record the run ID, observed runtime path, deployed artifact versions, emitted
-candidates, and any manually reconciled labels in this reference when a new
-failure mode changes future operational decisions.
+Record observed runtime paths, deployed artifact versions, emitted candidates,
+and any manually reconciled labels here when a new failure mode changes future
+operational decisions.

@@ -45,19 +45,17 @@ risks are `low`, `medium`, and `high`. Add a `complexity:*` label only when
 the size is known and the project convention requires it.
 
 When the user explicitly asks to queue an issue for Factory planning, use the
-project's installed lifecycle helper if present:
+authenticated GitHub CLI to apply the one explicit lifecycle transition after
+re-reading the issue. Do not invoke an installed Factory script from this
+skill. For example:
 
 ```powershell
-pwsh -NoProfile -File .ai/factory/scripts/update-github-lifecycle.ps1 `
-  -Issue <number> -State factory:needs-plan `
-  -Type <type:...> -Risk <risk:...>
+gh issue edit <number> --add-label factory:needs-plan --remove-label factory:new
 ```
 
-Pass `-Complexity complexity:large` for a decomposition candidate. The helper
-validates labels, removes conflicting lifecycle labels, and emits the event
-last. If the helper is absent, use `gh issue edit` only for the same explicit
-human-directed transition, removing the old lifecycle label and adding the
-new one in separate operations; never leave conflicting `factory:*` labels.
+The edit preserves other labels, including type, risk, and known complexity.
+Never leave conflicting `factory:*` state labels. For decomposition
+candidates, include `complexity:large`.
 
 Operator-driven status changes are limited to these cases:
 

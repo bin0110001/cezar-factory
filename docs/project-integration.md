@@ -70,30 +70,43 @@ project:
   type: your-project-type   # e.g., godot, dotnet, web
 
 validation:
-  changed: ./scripts/factory/test-changed.ps1
-  full: ./scripts/factory/test-full.ps1
-  verify: ./scripts/factory/verify.ps1
+  targeted:
+    command: "pwsh ./scripts/verify-changed.ps1"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: ["pwsh"]
+    timeoutSeconds: 600
+    evidencePath: ".factory/artifacts/verification/targeted.json"
+    appliesTo: ["src/**", "test/**"]
+  full:
+    command: "pwsh ./scripts/verify-full.ps1"
+    resultFormat: "json"
+    workingDirectory: "."
+    prerequisites: ["pwsh"]
+    timeoutSeconds: 1800
+    evidencePath: ".factory/artifacts/verification/full.json"
+    appliesTo: ["*"]
+  verify: "pwsh ./scripts/verify-project.ps1"
 ```
 
-The three `validation` values are explicit **project-owned commands**. The
-Factory workflow runs each from the current project's Git worktree root. For
-example, a .NET project can set `full: "dotnet test MySolution.sln"`, a JS
-project can use `full: "npm test"`, and a Godot project can call its own
-headless test script. A PowerShell adapter can use `pwsh ./scripts/factory/test-full.ps1`.
-Each command runs once; the Factory wrapper does not discover source files or
-guess a package runner. Quote paths with spaces in the command value.
-Targeted validation has a 20-minute deadline. Full and verify each have a
-two-hour deadline so projects with a genuine long-running suite can run it;
-the wrapper terminates an overlong child and records the applicable
-`timeoutSeconds` in its receipt. A suite that needs longer than two hours is
-an explicit release blocker, not a reason to substitute a smaller test set.
+The current workflow invokes the project-owned `targeted`, `full`, and `verify`
+commands from the project's Git worktree. A .NET project can use
+`dotnet test MySolution.sln`, a JS project can use `npm test`, and a Godot
+project can call its own parser/GdUnit test script. JSON-mode commands return
+the structured result contract; exit-code mode remains available for legacy
+commands. The Factory wrapper does not discover source files or guess a package
+runner. Quote paths with spaces in command values. Targeted validation is
+bounded to 20 minutes; full and verify are bounded to two hours. An overlong
+command fails with an infrastructure receipt. The template's `quick` entry is
+not currently invoked by the workflow, so do not treat it as a verified gate.
 
 Before moving an installed or shared-mount project to this Factory version,
 check that its `.ai/factory/factory.config.yaml` points to real project-owned
-changed, full, and verify commands. A missing config or command fails with a
-local receipt. Set `changed: "skip"` only if targeted testing is genuinely
-unsupported; `full` and `verify` are required and cannot be skipped. A
-command that points back at a Factory validation wrapper is rejected.
+targeted, full, and verify commands. A missing config or command returns an
+unavailable receipt and fails closed. Targeted validation may explicitly use
+`skip` only when the project cannot support focused checks; `full` and
+`verify` are required and cannot be skipped. A command that points back at a
+Factory validation wrapper is rejected.
 
 Each attempt stores bounded stdout, stderr, and a versioned receipt beneath
 the worktree's `.factory/artifacts/validation/<stage>/<attempt>/`. The receipt
@@ -260,15 +273,14 @@ setting or append its rules manually.
 
 ## Update Process
 
-To update to a new factory version:
-
-1. Update VERSION file with target version
-2. Run factory update
-3. Review changes with factory diff
-4. Run factory verify to confirm installation
-5. Run project validation scripts
-6. Commit changes and create PR
-7. Merge after approval
+Factory changes are reviewed through a PR targeting `dev`; request auto-merge
+only after validation and independent review pass. After the change is merged,
+run `scripts/release/promote-stable.ps1`, which runs the full Factory suite
+before fast-forwarding `origin/stable`. The Bazzite auto-deploy timer updates
+the shared mount and synchronizes automations. Use the configured-target
+release flow for remote-only automation sync. Do not update an installed
+project's managed `.ai/factory` layer unless its registry entry has a verified
+local `projectPath` and the release dry run succeeds.
 
 ## Factory-Provided Components
 

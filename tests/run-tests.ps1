@@ -75,7 +75,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'tests/fixtures/validation-result-passed.json', 'tests/fixtures/validation-result-failed.json', 'tests/fixtures/validation-result-skipped.json', 'tests/fixtures/validation-result-unavailable.json', 'tests/fixtures/validation-result-no-matching-tests.json', 'tests/fixtures/validation-result-malformed.json',
 'scripts/recover-audit-reservations.ps1',
 'tests/watchdog-automations.ps1', 'tests/watchdog-mock-api.py', 'tests/fixtures/watchdog-runs.json', 'tests/fixtures/watchdog-runs-envelope.json', 'tests/fixtures/watchdog-runs-envelope-simple.json', 'tests/fixtures/watchdog-runs-malformed.json',
-'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'docs/validation-baseline-policy.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
+'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'docs/validation-baseline-policy.md', 'skills/interactive-github-backlog/SKILL.md', 'skills/factory-cezar-skill-operations/SKILL.md', 'skills/factory-cezar-skill-operations/references/runtime-and-audit.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh'
@@ -136,7 +136,7 @@ foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
         if ($inPrompt -and $line -match '(pwsh|powershell).*\.ps1|run `[^`]*\.ps1') { $scriptOwnershipViolations += "$($wf.Name): $($line.Trim())" }
     }
 }
-foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'interactive-github-backlog', 'factory-work-backlog', 'factory-release', 'factory-finish-release', 'factory-cezar-skill-operations' }) {
+foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'factory-work-backlog', 'factory-release', 'factory-finish-release', 'factory-cezar-skill-operations' }) {
     foreach ($line in Get-Content (Join-Path $sk.FullName 'SKILL.md')) {
         if ($line -match '(pwsh|powershell)\s+.*\.ps1' -and $line -notmatch '(?i)\b(not|never|must not|do not)\b') { $scriptOwnershipViolations += "$($sk.Name): $($line.Trim())" }
     }

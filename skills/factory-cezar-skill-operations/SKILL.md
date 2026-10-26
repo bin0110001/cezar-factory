@@ -37,9 +37,9 @@ path; do not claim that an automation-only release deployed the change.
   already produced. If a step needs a script, add a workflow step before the
   skill step.
 - `tests/run-tests.ps1` enforces this; a new violation fails validation.
-- Operator-driven skills outside Cezar (`interactive-github-backlog`,
-  `factory-work-backlog`) are the exception: a human or interactive agent runs
-  them directly.
+- Operator-facing skills may use explicit, user-authorized GitHub CLI actions,
+  but still must not instruct the model to run Factory scripts. Script-backed
+  behavior belongs in workflow `command:` steps.
 
 ## Launching an automation or workflow
 
@@ -56,14 +56,9 @@ run only when the user asks, through the run API history.
 - Inspect the active runtime and project layer after deployment. Verify the
   exact command/path or policy text that must be available to the next Cezar
   worktree.
-- For a scheduled automation, use Cezar's manual schedule endpoint only when
-  the user authorizes a one-off run. Keep the timer's enabled state unchanged.
-- Monitor the created run. Cancel it when it violates bounded-policy rules,
-  repeats a completed side-effecting action, or consumes context without making
-  bounded progress. A cancellation does not undo labels or artifacts already
-  written.
-- Preserve the generated artifacts and reconcile any partially applied side
-  effects before starting another run.
+- Queue a user-requested automation with `cez automation run <id>`, report its
+  task ID, and stop. Inspect run history only when the user explicitly asks for
+  diagnostics.
 
 For deployed-runtime paths, manual run behavior, and the backlog-label-audit
 lessons, read [the operations reference](references/runtime-and-audit.md).
