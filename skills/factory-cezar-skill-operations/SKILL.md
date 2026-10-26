@@ -52,7 +52,12 @@ run only when the user asks, through the run API history.
 ## Operating rules
 
 - Validate the Factory change, then use the Factory release procedure for all
-  explicitly configured targets.
+  explicitly configured targets. A missing or empty
+  `config/factory-projects.json` means no external release changes are made;
+  report that target configuration is needed.
+- Shared-mount release follows validation and independent review: the reviewed
+  implementation PR targets `dev`, and stable promotion follows only after
+  that commit has merged. High-risk work also requires human plan approval.
 - Inspect the active runtime and project layer after deployment. Verify the
   exact command/path or policy text that must be available to the next Cezar
   worktree.

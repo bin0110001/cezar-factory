@@ -18,13 +18,21 @@ The goal is a verified end state, not merely a source-tree change:
    never reset, clean, stash, or overwrite it without explicit instruction.
 3. Read deployment targets only from `config/factory-projects.json`. If the
    registry is absent or empty, report that the release is ready but needs
-   target configuration and make no external changes.
-4. Run the `factory-release` skill: the shared-mount release (`promote-stable.ps1`, which runs the
-   full test suite as its gate) and, for any non-shared target, its legacy procedure.
-   Run the `factory-release` skill's configured release procedure. Always run
-   `scripts/push-factory-updates.ps1 -SyncAutomations`, including when the
-   Factory version appears unchanged. Never scan drives or invent targets.
-5. For Bazzite-hosted runtime changes, use the `homelab-ssh` instructions and
+   target configuration and make no external release changes: do not promote
+   `stable`, synchronize targets, or deploy. Continue the required repository
+   review handoff when its gates are met.
+4. Require independent review before the PR handoff. The implementation PR
+   targets `dev`; request GitHub auto-merge only after review and any required
+   high-risk plan approval. If no PR exists, report that handoff instead of
+   creating an unrelated PR. Do not promote `stable` from the feature branch.
+5. After the reviewed PR has merged and a non-empty target registry is
+   available, follow the `factory-release` procedure from the tested merged
+   commit. It promotes that commit to `stable` only after the catalog and full
+   suite pass, then synchronizes every configured target with
+   `scripts/push-factory-updates.ps1 -SyncAutomations`, even when the Factory
+   version appears unchanged. If target configuration is still missing,
+   defer these external release actions. Never scan drives or invent targets.
+6. For Bazzite-hosted runtime changes, use the `homelab-ssh` instructions and
    the supported Bazzite deployment flow. Verify all of the following before
    declaring success:
    - the host checkout `VERSION` equals the local Factory `VERSION`;
@@ -34,13 +42,10 @@ The goal is a verified end state, not merely a source-tree change:
      `/projects/cezar-factory`;
    - the same required scripts exist inside the running `cezar` container;
    - the supported deployment validation and health checks pass.
-6. If the Bazzite checkout is dirty, on an unexpected revision, missing the
+7. If the Bazzite checkout is dirty, on an unexpected revision, missing the
    required runtime, or cannot be validated, stop and report the exact
    mismatch. Do not pull, reset, copy over, or delete the remote checkout.
-7. After validation and independent review, ensure the implementation PR
-   targets `dev` and request GitHub auto-merge. Do not merge a failed,
-   unreviewed, unresolved, or blocked PR. If no PR exists, report the exact
-   remaining handoff rather than silently creating unrelated work.
+8. Do not merge or promote a failed, unreviewed, unresolved, or blocked PR.
 
 ## Required handoff
 
