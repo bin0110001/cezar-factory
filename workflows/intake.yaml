@@ -18,6 +18,10 @@ steps:
     onFail:
       retry: intake
       max: 1
+      retryOn: [1]
+    failureReasons:
+      "1": malformed_result
+      "10": configuration
   - id: route
     name: Route intake to planning
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json
