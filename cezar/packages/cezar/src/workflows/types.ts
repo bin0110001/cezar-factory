@@ -157,6 +157,34 @@ export function workflowControlOf(value: unknown): { control?: WorkflowControl; 
   if (!parsed.success) return { error: `invalid $cezar control: ${parsed.error.issues.map((issue) => issue.message).join('; ')}` };
   return { control: parsed.data.$cezar };
 }
+
+export type WorkflowOutputFailure = 'output_missing' | 'output_malformed' | 'output_invalid' | 'output_schema_invalid';
+export type WorkflowOutputValidation =
+  | { success: true; data: unknown; control?: WorkflowControl }
+  | { success: false; failure: WorkflowOutputFailure; message: string };
+
+/** Parse stdout against the declared output schema before exposing it downstream. */
+export function validateWorkflowOutput(raw: string, schema: Record<string, unknown>): WorkflowOutputValidation {
+  if (raw.trim().length === 0) {
+    return { success: false, failure: 'output_missing', message: 'check output contract failed: stdout was empty' };
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw.trim());
+  } catch {
+    return { success: false, failure: 'output_malformed', message: 'check output contract failed: stdout was not valid JSON' };
+  }
+  const parsed = validateWorkflowContract(schema, decoded);
+  if (!parsed.success) {
+    const failure = parsed.failure === 'schema_invalid' ? 'output_schema_invalid' : 'output_invalid';
+    return { success: false, failure, message: `check output contract failed: ${parsed.message}` };
+  }
+  const control = workflowControlOf(parsed.data);
+  if (control.error) {
+    return { success: false, failure: 'output_invalid', message: `check output contract failed: ${control.error}` };
+  }
+  return { success: true, data: parsed.data, ...(control.control ? { control: control.control } : {}) };
+}
 export type WorkflowDoc = z.infer<typeof workflowFileSchema>;
 
 /** Typed terminal meaning for a failed check, derived only from its declared retry contract. */

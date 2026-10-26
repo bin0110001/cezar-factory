@@ -1,15 +1,15 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { RunStore } from '../runs/store.ts';
 import { RunManager } from './run.ts';
 
 const exec = promisify(execFile);
 const gitIdentity = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
-let bashAvailable = false;
 const contract = {
   type: 'object',
   required: ['$cezar'],
@@ -29,18 +29,10 @@ describe('workflow control outputs', () => {
   const managers: RunManager[] = [];
   const stores: RunStore[] = [];
 
-  beforeAll(async () => {
-    try {
-      await exec('bash', ['-lc', 'true']);
-      bashAvailable = true;
-    } catch { bashAvailable = false; }
-  });
-
   afterEach(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 200));
     for (const manager of managers.splice(0)) manager.dispose();
     for (const store of stores.splice(0)) store.flush();
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
+    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 100, retryDelay: 100 });
   });
 
   async function runControl(action: 'no_work' | 'skip_step' | 'blocked', reasonCode: string, stepsAfter = false) {
@@ -55,6 +47,19 @@ describe('workflow control outputs', () => {
     const manager = new RunManager(store, repo);
     managers.push(manager);
     const tail = stepsAfter ? [{ id: 'tail', command: 'touch tail-ran' }] : [];
+    const internal = manager as unknown as {
+      runCheckStep: (_state: unknown, step: { id: string }) => Promise<{
+        ok: boolean; output: string; exitCode: number; structuredOutput?: unknown;
+        control?: { action: 'no_work' | 'skip_step' | 'blocked'; reasonCode: string };
+      }>;
+    };
+    internal.runCheckStep = async (_state, step) => {
+      if (step.id === 'preflight') {
+        return { ok: true, output: '{}', exitCode: 0, structuredOutput: { $cezar: { action, reasonCode } }, control: { action, reasonCode } };
+      }
+      writeFileSync(join(repo, 'tail-ran'), 'ran\n');
+      return { ok: true, output: 'passed', exitCode: 0 };
+    };
     const record = manager.startRun({
       name: 'control-fixture', source: 'file',
       steps: [
@@ -73,7 +78,45 @@ describe('workflow control outputs', () => {
     return { repo, run: store.getRun(record.id)! };
   }
 
-  it.skipIf(!bashAvailable)('settles no-work and marks unvisited steps skipped', async () => {
+  async function runInvalidOutput(reason: 'output_missing' | 'output_malformed' | 'output_invalid') {
+    const repo = mkdtempSync(join(tmpdir(), 'cez-invalid-output-'));
+    roots.push(repo);
+    await exec('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n');
+    await exec('git', ['add', '-A'], { cwd: repo });
+    await exec('git', [...gitIdentity, 'commit', '-q', '-m', 'base'], { cwd: repo });
+    const store = RunStore.open(join(repo, '.ai/cezar'));
+    stores.push(store);
+    const manager = new RunManager(store, repo);
+    managers.push(manager);
+    const internal = manager as unknown as {
+      runCheckStep: (_state: unknown, step: { id: string }) => Promise<{
+        ok: boolean; output: string; exitCode: number; contractError?: boolean;
+        contractFailureReason?: 'output_missing' | 'output_malformed' | 'output_invalid';
+      }>;
+    };
+    internal.runCheckStep = async (_state, step) => step.id === 'preflight'
+      ? { ok: false, output: 'invalid structured output', exitCode: 1, contractError: true, contractFailureReason: reason }
+      : { ok: true, output: 'should not execute', exitCode: 0 };
+    const record = manager.startRun({
+      name: 'invalid-output-fixture', source: 'file',
+      steps: [
+        {
+          id: 'preflight', command: 'preflight',
+          outputSchema: { type: 'object', required: ['count'], properties: { count: { type: 'integer' } } },
+        },
+        { id: 'consumer', command: 'touch consumer-ran' },
+      ],
+    }, { task: 'reject invalid structured output', worktree: false });
+    const deadline = Date.now() + 10_000;
+    while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('invalid-output workflow did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return { repo, run: store.getRun(record.id)! };
+  }
+
+  it('settles no-work and marks unvisited steps skipped', async () => {
     const { repo, run } = await runControl('no_work', 'no_work', true);
     expect(run.status, run.error).toBe('done');
     expect(run.outcome).toMatchObject({ kind: 'no_work', reasonCode: 'no_work', stepId: 'preflight' });
@@ -81,23 +124,38 @@ describe('workflow control outputs', () => {
     expect(existsSync(join(repo, 'tail-ran'))).toBe(false);
   });
 
-  it.skipIf(!bashAvailable)('skips only its step and continues the chain', async () => {
+  it('skips only its step and continues the chain', async () => {
     const { repo, run } = await runControl('skip_step', 'precondition_not_met', true);
     expect(run.status, run.error).toBe('done');
     expect(run.steps.map((step) => step.status)).toEqual(['skipped', 'done']);
     expect(existsSync(join(repo, 'tail-ran'))).toBe(true);
   });
 
-  it.skipIf(!bashAvailable)('records a terminal skipped outcome when every work step is skipped', async () => {
+  it('records a terminal skipped outcome when every work step is skipped', async () => {
     const { run } = await runControl('skip_step', 'precondition_not_met');
     expect(run.status).toBe('done');
     expect(run.outcome).toMatchObject({ kind: 'skipped', reasonCode: 'precondition_not_met', stepId: 'preflight' });
     expect(run.steps.map((step) => step.status)).toEqual(['skipped']);
   });
 
-  it.skipIf(!bashAvailable)('settles blocked with its stable reason code', async () => {
+  it('settles blocked with its stable reason code', async () => {
     const { run } = await runControl('blocked', 'provider_quota');
     expect(run.status).toBe('failed');
     expect(run.outcome).toMatchObject({ kind: 'blocked', reasonCode: 'provider_quota', stepId: 'preflight' });
+  });
+
+  it('rejects missing, malformed, and schema-invalid output before downstream dispatch', async () => {
+    const cases = [
+      'output_missing',
+      'output_malformed',
+      'output_invalid',
+    ] as const;
+    for (const reason of cases) {
+      const { repo, run } = await runInvalidOutput(reason);
+      expect(run.status, run.error).toBe('failed');
+      expect(run.outcome).toMatchObject({ kind: 'contract_failure', reasonCode: reason, stepId: 'preflight' });
+      expect(run.steps.map((step) => step.status)).toEqual(['failed', 'pending']);
+      expect(existsSync(join(repo, 'consumer-ran'))).toBe(false);
+    }
   });
 });

@@ -110,6 +110,7 @@ import {
   chainStepNote,
   checkFailureOutcome,
   validateWorkflowContract,
+  validateWorkflowOutput,
   workflowConditionMatches,
   workflowControlOf,
   DEFAULT_ALLOWED_TOOLS,
@@ -5976,32 +5977,15 @@ export class RunManager {
         const exitCode = timedOut ? 124 : code ?? -1;
         emit({ type: 'check-output', stepId: step.id, command, text: trimmed, exitCode });
         if (code === 0 && step.outputSchema) {
-          let decoded: unknown;
-          try {
-            decoded = JSON.parse(trimmed);
-          } catch {
-            const message = 'check output contract failed: stdout was not valid JSON';
-            emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
-            resolve({ ok: false, output: message, exitCode: 1, contractError: true,
-              contractFailureReason: output.trim().length === 0 ? 'output_missing' : 'output_malformed' });
-            return;
-          }
-          const parsed = validateWorkflowContract(step.outputSchema, decoded);
+          const parsed = validateWorkflowOutput(output, step.outputSchema);
           if (!parsed.success) {
-            const message = `check output contract failed: ${parsed.message}`;
+            const message = parsed.message;
             emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
             resolve({ ok: false, output: message, exitCode: 1, contractError: true,
-              contractFailureReason: parsed.failure === 'schema_invalid' ? 'output_schema_invalid' : 'output_invalid' });
+              contractFailureReason: parsed.failure });
             return;
           }
-          const controlResult = workflowControlOf(parsed.data);
-          if (controlResult.error) {
-            const message = `check output contract failed: ${controlResult.error}`;
-            emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: 1 });
-            resolve({ ok: false, output: message, exitCode: 1, contractError: true, contractFailureReason: 'output_invalid' });
-            return;
-          }
-          resolve({ ok: true, output: trimmed, exitCode, structuredOutput: parsed.data, control: controlResult.control });
+          resolve({ ok: true, output: trimmed, exitCode, structuredOutput: parsed.data, control: parsed.control });
           return;
         }
         resolve({ ok: !timedOut && code === 0, output: timedOut ? `finalizer timed out after ${step.timeoutSeconds}s\n${trimmed}` : trimmed, exitCode });

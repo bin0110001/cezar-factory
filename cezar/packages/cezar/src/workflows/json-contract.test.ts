@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateWorkflowContract, workflowConditionMatches, workflowControlOf, workflowStepSchema } from './types.ts';
+import { validateWorkflowContract, validateWorkflowOutput, workflowConditionMatches, workflowControlOf, workflowStepSchema } from './types.ts';
 
 describe('workflow JSON contracts', () => {
   it('accepts values matching a standard JSON Schema', () => {
@@ -48,5 +48,21 @@ describe('workflow JSON contracts', () => {
     });
     expect(workflowControlOf({ $cezar: { action: 'skip_step', reasonCode: 'no_work' } }).error).toContain('precondition_not_met');
     expect(workflowControlOf({ $cezar: { action: 'blocked', reasonCode: 'provider_quota' } }).control?.action).toBe('blocked');
+  });
+
+  it('classifies missing, malformed, invalid, and schema-invalid check output', () => {
+    const schema = { type: 'object', required: ['count'], properties: { count: { type: 'integer' } } };
+    expect(validateWorkflowOutput('  ', schema)).toMatchObject({ success: false, failure: 'output_missing' });
+    expect(validateWorkflowOutput('{', schema)).toMatchObject({ success: false, failure: 'output_malformed' });
+    expect(validateWorkflowOutput('{"count":"no"}', schema)).toMatchObject({ success: false, failure: 'output_invalid' });
+    expect(validateWorkflowOutput('{"count":1}', { type: 'unknown-schema' })).toMatchObject({ success: false, failure: 'output_schema_invalid' });
+  });
+
+  it('returns only schema-validated data and typed control envelopes', () => {
+    const schema = { type: 'object', required: ['$cezar'], properties: { $cezar: { type: 'object' } } };
+    expect(validateWorkflowOutput('{"$cezar":{"action":"no_work","reasonCode":"no_work"}}', schema))
+      .toMatchObject({ success: true, data: { $cezar: { action: 'no_work', reasonCode: 'no_work' } }, control: { action: 'no_work', reasonCode: 'no_work' } });
+    expect(validateWorkflowOutput('{"$cezar":{"action":"no_work","reasonCode":"wrong"}}', schema))
+      .toMatchObject({ success: false, failure: 'output_invalid' });
   });
 });
