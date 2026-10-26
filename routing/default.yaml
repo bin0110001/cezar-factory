@@ -27,4 +27,3 @@ labels:
 execution:
   record_selected_worker: true
   state_owner: cezar
-  session_owner: openhands
