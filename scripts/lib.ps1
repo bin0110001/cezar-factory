@@ -183,6 +183,7 @@ function Invoke-FactoryValidation {
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage); workingDirectory = '.'; evidencePath = ''
         validationResult = $null
+        changedFiles = @(); changedFilesKnown = $false
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
@@ -268,6 +269,61 @@ function Invoke-FactoryValidation {
         if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
         $receipt.command = $command
         $receipt.reasonCode = 'validation_completed'
+
+        $changedFiles = @()
+        $changeSetKnown = $false
+        $contextPath = Join-Path $root '.factory/implementation-context.json'
+        if (Test-Path $contextPath) {
+            try {
+                $context = Get-Content -Raw $contextPath | ConvertFrom-Json -ErrorAction Stop
+                $baseSha = [string]$context.environment.repositoryHeadSha
+                if ($baseSha -match '^[0-9a-fA-F]{40}$') {
+                    & git -C $root cat-file -e "$baseSha^{commit}" 2>$null
+                    $baseExists = ($LASTEXITCODE -eq 0)
+                    if ($baseExists) {
+                        $commitFiles = @(& git -C $root diff --name-only "$baseSha..HEAD" 2>$null); $commitOk = ($LASTEXITCODE -eq 0)
+                        $stagedFiles = @(& git -C $root diff --cached --name-only 2>$null); $stagedOk = ($LASTEXITCODE -eq 0)
+                        $workingFiles = @(& git -C $root diff --name-only 2>$null); $workingOk = ($LASTEXITCODE -eq 0)
+                        $untrackedFiles = @(& git -C $root ls-files --others --exclude-standard 2>$null); $untrackedOk = ($LASTEXITCODE -eq 0)
+                        if ($commitOk -and $stagedOk -and $workingOk -and $untrackedOk) {
+                            $changedFiles = @($commitFiles + $stagedFiles + $workingFiles + $untrackedFiles | ForEach-Object { ([string]$_).Trim() -replace '\\', '/' } | Where-Object { $_ } | Sort-Object -Unique)
+                            $changeSetKnown = $true
+                        }
+                    }
+                }
+            } catch { $changeSetKnown = $false; $changedFiles = @() }
+        }
+        if ($changedFiles.Count -gt 200) {
+            $receipt.changedFiles = @($changedFiles | Select-Object -First 200)
+            $receipt.changedFilesKnown = $false
+            $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_change_set_too_large'
+            $receipt.exitCode = 2; $receipt.message = 'Changed-file evidence exceeds the 200-path limit; applicability cannot be decided safely.'
+            return 1
+        }
+        $receipt.changedFiles = @($changedFiles)
+        $receipt.changedFilesKnown = $changeSetKnown
+        if ($stageConfig -is [System.Collections.IDictionary] -and $stageConfig.Contains('appliesTo') -and $changeSetKnown) {
+            $patterns = @($stageConfig.appliesTo | ForEach-Object { [string]$_ } | Where-Object { $_ })
+            if ($patterns.Count -eq 0) {
+                $receipt.status = 'unavailable'; $receipt.reasonCode = 'validation_applicability_rules_missing'
+                $receipt.exitCode = 2; $receipt.message = "Configured validation.$configStage has no applicability patterns."
+                return 1
+            }
+            $applicable = $false
+            foreach ($file in $changedFiles) {
+                foreach ($pattern in $patterns) {
+                    $matcher = [System.Management.Automation.WildcardPattern]::new(($pattern -replace '\\', '/'), [System.Management.Automation.WildcardOptions]::IgnoreCase)
+                    if ($matcher.IsMatch($file)) { $applicable = $true; break }
+                }
+                if ($applicable) { break }
+            }
+            if (-not $applicable) {
+                $receipt.status = 'skipped'
+                $receipt.reasonCode = if ($changedFiles.Count -eq 0) { 'validation_no_applicable_changes' } else { 'validation_not_applicable' }
+                $receipt.exitCode = 0; $receipt.message = "No changed file matched validation.$configStage appliesTo."
+                return $(if ($Stage -eq 'changed') { 0 } else { 1 })
+            }
+        }
         $workingPath = [IO.Path]::GetFullPath((Join-Path $root $workingDirectory))
         $rootPath = [IO.Path]::GetFullPath($root)
         $rootPrefix = $rootPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
@@ -307,6 +363,7 @@ function Invoke-FactoryValidation {
         $start.RedirectStandardError = $true
         $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
         $start.Environment['FACTORY_VALIDATION_RESULT_FORMAT'] = $resultFormat
+        $start.Environment['FACTORY_VALIDATION_CHANGED_FILES'] = ConvertTo-Json -InputObject @($changedFiles) -Compress
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture

@@ -74,6 +74,13 @@ if ([int]$issueRecord.number -ne $Issue) { throw "GitHub returned issue $($issue
 
 $repoRoot = Get-RepoRoot
 $workingDirectory = (Get-Location).Path
+$repositoryHeadSha = $null
+if ($repoRoot) {
+    $headOutput = @(& git -C $repoRoot rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $headOutput.Count -gt 0 -and ([string]$headOutput[0]).Trim() -match '^[0-9a-fA-F]{40}$') {
+        $repositoryHeadSha = ([string]$headOutput[0]).Trim()
+    }
+}
 $context = [ordered]@{
     schemaVersion = 1
     preparedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -81,6 +88,7 @@ $context = [ordered]@{
     environment = [ordered]@{
         workingDirectory = $workingDirectory
         repositoryRoot = $repoRoot
+        repositoryHeadSha = $repositoryHeadSha
         gitBranch = if ($repoRoot) { (& git -C $repoRoot branch --show-current 2>$null) -join '' } else { $null }
         gitStatus = if ($repoRoot) { @(& git -C $repoRoot status --short 2>$null) } else { @() }
         factoryRuntimeRoot = if ($env:FACTORY_RUNTIME_ROOT) { $env:FACTORY_RUNTIME_ROOT } else { $null }

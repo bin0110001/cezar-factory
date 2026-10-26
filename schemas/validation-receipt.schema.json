@@ -13,7 +13,7 @@
     "stage": { "type": "string", "enum": ["changed", "full", "verify"] },
     "status": { "type": "string", "enum": ["passed", "failed", "skipped", "unavailable", "no-matching-tests", "error"] },
     "exitCode": { "type": "integer" },
-    "reasonCode": { "type": "string", "enum": ["validation_passed", "validation_command_failed", "validation_command_missing", "validation_config_missing", "validation_config_invalid", "validation_working_directory_missing", "validation_prerequisite_missing", "targeted_validation_unsupported", "issue_already_resolved", "validation_result_passed", "validation_result_failed", "validation_result_skipped", "validation_result_unavailable", "validation_result_no_matching_tests", "validation_result_malformed", "validation_result_contradicts_exit_code", "validation_error", "validation_infrastructure_error", "validation_head_changed"] },
+    "reasonCode": { "type": "string", "enum": ["validation_passed", "validation_command_failed", "validation_command_missing", "validation_config_missing", "validation_config_invalid", "validation_working_directory_missing", "validation_prerequisite_missing", "validation_applicability_rules_missing", "validation_change_set_too_large", "validation_not_applicable", "validation_no_applicable_changes", "targeted_validation_unsupported", "issue_already_resolved", "validation_result_passed", "validation_result_failed", "validation_result_skipped", "validation_result_unavailable", "validation_result_no_matching_tests", "validation_result_malformed", "validation_result_contradicts_exit_code", "validation_error", "validation_infrastructure_error", "validation_head_changed"] },
     "artifactPaths": {
       "type": "array",
       "minItems": 1,
@@ -26,6 +26,8 @@
     "command": { "type": "string" },
     "workingDirectory": { "type": "string" },
     "evidencePath": { "type": "string" },
+    "changedFiles": { "type": "array", "maxItems": 200, "items": { "type": "string", "maxLength": 4096 } },
+    "changedFilesKnown": { "type": "boolean" },
     "validationResult": {
       "type": ["object", "null"],
       "properties": {

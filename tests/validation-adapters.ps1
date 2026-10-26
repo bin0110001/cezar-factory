@@ -31,6 +31,10 @@ param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
+if ($env:ADAPTER_EXPECT_CHANGED_FILE) {
+    $changedFiles = @((ConvertFrom-Json -InputObject $env:FACTORY_VALIDATION_CHANGED_FILES))
+    if ($changedFiles -notcontains $env:ADAPTER_EXPECT_CHANGED_FILE) { Write-Error 'Changed-file evidence was not passed to the project verifier.'; exit 9 }
+}
 if ($env:ADAPTER_COMMIT) {
     Set-Content ./adapter-commit.txt changed
     & git add -- adapter-commit.txt
@@ -67,7 +71,7 @@ validation:
     timeoutSeconds: 1200
     evidencePath: ".factory/artifacts/verification/changed.json"
     appliesTo:
-      - "*"
+      - "src/**"
   full:
     command: "pwsh ./runner.ps1 full"
     resultFormat: "json"
@@ -86,6 +90,14 @@ validation:
     & git -C $project remote add origin https://github.com/example/project.git
     & git -C $project add .
     & git -C $project commit -qm init
+    $baselineHead = (& git -C $project rev-parse HEAD).Trim()
+    New-Item -ItemType Directory -Path (Join-Path $project '.factory') -Force | Out-Null
+    @{ schemaVersion = 1; environment = @{ repositoryHeadSha = $baselineHead } } |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    New-Item -ItemType Directory -Path (Join-Path $project 'src') -Force | Out-Null
+    Set-Content (Join-Path $project 'src/fixture.ts') 'export const validationFixture = true'
+    & git -C $project add src/fixture.ts
+    & git -C $project commit -qm 'fixture project change'
     $templateConfig = Read-FactoryConfig (Join-Path $factory 'templates/factory.config.yaml')
     Check 'factory template parser reads nested targeted verification contract' (
         $templateConfig.validation.targeted.command -eq '' -and
@@ -100,6 +112,7 @@ validation:
     @{ issue = 7; pr = 'https://github.com/example/project/pull/1' } |
         ConvertTo-Json | Set-Content (Join-Path $project '.factory/implement-result.json')
 
+    $env:ADAPTER_EXPECT_CHANGED_FILE = 'src/fixture.ts'
     foreach ($stage in 'changed', 'full', 'verify') {
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
@@ -109,10 +122,20 @@ validation:
             $expectedEvidence = ".factory/artifacts/verification/$stage.json"
             Check "$stage receipt reflects structured workdir/evidence metadata" ($run.Receipt.workingDirectory -eq '.' -and $run.Receipt.evidencePath -eq $expectedEvidence)
         }
+        if ($stage -eq 'changed') {
+            Check 'targeted receipt records bounded changed-file evidence' ($run.Receipt.changedFilesKnown -and $run.Receipt.changedFiles -contains 'src/fixture.ts')
+        }
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
         $expectedTimeout = if ($stage -eq 'changed') { 1200 } else { 7200 }
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
     }
+    Remove-Item Env:ADAPTER_EXPECT_CHANGED_FILE
+    $originalConfig = Get-Content -Raw $configPath
+    $originalConfig.Replace('- "src/**"', '- "docs/**"') | Set-Content $configPath
+    $beforeCount = @(Get-Content (Join-Path $project '.factory/counter.txt')).Count
+    $run = Run-Stage changed
+    Check 'non-applicable targeted changes skip without running tests' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped' -and $run.Receipt.reasonCode -eq 'validation_not_applicable' -and @(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq $beforeCount)
+    $originalConfig | Set-Content $configPath
     Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
 
     foreach ($statusCase in @(
@@ -241,6 +264,7 @@ validation:
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_DIRTY -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_COMMIT -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_EXPECT_CHANGED_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_RESULT_FILE -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
