@@ -54,6 +54,42 @@ describe('ScheduleRunner', () => {
     });
   });
 
+  it('launches a scheduled occurrence only once when two runners overlap', async () => {
+    const { dir, store, definition, clock } = await setup();
+    const otherStore = AutomationStore.open(dir, { now: () => new Date(clock.now()) });
+    let releaseLaunch: (() => void) | undefined;
+    const launchGate = new Promise<void>((resolve) => { releaseLaunch = resolve; });
+    const launch = vi.fn(async () => {
+      await launchGate;
+      return { runId: 'run-once' };
+    });
+    const duplicateLaunch = vi.fn(async () => ({ runId: 'run-duplicate' }));
+    const first = new ScheduleRunner({ projectId: 'p', store, timeZone: 'UTC', launch, now: clock.now });
+    const second = new ScheduleRunner({ projectId: 'p', store: otherStore, timeZone: 'UTC', launch: duplicateLaunch, now: clock.now });
+    first.dueAt(definition);
+    second.dueAt(definition);
+    clock.set(FIRST_RUN + 1_000);
+
+    const firstFire = first.fire(definition);
+    try {
+      const launchDeadline = Date.now() + 1_000;
+      while (launch.mock.calls.length === 0) {
+        if (Date.now() > launchDeadline) throw new Error('first scheduled launch did not start');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const secondOutcome = await second.fire(definition);
+      expect(secondOutcome.result).toBe('lease-held');
+    } finally {
+      releaseLaunch?.();
+    }
+
+    await expect(firstFire).resolves.toMatchObject({ result: 'launched', runId: 'run-once' });
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(duplicateLaunch).not.toHaveBeenCalled();
+    expect(store.latestReceipts().get(`nightly:schedule:${new Date(FIRST_RUN).toISOString()}`))
+      .toMatchObject({ status: 'launched', runId: 'run-once' });
+  });
+
   it('keeps a successful run id when the guard is compromised during awaited launch', async () => {
     const { dir, store, definition, clock } = await setup();
     const launch = vi.fn(async () => {
