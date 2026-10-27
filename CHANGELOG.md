@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.75] - 2026-10-27
+
+- Remove the watchdog's optional direct GitHub label/comment writes until they
+  can use the shared revision-bound effect receipt path.
+
 ## [0.3.74] - 2026-10-27
 
 - Prefer an installed Git for Windows Bash for Cezar check steps on Windows.

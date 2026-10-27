@@ -14,8 +14,6 @@ param(
     [ValidateRange(5, 10080)][int]$MaxRunMinutes = 15,
     [ValidateRange(1, 10080)][int]$MaxIdleMinutes = 15,
     [switch]$DryRun,
-    [switch]$RouteCancelledRuns,
-    [string]$GhCommand = 'gh',
     [string]$OutputPath = '.factory/watchdog-report.json',
     [string]$RunsFixturePath = ''
 )
@@ -177,12 +175,6 @@ try {
             $entry.reason = 'factory-run-stalled-past-deadline'
             $cancelled.Add([pscustomobject]@{ id = $id; issueNumber = $decision.issueNumber; reason = $entry.reason; evidence = @($decision.evidence) })
             $decisions.Add($entry)
-
-            if ($RouteCancelledRuns) {
-                $issue = [int]$decision.issueNumber
-                Invoke-Gh @('issue','edit',[string]$issue,'--add-label','factory:investigate','--remove-label','factory:working')
-                Invoke-Gh @('issue','comment',[string]$issue,'--body',"Factory watchdog cancelled stalled run $id after its lease, heartbeat, progress, and deadline evidence expired. Operator: $([Environment]::UserName).")
-            }
         } catch {
             $failures.Add([pscustomobject]@{ id = $id; error = $_.Exception.Message })
             $decisions.Add([pscustomobject]@{ id = $id; decision = 'failed'; reason = 'run-check-or-cancel-failed'; evidence = @($_.Exception.Message); operator = [Environment]::UserName })
@@ -196,8 +188,3 @@ $status = if ($failures.Count) { 'failed' } else { 'complete' }
 $json = Write-Report $status
 if ($failures.Count) { exit 1 }
 Write-Output $json
-
-function Invoke-Gh([string[]]$Arguments) {
-    $output = & $GhCommand @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "GitHub routing failed: $($output -join "`n")" }
-}

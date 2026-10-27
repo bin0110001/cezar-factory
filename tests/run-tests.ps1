@@ -1567,6 +1567,8 @@ Write-Host '== watchdog fixtures =='
 $watchdogOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'watchdog-automations.ps1') 2>&1 | Out-String
 Write-Host $watchdogOutput
 Assert 'watchdog parsing and eligibility fixtures pass' ($LASTEXITCODE -eq 0)
+$watchdogScript = Get-Content -Raw (Join-Path $scripts 'watchdog-automations.ps1')
+Assert 'watchdog does not perform unrouted GitHub side effects after cancellation' ($watchdogScript -notmatch 'RouteCancelledRuns|GhCommand|Invoke-Gh|issue.{0,20}(edit|comment)')
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
