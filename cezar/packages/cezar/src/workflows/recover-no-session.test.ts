@@ -90,14 +90,40 @@ describe('recover() and a running run with no agent session', () => {
       task: 'do it',
       steps: [{ id: 'work', name: 'Work', kind: 'agent' }],
     });
-    store.updateRun(id, { workflowDef: WORKFLOW_DEF, status: 'running', startedAt: new Date().toISOString(), currentStepId: 'work' });
+    store.updateRun(id, {
+      workflowDef: WORKFLOW_DEF,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      currentStepId: 'work',
+      repairContext: {
+        checkStepId: 'verify',
+        agentStepId: 'work',
+        retryAttempt: 1,
+        retryLimit: 2,
+        sharedRepairsUsed: 1,
+        sharedRepairLimit: 3,
+        exitCode: 1,
+        failureCategory: 'test_regression',
+        failureOutput: 'assertion failed: expected 2, received 1',
+        changedFiles: 'src/calc.ts | 2 +-',
+        recordedAt: new Date().toISOString(),
+      },
+    });
     store.updateStep(id, 'work', { status: 'running', sessionId: 'sess-1', backend: 'claude' });
 
-    await recoveringManager().recover();
+    const manager = recoveringManager();
+    await manager.recover();
 
     // The continuation path: interrupted, then resumed from the recorded session (queued here
     // only because the semaphore is frozen).
     expect(lifecycle(id)).toContain('cezar restarted — resuming the interrupted task from its last session');
     expect(lifecycle(id)).not.toContain('cezar restarted — the task had not reached its agent session — task re-queued');
+    const continuation = (manager as unknown as {
+      pendingContinuations: Map<string, { prompt: string }>;
+    }).pendingContinuations.get(id);
+    expect(continuation?.prompt).toContain('Previous verification repair: check "verify" failed with exit 1; repair attempt 1 of 2.');
+    expect(continuation?.prompt).toContain('assertion failed: expected 2, received 1');
+    expect(continuation?.prompt).toContain('src/calc.ts | 2 +-');
+    expect(continuation?.prompt).toContain('Read the handoff file (CEZ_HANDOFF_FILE)');
   });
 });
