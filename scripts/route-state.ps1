@@ -415,6 +415,34 @@ function Add-PlanCommentOnce([string]$Body) {
     Assert-EffectRevision $fresh $current
     Add-Comment ($Body + "`n`n$receipt")
 }
+function Confirm-DecompositionChild($Child, [int]$ParentIssue, [int]$Slot, [string]$Digest, [string]$Title, [string]$ExpectedBody, [string[]]$ExpectedLabels) {
+    $childBody = [string]$Child.body
+    $slotMarker = "<!-- factory:plan-child:${ParentIssue}:${Slot}:${Digest} -->"
+    if ([string]$Child.title -ne $Title -or $childBody -notmatch [regex]::Escape("<!-- factory-parent:$ParentIssue -->") -or
+        $childBody -notmatch [regex]::Escape($slotMarker)) { Fail "decomposition slot $Slot remote child does not match its title and stable slot markers" }
+    $payloadMatches = [regex]::Matches($childBody, 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
+    if ($payloadMatches.Count -ne 1) { Fail "decomposition slot $Slot child must contain exactly one durable action receipt" }
+    $payloadMatch = $payloadMatches[0]
+    try {
+        $action = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payloadMatch.Groups[1].Value)) | ConvertFrom-Json
+        $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+        if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) { Fail "decomposition slot $Slot action receipt is invalid" }
+    } catch { Fail "decomposition slot $Slot action receipt is invalid: $($_.Exception.Message)" }
+    $expectedBodyHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($ExpectedBody))).ToLowerInvariant()
+    $bodyParts = $childBody -split "`n`n---`nParent: ", 2
+    $actualBodyHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$bodyParts[0]))).ToLowerInvariant()
+    $expectedKey = "factory:plan-result:${ParentIssue}:child:${Slot}:$Digest"
+    $actualLabels = @($Child.labels | ForEach-Object { if ($_ -is [string]) { $_ -split ',' } else { [string]$_.name } } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ([int]$action.target.id -ne $ParentIssue -or $action.target.kind -ne 'github_issue' -or
+        $action.operation -ne 'github.issue.create_child' -or $action.operationKey -ne $expectedKey -or
+        [int]$action.arguments.slot -ne $Slot -or $action.arguments.title -ne $Title -or
+        $action.arguments.bodySha256 -ne $expectedBodyHash -or $actualBodyHash -ne $expectedBodyHash -or
+        (@($action.arguments.labels | Sort-Object) -join ',') -ne (@($ExpectedLabels | Sort-Object) -join ',') -or
+        (@($actualLabels | Sort-Object) -join ',') -ne (@($ExpectedLabels | Sort-Object) -join ',')) {
+        Fail "decomposition slot $Slot action receipt does not match the requested child and labels"
+    }
+    $action
+}
 function Get-SelectedWorker([string[]]$IssueLabels) {
     # Complexity is an implementation-tier guard. Medium and large work must
     # never fall through to the bounded local worker, even if a stale or
@@ -506,11 +534,15 @@ switch ($Event) {
             $marker = "<!-- factory-parent:$Issue -->"
             $existing = @{}
             $existingBySlot = @{}
-            foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body' --limit 200 | ConvertFrom-Json)) {
+            foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body,labels,updatedAt' --limit 200 | ConvertFrom-Json)) {
                 if ($e.body -like "*$marker*") {
-                    $existing[[string]$e.title] = [int]$e.number
+                    $existing[[string]$e.title] = $e
                     $slotMatch = [regex]::Match([string]$e.body, "<!-- factory:plan-child:${Issue}:(?<slot>\d+):(?<digest>[a-f0-9]{64}) -->")
-                    if ($slotMatch.Success) { $existingBySlot[[int]$slotMatch.Groups['slot'].Value] = [ordered]@{ number = [int]$e.number; digest = $slotMatch.Groups['digest'].Value } }
+                    if ($slotMatch.Success) {
+                        $slot = [int]$slotMatch.Groups['slot'].Value
+                        if ($existingBySlot.ContainsKey($slot)) { Fail "decomposition slot $slot has multiple remote child issues; reconcile manually" }
+                        $existingBySlot[$slot] = $e
+                    }
                 }
             }
             $subs = @($result.subIssues)
@@ -527,16 +559,19 @@ switch ($Event) {
                 $specification = [ordered]@{ slot = $i; title = $subTitle; body = $subBody; type = $subType; risk = $subRisk; complexity = $subComplexity; dependsOn = $subDependencies }
                 $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($specification | ConvertTo-Json -Compress -Depth 8)))).ToLowerInvariant()
                 $slotMarker = "<!-- factory:plan-child:${Issue}:${i}:$digest -->"
+                $labelsForChild = @('factory:needs-plan', $subType, $subRisk, $subComplexity)
                 if ($existingBySlot.ContainsKey($i)) {
-                    if ($existingBySlot[$i].digest -ne $digest) { Fail "decomposition slot $i already has a child issue with different content; reconcile before retrying" }
-                    $numbers += [int]$existingBySlot[$i].number
+                    $child = $existingBySlot[$i]
+                    if ($child.body -notmatch [regex]::Escape($slotMarker)) { Fail "decomposition slot $i already has a child issue with different content; reconcile before retrying" }
+                    $childAction = Confirm-DecompositionChild $child $Issue $i $digest $subTitle $subBody $labelsForChild
+                    Add-EffectActionReceipt $childAction 'verified' ([string]$child.updatedAt)
+                    $numbers += [int]$child.number
                     continue
                 }
-                if ($existing.ContainsKey($subTitle)) { $numbers += $existing[$subTitle]; continue }
+                if ($existing.ContainsKey($subTitle)) { Fail "a child titled '$subTitle' exists without this decomposition slot receipt; reconcile before retrying" }
                 $freshParent = Get-LiveIssue
                 Assert-EffectRevision $freshParent $current
                 $expectedRevision = ([DateTimeOffset]$freshParent.updatedAt).ToUniversalTime().ToString('o')
-                $labelsForChild = @('factory:needs-plan', $subType, $subRisk, $subComplexity)
                 $operationKey = "factory:plan-result:${Issue}:child:${i}:$digest"
                 $action = [ordered]@{
                     schemaVersion = 1
@@ -566,13 +601,17 @@ switch ($Event) {
                 if ($url -match '/issues/(\d+)') { $createdNumber = [int]$Matches[1] }
                 if ($createdNumber -lt 1) {
                     try {
-                        $reconciled = @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body' --limit 200 | ConvertFrom-Json | Where-Object { [string]$_.body -like "*$slotMarker*" })
+                        $reconciled = @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body,labels,updatedAt' --limit 200 | ConvertFrom-Json | Where-Object { [string]$_.body -like "*$slotMarker*" })
                     } catch { if ($createFailure) { throw $createFailure }; throw }
                     if ($reconciled.Count -eq 1) { $createdNumber = [int]$reconciled[0].number }
                     elseif ($reconciled.Count -gt 1) { Fail "sub-issue creation for slot $i has multiple matching remote results; reconcile manually" }
                     elseif ($createFailure) { throw $createFailure }
                     else { Fail "sub-issue creation for slot $i returned no verifiable issue URL or receipt" }
                 }
+                $createdChildren = @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body,labels,updatedAt' --limit 200 | ConvertFrom-Json | Where-Object { [int]$_.number -eq $createdNumber })
+                if ($createdChildren.Count -ne 1) { Fail "sub-issue creation for slot $i could not be uniquely verified after the remote write" }
+                $childAction = Confirm-DecompositionChild $createdChildren[0] $Issue $i $digest $subTitle $subBody $labelsForChild
+                Add-EffectActionReceipt $childAction 'verified' ([string]$createdChildren[0].updatedAt)
                 $numbers += $createdNumber
             }
             $rows = for ($i = 0; $i -lt $subs.Count; $i++) {

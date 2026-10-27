@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.67] - 2026-10-27
+
+- Verify decomposition child action receipts against remote title, body, labels
+  and stable slot identity before treating child creation as complete.
+
 ## [0.3.66] - 2026-10-27
 
 - Verify replayed and ambiguous route comments against their durable action
