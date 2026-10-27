@@ -1,0 +1,453 @@
+{
+  "issues": [
+    {
+      "createdAt": "2026-10-24T14:27:09Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature"
+      ],
+      "number": 94,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:27:08Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "factory:auditing",
+        "type:feature"
+      ],
+      "number": 93,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:27:06Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "factory:auditing",
+        "type:feature"
+      ],
+      "number": 92,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:27:04Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "factory:auditing",
+        "type:feature"
+      ],
+      "number": 91,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:27:03Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 90,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:27:01Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:refactor"
+      ],
+      "number": 89,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-24T14:26:59Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 88,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:24Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new",
+        "factory:auditing"
+      ],
+      "number": 73,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:22Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new",
+        "factory:auditing"
+      ],
+      "number": 72,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:20Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new",
+        "factory:auditing"
+      ],
+      "number": 71,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:18Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature"
+      ],
+      "number": 70,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:17Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:refactor"
+      ],
+      "number": 69,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:15Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature"
+      ],
+      "number": 68,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:14Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature"
+      ],
+      "number": 67,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:12Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 66,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:10Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature"
+      ],
+      "number": 65,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:09Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 64,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:05Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 62,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:58:04Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:new"
+      ],
+      "number": 61,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T20:57:31Z",
+      "labels": [
+        "risk:medium",
+        "factory:tracking"
+      ],
+      "number": 60,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:38Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:test"
+      ],
+      "number": 59,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:35Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:test"
+      ],
+      "number": 58,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:33Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:feature"
+      ],
+      "number": 57,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:31Z",
+      "labels": [
+        "factory:needs-plan",
+        "type:refactor",
+        "risk:high"
+      ],
+      "number": 56,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:29Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:feature"
+      ],
+      "number": 55,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:26Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:refactor"
+      ],
+      "number": 54,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:24Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:refactor"
+      ],
+      "number": 53,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:03:22Z",
+      "labels": [
+        "risk:medium",
+        "factory:needs-plan",
+        "type:refactor"
+      ],
+      "number": 52,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:02:05Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:needs-plan",
+        "factory:auditing"
+      ],
+      "number": 51,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:02:02Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:feature",
+        "complexity:large"
+      ],
+      "number": 50,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:02:00Z",
+      "labels": [
+        "risk:medium",
+        "factory:new",
+        "type:refactor",
+        "complexity:large"
+      ],
+      "number": 49,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-23T14:00:32Z",
+      "labels": [
+        "factory:tracking"
+      ],
+      "number": 47,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T22:04:10Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:blocked",
+        "complexity:medium"
+      ],
+      "number": 39,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T21:50:09Z",
+      "labels": [
+        "risk:medium",
+        "factory:blocked",
+        "type:feature",
+        "complexity:medium"
+      ],
+      "number": 37,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:35:21Z",
+      "labels": [
+        "factory:needs-help",
+        "type:refactor",
+        "risk:high",
+        "complexity:medium"
+      ],
+      "number": 29,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:35:18Z",
+      "labels": [
+        "factory:needs-help",
+        "type:bug",
+        "risk:high",
+        "complexity:medium"
+      ],
+      "number": 28,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:35:12Z",
+      "labels": [
+        "type:maintenance",
+        "factory:needs-help",
+        "risk:high",
+        "complexity:medium"
+      ],
+      "number": 26,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:35:09Z",
+      "labels": [
+        "risk:medium",
+        "factory:blocked",
+        "type:bug",
+        "complexity:medium"
+      ],
+      "number": 25,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:18:37Z",
+      "labels": [
+        "factory:human-review",
+        "factory:tracking",
+        "type:refactor",
+        "risk:high",
+        "complexity:large"
+      ],
+      "number": 21,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:18:35Z",
+      "labels": [
+        "factory:human-review",
+        "factory:tracking",
+        "type:bug",
+        "risk:high",
+        "complexity:large"
+      ],
+      "number": 20,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:18:34Z",
+      "labels": [
+        "risk:medium",
+        "factory:blocked",
+        "type:refactor",
+        "complexity:medium"
+      ],
+      "number": 19,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-16T20:17:23Z",
+      "labels": [
+        "type:maintenance",
+        "factory:tracking",
+        "risk:high",
+        "complexity:large"
+      ],
+      "number": 17,
+      "dependenciesReady": true
+    },
+    {
+      "createdAt": "2026-10-06T14:21:53Z",
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:blocked",
+        "complexity:medium"
+      ],
+      "number": 1,
+      "dependenciesReady": true
+    }
+  ]
+}

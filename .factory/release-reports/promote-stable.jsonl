@@ -1,3 +1,4 @@
 {"timestamp":"2026-10-10T14:55:46.9642835Z","status":"promoted","sha":"2522e23a5eed1ce0c0fef39ca3b1588afd59e4db","branch":"stable","detail":"Tests passed; origin/stable now at 2522e23a5eed1ce0c0fef39ca3b1588afd59e4db."}
 {"timestamp":"2026-10-11T13:26:41.8282193Z","status":"promoted","sha":"277a8e5b43d92b44af4a2769de0e33738d523751","branch":"stable","detail":"Tests passed; origin/stable now at 277a8e5b43d92b44af4a2769de0e33738d523751."}
 {"timestamp":"2026-10-11T21:15:22.3134268Z","status":"promoted","sha":"418585a2b74497f4c9bf8c231695892e63bb8ddc","branch":"stable","detail":"Tests passed; origin/stable now at 418585a2b74497f4c9bf8c231695892e63bb8ddc."}
+{"timestamp":"2026-10-27T22:12:01.6006865Z","status":"refused","sha":"84f84c5badf0f9950730fe7c101784ae60b483b1","branch":"stable","detail":"Working tree has uncommitted tracked changes; commit them so the tested tree is the promoted commit."}
