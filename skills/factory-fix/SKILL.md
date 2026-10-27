@@ -18,7 +18,7 @@ source: skills/factory-fix/SKILL.md
 
 ### 1. Read Review Findings
 
-- Review the findings posted by the review skill or human reviewer.
+- Review the latest blocking findings posted by the review skill or human reviewer.
 - Categorize each finding as blocking or non-blocking.
 - Understand the root cause of each finding before attempting a fix.
 
@@ -48,7 +48,7 @@ source: skills/factory-fix/SKILL.md
 ### 6. Return to Review
 
 - Update the PR with the fixes.
-- Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
+- Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return the structured result object with the existing PR URL in `pr`; the workflow materializes the result and binds issue identity from the selected task.
 - Fixes are reported with the implementation result schema; the workflow returns the issue to `factory:review`.
 
 ## Retry Limits
@@ -62,7 +62,6 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ```json
 {
-  "issue": 272,
   "status": "success",
   "summary": "Fixed the blocking review finding.",
   "filesChanged": ["src/example.ps1"],

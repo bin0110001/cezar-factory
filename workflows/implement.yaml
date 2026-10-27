@@ -49,9 +49,8 @@ steps:
     skill: factory-implement
     outputSchema:
       type: object
-      required: [issue, status, summary, filesChanged, testsRun, testResult, acceptanceCriteriaStatus, knownConcerns, followUpSuggestions, durableKnowledgeCandidates, documentationUpdated]
+      required: [status, summary, filesChanged, testsRun, testResult, acceptanceCriteriaStatus, knownConcerns, followUpSuggestions, durableKnowledgeCandidates, documentationUpdated]
       properties:
-        issue: { type: integer, minimum: 1 }
         status: { type: string, enum: [success, failure] }
         summary: { type: string }
         filesChanged: { type: array, items: { type: string } }
@@ -73,25 +72,7 @@ steps:
           required: [resolved]
           properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     prompt: |
-      Implement this GitHub issue: {{task}}
-
-      Before editing code, read the prepared .factory/implementation-context.json
-      artifact, the nearest AGENTS.md/manual, and the issue body/comments recorded
-      there. The issue and approved plan are the source of truth. Do not repeat
-      broad discovery, use anonymous GitHub curl calls, guess repositories, or
-      dispatch a child Cezar task.
-
-      The workflow already prepared the context and moved the issue to factory:working.
-      Do not run Factory lifecycle, routing, or preparation scripts and do not set any
-      factory:* label. Use only the current worktree. If a command fails, inspect its
-      actual error and retry once with corrected syntax. Prefer structured file edits
-      over shell heredocs or nested quoting for multiline files. If the corrected
-      command also fails, or two consecutive calls are spent recovering the same
-      command failure, stop and return a failure result immediately; do not switch
-      shells, invent paths, recursively list directories, or delete/recreate files.
-      When done, open or update the PR if implementation succeeded, then return exactly one JSON object
-      matching this workflow's output contract. Do not write a result file. Set issue to the issue number
-      in the prepared context; the workflow checks that identity before materializing the validated output.
+      {{task}}
   - id: materialize-result
     name: Materialize the validated implementation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey implement -Path .factory/implement-result.json -ExpectedIssuePath .factory/implementation-context.json
@@ -229,7 +210,7 @@ steps:
       "18": unknown
   - id: validate
     name: Validate implementation result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -Task "{{task}}"
     when:
       type: object
       required: [outputs]

@@ -168,7 +168,8 @@ Assert 'fix-review typed resolved preflight owns early exit without duplicate ag
 Assert 'implementation typed resolved preflight owns early exit without skill duplication' ($implementWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $implementWorkflow -notmatch 'already-resolved\.json' -and $implementSkill -notmatch 'Already-resolved issues|already-resolved\.json')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference only after an open-issue result exists' ($implementWorkflow -match '(?s)id: ensure-pr-closes-issue\s+name:.*?ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json.*?outputSchema:.*?observedRevision.*?when:.*?resolved.*?const: open')
-Assert 'implementation result is typed, identity-bound, and has failure/cancellation-safe finalizers' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[issue, status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -notmatch 'id: ensure-result' -and $implementWorkflow -match '(?s)id: recover-implementation-contract-failure.*?finalizer: true.*?idempotent: true.*?timeoutSeconds: 20' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
+Assert 'implementation result is typed, workflow-bound and finalized safely' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -match 'validate-result\.ps1 -Kind implementation .* -Task "\{\{task\}\}"' -and $implementWorkflow -notmatch 'id: ensure-result' -and $implementWorkflow -match '(?s)id: recover-implementation-contract-failure.*?finalizer: true.*?idempotent: true.*?timeoutSeconds: 20' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $implementSkill -match 'workflow materializer binds the issue identity' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
+Assert 'fix-review returns a bounded result for workflow materialization with task-bound identity' ($fixReviewWorkflow -match '(?s)id: fix\s+name:.*?outputSchema:.*?required: \[status, summary' -and $fixReviewWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey fix -Path \.factory/implement-result\.json' -and $fixReviewWorkflow -match 'validate-result\.ps1 -Kind implementation .* -Task "\{\{task\}\}"' -and $fixReviewWorkflow -notmatch 'write the structured result as JSON|issue number in "issue"' -and $fixSkill -match 'Do \*\*not\*\*.*write `.factory/implement-result\.json`' -and $fixSkill -notmatch 'including the issue number in `issue`')
 Assert 'implementation verification retries only normalized test regressions' (@([regex]::Matches($implementWorkflow, '(?s)onFail:\s+retry: implement\s+max: [12]\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 4 -and $implementWorkflow -match '"11": missing_command' -and $implementWorkflow -match '"16": timeout' -and $implementWorkflow -match '"18": unknown' -and $implementWorkflow -match '(?s)id: validate\s+name: Validate implementation result.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration')
 Assert 'planner, reviewer and investigator retry agents only for malformed result code 1' ($planWorkflow -match '(?s)id: validate-plan.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $reviewWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $investigateWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $planMaterializeStep -notmatch 'onFail:')
 Assert 'intake retries classification only for malformed result code 1' ($intakeWorkflow -match '(?s)id: validate\s+name: Validate intake result.*?retry: intake\s+max: 1\s+retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration')
@@ -256,7 +257,7 @@ foreach ($entry in $resultExamples) {
     if (-not $example.Success) { continue }
     $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
     $exampleJson = $example.Groups[1].Value
-    if ($entry.Skill -in @('factory-investigate', 'factory-plan')) {
+    if ($entry.Skill -in @('factory-investigate', 'factory-plan', 'factory-implement', 'factory-fix')) {
         # The model-facing shape omits issue; its workflow validator binds the
         # selected task identity before downstream steps consume the artifact.
         $investigationExample = $exampleJson | ConvertFrom-Json -AsHashtable
@@ -600,17 +601,18 @@ try {
         Assert 'workflow output materializer writes the selected structured output' ($materialized.Code -eq 0 -and $materializedPlan.issue -eq 123 -and $materializedPlan.objective -eq 'test')
         New-Item -ItemType Directory -Force (Join-Path $rp '.factory') | Out-Null
         @{ issue = @{ number = 123 } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $rp '.factory/implementation-context.json')
-        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ implement = @{ issue = 123; status = 'failure' } } } | ConvertTo-Json -Depth 8 -Compress)
+        $env:CEZAR_INPUT_JSON = (@{ outputs = @{ implement = @{ status = 'failure' } } } | ConvertTo-Json -Depth 8 -Compress)
         Push-Location $rp
         try { $implementationMaterialized = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'implement'; Path = '.factory/implement-result.json'; ExpectedIssuePath = '.factory/implementation-context.json' } }
         finally { Pop-Location }
         $implementationResult = Get-Content -Raw (Join-Path $rp '.factory/implement-result.json') | ConvertFrom-Json
-        Assert 'implementation output materializes only for the prepared issue' ($implementationMaterialized.Code -eq 0 -and $implementationResult.issue -eq 123)
+        Assert 'implementation output materializer binds omitted issue from prepared context' ($implementationMaterialized.Code -eq 0 -and $implementationResult.issue -eq 123)
         $env:CEZAR_INPUT_JSON = (@{ outputs = @{ implement = @{ issue = 124; status = 'failure' } } } | ConvertTo-Json -Depth 8 -Compress)
         Push-Location $rp
         try { $wrongImplementation = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'implement'; Path = '.factory/wrong-implement-result.json'; ExpectedIssuePath = '.factory/implementation-context.json' } }
         finally { Pop-Location }
-        Assert 'implementation materializer refuses a mismatched issue identity' ($wrongImplementation.Code -ne 0 -and -not (Test-Path (Join-Path $rp '.factory/wrong-implement-result.json')))
+        $boundImplementation = Get-Content -Raw (Join-Path $rp '.factory/wrong-implement-result.json') | ConvertFrom-Json
+        Assert 'implementation materializer overrides model-proposed issue with prepared identity' ($wrongImplementation.Code -eq 0 -and $boundImplementation.issue -eq 123)
         Set-Content (Join-Path $rp '.factory/implement-result.json') '{"issue":123,"status":"success","summary":"stale attempt"}'
         $env:CEZAR_INPUT_JSON = (@{ finalization = @{ terminal = 'failed'; outcome = @{ kind = 'contract_failure'; reasonCode = 'output_invalid'; stepId = 'implement' } } } | ConvertTo-Json -Depth 8 -Compress)
         Push-Location $rp
@@ -665,7 +667,7 @@ try {
     function Test-Validate([string]$Kind, $Obj) {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
         $global:LASTEXITCODE = 0
-        if ($Kind -in @('plan', 'investigation')) { & pwsh -NoProfile -File $val -Kind $Kind -Path $f -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null }
+        if ($Kind -in @('plan', 'implementation', 'investigation')) { & pwsh -NoProfile -File $val -Kind $Kind -Path $f -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null }
         else { & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null }
         $global:LASTEXITCODE
     }
@@ -808,6 +810,12 @@ try {
     $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
     $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
+    $implementationIdentityPath = Join-Path $tmp 'implementation-identity.json'
+    $implementationWithoutIssue = $impl.Clone(); $implementationWithoutIssue.Remove('issue')
+    ($implementationWithoutIssue | ConvertTo-Json -Depth 5) | Set-Content $implementationIdentityPath
+    $boundImplementationValidation = Run 'validate-result.ps1' @{ Kind = 'implementation'; Path = $implementationIdentityPath; Task = 'GitHub issue #7 selected by workflow' }
+    $boundImplementationValidationResult = Get-Content -Raw $implementationIdentityPath | ConvertFrom-Json
+    Assert 'validate: implementation issue identity is bound from workflow task when omitted' ($boundImplementationValidation.Code -eq 0 -and $boundImplementationValidationResult.issue -eq 7)
     Assert 'validate: implementation with no documentation change and nonblocking concern passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false; knownConcerns = 'Minor follow-up suggested.' })) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
     Assert 'validate: success without PR fails' ((Test-Validate 'implementation' $noPr) -ne 0)

@@ -142,7 +142,6 @@ output contract. The workflow persists the validated value; do not write an arti
 
 ```json
 {
-  "issue": 272,
   "status": "success",
   "summary": "Implemented the planned change.",
   "filesChanged": ["src/example.ps1"],
@@ -165,6 +164,6 @@ change.
 ## Workflow Contract
 
 - The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory lifecycle, routing, or preparation commands; the workflow owns those steps.
-- Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return one JSON object matching the workflow's implementation output contract. Set `issue` to the number in the prepared context; the workflow validates the contract and materializes the result.
+- Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return one JSON object matching the workflow's implementation output contract. The workflow materializer binds the issue identity from the prepared context.
 - Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
 - The workflow owns result persistence under `.factory/`; never commit its generated artifacts.

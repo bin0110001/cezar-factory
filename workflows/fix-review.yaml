@@ -3,7 +3,7 @@ description: Address actionable review findings, re-validate, and return the iss
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,materialize-workflow-output.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -36,6 +36,22 @@ steps:
   - id: fix
     name: Run factory-fix skill
     skill: factory-fix
+    outputSchema:
+      type: object
+      required: [status, summary, filesChanged, testsRun, testResult, acceptanceCriteriaStatus, knownConcerns, followUpSuggestions, durableKnowledgeCandidates, documentationUpdated]
+      properties:
+        status: { type: string, enum: [success, failure] }
+        summary: { type: string }
+        filesChanged: { type: array, items: { type: string } }
+        testsRun: { type: array, items: { type: string } }
+        testResult: { type: string }
+        acceptanceCriteriaStatus: { type: string }
+        documentationUpdated: { type: boolean }
+        knownConcerns: { type: string }
+        followUpSuggestions: { type: string }
+        durableKnowledgeCandidates: { type: string }
+        pr: { type: string }
+      additionalProperties: false
     when:
       type: object
       required: [outputs]
@@ -45,12 +61,20 @@ steps:
           required: [resolved]
           properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     prompt: |
-      Address the review findings on this GitHub issue's PR: {{task}}
-
-      The workflow already moved the issue to factory:working. Do not run Factory lifecycle or routing
-      scripts and do not edit factory:* labels. Read only the latest review comment's blocking findings.
-      Push fixes to the existing PR, then write the structured result as JSON to .factory/implement-result.json
-      (create the directory) with the issue number in "issue" and the PR URL in "pr".
+      {{task}}
+  - id: materialize-result
+    name: Materialize the fix result
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey fix -Path .factory/implement-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved, fix]
+          properties:
+            resolved: { type: object, required: [status], properties: { status: { const: open } } }
+            fix: { type: object }
   - id: targeted-tests
     name: Run targeted validation
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
@@ -79,7 +103,7 @@ steps:
       "18": unknown
   - id: validate
     name: Validate fix result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json -Task "{{task}}"
     when:
       type: object
       required: [outputs]

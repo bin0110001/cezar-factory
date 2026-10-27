@@ -35,9 +35,8 @@ try {
         $context = Get-Content -Raw -LiteralPath $contextPath | ConvertFrom-Json -AsHashtable -Depth 40
         $expectedIssue = 0
         if ($context.issue -and $context.issue.number) { $expectedIssue = [int]$context.issue.number }
-        if ($expectedIssue -lt 1 -or -not $value.Contains('issue') -or [int]$value.issue -ne $expectedIssue) {
-            throw "workflow output '$OutputKey' issue does not match the prepared issue context ($expectedIssue)"
-        }
+        if ($expectedIssue -lt 1) { throw "prepared issue context has no valid issue number ($expectedIssue)" }
+        $value.issue = $expectedIssue
     }
     $target = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
     if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
