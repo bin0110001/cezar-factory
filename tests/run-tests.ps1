@@ -1506,12 +1506,15 @@ try {
     Set-Content $fakePr @'
 $a = @($args)
 if ($a[0] -eq 'pr' -and $a[1] -eq 'list') {
-    if (Test-Path $env:FAKE_PR_STATE) { '[{"url":"https://github.com/x/y/pull/7","headRefName":"factory/godot-4.8","baseRefName":"main"}]' }
+    if (Test-Path $env:FAKE_PR_RECORD) { Get-Content -Raw $env:FAKE_PR_RECORD }
     else { '[]' }
     exit 0
 }
 if ($a[0] -eq 'pr' -and $a[1] -eq 'create') {
     Add-Content $env:FAKE_PR_STATE 'created'
+    $body = [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1])
+    $headSha = (& git rev-parse HEAD).Trim()
+    @{ url = 'https://github.com/x/y/pull/7'; headRefName = 'factory/godot-4.8'; baseRefName = 'main'; headRefOid = $headSha; body = $body } | ConvertTo-Json -Compress | Set-Content $env:FAKE_PR_RECORD
     'https://github.com/x/y/pull/7'
     if ($env:FAKE_PR_AMBIGUOUS -eq '1') { exit 1 }
     exit 0
@@ -1520,14 +1523,23 @@ if ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { Add-Content $env:FAKE_PR_STATE 'mer
 Write-Error "unsupported $($a -join ' ')"; exit 2
 '@
     $env:FAKE_PR_STATE = Join-Path $gd 'fake-pr-state.txt'
+    $env:FAKE_PR_RECORD = Join-Path $gd 'fake-pr-record.json'
     $env:FAKE_PR_AMBIGUOUS = '1'
     $r = GodotStep publish @('-GhCommand', $fakePr)
     $published = Get-Content -Raw .factory/godot-upgrade-result.json | ConvertFrom-Json
-    Assert 'godot publish reconciles a lost PR-create response and requests auto-merge' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
+    $publishedActions = if ($published.PSObject.Properties['actionReceipts']) { @($published.actionReceipts) } else { @() }
+    if (-not $publishedActions.Count) { Write-Host "  info godot publish result missing receipt: exit=$($r.Code); output=$($r.Out.Trim()); artifact=$($published | ConvertTo-Json -Compress -Depth 8)" }
+    $publishJsonMatch = [regex]::Match($r.Out, '(?m)^\{[^\r\n]*\}\r?$')
+    $publishedCommand = if ($publishJsonMatch.Success) { $publishJsonMatch.Value | ConvertFrom-Json } else { $null }
+    $publishedCommandActions = if ($publishedCommand -and $publishedCommand.PSObject.Properties['actionReceipts']) { @($publishedCommand.actionReceipts) } else { @() }
+    if (@($publishedCommandActions).Count -eq 0) { Write-Host "  info godot command output missing receipt: exit=$($r.Code); output=$($r.Out.Trim())" }
+    Assert 'godot publish reconciles a lost PR-create response and requests auto-merge' ($r.Code -eq 0 -and $published.pr -match '/pull/7' -and $published.autoMerge -and @($publishedActions | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.pull_request.create' -and $_.action.expectedRevision -eq (& git rev-parse HEAD).Trim() -and (Test-Json -Json ($_.action | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) }).Count -eq 1 -and $publishedCommandActions[0].action.operation -eq 'github.pull_request.create' -and ((& git show --stat --format=%s HEAD) -join ' ') -match 'Adapt to Godot 4.8-stable')
     $r = GodotStep publish @('-GhCommand', $fakePr)
     $effects = @(Get-Content $env:FAKE_PR_STATE)
-    Assert "godot publish replay reuses the open PR without creating a duplicate (exit=$($r.Code); effects=$($effects -join ','); output=$($r.Out.Trim()))" ($r.Code -eq 0 -and @($effects | Where-Object { $_ -eq 'created' }).Count -eq 1 -and @($effects | Where-Object { $_ -eq 'merged' }).Count -eq 2)
-    Remove-Item Env:FAKE_PR_STATE, Env:FAKE_PR_AMBIGUOUS -ErrorAction SilentlyContinue
+    $replayedPublish = Get-Content -Raw .factory/godot-upgrade-result.json | ConvertFrom-Json
+    $replayedActions = if ($replayedPublish.PSObject.Properties['actionReceipts']) { @($replayedPublish.actionReceipts) } else { @() }
+    Assert "godot publish replay reuses the open PR receipt without creating a duplicate (exit=$($r.Code); effects=$($effects -join ','); output=$($r.Out.Trim()))" ($r.Code -eq 0 -and @($effects | Where-Object { $_ -eq 'created' }).Count -eq 1 -and @($effects | Where-Object { $_ -eq 'merged' }).Count -eq 2 -and $replayedActions[0].status -eq 'verified' -and $replayedActions[0].action.operationKey -eq $publishedActions[0].action.operationKey)
+    Remove-Item Env:FAKE_PR_STATE, Env:FAKE_PR_RECORD, Env:FAKE_PR_AMBIGUOUS -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_GH_STATE -ErrorAction SilentlyContinue
     $r = GodotStep check @('-LatestTag', '4.8-stable')
     Assert 'godot check: an existing upgrade branch suppresses re-attempts' ((Get-Content -Raw .factory/godot-upgrade.json | ConvertFrom-Json).status -eq 'none')

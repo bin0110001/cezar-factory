@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.68] - 2026-10-27
+
+- Persist a schema-valid Godot upgrade PR action receipt in the PR body and
+  verify the exact remote head on create recovery and replay.
+
 ## [0.3.67] - 2026-10-27
 
 - Verify decomposition child action receipts against remote title, body, labels
