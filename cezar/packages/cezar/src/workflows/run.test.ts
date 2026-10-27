@@ -976,6 +976,64 @@ describe('a chain of 2 selected skills runs BOTH steps, in order (#410)', () => 
     }
   }, 20_000);
 
+  it('expires a workflow deadline against a real agent-runner child process', async () => {
+    const savedDryRun = process.env.CEZ_DRY_RUN;
+    process.env.CEZ_DRY_RUN = '1';
+    const workflow: WorkflowDef = {
+      name: 'agent-process-deadline',
+      source: 'built-in',
+      maxRunDurationSeconds: 5,
+      steps: [{ id: 'slow-agent', skill: 'implement', prompt: '{{task}}' }],
+    };
+    let runId: string | undefined;
+    let childPid: number | undefined;
+    try {
+      const record = manager.startRun(workflow, {
+        task: 'mock:slow wait past the active workflow deadline',
+        worktree: false,
+      });
+      runId = record.id;
+      const active = manager as unknown as {
+        active: Map<string, { session?: { pid?: number; result: Promise<unknown> } }>;
+      };
+      const spawnDeadline = Date.now() + 8_000;
+      while (childPid === undefined) {
+        childPid = active.active.get(record.id)?.session?.pid;
+        if (childPid !== undefined) break;
+        if (Date.now() > spawnDeadline) throw new Error('real mock agent process did not start');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      if (childPid === undefined) throw new Error('real mock agent process has no pid');
+
+      const finishDeadline = Date.now() + 15_000;
+      while (manager.isActive(record.id)) {
+        if (Date.now() > finishDeadline) throw new Error('expired agent process did not settle');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const finished = store.getRun(record.id);
+      expect(finished?.status).toBe('failed');
+      expect(finished?.outcome).toMatchObject({
+        kind: 'timeout', reasonCode: 'deadline_exceeded', stepId: 'slow-agent',
+      });
+
+      const exitDeadline = Date.now() + 3_000;
+      while (true) {
+        try {
+          process.kill(childPid, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') break;
+          throw error;
+        }
+        if (Date.now() > exitDeadline) throw new Error(`agent runner process ${childPid} survived deadline settlement`);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      if (runId && manager.isActive(runId)) await cancelAndWait(manager, runId);
+      if (savedDryRun === undefined) delete process.env.CEZ_DRY_RUN;
+      else process.env.CEZ_DRY_RUN = savedDryRun;
+    }
+  }, 30_000);
+
   it('persists remaining active time when an explicit human wait is paused and resumed', () => {
     const record = store.createRun({
       title: 'pause budget', workflow: 'pause-budget', task: 'wait for a person',
