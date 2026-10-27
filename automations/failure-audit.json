@@ -8,7 +8,7 @@
     "minute": 0
   },
   "task": {
-    "prompt": "Audit recent Cezar failures for {{project}} on {{date}}. Inspect at most the latest 20 run records and create at most one deduplicated Factory maintenance issue if warranted.",
+      "prompt": "Classify the bounded failure evidence collected for {{project}} on {{date}}. Inspect only the workflow artifacts. The workflow owns issue publication; do not create, edit, label, close, or search GitHub issues, and do not restart runs.",
     "workflow": "factory-failure-audit",
     "runner": "codex",
     "model": "factory-gateway/factory-code",

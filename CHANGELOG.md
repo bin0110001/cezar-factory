@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.57] - 2026-10-27
+
+- Publish bounded Factory failure evidence to one canonical issue per project
+  and normalized signature, with idempotent evidence appends, fail-closed
+  deduplication, human review for ambiguous legacy issues, and a versioned
+  publication receipt.
+
 ## [0.3.56] - 2026-10-18
 
 - Retry shared Factory parity and automation reconciliation on every timer tick,

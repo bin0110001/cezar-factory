@@ -40,11 +40,13 @@ Classify each distinct failure as one of:
 
 ## Required action
 
-If asked to classify a collected artifact, read only
-`.factory/failure-audit-input.json`; do not run shell commands or inspect raw
-logs. If it reports `limited`, report the limitation and stop. The collector
-does not create issues or restart runs. Publication is a separate workflow
-command tracked in #31 and must not treat incomplete evidence as complete.
+Read only `.factory/failure-audit-input.json` and
+`.factory/failure-audit-publication.json`; do not run shell commands or inspect
+raw logs. If collection reports `limited`, report the limitation and stop. The
+workflow's publisher owns GitHub issue writes and reports `created`, `appended`,
+`adopted`, `existing`, `skipped`, `needs-review`, or `failed` in its receipt. Never create,
+edit, label, close, or search issues from the skill, and never infer that a
+published issue means the defect is fixed.
 
 For `project-defect`, `environment`, or `unknown`, summarize the evidence and
 limitations in the audit report. Do not create an issue from this skill.
