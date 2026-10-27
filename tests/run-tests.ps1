@@ -159,7 +159,8 @@ $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implement
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
-Assert 'planner returns a schema-validated structured artifact for deterministic consumers' ($planWorkflow -match '(?s)id: plan.*?outputSchema:.*?required: \[issue, objective' -and $planWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey plan' -and $planWorkflow -notmatch 'id: plan.*?plan-result\.json' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Return one JSON object')
+Assert 'planner returns a schema-validated structured artifact with workflow-bound issue identity' ($planWorkflow -match '(?s)id: plan.*?outputSchema:.*?required: \[objective' -and $planWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey plan' -and $planWorkflow -notmatch 'id: plan.*?plan-result\.json' -and $planWorkflow -match 'validate-result\.ps1 -Kind plan .* -Task "\{\{task\}\}"' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not supply or infer the `issue` field')
+Assert 'planning skill uses the selected issue and bounded recall artifact without duplicate side effects' ((Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'single GitHub issue selected by the Cezar workflow' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not query memory tools again' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not run commands or Factory scripts' -and $planWorkflow -match '\{\{task\}\}' -and $planWorkflow -notmatch 'Read `\.factory/context/memory-recall\.json`|run Factory scripts|Plan this GitHub issue')
 Assert 'investigation skill defines bounded inputs, forbidden effects and the validated result contract' ($investigateSkill -match 'single issue selected by the Cezar workflow' -and $investigateSkill -match 'Do not discover or select other work' -and $investigateSkill -match 'run Factory scripts' -and $investigateSkill -match 'investigate-result\.json' -and $investigateSkill -notmatch 'issue number.*selected task|Hindsight after normal review' -and $investigateWorkflow -match 'workflow-selected issue: \{\{task\}\}' -and $investigateWorkflow -match 'validate-result\.ps1 .* -Task "\{\{task\}\}"' -and $investigateWorkflow -notmatch 'copying the numeric issue number|Read compact evidence only')
 Assert 'typed resolved preflight owns investigation early exit without duplicate agent instructions' ($investigateWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $investigateWorkflow -match '(?s)id: investigate.*?when:.*?resolved.*?const: open' -and $investigateWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $investigateSkill -notmatch 'already-resolved\.json|Already-resolved issues|retain the lesson through Hindsight')
 Assert 'review typed resolved preflight gates all downstream work without duplicate agent instructions' ($reviewWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and @([regex]::Matches($reviewWorkflow, '(?ms)^  - id: (?:full-verification|verify-project|review|validate|merge-eligibility|route)\b(?:(?!^  - id: ).)*?when:\s+type: object')).Count -eq 6 -and $reviewWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $reviewSkill -notmatch 'already-resolved\.json|Already-resolved issues')
@@ -255,7 +256,7 @@ foreach ($entry in $resultExamples) {
     if (-not $example.Success) { continue }
     $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
     $exampleJson = $example.Groups[1].Value
-    if ($entry.Skill -eq 'factory-investigate') {
+    if ($entry.Skill -in @('factory-investigate', 'factory-plan')) {
         # The model-facing shape omits issue; its workflow validator binds the
         # selected task identity before downstream steps consume the artifact.
         $investigationExample = $exampleJson | ConvertFrom-Json -AsHashtable
@@ -664,7 +665,7 @@ try {
     function Test-Validate([string]$Kind, $Obj) {
         $f = Join-Path $tmp "r-$Kind.json"; ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f
         $global:LASTEXITCODE = 0
-        if ($Kind -eq 'investigation') { & pwsh -NoProfile -File $val -Kind $Kind -Path $f -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null }
+        if ($Kind -in @('plan', 'investigation')) { & pwsh -NoProfile -File $val -Kind $Kind -Path $f -Task 'GitHub issue #7 selected by workflow' *>&1 | Out-Null }
         else { & pwsh -NoProfile -File $val -Kind $Kind -Path $f *>&1 | Out-Null }
         $global:LASTEXITCODE
     }
@@ -793,7 +794,16 @@ try {
     Assert 'validate: bounded memory recall passes' ((Test-Validate 'plan' $memoryPlan) -eq 0)
     Assert 'validate: ready plan with open questions fails' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'which db?' })) -ne 0)
     $bad = $plan.Clone(); $bad.Remove('issue')
-    Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
+    Assert 'validate: plan issue is supplied by selected task when omitted by the model' ((Test-Validate 'plan' $bad) -eq 0)
+    $planIdentityPath = Join-Path $tmp 'plan-identity.json'
+    (With $plan @{ issue = 999 } | ConvertTo-Json -Depth 5) | Set-Content $planIdentityPath
+    $boundPlanValidation = Run 'validate-result.ps1' @{ Kind = 'plan'; Path = $planIdentityPath; Task = 'GitHub issue #7 selected by workflow' }
+    $boundPlan = Get-Content -Raw $planIdentityPath | ConvertFrom-Json
+    Assert 'validate: planning issue identity is bound from workflow task, overriding model-proposed identity' ($boundPlanValidation.Code -eq 0 -and $boundPlan.issue -eq 7)
+    $missingTaskPlanPath = Join-Path $tmp 'plan-missing-task.json'
+    ($plan | ConvertTo-Json -Depth 5) | Set-Content $missingTaskPlanPath
+    $missingTaskPlanValidation = Run 'validate-result.ps1' @{ Kind = 'plan'; Path = $missingTaskPlanPath }
+    Assert 'validate: planning workflow task identity is mandatory' ($missingTaskPlanValidation.Code -eq 10)
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
     $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
     $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }

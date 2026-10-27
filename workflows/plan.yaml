@@ -42,9 +42,8 @@ steps:
     skill: factory-plan
     outputSchema:
       type: object
-      required: [issue, objective, acceptanceCriteria, nonGoals, risks, dependencies, suggestedWorkBreakdown, requiredProjectSkills, unresolvedQuestions, complexity, readyNotReadyStatus]
+      required: [objective, acceptanceCriteria, nonGoals, risks, dependencies, suggestedWorkBreakdown, requiredProjectSkills, unresolvedQuestions, complexity, readyNotReadyStatus]
       properties:
-        issue: { type: integer, minimum: 1 }
         objective: { type: string, minLength: 1 }
         acceptanceCriteria: { type: string, minLength: 1 }
         nonGoals: { type: string }
@@ -89,12 +88,7 @@ steps:
               required: [status]
               properties: { status: { const: open } }
     prompt: |
-      Plan this GitHub issue: {{task}}
-
-      Read `.factory/context/memory-recall.json` when present. Treat an unavailable or miss status as a genuine recall miss; do not invent memories.
-
-      Return exactly one JSON object conforming to the plan result contract. Do not write a result file,
-      run Factory scripts, or edit factory:* labels; the workflow validates and routes the result.
+      {{task}}
   - id: validate
     name: Materialize and validate the structured plan result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey plan -Path .factory/plan-result.json
@@ -113,7 +107,7 @@ steps:
             plan: { type: object }
   - id: validate-plan
     name: Validate plan result and Definition of Ready
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json -Task "{{task}}"
     when:
       type: object
       required: [outputs]

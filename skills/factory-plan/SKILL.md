@@ -1,129 +1,46 @@
-<!--
-managed-by: cezar-factory
-factory-version: 0.3.2
-source: skills/factory-plan/SKILL.md
--->
-# Factory Plan Skill
+# Factory plan skill
 
-## Responsibilities
+Plan the single GitHub issue selected by the Cezar workflow. Use this skill when a selected issue needs a concrete, reviewable implementation plan or deliberate decomposition.
 
-- Read the issue.
-- Recall a bounded set of relevant Hindsight memories before planning when the
-  Hindsight MCP integration is available.
-- Inspect relevant repository context.
-- Identify ambiguities.
-- Identify likely dependencies.
-- Define acceptance criteria.
-- Define non-goals.
-- Propose implementation steps.
-- Identify risks.
-- Estimate delivery complexity.
-- Decide whether decomposition is needed.
+## Inputs and prerequisites
 
-## Must not
+- Treat the workflow task as the authoritative issue and scope. Do not search for or select other issues, extract an issue number for a Factory command, or create issues yourself.
+- Read `.factory/context/memory-recall.json` when present. It is the bounded result of the workflow's recall step; use only its returned memories and report a genuine miss or unavailable result honestly. Do not query memory tools again.
+- Inspect relevant repository context, existing conventions, and tests needed to make the plan actionable. Do not implement production changes.
+- Use the issue's linked specifications and project context when available. State assumptions where the supplied evidence does not resolve a requirement.
 
-- Implement production changes.
+## Planning judgment
 
-## Detailed Guidance
+- Define the objective, testable acceptance criteria, explicit non-goals, dependencies, risks and mitigations, and ordered implementation steps.
+- Choose `complexity:small` for isolated reversible work, `complexity:medium` for substantial multi-step or multi-file work, and `complexity:large` for cross-cutting architecture, broad migrations, or work that needs decomposition. Complexity informs downstream automation selection; do not inflate it to request a different worker.
+- Mark the plan `ready` only when there are no unresolved blocking questions, risks are stated, and the work breakdown is verifiable. Use `not-ready` and name blocking questions when a human decision or missing prerequisite prevents a sound plan.
+- Decompose only when the work is too large for one reviewable PR or the request explicitly asks to decompose. For each sub-issue, provide a self-contained objective, concrete tasks, acceptance criteria, and source section; use valid taxonomy and only zero-based dependencies on earlier sub-issues. Keep each issue to roughly one reviewable PR and obey the workflow cap.
+- For decomposition, describe what decomposition completion means in `acceptanceCriteria`, summarize the grouping in `suggestedWorkBreakdown`, and note already completed scope in `nonGoals`.
+- Keep risk aligned with repository policy. High-risk work remains subject to a separate human approval gate after planning.
 
-### 1. Read the Issue
+## Output contract
 
-- Extract the issue title, body, and any linked PRs or commits.
-- Note any existing comments, especially from humans.
-- Identify the work type (`type:bug`, `type:feature`, etc.) and risk level (`risk:low`, `risk:medium`, `risk:high`).
-- Set exactly one complexity label in the plan result: `complexity:small` for an isolated, reversible change; `complexity:medium` for substantial multi-step or multi-file work; `complexity:large` for cross-cutting architecture, broad migrations, or work requiring decomposition. This label selects the automation model after planning.
-- Query the project bank first and the Factory bank when cross-project lessons
-  are relevant. Limit recall to at most 8 memories and 12,000 characters.
-- Record the bank(s) queried and memory identifiers in `memoryRecall`; never
-  paste an entire memory bank into the planning context.
+Return one JSON object with `objective`, `acceptanceCriteria`, `nonGoals`, `risks`, `dependencies`, `suggestedWorkBreakdown`, `requiredProjectSkills`, `unresolvedQuestions`, `complexity`, and `readyNotReadyStatus`. Include `memoryRecall` when the workflow supplied its artifact, with the banks queried, memory IDs, count (maximum 8), and context characters (maximum 12,000). Include `subIssues` only for a `decomposed` plan; each item has `title`, `body`, `type`, `risk`, `complexity`, and optional `dependsOn`.
 
-### 2. Inspect Repository Context
+The workflow validator binds the selected issue identity and validates the final artifact against `schemas/plan.schema.json`. Do not supply or infer the `issue` field. The workflow owns validation, posting, sub-issue creation, and lifecycle routing.
 
-- Search the codebase for related files, modules, or patterns.
-- Look at recent changes in the same area to understand conventions.
-- Check for existing tests that cover the relevant code paths.
-- Identify the entry points and architecture that the change would touch.
-
-### 3. Identify Ambiguities
-
-- List any unclear requirements or assumptions.
-- Note where the issue description is incomplete or contradictory.
-- Flag anything that requires human judgment or domain expertise.
-
-### 4. Identify Likely Dependencies
-
-- External libraries or packages that may need updating.
-- Other modules or services that the change affects.
-- Configuration or environment setup required.
-- Database migrations or data model changes.
-
-### 5. Define Acceptance Criteria
-
-- Write concrete, testable criteria that clearly define "done".
-- Use the format: "Given [context], when [action], then [expected outcome]".
-- Ensure criteria are verifiable through code, tests, or manual inspection.
-- Align criteria with the issue's intent and any linked specifications.
-
-### 6. Define Non-Goals
-
-- Explicitly state what is out of scope for this task.
-- Prevent scope creep by clarifying boundaries.
-- Note any adjacent work that should be tracked separately.
-
-### 7. Propose Implementation Steps
-
-- Break the work into logical, sequential steps.
-- Each step should be small enough to validate independently.
-- Include test creation as part of the implementation steps.
-- Consider edge cases and error handling in the steps.
-
-### 8. Identify Risks
-
-- Assess the risk level (low, medium, high) based on:
-  - Blast radius (number of files, public API changes).
-  - Security or data sensitivity.
-  - Performance impact.
-  - Architectural complexity.
-- Document specific risk factors and mitigation strategies.
-
-### 9. Decide Whether Decomposition Is Needed
-
-- Decompose when the issue is too large to implement and review as one PR, or when the issue itself asks you to break a document, spec or epic into issues.
-  - Set `readyNotReadyStatus` to `decomposed` and list the sub-issues in `subIssues`. Do **not** create issues yourself; the workflow creates them from your list and queues them as `factory:needs-plan` for autonomous planning.
-- Each sub-issue is `{ "title", "body", "type", "risk", "complexity", "dependsOn" }`:
-  - `title`: short and unique, in the form a maintainer would file ("Phase 3: deterministic evaluation engine").
-  - `body`: self-contained. State the objective, the concrete tasks, acceptance criteria, and a pointer to the source (document path and section). A planner reading only this issue must be able to plan it without the parent.
-  - `type`: one of `type:bug|feature|refactor|test|docs|maintenance`. `risk`: `risk:low|medium|high` per the project's risk guidance. `complexity`: one of `complexity:small|medium|large`.
-  - `dependsOn`: zero-based indexes of earlier entries in `subIssues` that must land first. Never self-reference.
-- Size each sub-issue to roughly one reviewable PR; group tiny related tasks together, split anything spanning several layers. Prefer fewer, meaningful issues over one per checkbox; the cap is `max_sub_issues` in `policies/retry.yaml` (default 40).
-- Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
-- In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
-
-### 10. Return the Plan Result
-
-- Set `readyNotReadyStatus` to `ready` only if the plan meets the Definition of Ready (no unresolved blocking questions, risks stated, a work breakdown present); otherwise use `not-ready` and record the questions in `unresolvedQuestions`.
-- Return one JSON object conforming to `plan.schema.json`, including the issue number in the `issue` field. The workflow validates and materializes the result for deterministic consumers.
-- Do not post comments, create issues, or edit lifecycle labels. The workflow validates the artifact, posts the plan, creates any declared sub-issues, and routes the issue state. High-risk plan approval remains a separate human gate.
-
-## Output Format
-
-Return a structured plan result conforming to `plan.schema.json`:
+Example model output:
 
 ```json
 {
-  "issue": 123,
-  "objective": "Clear statement of what this task achieves",
-  "acceptanceCriteria": "Testable criteria for completion",
-  "nonGoals": "Explicitly stated out-of-scope items",
-  "risks": "Identified risks and mitigation strategies",
-  "dependencies": "Required dependencies and setup steps",
-  "suggestedWorkBreakdown": "Ordered list of implementation steps",
-  "requiredProjectSkills": ["skill-ids needed for this task"],
-  "unresolvedQuestions": "Questions requiring human input (empty if none)",
-  "complexity": "complexity:medium",
-  "readyNotReadyStatus": "ready",
-  "subIssues": [{ "title": "...", "body": "...", "type": "type:feature", "risk": "risk:medium", "complexity": "complexity:small", "dependsOn": [0] }]
+  "objective": "Add a bounded timeout to the configured verifier.",
+  "acceptanceCriteria": "Given a verifier exceeds its configured timeout, when validation runs, then it returns an unavailable result with a timeout reason and does not report a pass.",
+  "nonGoals": "Changing project test commands or the merge policy.",
+  "risks": "A timeout that is too short could stop a legitimate long test; use the configured project limit and preserve elapsed-time evidence.",
+  "dependencies": "Use the existing project validation configuration.",
+  "suggestedWorkBreakdown": "1. Add timeout enforcement. 2. Record a structured timeout result. 3. Cover the behavior with a fixture.",
+  "requiredProjectSkills": [],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:small",
+  "readyNotReadyStatus": "ready"
 }
 ```
 
-`subIssues` is required only when `readyNotReadyStatus` is `decomposed`.
+## Boundaries
+
+Do not run commands or Factory scripts, write result files, post comments, create issues, change labels, or edit source. Return only the structured plan object. When evidence is insufficient, record the limitation in `unresolvedQuestions` instead of inventing detail.
