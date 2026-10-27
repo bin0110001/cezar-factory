@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.74] - 2026-10-27
+
+- Prefer an installed Git for Windows Bash for Cezar check steps on Windows.
+
 ## [0.3.73] - 2026-10-27
 
 - Recheck live issue revision and lifecycle state immediately before route-state

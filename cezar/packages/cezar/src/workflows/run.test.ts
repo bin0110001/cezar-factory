@@ -1504,7 +1504,7 @@ describe('a single agent step plus a check step gets NO chain note (#410)', () =
     await removeFixtureDirectory(repoRoot);
   });
 
-  it("leaves the lone agent step's prompt untouched", async () => {
+  it("does not add a chain preamble to the lone agent step's task", async () => {
     // README.md's documented workflow, with a check that passes so the run
     // reaches a terminal state without looping back.
     const workflow: WorkflowDef = {
@@ -1529,14 +1529,13 @@ describe('a single agent step plus a check step gets NO chain note (#410)', () =
       { id: 'verify', status: 'done' },
     ]);
 
-    // One session ran, and its userText is the task text alone — no chain
-    // note, no "an earlier step" premise, no skill named as the step's goal.
+    // The original task remains first, without a chain preamble. The bounded
+    // execution summary is appended separately and may name the selected skill.
     const notes = readFileSync(join(repoRoot, 'notes.md'), 'utf8').trim().split('\n');
     expect(notes.length).toBe(1);
-    expect(notes[0]).toContain('mock:done fix the login bug');
+    expect(notes[0]).toMatch(/: mock:done fix the login bug Task summary: \/project-conventions mock:done fix the login bug/);
     expect(notes[0]).not.toContain('chain of');
     expect(notes[0]).not.toContain('earlier step');
-    expect(notes[0]).not.toContain('project-conventions');
   }, 30_000);
 });
 

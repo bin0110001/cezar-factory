@@ -34,6 +34,7 @@ import {
 } from '../handoff.ts';
 import { todosPath } from '../todos.ts';
 import { collectPriorStepOutputs, workflowDefinitionDigest, workflowStepDigest } from './structured-artifacts.ts';
+import { resolveWorkflowCheckShell } from './check-shell.ts';
 // Contract VALUES, like `workspaceUiStateSchema` in workspace/migrations.ts: the attachment
 // vocabulary the routes validate with is the same one the engine stores and re-reads by, so the
 // wire and the disk can never disagree about what counts as an image (#950).
@@ -6268,7 +6269,7 @@ export class RunManager {
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
       const processGroup = Boolean(step.timeoutSeconds) && process.platform !== 'win32';
-      const child = spawn('bash', ['-lc', command], {
+      const child = spawn(resolveWorkflowCheckShell(), ['-lc', command], {
         cwd: state.cwd,
         env: { ...process.env, CEZAR_TASK: task, CEZAR_INPUT_JSON: JSON.stringify(stepInput) },
         ...(processGroup ? { detached: true } : {}),
