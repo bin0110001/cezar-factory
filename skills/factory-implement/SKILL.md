@@ -5,140 +5,74 @@ source: skills/factory-implement/SKILL.md
 -->
 # Factory Implement Skill
 
-## Responsibilities
+## Contract
 
-- Consume the prepared `.factory/implementation-context.json` handoff.
-- Read the approved issue plan from the prepared issue body/comments.
-- Follow acceptance criteria.
-- Use project-specific skills.
-- Make the smallest appropriate change.
-- Add/update tests.
-- Run targeted validation where appropriate.
-- Report structured completion information.
-- Explicitly verify substantive acceptance criteria and report whether required
-  documentation was updated. Set `documentationUpdated` to `false` when the
-  documentation review finds that no update is needed.
-- Prepare/update PR.
+Implement the one issue selected by the Cezar workflow and return its typed
+result. The prepared issue, approved plan, acceptance criteria, and non-goals
+define the scope. Use the current task worktree; this run already owns the issue.
 
-## Detailed Guidance
+### Prerequisites and bounded input
 
-### 1. Read the Prepared Issue Context and Approved Plan
+- Read `.factory/implementation-context.json` before discovery. It must match
+  the workflow task and contain the selected issue, plan context, nearest
+  project instructions, and environment metadata. If it is missing, stale,
+  malformed, or mismatched, report the blocker and stop without editing.
+- Use the prepared issue and approved plan as authoritative. Do not search for
+  or select other issues, repeat workflow discovery, or guess repository owners.
+  Do not use anonymous GitHub `curl` calls.
+- Read relevant project instructions and skills. Inspect only the repository,
+  tests, and artifacts needed for the acceptance criteria; keep unrelated logs
+  and memory out of context.
 
-- Read `.factory/implementation-context.json` before any discovery. It must
-  contain the issue number, URL, body/comments, nearest project instructions,
-  and environment metadata written by `prepare-implementation.ps1`.
-- Work only on the prepared issue. Treat the recorded issue and approved plan
-  as authoritative. If the artifact is missing, stale, malformed, or names a
-  different issue than the workflow prompt, report the environment blocker to
-  the outer workflow and do not edit this issue. A backlog-level task must
-  continue with another eligible issue while the workflow prepares or repairs
-  this handoff; do not ask the user to schedule it. Do not repeat broad issue
-  discovery inside a workflow-selected implementation run.
-- Do not use anonymous GitHub `curl` calls or guess repository owners; the
-  preparation script already performed the authenticated issue read.
-- Review the plan's objective, acceptance criteria, and non-goals.
-- Note any risks, dependencies, and required project skills.
-- Ensure you understand the expected outcome before making changes.
+### Required judgment
 
-### 2. Follow Acceptance Criteria
+- Meet each acceptance criterion with the smallest appropriate change. Do not
+  expand scope; resolve routine ambiguity with a documented reversible
+  assumption. Escalate only a major decision that materially changes
+  compatibility, ownership, or the system contract.
+- Add or update meaningful tests for changed behavior. Review documentation
+  relevance and report whether it changed.
+- Use project-owned development and validation commands. Do not run Factory
+  workflow scripts, workflow verification, or result validation from this
+  skill; their command steps own those operations.
+- A command failure is evidence to inspect. Capture the complete error, check
+  command help or documentation, and retry at most once with corrected syntax.
+  If it still fails, or two consecutive tool calls are spent cleaning up that
+  failure, stop and return a failure result with the blocker. Repeating the same failed command,
+  switching shells,
+  deleting/recreating paths, or searching unrelated paths is not recovery.
+- Do not hard-code machine-specific paths or switch to a shell with unknown
+  semantics. Prefer structured file editing for multiline changes.
+- Do not dispatch a child Cezar task. The current workflow owns this issue and
+  its isolated worktree.
 
-- Treat acceptance criteria as the primary success measure.
-- Do not implement features or fixes beyond the stated criteria.
-- Resolve routine ambiguity with the safest reversible assumption and document
-  it. Escalate only an unresolved major architectural decision that materially
-  changes compatibility, ownership, or the system contract.
+### Workflow-owned operations and forbidden effects
 
-### 3. Use Project-Specific Skills
+The workflow prepares context, owns lifecycle labels and routing, runs changed
+and full verification, validates and persists the result, and handles
+finalization. Never run Factory scripts, extract an issue number for one, edit
+`factory:*` labels, write `.factory/implement-result.json`, or commit generated
+workflow artifacts. Do not bypass retry, review, or release gates.
 
-- Discover and apply project-specific skills relevant to the task.
-- Follow any architecture, testing, or convention guidance provided by those skills.
-- Project skills extend or specialize factory behavior; they do not replace it.
-- Do not dispatch a child Cezar task from an implementation run. The current
-  run already owns the issue and its isolated worktree.
+For implementation retries, fix the reported test regression. `policies/retry.yaml`
+allows at most two retries. After the limit, stop modifying
+code and return a failure result for investigation. Infrastructure failures,
+missing tools, malformed results, or unknown failures do not authorize a code
+repair retry.
 
-### 3a. Command and Environment Discipline
+## Result and handoff
 
-- Use the shell and tools provided by the runner. Do not switch to `/bin/sh`,
-  invent container paths, or replace a failed command with one whose semantics
-  are unknown.
-- Run the project's own development commands from the current worktree.
-  Workflow `command:` steps run Factory scripts; do not run them from this skill.
-  Never hard-code `/projects/...` or another machine-specific path.
-- Prefer the runner's structured file-edit tool for multiline files. Avoid shell
-  heredocs and nested quoting when a structured edit is available; malformed
-  quoting can create literal paths or partial files.
-- A non-zero command is evidence to inspect: capture its complete error, check
-  the command help or manual, and retry at most once with corrected syntax. If
-  the second attempt fails—or if two consecutive tool calls are spent cleaning
-  up the same command failure—stop and return a failure result immediately with
-  the blocker. Do not list recursively, switch shells, delete/recreate paths,
-  or spend the remaining run trying unrelated recovery commands. Repeating the
-  same failed command is not a retry.
-- Do not run workflow verification or result-validation commands inside the
-  skill; those are separate workflow steps. Leave the result artifact for them.
-- Do not use Cezar task/automation commands for issue lookup or implementation
-  delegation.
+Return one JSON object matching `implementation-result.schema.json` and the workflow output contract; never write `.factory/implement-result.json`.
+The workflow materializer binds the issue identity from the prepared context.
+Include `status`, `summary`, `filesChanged`,
+`testsRun`, `testResult`, `acceptanceCriteriaStatus`, `documentationUpdated`,
+`knownConcerns`, `followUpSuggestions`, and `durableKnowledgeCandidates`.
+Successful results require non-empty `filesChanged`, `testResult`, and `pr`.
+Use `status: failure` with the observed blocker when work or validation cannot
+finish. Set `documentationUpdated` to `false` when review finds no needed
+documentation change.
 
-### 4. Make the Smallest Appropriate Change
-
-- Implement only what is necessary to satisfy the acceptance criteria.
-- Avoid refactoring, reformatting, or cleaning up unrelated code.
-- If a change seems necessary for clarity, document it as a known concern.
-
-### 5. Add/Update Tests
-
-- Add tests that verify each acceptance criterion.
-- Update existing tests if behavior changes.
-- Ensure tests are meaningful: they should catch regressions, not just exercise code.
-
-### 6. Run Targeted Validation
-
-- Run the project's own test commands while developing. The workflow runs `test-changed.ps1` and the full verification itself after you finish; do not run those Factory scripts.
-- If the project's test command is unavailable, run the most relevant unit or integration tests manually.
-- Do not skip validation; even targeted validation provides signal.
-- If the test script fails because the runtime command itself is unavailable,
-  distinguish that infrastructure failure from a test failure; do not claim
-  the tests passed.
-
-### 7. Report Structured Completion Information
-
-- Produce an implementation result conforming to `implementation-result.schema.json`.
-- Include status, summary, files changed, tests run, test results, and acceptance criteria status.
-- Note any known concerns, follow-up suggestions, and durable knowledge candidates.
-
-### 8. Prepare/Update PR
-
-- Create a new branch if not already on one.
-- Commit changes with a clear, concise message.
-- Create or update a pull request targeting the configured `dev` base branch.
-  After validation and independent approval, the review router requests GitHub
-  auto-merge into `dev`.
-- Link the PR to the issue.
-
-### 9. Factory-managed asset handoff
-
-When the change touches a Factory-managed asset or its source equivalent
-(`skills/`, `workflows/`, `automations/`, `policies/`, `templates/`,
-`scripts/`, schemas, or Factory versioning), identify those files in the
-implementation result. This implementation workflow runs its configured
-validation commands and routes the PR to review. The Factory release and
-configured-target synchronization are later gates handled by the reviewed
-finish-release process, after the PR is approved and merged. A successful
-implementation result means the code and PR are ready for review; do not claim
-the Factory update has been released or delivered to targets at this stage.
-
-## Retry Behavior
-
-- If validation fails, analyze the failure and attempt a fix.
-- Maximum implementation retries: 2 (see `policies/retry.yaml`).
-- After the retry limit is reached, stop modifying code and trigger investigation.
-- Retries must address the reported failure. Repeating the same failed command,
-  changing shells, or searching unrelated paths is not a retry.
-
-## Output Format
-
-Return one implementation result conforming to `implementation-result.schema.json` and the workflow's
-output contract. The workflow persists the validated value; do not write an artifact file yourself:
+Example successful result:
 
 ```json
 {
@@ -156,14 +90,13 @@ output contract. The workflow persists the validated value; do not write an arti
 }
 ```
 
-This is a successful result example. Use `status: failure` with the observed
-blocker when implementation or validation cannot finish. Set
-`documentationUpdated` to `false` when the documentation review requires no
-change.
+Prepare or update the issue-linked PR targeting `dev`; do not merge or request
+auto-merge yourself. Independent review and any required high-risk plan
+approval precede the workflow's auto-merge handoff. A successful result means
+the implementation is ready for review, not merged or released.
 
-## Workflow Contract
-
-- The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory lifecycle, routing, or preparation commands; the workflow owns those steps.
-- Do **not** edit `factory:*` labels or write `.factory/implement-result.json`. Return one JSON object matching the workflow's implementation output contract. The workflow materializer binds the issue identity from the prepared context.
-- Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
-- The workflow owns result persistence under `.factory/`; never commit its generated artifacts.
+For Factory-managed changes (`skills/`, `workflows/`, `automations/`,
+`policies/`, `templates/`, `scripts/`, schemas, or Factory versioning), identify
+the changed Factory assets in the result. The reviewed finish-release process
+handles configured-target synchronization and runtime parity after merge; do
+not claim deployment or release from implementation success.
