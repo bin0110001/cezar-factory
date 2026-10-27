@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.70] - 2026-10-27
+
+- Define the no-op response and forbidden effects for the legacy implementation
+  preparation compatibility skill.
+
 ## [0.3.69] - 2026-10-27
 
 - Test that a blank required project validation command returns unavailable.
