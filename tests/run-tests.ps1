@@ -1135,6 +1135,8 @@ try {
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
     Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 5)
     Assert 'backlog audit input: deterministic hit and ambiguity rates use the eligible rule sample' ($auditCandidates.classificationMetrics.eligibleIssues -eq 6 -and $auditCandidates.classificationMetrics.deterministicRuleHits -eq 5 -and $auditCandidates.classificationMetrics.deterministicRuleHitRate -eq 0.8333 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousRate -eq 0.1667)
+    $ruleHitTotal = ($auditCandidates.classificationMetrics.ruleHits.PSObject.Properties | ForEach-Object { [int]$_.Value } | Measure-Object -Sum).Sum
+    Assert 'backlog audit input: per-rule hits and actual agent escalations are counted' ($ruleHitTotal -eq 5 -and $auditCandidates.classificationMetrics.ambiguousIssuesSelectedForReview -eq 1 -and $auditCandidates.unreviewedAmbiguousCount -eq 0)
     $savedAuditState = Get-Gh
     $emptyAuditState = Get-Gh; $emptyAuditState.issues = @(); $emptyAuditState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $emptyAuditPath = Join-Path $tmp 'empty-backlog-label-audit-input.json'
