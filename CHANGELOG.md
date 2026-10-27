@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.72] - 2026-10-27
+
+- Close the workflow effect operation schema to the supported side-effect
+  allowlist.
+
 ## [0.3.71] - 2026-10-27
 
 - Record current configured Cezar runner profiles and Bazzite runtime parity

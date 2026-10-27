@@ -1295,7 +1295,9 @@ try {
     Assert 'backlog audit receipt exposes a revision-bound allowlisted action' ($auditAction.schemaVersion -eq 1 -and $auditAction.target.kind -eq 'github_issue' -and $auditAction.target.id -eq 5 -and $auditAction.expectedRevision -eq $preparedRevision -and $auditAction.operation -eq 'github.issue.update_labels' -and @($auditAction.arguments.addLabels) -contains 'type:maintenance' -and @($auditAction.arguments.removeLabels) -contains 'factory:auditing' -and $auditAction.rationale.Length -gt 0 -and $auditAction.operationKey -eq $expectedAuditActionKey)
     Assert 'backlog label consumer emits an action validated by the shared schema' (Test-Json -Json ($auditAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
     $effectActionSchema = Get-Content -Raw (Join-Path $factory 'schemas/workflow-effect-action.schema.json') | ConvertFrom-Json
-    Assert 'workflow effect action schema declares the normalized action contract' (@($effectActionSchema.required) -contains 'expectedRevision' -and @($effectActionSchema.required) -contains 'operationKey' -and $effectActionSchema.properties.schemaVersion.const -eq 1)
+    $unlistedEffectAction = $auditAction | ConvertTo-Json -Compress -Depth 8 | ConvertFrom-Json -AsHashtable
+    $unlistedEffectAction.operation = 'github.issue.delete'
+    Assert 'workflow effect action schema declares the normalized contract and closed operation allowlist' (@($effectActionSchema.required) -contains 'expectedRevision' -and @($effectActionSchema.required) -contains 'operationKey' -and $effectActionSchema.properties.schemaVersion.const -eq 1 -and @($effectActionSchema.properties.operation.enum).Count -eq 8 -and -not (Test-Json -Json ($unlistedEffectAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json') -ErrorAction SilentlyContinue))
 
     $recoveryOutput = Join-Path $tmp 'audit-reservation-recovery.json'
     $expired = @{ issue = 5; owner = 'test'; createdAt = '2020-01-01T00:00:00Z'; expiresAt = '2020-01-01T01:00:00Z' } | ConvertTo-Json -Compress
