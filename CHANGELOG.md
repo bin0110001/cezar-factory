@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.66] - 2026-10-27
+
+- Verify replayed and ambiguous route comments against their durable action
+  receipt and include a verified receipt in the route result.
+
 ## [0.3.65] - 2026-10-27
 
 - Make decomposed parent closure replay-safe and verify its durable action

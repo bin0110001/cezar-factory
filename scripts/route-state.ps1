@@ -322,9 +322,29 @@ function Add-Comment([string]$Body) {
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
     $operation = "factory:route-effect:${Event}:${Issue}:$hash"
     $marker = "<!-- $operation -->"
+    $actionSchemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    function Confirm-CommentReceipt($CommentBodies, [string]$ExpectedOperation, [string]$ExpectedHash, [string]$SchemaPath) {
+        $matching = @($CommentBodies | Where-Object { $_ -match [regex]::Escape("<!-- $ExpectedOperation -->") })
+        if ($matching.Count -ne 1) { Fail "comment effect $ExpectedOperation has $($matching.Count) matching remote receipts; reconcile manually" }
+        $payloadMatch = [regex]::Match($matching[0], 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
+        if (-not $payloadMatch.Success) { Fail "comment effect $ExpectedOperation is missing its durable action receipt" }
+        try {
+            $action = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payloadMatch.Groups[1].Value)) | ConvertFrom-Json
+            if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $SchemaPath -ErrorAction Stop)) { Fail "comment effect $ExpectedOperation has an invalid action receipt" }
+        } catch { Fail "comment effect $ExpectedOperation action receipt is invalid: $($_.Exception.Message)" }
+        if ([int]$action.target.id -ne $Issue -or $action.target.kind -ne 'github_issue' -or
+            $action.operation -ne 'github.issue.add_comment' -or $action.operationKey -ne $ExpectedOperation -or
+            $action.arguments.bodySha256 -ne $ExpectedHash) {
+            Fail "comment effect $ExpectedOperation action receipt does not match the requested effect"
+        }
+        $action
+    }
     $before = Get-LiveIssue
-    $prior = @($before.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+    $priorBodies = @($before.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } })
+    $prior = @($priorBodies | Where-Object { $_ -match [regex]::Escape($marker) })
     if ($prior.Count) {
+        $priorAction = Confirm-CommentReceipt $priorBodies $operation $hash $actionSchemaPath
+        Add-EffectActionReceipt $priorAction 'verified' ([string]$before.updatedAt)
         $script:effectRevision = [string]$before.updatedAt
         return
     }
@@ -345,7 +365,6 @@ function Add-Comment([string]$Body) {
         Fail 'comment action is missing a bounded revision, rationale or operation key'
     }
     $actionJson = $action | ConvertTo-Json -Compress -Depth 6
-    $actionSchemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
     try {
         if (-not (Test-Json -Json $actionJson -SchemaFile $actionSchemaPath -ErrorAction Stop)) {
             Fail 'comment action does not satisfy the shared workflow effect contract'
@@ -354,21 +373,28 @@ function Add-Comment([string]$Body) {
     $actionPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($actionJson))
     $actionMarker = "<!-- factory:effect-action:v1:$actionPayload -->"
     $markedBody = $Body + "`n`n" + $marker + "`n" + $actionMarker
+    Add-EffectActionReceipt $action 'applying'
     $f = [IO.Path]::GetTempFileName()
     try {
         [IO.File]::WriteAllText($f, $markedBody)
         try { Invoke-Gh issue comment $Issue --body-file $f | Out-Null }
         catch {
             $afterAmbiguous = Get-LiveIssue
-            $found = @($afterAmbiguous.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+            $afterBodies = @($afterAmbiguous.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } })
+            $found = @($afterBodies | Where-Object { $_ -match [regex]::Escape($marker) })
             if (-not $found.Count) { throw }
+            $verifiedAction = Confirm-CommentReceipt $afterBodies $operation $hash $actionSchemaPath
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
+            Add-EffectActionReceipt $verifiedAction 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
         $after = Get-LiveIssue
-        $found = @($after.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+        $afterBodies = @($after.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } })
+        $found = @($afterBodies | Where-Object { $_ -match [regex]::Escape($marker) })
         if (-not $found.Count) { Fail "comment side effect is unresolved for $operation" }
+        $verifiedAction = Confirm-CommentReceipt $afterBodies $operation $hash $actionSchemaPath
         $script:effectRevision = [string]$after.updatedAt
+        Add-EffectActionReceipt $verifiedAction 'verified' ([string]$after.updatedAt)
     } finally { Remove-Item $f -ErrorAction SilentlyContinue }
 }
 function Add-PlanCommentOnce([string]$Body) {
@@ -383,7 +409,7 @@ function Add-PlanCommentOnce([string]$Body) {
     $prior = @($fresh.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($prefix) })
     if ($prior.Count -gt 0) {
         if ($prior | Where-Object { $_ -notmatch [regex]::Escape($receipt) }) { Fail 'a prior plan-result comment has different content; reconcile the issue before retrying' }
-        $script:effectRevision = [string]$fresh.updatedAt
+        Add-Comment ($Body + "`n`n$receipt")
         return
     }
     Assert-EffectRevision $fresh $current

@@ -891,7 +891,7 @@ try {
     $ambiguousClassificationResult = Get-Gh
     Assert 'route: ambiguous classification response is reconciled before later effects' ($ambiguousClassificationRoute -eq 0 -and $ambiguousClassificationResult.labels -contains 'type:bug' -and $ambiguousClassificationResult.labels -contains 'risk:low' -and $ambiguousClassificationResult.labels -contains 'factory:needs-plan' -and @($ambiguousClassificationResult.comments | Where-Object { $_ -match 'factory:route-effect:intake-result:7:' }).Count -eq 1)
     $classificationReceipt = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
-    Assert 'route: classification emits schema-valid verified action receipt' ($classificationReceipt.actionReceipts.Count -eq 2 -and @($classificationReceipt.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operationKey -match '^factory:route-labels:intake-result:7:' -and (Test-Json -Json ($_.action | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) }).Count -eq 2)
+    Assert 'route: classification emits schema-valid verified label action receipts' (@($classificationReceipt.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operationKey -match '^factory:route-labels:intake-result:7:' -and (Test-Json -Json ($_.action | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) }).Count -eq 2)
     Set-Gh @('factory:new')
     Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)
@@ -1021,7 +1021,9 @@ try {
     Assert 'route comment receipt records a schema-shaped revision-bound action' ($null -ne $planCommentAction -and $planCommentAction.schemaVersion -eq 1 -and $planCommentAction.target.kind -eq 'github_issue' -and $planCommentAction.target.id -eq 7 -and $planCommentAction.expectedRevision -eq $expectedRouteActionRevision -and $planCommentAction.operation -eq 'github.issue.add_comment' -and $planCommentAction.arguments.bodySha256 -match '^[a-f0-9]{64}$' -and $planCommentAction.rationale -eq 'plan-result' -and $planCommentAction.operationKey -match '^factory:route-effect:plan-result:7:')
     Assert 'route comment receipt satisfies the shared workflow effect action schema' (Test-Json -Json ($planCommentAction | ConvertTo-Json -Compress -Depth 6) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
     $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
-    Assert 'route: plan-result retry reuses matching comment receipt' ((Invoke-Route 'plan-result' $plan) -eq 0 -and @((Get-Gh).comments).Count -eq 1)
+    $planReplayCode = Invoke-Route 'plan-result' $plan
+    $planReplayResult = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    Assert 'route: plan-result retry reuses matching comment receipt and reports verified effect' ($planReplayCode -eq 0 -and @((Get-Gh).comments).Count -eq 1 -and @($planReplayResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.add_comment' -and $_.action.operationKey -eq $planCommentAction.operationKey }).Count -eq 1)
     $planRetryState = Get-Gh; $planRetryState.labels = @('factory:needs-plan', 'type:bug', 'complexity:medium'); $planRetryState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: plan-result refuses changed content after a prior receipt' ((Invoke-Route 'plan-result' (With $plan @{ objective = 'changed plan' })) -ne 0 -and @((Get-Gh).comments).Count -eq 1)
     Set-Gh @('factory:needs-plan', 'risk:high')
@@ -1083,7 +1085,7 @@ try {
     $ambiguousLabelRoute = Invoke-Route 'implement-result' $impl
     Assert 'route: ambiguous lifecycle response is reconciled from live state' ($ambiguousLabelRoute -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and (Get-Gh).labels -notcontains 'factory:working')
     $lifecycleReceipt = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
-    Assert 'route: lifecycle transition emits verified revision-bound action receipt' ($lifecycleReceipt.actionReceipts.Count -eq 1 -and $lifecycleReceipt.actionReceipts[0].status -eq 'verified' -and $lifecycleReceipt.actionReceipts[0].action.expectedRevision -and $lifecycleReceipt.actionReceipts[0].observedRevision -and $lifecycleReceipt.actionReceipts[0].action.arguments.addLabels -contains 'factory:review')
+    Assert 'route: lifecycle transition emits verified revision-bound action receipt' (@($lifecycleReceipt.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.update_labels' -and $_.action.expectedRevision -and $_.observedRevision -and $_.action.arguments.addLabels -contains 'factory:review' }).Count -eq 1)
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
     Assert 'route: execution completion recorded' ($execution.execution.status -eq 'complete' -and $execution.execution.result -eq 'success' -and $execution.execution.pr -eq $impl.pr)
     Set-Gh @('factory:working')
@@ -1092,7 +1094,8 @@ try {
     $ambiguousCommentState = Get-Gh; $ambiguousCommentState | Add-Member -NotePropertyName failNextCommentAfterWrite -NotePropertyValue $true -Force; $ambiguousCommentState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $ambiguousCommentRoute = Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })
     $ambiguousCommentResult = Get-Gh
-    Assert 'route: ambiguous comment response is reconciled without duplicate effect' ($ambiguousCommentRoute -eq 0 -and @($ambiguousCommentResult.comments | Where-Object { $_ -match 'factory:route-effect:implement-result:7:' }).Count -eq 1 -and $ambiguousCommentResult.labels -contains 'factory:investigate')
+    $ambiguousCommentReceipt = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    Assert 'route: ambiguous comment response is reconciled with a verified receipt and no duplicate effect' ($ambiguousCommentRoute -eq 0 -and @($ambiguousCommentResult.comments | Where-Object { $_ -match 'factory:route-effect:implement-result:7:' }).Count -eq 1 -and $ambiguousCommentResult.labels -contains 'factory:investigate' -and @($ambiguousCommentReceipt.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.add_comment' }).Count -eq 1)
     Set-Gh @('factory:review')
     Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = '' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
@@ -1106,7 +1109,7 @@ try {
     $mergeComment = [string](@($mergeState.comments | Where-Object { $_ -match 'factory:auto-merge-action:v1:' })[-1])
     $mergeActionMatch = [regex]::Match($mergeComment, 'factory:auto-merge-action:v1:([A-Za-z0-9+/=]+)')
     $mergeAction = if ($mergeActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($mergeActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
-    Assert 'route: lost merge response reconciles and persists a schema-valid verified action receipt' ($mergeState.prMergeCount -eq 1 -and $mergeResult.actionReceipts.Count -eq 2 -and @($mergeResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.pull_request.enable_auto_merge' }).Count -eq 1 -and $mergeAction.operationKey -match '^factory:auto-merge:7:' -and (Test-Json -Json ($mergeAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
+    Assert 'route: lost merge response reconciles and persists a schema-valid verified action receipt' ($mergeState.prMergeCount -eq 1 -and @($mergeResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.pull_request.enable_auto_merge' }).Count -eq 1 -and $mergeAction.operationKey -match '^factory:auto-merge:7:' -and (Test-Json -Json ($mergeAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
     $mergeCommentCount = @($mergeState.comments).Count
     Assert 'route: merged review replay reuses its durable receipt without another merge or comment' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).prMergeCount -eq 1 -and @((Get-Gh).comments).Count -eq $mergeCommentCount)
     Set-Gh @('factory:review')
@@ -1146,7 +1149,7 @@ try {
     $parentCloseComment = [string](@($decompositionReceiptState.comments | Where-Object { $_ -match 'factory:decomposition-close:' })[-1])
     $parentCloseActionMatch = [regex]::Match($parentCloseComment, 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
     $parentCloseAction = if ($parentCloseActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parentCloseActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
-    Assert 'route: lost parent-close response reconciles through its schema-valid durable action receipt' ($decompositionReceiptState.issueCloseCount -eq 1 -and $decompositionRouteResult.actionReceipts.Count -eq 3 -and @($decompositionRouteResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.close' }).Count -eq 1 -and $parentCloseAction.operationKey -match '^factory:decomposition-close:7:' -and (Test-Json -Json ($parentCloseAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
+    Assert 'route: lost parent-close response reconciles through its schema-valid durable action receipt' ($decompositionReceiptState.issueCloseCount -eq 1 -and @($decompositionRouteResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.close' }).Count -eq 1 -and $parentCloseAction.operationKey -match '^factory:decomposition-close:7:' -and (Test-Json -Json ($parentCloseAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
     $iss = @((Get-Gh).issues)
     Assert 'route: sub-issues queued for planning' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:needs-plan,type:feature,risk:medium,complexity:medium')
     Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
