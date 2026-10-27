@@ -43,9 +43,12 @@ the tested merge commit, never an unmerged feature branch.
 1. The implementation PR targets `dev` and has independent review plus the
    high-risk plan-approval gate when applicable. Request GitHub auto-merge only
    after those gates pass.
-2. After merge, stable promotion is performed by the approved post-merge
-   release process, which runs the catalog and full-suite gates before moving
-   `stable`. Do not ask the model to invoke a promotion script.
+2. After merge, stable promotion is a separate host-side operation on the
+   tested merged checkout, as documented in `docs/shared-factory.md`. It runs
+   the catalog and full-suite gates before moving `stable`; it is not a Cezar
+   project-target synchronization automation. Do not invoke Factory scripts
+   from this skill. Report promotion as pending until the host-side operation
+   is confirmed.
 3. The Bazzite `factory-autodeploy` timer advances the mounted checkout and
    reconciles automations. For immediate host deployment, use the supported
    host process and stop on a dirty checkout, divergence, or runtime mismatch.
@@ -61,12 +64,12 @@ when a target needs the full managed Factory layer.
 2. Check the host-local target registry only. If it is missing or empty, report
    that release is ready but needs explicit target configuration; perform no
    promotion, synchronization, deployment, or target discovery.
-3. For each configured target, use its approved release automation if one is
+3. For each configured target, use its approved synchronization automation if one is
    present. Queue that automation with `cez automation run <id>`, report the
    returned task ID, and stop. Do not inspect its worktree or create a
    replacement task.
-4. If a configured target requires release work and no approved automation
-   exists, report the missing workflow-owned release path. Do not run a Factory
-   script directly from the skill.
+4. If a configured target requires synchronization and no approved automation
+   exists, report the missing workflow-owned synchronization path. Do not run a
+   Factory script directly from the skill.
 5. Report local validation, each configured target's result, runtime parity,
    and any release handoff gap.

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.62] - 2026-10-27
+
+- Clarify that stable promotion is a host-side operation separate from Cezar
+  target synchronization.
+
 ## [0.3.61] - 2026-10-27
 
 - Route typed implementation contract failures directly from Cezar finalizer

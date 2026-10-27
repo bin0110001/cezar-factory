@@ -24,12 +24,15 @@ The goal is a verified handoff, not merely a source-tree change:
    high-risk plan approval. If no implementation PR exists, report that the
    review handoff remains outstanding. Do not create an unrelated PR or promote
    a feature branch.
-5. After the reviewed PR has merged and a non-empty target registry is
-   available, use an approved workflow-owned release automation for promotion
-   and synchronization. If the automation is configured, queue it with
-   `cez automation run <id>`, report the returned task ID, and stop. Do not
-   inspect its worktree or create replacement tasks. If no approved release
-   automation exists, report that gap; never run Factory scripts from a skill.
+5. After the reviewed PR has merged, stable promotion is a separate host-side
+   operation on the tested merged checkout, as documented in
+   `docs/shared-factory.md`. It is not a Cezar target-sync automation. Do not
+   invoke Factory scripts from this skill; report promotion as pending until
+   the host-side operation is confirmed. For configured Cezar targets, use an
+   approved workflow-owned synchronization automation if one is available.
+   Queue it with `cez automation run <id>`, report the task ID, and stop. Do not
+   inspect its worktree or create replacement tasks. If no approved target
+   synchronization automation exists, report that gap.
 6. For Bazzite-hosted runtime changes, use the approved host deployment process.
    Verify that the host checkout matches the merged Factory version, the active
    workflow scripts exist in the host checkout and running Cezar container, the
