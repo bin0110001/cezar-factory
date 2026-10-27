@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.63] - 2026-10-27
+
+- Record verified replacement of implementation result recovery with typed
+  finalizer routing in the automation polish plan.
+
 ## [0.3.62] - 2026-10-27
 
 - Clarify that stable promotion is a host-side operation separate from Cezar
