@@ -24,7 +24,7 @@ If either artifact is missing, malformed, or disagrees on collection time, repor
 
 ## Result contract
 
-Write `.factory/environment-analysis/analysis.md` with the collection timestamp and these sections:
+Write `.factory/environment-analysis/analysis.md` with the collection timestamp and these sections. Keep the result bounded to five executive-summary bullets, ten evidence rows, five prioritized actions, and three quick wins. If more items qualify, group related observations and state the cap; never omit a material limitation to fit it.
 
 1. **Executive summary** — current assessment and the strongest evidence limitation.
 2. **Evidence table** — observation, source reference, confidence, and limitation.

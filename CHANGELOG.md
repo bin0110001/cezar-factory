@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.76] - 2026-10-27
+
+- Bound environment-analysis output to concise evidence and action limits.
+
 ## [0.3.75] - 2026-10-27
 
 - Remove the watchdog's optional direct GitHub label/comment writes until they
