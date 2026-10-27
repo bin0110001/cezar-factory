@@ -67,7 +67,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/deploy/deploy-vllm-mac.sh', 'scripts/deploy/validate-deployment.sh',
 'scripts/deploy/vllm-trusted-proxy.py', 'scripts/deploy/deploy-vllm-trusted-proxy-mac.sh', 'scripts/deploy/validate-vllm-trusted-proxy-mac.sh',
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
-'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/factory.config.schema.json', 'schemas/validation-receipt.schema.json', 'schemas/project-validation-result.schema.json', 'schemas/project-validation-baseline.schema.json', 'schemas/investigation-result.schema.json',
+'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/factory.config.schema.json', 'schemas/validation-receipt.schema.json', 'schemas/project-validation-result.schema.json', 'schemas/project-validation-baseline.schema.json', 'schemas/investigation-result.schema.json', 'schemas/learn-result.schema.json',
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
@@ -137,6 +137,18 @@ $environmentAnalysisPrompt = [regex]::Match($environmentAnalysisWorkflow, '(?ms)
 Assert 'environment analysis workflow prompt delegates artifact and safety contract to the skill' ($environmentAnalysisPrompt -match '\{\{task\}\}' -and $environmentAnalysisPrompt -notmatch 'Read the generated|Do not run scripts|rediscover targets|inspect raw logs|mutate external systems')
 $intakeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/intake.yaml')
 $intakeSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-intake/SKILL.md')
+$learnSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-learn/SKILL.md')
+$learnExampleMatch = [regex]::Match($learnSkill, '(?ms)```json\s*(\{.*?\})\s*```')
+$learnExampleValid = $false
+$learnCandidateValid = $false
+if ($learnExampleMatch.Success) {
+    try {
+        $learnExampleValue = $learnExampleMatch.Groups[1].Value | ConvertFrom-Json -AsHashtable
+        $learnExampleValid = [bool](Test-Json -Json ($learnExampleValue | ConvertTo-Json -Depth 10) -SchemaFile (Join-Path $factory 'schemas/learn-result.schema.json') -ErrorAction Stop)
+        $learnCandidateValid = [bool](Test-Json -Json ($learnExampleValue.durableKnowledgeCandidates[0] | ConvertTo-Json -Depth 5) -SchemaFile (Join-Path $factory 'schemas/memory-candidate.schema.json') -ErrorAction Stop)
+    } catch { }
+}
+Assert 'learn skill returns bounded evidence-backed proposals matching both result and memory-candidate schemas' ($learnSkill -match 'at most five task records' -and $learnSkill -match 'up to eight relevant Hindsight memories' -and $learnSkill -match 'Do not write to Hindsight, edit skills or source' -and $learnSkill -match 'schemas/learn-result.schema.json' -and $learnExampleValid -and $learnCandidateValid)
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
 $routeFailureContractsValid = $true

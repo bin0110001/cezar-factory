@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryLearnResult",
+  "type": "object",
+  "required": ["durableKnowledgeCandidates", "recommendedUpdates"],
+  "properties": {
+    "durableKnowledgeCandidates": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["topic", "lesson", "kind", "evidence"],
+        "properties": {
+          "topic": { "type": "string", "minLength": 3, "maxLength": 160 },
+          "lesson": { "type": "string", "minLength": 10, "maxLength": 2000 },
+          "kind": { "type": "string", "enum": ["architecture", "recurring-failure", "successful-fix", "convention", "environment-discovery"] },
+          "evidence": { "type": "string", "minLength": 3, "maxLength": 500 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "recommendedUpdates": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["target", "path", "change", "evidence"],
+        "properties": {
+          "target": { "type": "string", "enum": ["project-skill", "factory-skill", "testing-guidance", "architecture-doc", "agent-instructions"] },
+          "path": { "type": "string", "minLength": 1 },
+          "change": { "type": "string", "minLength": 1 },
+          "evidence": { "type": "string", "minLength": 3 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

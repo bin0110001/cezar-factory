@@ -1,87 +1,46 @@
-<!--
-managed-by: cezar-factory
-factory-version: 0.3.2
-source: skills/factory-learn/SKILL.md
--->
-# Factory Learn Skill
+---
+name: factory-learn
+description: Extract evidence-backed, reusable lessons from completed work and propose bounded memory or documentation updates.
+---
 
-## Responsibilities
+# Factory learn skill
 
-- Review successful work and failures.
-- Recall related Factory/project memories before proposing a lesson when Hindsight is available.
-- Retain approved durable candidates to the appropriate Hindsight bank; do not
-  write directly to normative Git documentation.
-- Identify durable reusable knowledge.
-- Avoid storing task-specific/transient facts.
-- Recommend or update:
-  - Project skills.
-  - Testing guidance.
-  - Architecture documentation.
-  - Agent instructions.
+Use this skill when asked to review completed work for durable lessons that could improve future tasks.
 
-## Initially
+## Inputs and bounds
 
-- Run manually or in observation-only mode.
-- Require review before automatically modifying shared factory skills.
+- Review only the tasks, run records, results, and artifacts supplied or named by the user. If none are available, ask for evidence instead of inventing history.
+- Analyze at most five task records and return at most eight durable candidates and eight documentation recommendations per response. Do not load full memory banks or unrestricted run logs.
+- Recall up to eight relevant Hindsight memories (maximum 12,000 characters) when a bounded recall tool is available. Treat a miss or unavailable tool as a limitation, not proof that no prior lesson exists.
+- Keep Hindsight as operational memory. Git remains authoritative for architecture, policies, skills, and normative project documentation.
 
-## Detailed Guidance
+## Required judgment
 
-### 1. Review Successful Work and Failures
+- Separate observed facts from hypotheses. A repeated lesson needs evidence across the supplied tasks; a single event may support a candidate only when the underlying cause is directly demonstrated.
+- Keep candidates reusable and actionable. Exclude transient, task-specific, already-documented, or speculative facts.
+- Recommend a Git documentation change only when the evidence shows a stable convention or repeated gap. Name the exact target path and proposed change.
+- Escalate unresolved architectural or policy choices as recommendations for human review; do not choose a system-contract change on the user's behalf.
 
-- Examine completed tasks that went well and identify why they succeeded.
-- Analyze failed tasks or investigations to extract lessons learned.
-- Look for patterns across multiple tasks.
+## Output contract
 
-### 2. Identify Durable Reusable Knowledge
+Return one JSON object conforming to `schemas/learn-result.schema.json`. Put durable operational lessons in `durableKnowledgeCandidates` using `schemas/memory-candidate.schema.json`; put proposed Git changes in `recommendedUpdates`. Use empty arrays when the evidence supports no candidates. Include concrete evidence references in every candidate and recommendation.
 
-- Focus on knowledge that will be valuable for future tasks.
-- Durable knowledge includes:
-  - Common pitfalls and how to avoid them.
-  - Effective testing strategies for specific scenarios.
-  - Architectural patterns that work well for the project.
-  - Conventions and best practices that are not obvious from code alone.
-- Avoid storing:
-  - Task-specific details or transient facts.
-  - One-off solutions that won't apply elsewhere.
-  - Information already documented in code comments.
-
-### 3. Recommend or Update
-
-- **Project skills**: Suggest updates to `.ai/skills/` to capture project-specific knowledge.
-- **Testing guidance**: Recommend improvements to test coverage, test patterns, or validation scripts.
-- **Architecture documentation**: Suggest updates to architecture docs or ADRs.
-- **Agent instructions**: Recommend improvements to factory skills or project skills based on lessons learned.
-
-### 4. Review Before Modifying Shared Skills
-
-- Initially, the learn skill should only recommend changes, not apply them.
-- Human review is required before any shared factory skill is modified.
-- This ensures that factory-wide changes are deliberate and vetted.
-
-### 5. Hindsight and Git Boundary
-
-- Hindsight stores operational lessons and candidate documentation changes.
-- Git remains the source of truth for architecture, policies, skills, and
-  normative project documentation.
-- A candidate becomes a documentation change only through a normal reviewed PR.
-
-## Output Format
+Example:
 
 ```json
 {
   "durableKnowledgeCandidates": [
     {
-      "topic": "Testing pattern for async operations",
-      "suggestion": "Add a project skill covering async test patterns",
-      "evidence": "Three tasks failed due to missing async waits"
+      "topic": "Retrying a failed verifier",
+      "lesson": "The project verifier uses exit code 18 for unavailable checks; do not treat it as a test regression or retry code changes.",
+      "kind": "recurring-failure",
+      "evidence": "Runs 104 and 109 both recorded reasonCode=missing_command with exitCode=18."
     }
   ],
-  "recommendedUpdates": [
-    {
-      "target": "project skill",
-      "path": ".ai/skills/project-testing/SKILL.md",
-      "change": "Add section on async test patterns"
-    }
-  ]
+  "recommendedUpdates": []
 }
 ```
+
+## Boundaries
+
+Do not write to Hindsight, edit skills or source, or modify project documentation unless the user explicitly approves that specific change. Return proposals only; approved changes use the normal reviewed workflow. Do not run Factory scripts or create issues, comments, or labels.
