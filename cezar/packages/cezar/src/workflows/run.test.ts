@@ -2464,6 +2464,7 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
 
     expect(manager.cancel(record.id)).toBe(true);
     expect(store.getRun(record.id)).toMatchObject({ status: 'cancelled', currentStepId: undefined });
+    expect(store.getRun(record.id)?.outcome).toEqual({ kind: 'cancelled', reasonCode: 'user_cancelled' });
     expect(store.getRun(record.id)?.steps[0]).toMatchObject({ status: 'cancelled' });
     expect(manager.isActive(record.id)).toBe(false);
   });
