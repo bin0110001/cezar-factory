@@ -38,6 +38,15 @@ test('workflow files require exactly one step representation', () => {
   );
 });
 
+test('verification check deadlines share the two-hour maximum', () => {
+  assert.equal(workflowFileSchema.safeParse({
+    name: 'long-check', steps: [{ id: 'verify', command: 'verify', timeoutSeconds: 7_200 }],
+  }).success, true);
+  assert.equal(workflowFileSchema.safeParse({
+    name: 'overlong-check', steps: [{ id: 'verify', command: 'verify', timeoutSeconds: 7_201 }],
+  }).success, false);
+});
+
 test('retry targets must refer to an earlier unique step', () => {
   assert.equal(
     stepsIssue([

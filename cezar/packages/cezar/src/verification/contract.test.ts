@@ -20,6 +20,14 @@ describe('versioned verification contracts', () => {
     }
   });
 
+  it('accepts the shared two-hour verification ceiling and rejects values above it', async () => {
+    const manifest = await read('v1-valid.json');
+    manifest.checks.parse.timeoutSeconds = 7_200;
+    expect(verificationManifestSchema.safeParse(manifest).success).toBe(true);
+    manifest.checks.parse.timeoutSeconds = 7_201;
+    expect(verificationManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
   it('accepts conclusive results and fails closed for incomplete evidence', async () => {
     for (const name of ['passing-result.json', 'optional-skip-result.json', 'truncated-result.json', 'failed-result.json', 'required-skip-result.json', 'no-tests-result.json', 'parser-error-result.json', 'infrastructure-error-result.json', 'cancelled-result.json']) {
       const result = await read(name);

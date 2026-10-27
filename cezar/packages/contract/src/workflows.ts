@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { runnerSchema } from './health.ts';
+import { MAX_VERIFICATION_TIMEOUT_SECONDS } from './verification.ts';
+
+export const MAX_WORKFLOW_CHECK_TIMEOUT_SECONDS = MAX_VERIFICATION_TIMEOUT_SECONDS;
 
 const checkFailureCategorySchema = z.enum([
   'work_verdict', 'test_regression', 'configuration', 'missing_command', 'authentication',
@@ -53,7 +56,7 @@ export const workflowStepDefSchema = z
     /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
     idempotent: z.literal(true).optional(),
     /** Hard upper bound for a check command, in seconds. */
-    timeoutSeconds: z.number().int().positive().max(300).optional(),
+    timeoutSeconds: z.number().int().positive().max(MAX_WORKFLOW_CHECK_TIMEOUT_SECONDS).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),

@@ -78,6 +78,7 @@ steps:
   - id: targeted-tests
     name: Run targeted validation
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    timeoutSeconds: 1200
     when:
       type: object
       required: [outputs]

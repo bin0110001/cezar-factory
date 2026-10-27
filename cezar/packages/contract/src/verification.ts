@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
+export const MAX_VERIFICATION_TIMEOUT_SECONDS = 7_200;
+
 export const VERIFICATION_LIMITS = {
   checksPerRun: 256,
-  timeoutSeconds: { min: 1, max: 3_600 },
+  timeoutSeconds: { min: 1, max: MAX_VERIFICATION_TIMEOUT_SECONDS },
   outputCharsPerCheck: 20_000,
   diagnosticsPerCheck: 200,
   diagnosticMessageChars: 2_000,
@@ -22,7 +24,7 @@ const verificationCheckSchema = z.object({
   executable: z.string().trim().min(1).max(512),
   args: z.array(z.string().max(4_096)).max(256),
   cwd: relativePathSchema.default('.'),
-  timeoutSeconds: z.number().int().min(1).max(3_600),
+  timeoutSeconds: z.number().int().min(1).max(MAX_VERIFICATION_TIMEOUT_SECONDS),
   tags: z.array(z.string().min(1).max(64)).max(64).optional(),
   owns: z.array(z.string().min(1).max(256)).max(128).optional(),
   requires: z.array(z.string().min(1).max(128)).max(128).optional(),

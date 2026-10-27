@@ -133,6 +133,7 @@ steps:
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    timeoutSeconds: 1200
     when:
       type: object
       required: [outputs]
@@ -159,6 +160,7 @@ steps:
   - id: full-verification
     name: Run required verification
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
+    timeoutSeconds: 7200
     when:
       type: object
       required: [outputs]
@@ -185,6 +187,7 @@ steps:
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
+    timeoutSeconds: 7200
     when:
       type: object
       required: [outputs]

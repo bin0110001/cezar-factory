@@ -1,3 +1,4 @@
+import { MAX_WORKFLOW_CHECK_TIMEOUT_SECONDS } from '@open-mercato/cezar-contract';
 import { fromJSONSchema, z } from 'zod';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
 import type { RunOutcome } from '@open-mercato/cezar-contract';
@@ -66,7 +67,7 @@ export const workflowStepSchema = z
     /** A finalizer may be replayed after a crash that occurred before its result was persisted. */
     idempotent: z.literal(true).optional(),
     /** Hard upper bound for a check command, in seconds. */
-    timeoutSeconds: z.number().int().positive().max(300).optional(),
+    timeoutSeconds: z.number().int().positive().max(MAX_WORKFLOW_CHECK_TIMEOUT_SECONDS).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),

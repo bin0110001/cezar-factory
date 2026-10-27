@@ -34,6 +34,13 @@ describe('workflow JSON contracts', () => {
     const isPlanner = file === 'plan.yaml';
     const isMaintenance = file === 'maintenance.yaml';
     const isImplementation = file === 'implement.yaml';
+    if (['implement.yaml', 'fix-review.yaml'].includes(file)) {
+      const expectedTimeouts: Record<string, number> = file === 'implement.yaml'
+        ? { 'targeted-tests': 1_200, 'full-verification': 7_200, 'verify-project': 7_200 }
+        : { 'targeted-tests': 1_200 };
+      expect(Object.fromEntries(normalized.steps.filter((step) => step.id in expectedTimeouts).map((step) => [step.id, step.timeoutSeconds])))
+        .toEqual(expectedTimeouts);
+    }
     if (isMaintenance) {
       expect(normalized.steps.filter((step) => step.continueOnFailure).map((step) => ({ id: step.id, timeoutSeconds: step.timeoutSeconds }))).toEqual([
         { id: 'refresh-stale-workable', timeoutSeconds: 300 },
@@ -57,7 +64,7 @@ describe('workflow JSON contracts', () => {
           skipped: [],
             }
           : {
-            issue: 12, status: 'failure', summary: 'implementation failed', filesChanged: [], testsRun: [],
+            status: 'failure', summary: 'implementation failed', filesChanged: [], testsRun: [],
             testResult: 'not-run', acceptanceCriteriaStatus: 'Not met', documentationUpdated: false,
             knownConcerns: 'missing prerequisite', followUpSuggestions: '', durableKnowledgeCandidates: '',
             };
@@ -87,6 +94,13 @@ describe('workflow JSON contracts', () => {
       const result = validateWorkflowContract(preflightStep!.outputSchema!, preflightValue);
       expect(result, JSON.stringify(result)).toMatchObject({ success: true });
     }
+  });
+
+  it('declares the two-hour deadline on review verification steps', () => {
+    const parsed = workflowFileSchema.parse(parseYaml(readFileSync(join(factoryRoot, 'workflows', 'review.yaml'), 'utf8')));
+    const steps = normalizeWorkflowDoc(parsed).steps;
+    expect(Object.fromEntries(steps.filter((step) => ['full-verification', 'verify-project'].includes(step.id)).map((step) => [step.id, step.timeoutSeconds])))
+      .toEqual({ 'full-verification': 7_200, 'verify-project': 7_200 });
   });
 
   it('accepts values matching a standard JSON Schema', () => {

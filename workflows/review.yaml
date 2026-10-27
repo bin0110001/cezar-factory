@@ -25,6 +25,7 @@ steps:
   - id: full-verification
     name: Run required project suite
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
+    timeoutSeconds: 7200
     when:
       type: object
       required: [outputs]
@@ -36,6 +37,7 @@ steps:
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
+    timeoutSeconds: 7200
     when:
       type: object
       required: [outputs]
