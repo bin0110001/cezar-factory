@@ -150,6 +150,11 @@ validation:
     $configText.Replace('pwsh ./runner.ps1 changed', 'skip') | Set-Content $configPath
     $run = Run-Stage changed
     Check 'explicit unsupported targeted stage is skipped, not passed' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped')
+    New-Item -ItemType Directory -Path (Join-Path $project '.factory') -Force | Out-Null
+    Set-Content (Join-Path $project '.factory/implement-result.json') '{"issue":7,"status":"failure"}'
+    $run = Run-Stage changed
+    Check 'result file without a pr field does not break validation' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped')
+    Remove-Item (Join-Path $project '.factory/implement-result.json')
     $configText.Replace('  full: "pwsh ./runner.ps1 full"', '') | Set-Content $configPath
     $run = Run-Stage full
     Check 'missing full command fails explicitly' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error')

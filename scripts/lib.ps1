@@ -136,8 +136,11 @@ function Invoke-FactoryValidation {
         if (-not (Test-Path $resultPath)) { $resultPath = Join-Path $root '.factory/review-result.json' }
         if (Test-Path $resultPath) {
             $result = Get-Content -Raw $resultPath | ConvertFrom-Json
-            if ($result.issue) { $receipt.issue = [int]$result.issue }
-            if ($result.pr) { $receipt.pr = [string]$result.pr }
+            # Failure results omit optional fields and StrictMode rejects reading them.
+            $resultIssue = $result.PSObject.Properties['issue']
+            $resultPr = $result.PSObject.Properties['pr']
+            if ($resultIssue -and $resultIssue.Value) { $receipt.issue = [int]$resultIssue.Value }
+            if ($resultPr -and $resultPr.Value) { $receipt.pr = [string]$resultPr.Value }
         }
         if ($Task -match '(?:issues/|#)?([1-9][0-9]*)$') { $receipt.issue = [int]$Matches[1] }
         if (Test-Path (Join-Path $root '.factory/already-resolved.json')) {
