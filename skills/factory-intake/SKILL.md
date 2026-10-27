@@ -23,12 +23,22 @@ with the narrowest reversible assumption and state it in `summary`.
 
 ## Output and escalation
 
-Write `.factory/intake-result.json` with `issue`, `type`, `risk`, `summary`,
-and `unresolvedQuestions`, conforming to
-`schemas/intake-result.schema.json`. Set `unresolvedQuestions` only when a
-major architectural choice materially changes compatibility, ownership, or
-the system contract. Risk level alone is never a reason to ask for approval.
+Return one JSON object with `issue`, `type`, `risk`, `summary`, and
+`unresolvedQuestions`, conforming to `schemas/intake-result.schema.json`. Set
+`unresolvedQuestions` only when a major architectural choice materially
+changes compatibility, ownership, or the system contract. Risk level alone is
+never a reason to ask for approval.
 
-Do not run Factory scripts. Do not edit labels or comments, implement code, or
-discover replacement work. Workflow-owned validation and routing handle
-lifecycle changes.
+```json
+{
+  "issue": 123,
+  "type": "type:bug",
+  "risk": "risk:low",
+  "summary": "The settings page drops the selected value after refresh.",
+  "unresolvedQuestions": ""
+}
+```
+
+Do not run Factory scripts, write result files, edit labels or comments,
+implement code, or discover replacement work. The active workflow validates
+and routes its own script-generated result.
