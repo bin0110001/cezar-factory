@@ -1,10 +1,39 @@
 {
-  "generatedAt": "2026-10-25T02:33:52.9775995+00:00",
-  "cutoff": "2026-10-25T01:03:52.9775995+00:00",
+  "generatedAt": "2026-10-27T07:00:01.9530032+00:00",
+  "cutoff": "2026-10-27T05:30:01.9530032+00:00",
   "olderThanMinutes": 90,
   "dryRun": false,
   "activeRunCheck": true,
   "recovered": [],
-  "skipped": [],
+  "skipped": [
+    {
+      "issue": 93,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 92,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 91,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 73,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 72,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 71,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 51,
+      "reason": "competing-lifecycle-state"
+    }
+  ],
   "terminalReason": "no-expired-reservations"
 }
