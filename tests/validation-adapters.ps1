@@ -359,6 +359,9 @@ validation:
     [regex]::Replace($configText, '(?ms)^  full:\r?\n.*?(?=^  verify:)', '') | Set-Content $configPath
     $run = Run-Stage full
     Check 'missing full command is unavailable and fails closed' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_command_missing')
+    $configText.Replace('command: "pwsh ./runner.ps1 full"', 'command: ""') | Set-Content $configPath
+    $run = Run-Stage full
+    Check 'blank full command is unavailable and fails closed' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_command_missing')
     Remove-Item $configPath
     $run = Run-Stage full
     Check 'missing config is unavailable without discovery fallback' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_config_missing')

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.69] - 2026-10-27
+
+- Test that a blank required project validation command returns unavailable.
+
 ## [0.3.68] - 2026-10-27
 
 - Persist a schema-valid Godot upgrade PR action receipt in the PR body and
