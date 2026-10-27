@@ -130,6 +130,11 @@ $planMaterializeStep = [regex]::Match($planWorkflow, '(?s)  - id: validate\r?\n(
 $reviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')
 $mergeEligibilityStep = [regex]::Match($reviewWorkflow, '(?ms)^  - id: merge-eligibility\r?\n(?:(?!^  - id: ).)*').Value
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
+$environmentAnalysisWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/environment-analysis.yaml')
+$environmentAnalysisSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-environment-analysis/SKILL.md')
+Assert 'environment analysis defines bounded snapshot inputs, output sections and no-side-effect boundaries' ($environmentAnalysisWorkflow -match 'collect-environment-state\.ps1 -OutputDirectory \.factory/environment-analysis' -and $environmentAnalysisWorkflow -match 'skill: factory-environment-analysis' -and $environmentAnalysisWorkflow -match '\{\{task\}\}' -and $environmentAnalysisSkill -match 'at most 50 records per configured target' -and $environmentAnalysisSkill -match 'analysis\.md' -and $environmentAnalysisSkill -match 'Evidence table' -and $environmentAnalysisSkill -match 'Do not run scripts or commands' -and $environmentAnalysisSkill -match 'Do not fetch additional data or inspect raw run logs' -and $environmentAnalysisSkill -notmatch 'extract.*issue number|run the `?collect-environment-state')
+$environmentAnalysisPrompt = [regex]::Match($environmentAnalysisWorkflow, '(?ms)^    prompt: \|\r?\n(?<prompt>.*?)(?=^  - id:|\z)').Groups['prompt'].Value
+Assert 'environment analysis workflow prompt delegates artifact and safety contract to the skill' ($environmentAnalysisPrompt -match '\{\{task\}\}' -and $environmentAnalysisPrompt -notmatch 'Read the generated|Do not run scripts|rediscover targets|inspect raw logs|mutate external systems')
 $intakeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/intake.yaml')
 $intakeSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-intake/SKILL.md')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')

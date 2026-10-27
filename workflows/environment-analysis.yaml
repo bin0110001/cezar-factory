@@ -12,5 +12,3 @@ steps:
     skill: factory-environment-analysis
     prompt: |
       {{task}}
-
-      Read the generated `.factory/environment-analysis/environment-state-latest.json` and `.md` artifacts. Produce `.factory/environment-analysis/analysis.md` with evidence-backed findings and prioritized improvement paths. Do not run scripts, rediscover targets, inspect raw logs, or mutate external systems.

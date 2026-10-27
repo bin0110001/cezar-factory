@@ -5,18 +5,35 @@ description: Analyze bounded exports of Cezar and Factory runtime health, job fa
 
 # Factory environment analysis
 
-Use this skill when the user wants a current operational assessment of Factory/Cezar throughput, failing builds, pickup latency, schedules, or auto-fix effectiveness.
+Use this skill when the user wants an operational assessment of Factory/Cezar throughput, failures, pickup latency, schedules, or auto-fix effectiveness.
 
-The workflow command creates a JSON export and a compact Markdown handoff. Read only the generated JSON and Markdown artifacts; do not rediscover targets, inspect secrets, or fetch raw run logs. Treat missing API data as a limitation, not as evidence that the system is healthy.
+## Inputs and bounds
 
-Analyze at least:
+The workflow has already collected `.factory/environment-analysis/environment-state-latest.json` and `.md`. Read those two artifacts only. The JSON is schema version 1 and includes the collection time, local Factory state, workflow and automation inventory, GitHub metadata, configured Cezar targets, and collection limitations. Cezar run history is bounded to at most 50 records per configured target; GitHub history is bounded to at most 50 runs. Do not assume the returned history is exhaustive or that a missing field means zero.
 
-- failure rate and recurring failure signatures across the bounded Cezar and GitHub histories;
-- queue/pickup signals available in run timestamps, workflow events, and automation schedules;
-- enabled versus stale or missing automations and workflow coverage;
-- auto-fix evidence: whether fix/review jobs are scheduled, executing, succeeding, and producing subsequent recovery;
-- target-by-target API availability and local Factory checkout health.
+If either artifact is missing, malformed, or disagrees on collection time, report that as a blocker and stop analysis. Treat unavailable endpoints, absent targets, empty history, and stale timestamps as limitations; they do not establish system health. Do not fetch additional data or inspect raw run logs.
 
-Separate observations from hypotheses. For every proposed change, name the evidence, expected effect, risk, and a measurable validation signal. Prefer incremental Factory-side fixes first; discuss a Cezar fork only where the export shows a platform limitation that cannot be addressed through workflows, automations, routing, or scripts. Do not make external changes, create issues, restart jobs, or edit source during analysis unless the user separately asks for implementation.
+## Required analysis
 
-Produce an analysis artifact alongside the export with an executive summary, evidence table, prioritized improvement paths, quick wins, and a fork decision record. Preserve the export filenames and collection timestamp so recommendations remain auditable.
+- Separate directly observed facts from hypotheses and cite the relevant target, run, timestamp, workflow, automation, or limitation for each finding.
+- Assess failure rate and recurring failure signatures only where the bounded sample supports a denominator. Avoid percentages when history is unavailable or incomplete.
+- Evaluate pickup/queue signals only from available run timestamps, workflow events, and schedules; state when latency cannot be measured.
+- Compare enabled, stale, and missing automations with the workflow inventory. Evaluate auto-fix execution and recovery only when subsequent run evidence exists.
+- Assess target API availability and local checkout health independently; do not infer one from the other.
+- For each proposed change, state its evidence, expected effect, risk, and a measurable validation signal. Prefer incremental Factory changes. Recommend a Cezar fork only when the export shows a platform limit that Factory workflows, automations, routing, or scripts cannot address.
+
+## Result contract
+
+Write `.factory/environment-analysis/analysis.md` with the collection timestamp and these sections:
+
+1. **Executive summary** — current assessment and the strongest evidence limitation.
+2. **Evidence table** — observation, source reference, confidence, and limitation.
+3. **Prioritized improvement paths** — ordered actions with evidence, expected effect, risk, and validation signal.
+4. **Quick wins** — low-risk actions supported by the snapshot, or “None supported by available evidence.”
+5. **Fork decision** — whether a Cezar fork is justified, with the specific platform evidence or why none is demonstrated.
+
+Keep recommendations traceable to the preserved snapshot filenames and collection time. If there is insufficient evidence for a section, say so explicitly rather than filling gaps with assumptions.
+
+## Boundaries
+
+Do not run scripts or commands, discover or select targets, inspect secrets or raw logs, call APIs, mutate external systems, create issues or pull requests, restart jobs, change schedules, or edit source code during analysis. The workflow owns collection and target selection. Implementation requires a separate user request.
