@@ -6,6 +6,12 @@ foreach ($x in $a) { if ($x -isnot [string] -and $x -isnot [int]) { Write-Error 
 if ($a[0] -eq 'issue' -and $a[1] -eq 'view') {
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
     if ($issue -and -not $issue.updatedAt) { $issue.updatedAt = '2026-10-25T00:00:00.0000000Z' }
+    if ($state.ContainsKey('changeIssueAfterView') -and [int]$state.changeIssueAfterView -gt 0) {
+        $state.issueViewCount = [int]$state.issueViewCount + 1
+        if ([int]$state.issueViewCount -eq [int]$state.changeIssueAfterView) {
+            if ($issue) { $issue.updatedAt = '2026-10-26T00:00:00.0000000Z' } else { $state.updatedAt = '2026-10-26T00:00:00.0000000Z' }
+        }
+    }
     $labels = if ($issue) { @($issue.labels | ForEach-Object { if ($_ -is [string]) { [string]$_ } else { [string]$_.name } }) } else { @($state.labels) }
     $body = if ($issue -and $issue.ContainsKey('body')) { [string]$issue.body } else { '' }
     @{ number = [int]$issue.number; state = $(if ($state.issueState) { [string]$state.issueState } else { 'OPEN' }); body = $body; updatedAt = if ($issue) { [string]$issue.updatedAt } else { [string]$state.updatedAt }; labels = @($labels | ForEach-Object { @{ name = $_ } }); comments = @($state.comments | ForEach-Object { @{ body = $_ } }) } | ConvertTo-Json -Depth 5 -Compress

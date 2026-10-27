@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.77] - 2026-10-27
+
+- Bind lease comments to the shared workflow effect receipt and reconcile lost
+  comment responses.
+
 ## [0.3.76] - 2026-10-27
 
 - Bound environment-analysis output to concise evidence and action limits.

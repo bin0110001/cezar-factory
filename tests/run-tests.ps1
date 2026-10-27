@@ -74,6 +74,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'schemas/workflow-effect-action.schema.json', 'docs/local-model-evaluation.md',
 'tests/fixtures/validation-result-passed.json', 'tests/fixtures/validation-result-failed.json', 'tests/fixtures/validation-result-skipped.json', 'tests/fixtures/validation-result-unavailable.json', 'tests/fixtures/validation-result-no-matching-tests.json', 'tests/fixtures/validation-result-malformed.json',
 'scripts/recover-audit-reservations.ps1',
+'tests/lease-effect-replay.ps1',
 'tests/watchdog-automations.ps1', 'tests/watchdog-mock-api.py', 'tests/fixtures/watchdog-runs.json', 'tests/fixtures/watchdog-runs-envelope.json', 'tests/fixtures/watchdog-runs-envelope-simple.json', 'tests/fixtures/watchdog-runs-malformed.json',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'docs/cezar-integration.md', 'docs/validation-baseline-policy.md', 'skills/interactive-github-backlog/SKILL.md', 'skills/factory-release/SKILL.md', 'skills/factory-finish-release/SKILL.md', 'skills/factory-cezar-skill-operations/SKILL.md', 'skills/factory-cezar-skill-operations/references/runtime-and-audit.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
@@ -831,18 +832,9 @@ try {
     $closingState = Get-Gh; $closingState.prs[0].body = 'Implementation summary'; $closingState | Add-Member -NotePropertyName failNextPrEditBeforeWrite -NotePropertyValue $true -Force; $closingState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $closingUnavailable = Run 'ensure-pr-closes-issue.ps1' $closingArgs
     Assert 'PR close guard fails closed when the edit did not reach GitHub' ($closingUnavailable.Code -ne 0 -and (Get-Gh).prs[0].body -eq 'Implementation summary')
-    $leaseScript = Join-Path $rp '.ai/factory/scripts/lease.ps1'
-    function Invoke-Lease([string]$Action, [string]$Owner = '') {
-        $leaseArgs = @('-NoProfile','-File',$leaseScript,'-Action',$Action,'-Issue','7','-GhCommand',$gh)
-        if ($Owner) { $leaseArgs += @('-Owner',$Owner) }
-        $oldPreference = $ErrorActionPreference; try { $ErrorActionPreference = 'Continue'; $discard = & pwsh @leaseArgs *>&1 | Out-String } finally { $ErrorActionPreference = $oldPreference }
-        $LASTEXITCODE
-    }
-    Set-Gh @('factory:ready')
-    Assert 'lease: GitHub-visible claim created' ((Invoke-Lease 'create' 'worker-a') -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-lease:7' }).Count -eq 1)
-    Assert 'lease: same owner is idempotent' ((Invoke-Lease 'create' 'worker-a') -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-lease:7' }).Count -eq 1)
-    Assert 'lease: collision refused' ((Invoke-Lease 'create' 'worker-b') -ne 0)
-    Assert 'lease: release is idempotent' ((Invoke-Lease 'release') -eq 0 -and (Invoke-Lease 'release') -eq 0)
+    $leaseReplayOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'lease-effect-replay.ps1') 2>&1 | Out-String
+    Write-Host $leaseReplayOutput
+    Assert 'lease effects use revision-bound durable receipts and replay safely' ($LASTEXITCODE -eq 0)
     function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0, [string]$GatePath = '') {
         $f = Join-Path $tmp 'route-result.json'; if ($Obj) { ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f }
         $global:routeOutputPath = Join-Path $tmp 'route-output.json'
