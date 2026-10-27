@@ -31,10 +31,10 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     }
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
-    $f = $a[$a.IndexOf('--body-file') + 1]
+    $body = if ($a -contains '--body-file') { [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1]) } else { [string]$a[$a.IndexOf('--body') + 1] }
     $issue = @($state.issues | Where-Object { $_.number -eq [int]$a[2] }) | Select-Object -First 1
     $state.lastCommentExpectedRevision = if ($issue) { [string]$issue.updatedAt } else { [string]$state.updatedAt }
-    $state.comments = @($state.comments) + [IO.File]::ReadAllText($f)
+    $state.comments = @($state.comments) + $body
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
     else { $state.updatedAt = [DateTime]::UtcNow.ToString('o') }
     if ($state.ContainsKey('failNextCommentAfterWrite') -and $state.failNextCommentAfterWrite) {
@@ -64,8 +64,8 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
         exit 1
     }
     $n = 100 + @($state.issues | Where-Object { $_ }).Count
-    $body = [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1])
-    $state.issues = @($state.issues | Where-Object { $_ }) + @{ number = $n; title = $a[$a.IndexOf('--title') + 1]; body = $body; labels = $a[$a.IndexOf('--label') + 1] }
+    $body = if ($a -contains '--body-file') { [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1]) } else { [string]$a[$a.IndexOf('--body') + 1] }
+    $state.issues = @($state.issues | Where-Object { $_ }) + @{ number = $n; title = $a[$a.IndexOf('--title') + 1]; body = $body; labels = $a[$a.IndexOf('--label') + 1]; url = "https://github.com/x/y/issues/$n"; updatedAt = [DateTime]::UtcNow.ToString('o') }
     if ($state.ContainsKey('changeParentRevisionAfterIssueCreate') -and $state.changeParentRevisionAfterIssueCreate) { $state.updatedAt = '2026-10-26T00:00:00.0000000Z' }
     if ($state.ContainsKey('failNextIssueCreateAfterWrite') -and $state.failNextIssueCreateAfterWrite) {
         $state.failNextIssueCreateAfterWrite = $false

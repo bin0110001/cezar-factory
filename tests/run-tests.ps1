@@ -208,6 +208,8 @@ Assert 'new-project onboarding creates dev from the default branch' ($onboardScr
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
+$maintenanceScript = Get-Content -Raw (Join-Path $factory 'scripts/maintain-repository.ps1')
+Assert 'repository maintenance rechecks working-issue revision and verifies a stable recovery receipt' ($maintenanceScript -match "state,updatedAt,labels,comments" -and $maintenanceScript -match 'changed since maintenance selection' -and $maintenanceScript -match 'factory-maintenance:working-recovery:' -and $maintenanceScript -match 'transition could not be verified')
 Assert 'maintenance housekeeping continues the second independent check after a first-step failure' ($maintenanceWorkflow -match '(?s)id: refresh-stale-workable\s+name:.*?timeoutSeconds: 300\s+continueOnFailure: true.*?id: repository-maintenance\s+name:.*?timeoutSeconds: 300\s+continueOnFailure: true' -and $maintenanceWorkflow -match '(?s)id: repository-maintenance.*?continueOnFailure: true.*?id: recover-audit-reservations')
 Assert 'stale-workable uses issue activity revision for cooldown and checks revision before refresh' ($staleWorkableScript -match "updatedAt,labels,url" -and $staleWorkableScript -match 'recently-updated' -and $staleWorkableScript -match "state,updatedAt,labels" -and $staleWorkableScript -match 'issue state, updatedAt revision, or labels changed')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
@@ -721,6 +723,32 @@ try {
     $staleRaceRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
     $staleRaceResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
     Assert 'stale-workable refuses to refresh after the selected issue revision changes' ($staleRaceRun.Code -ne 0 -and @($staleRaceResult.failures).Count -eq 1 -and (Get-Gh).issueEditCount -eq 0 -and @((Get-Gh).issues[0].labels | Where-Object { $_.name -eq 'factory:ready' }).Count -eq 1)
+
+    $maintenanceState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0; prMerged = $false; prs = @()
+        issues = @(@{ number = 30; title = 'Stale working issue'; url = 'https://github.com/x/y/issues/30'; updatedAt = '2020-01-01T00:00:00Z'; labels = @('factory:working') })
+    }
+    $maintenanceState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $maintenanceOutput = Join-Path $tmp 'repository-maintenance.json'
+    $maintenanceFirst = Run 'maintain-repository.ps1' @{ GhCommand = $gh; ProjectId = ''; OutputPath = $maintenanceOutput }
+    $maintenanceFirstResult = Get-Content -Raw $maintenanceOutput | ConvertFrom-Json
+    $maintenanceAfterFirst = Get-Gh
+    $maintenanceReceiptCount = @($maintenanceAfterFirst.comments | Where-Object { $_ -match 'factory-maintenance:working-recovery:30:[a-f0-9]{64}' }).Count
+    Assert 'repository maintenance rechecks and verifies a stale working-issue transition' ($maintenanceFirst.Code -eq 0 -and $maintenanceFirstResult.movedToInvestigate[0].action -eq 'investigated' -and @($maintenanceAfterFirst.issues[0].labels | Where-Object { $_ -eq 'factory:investigate' }).Count -eq 1 -and $maintenanceReceiptCount -eq 1)
+    $maintenanceSecond = Run 'maintain-repository.ps1' @{ GhCommand = $gh; ProjectId = ''; OutputPath = $maintenanceOutput }
+    $maintenanceAfterSecond = Get-Gh
+    Assert 'repository maintenance replay does not repeat a completed recovery effect' ($maintenanceSecond.Code -eq 0 -and (Get-Content -Raw $maintenanceOutput | ConvertFrom-Json).movedToInvestigate.Count -eq 0 -and $maintenanceAfterSecond.issueEditCount -eq 1 -and @($maintenanceAfterSecond.comments | Where-Object { $_ -match 'factory-maintenance:working-recovery:30:[a-f0-9]{64}' }).Count -eq 1)
+
+    $maintenanceRaceState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0; prMerged = $false; prs = @(); changeIssueAfterList = 31
+        issues = @(@{ number = 31; title = 'Changed working issue'; url = 'https://github.com/x/y/issues/31'; updatedAt = '2020-01-01T00:00:00Z'; labels = @('factory:working') })
+    }
+    $maintenanceRaceState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $maintenanceRace = Run 'maintain-repository.ps1' @{ GhCommand = $gh; ProjectId = ''; OutputPath = $maintenanceOutput }
+    $maintenanceRaceResult = Get-Content -Raw $maintenanceOutput | ConvertFrom-Json
+    $maintenanceRaceAfter = Get-Gh
+    Assert 'repository maintenance leaves a working issue untouched when its revision changes after listing' ($maintenanceRace.Code -eq 0 -and $maintenanceRaceResult.conflicts.Count -eq 1 -and $maintenanceRaceAfter.issueEditCount -eq 0 -and @($maintenanceRaceAfter.issues[0].labels | Where-Object { $_ -eq 'factory:working' }).Count -eq 1 -and @($maintenanceRaceAfter.comments).Count -eq 0)
+
     $closingPrUrl = 'https://github.com/x/y/pull/99'
     $closingResultPath = Join-Path $tmp 'closing-reference-result.json'
     @{ issue = 7; status = 'success'; pr = $closingPrUrl } | ConvertTo-Json | Set-Content $closingResultPath

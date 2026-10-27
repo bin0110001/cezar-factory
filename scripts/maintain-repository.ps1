@@ -33,6 +33,7 @@ if (-not $ProjectId -and (Get-Location).Path -match '^(?<root>.+)[\\/]\.ai[\\/]c
 $workingCutoff =[DateTimeOffset]::UtcNow.AddHours(-24)
 $staleCutoff = [DateTimeOffset]::UtcNow.AddDays(-60)
 $summaryTitle = 'Factory maintenance: stale open issues'
+$lifecycle = @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate')
 
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
@@ -44,6 +45,11 @@ function Invoke-Gh([string[]]$Arguments) {
 
 function Get-Labels($Issue) {
     @($Issue.labels | ForEach-Object { if ($_ -is [string]) { [string]$_ } else { [string]$_.name } })
+}
+
+function Get-LiveIssue([int]$Number) {
+    $raw = Invoke-Gh @('issue', 'view', [string]$Number, '--json', 'number,state,updatedAt,labels,comments')
+    ($raw -join "`n") | ConvertFrom-Json
 }
 
 function Write-Result($Result) {
@@ -79,6 +85,7 @@ if ($ProjectId) {
 }
 
 $moved = @()
+$conflicts = @()
 foreach ($issue in $issues) {
     $labels = @(Get-Labels $issue)
     if ($labels -notcontains 'factory:working') { continue }
@@ -87,8 +94,41 @@ foreach ($issue in $issues) {
     if ($runFailed -or $updated -le $workingCutoff) {
         $reason = if ($runFailed) { 'its latest Cezar run failed' } else { '24 hours without activity' }
         if (-not $DryRun) {
-            Invoke-Gh @('issue', 'edit', [string]$issue.number, '--remove-label', 'factory:working', '--add-label', 'factory:investigate') | Out-Null
-            Invoke-Gh @('issue', 'comment', [string]$issue.number, '--body', "Factory maintenance moved this work to ``factory:investigate`` because $reason.") | Out-Null
+            $live = Get-LiveIssue ([int]$issue.number)
+            $liveLabels = @(Get-Labels $live | Sort-Object -Unique)
+            $snapshotLabels = @($labels | Sort-Object -Unique)
+            if ([string]$live.state -ne 'OPEN' -or [string]$live.updatedAt -ne [string]$issue.updatedAt -or ($liveLabels -join "`n") -ne ($snapshotLabels -join "`n")) {
+                $conflicts += [ordered]@{ issue = [int]$issue.number; reason = 'issue state, revision, or labels changed since maintenance selection' }
+                continue
+            }
+            $operationMaterial = "$($issue.number)`n$($issue.updatedAt)`n$reason"
+            $operationDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($operationMaterial))).ToLowerInvariant()
+            $marker = "<!-- factory-maintenance:working-recovery:$($issue.number):$operationDigest -->"
+            try { Invoke-Gh @('issue', 'edit', [string]$issue.number, '--remove-label', 'factory:working', '--add-label', 'factory:investigate') | Out-Null }
+            catch {
+                $afterAmbiguous = Get-LiveIssue ([int]$issue.number)
+                $afterStates = @(Get-Labels $afterAmbiguous | Where-Object { $_ -in $lifecycle })
+                if ([string]$afterAmbiguous.state -ne 'OPEN' -or $afterStates.Count -ne 1 -or $afterStates[0] -ne 'factory:investigate') { throw }
+            }
+            $after = Get-LiveIssue ([int]$issue.number)
+            $afterStates = @(Get-Labels $after | Where-Object { $_ -in $lifecycle })
+            if ([string]$after.state -ne 'OPEN' -or $afterStates.Count -ne 1 -or $afterStates[0] -ne 'factory:investigate') {
+                throw "Issue $($issue.number) maintenance transition could not be verified."
+            }
+            $existingReceipt = @($after.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+            if ($existingReceipt.Count -gt 1) { throw "Issue $($issue.number) has duplicate maintenance receipts; reconcile before retrying." }
+            if (-not $existingReceipt.Count) {
+                $commentBody = "$marker`nFactory maintenance moved this work to ``factory:investigate`` because $reason."
+                try { Invoke-Gh @('issue', 'comment', [string]$issue.number, '--body', $commentBody) | Out-Null }
+                catch {
+                    $afterCommentAmbiguous = Get-LiveIssue ([int]$issue.number)
+                    $foundReceipt = @($afterCommentAmbiguous.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+                    if ($foundReceipt.Count -ne 1) { throw }
+                }
+                $afterComment = Get-LiveIssue ([int]$issue.number)
+                $verifiedReceipt = @($afterComment.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
+                if ($verifiedReceipt.Count -ne 1) { throw "Issue $($issue.number) maintenance comment could not be verified." }
+            }
         }
         $moved += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-investigate' } else { 'investigated' }; reason = if ($runFailed) { 'failed-run' } else { 'inactive' }; updatedAt = [string]$issue.updatedAt }
     }
@@ -122,6 +162,7 @@ Write-Result ([ordered]@{
     staleCutoff = $staleCutoff.ToString('o')
     considered = $issues.Count
     movedToInvestigate = $moved
+    conflicts = $conflicts
     limitations = $limitations
     staleIssues = $stale
     staleSummary = $summary
