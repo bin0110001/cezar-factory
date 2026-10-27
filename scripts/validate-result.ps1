@@ -36,7 +36,7 @@ if (-not (Test-Path $Path)) { $errors.Add("result file not found: $Path"); Done 
 try { $rawResult = Get-Content -Raw $Path } catch { ConfigurationFailure "could not read result file: $Path" }
 try { $result = $rawResult | ConvertFrom-Json -AsHashtable } catch { $errors.Add("not valid JSON: $($_.Exception.Message)"); Done }
 if ($result -isnot [hashtable]) { $errors.Add('result must be a JSON object'); Done }
-if ($Kind -in @('plan', 'investigation') -or ($Kind -eq 'implementation' -and -not [string]::IsNullOrWhiteSpace($Task))) {
+if ($Kind -in @('plan', 'investigation') -or ($Kind -in @('implementation', 'review') -and -not [string]::IsNullOrWhiteSpace($Task))) {
     if ($Task -notmatch 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') { ConfigurationFailure "$Kind validation requires the workflow-selected issue through -Task." }
     $result.issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
     $result | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8

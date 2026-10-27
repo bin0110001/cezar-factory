@@ -3,7 +3,7 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/test-full.ps1,factory/verify.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,materialize-workflow-output.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/test-full.ps1,factory/verify.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
@@ -47,6 +47,20 @@ steps:
   - id: review
     name: Run factory-review skill
     skill: factory-review
+    outputSchema:
+      type: object
+      required: [approvalChangeRequestStatus, blockingFindings, nonBlockingFindings, acceptanceCriteriaVerification, testAdequacy, riskObservations, pr, reviewedHeadSha, reviewerIdentity]
+      properties:
+        approvalChangeRequestStatus: { type: string, enum: [approval, change-request] }
+        blockingFindings: { type: string }
+        nonBlockingFindings: { type: string }
+        acceptanceCriteriaVerification: { type: string }
+        testAdequacy: { type: string }
+        riskObservations: { type: string }
+        pr: { type: string }
+        reviewedHeadSha: { type: string }
+        reviewerIdentity: { type: string }
+      additionalProperties: false
     when:
       type: object
       required: [outputs]
@@ -57,15 +71,23 @@ steps:
           properties: { resolved: { type: object, required: [status], properties: { status: { const: open } } } }
     # Each Cezar run starts a fresh session in its own worktree, so the reviewer never shares the implementer's context.
     prompt: |
-      Review the pull request for this GitHub issue: {{task}}
-
-      Do not modify code. Write the structured review result as JSON to .factory/review-result.json
-      (create the directory) with the issue number in "issue", the exact PR URL, the 40-character PR head SHA you
-      reviewed as "reviewedHeadSha", and your reviewer identity (runner/model) as "reviewerIdentity". Do not run Factory scripts or edit factory:* labels; the
-      workflow posts findings and routes state.
+      {{task}}
+  - id: materialize-result
+    name: Materialize the validated review result
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/materialize-workflow-output.ps1 -OutputKey review -Path .factory/review-result.json
+    when:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          required: [resolved, review]
+          properties:
+            resolved: { type: object, required: [status], properties: { status: { const: open } } }
+            review: { type: object }
   - id: validate
     name: Validate review result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind review -Path .factory/review-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind review -Path .factory/review-result.json -Task "{{task}}"
     when:
       type: object
       required: [outputs]

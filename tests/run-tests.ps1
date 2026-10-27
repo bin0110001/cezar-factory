@@ -160,6 +160,7 @@ $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.p
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
 Assert 'planner returns a schema-validated structured artifact with workflow-bound issue identity' ($planWorkflow -match '(?s)id: plan.*?outputSchema:.*?required: \[objective' -and $planWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey plan' -and $planWorkflow -notmatch 'id: plan.*?plan-result\.json' -and $planWorkflow -match 'validate-result\.ps1 -Kind plan .* -Task "\{\{task\}\}"' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not supply or infer the `issue` field')
+Assert 'review returns a bounded result for workflow materialization and task-bound identity' ($reviewWorkflow -match '(?s)id: review\s+name:.*?outputSchema:.*?required: \[approvalChangeRequestStatus' -and $reviewWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey review -Path \.factory/review-result\.json' -and $reviewWorkflow -match 'validate-result\.ps1 -Kind review .* -Task "\{\{task\}\}"' -and $reviewWorkflow -notmatch 'write the structured review result|issue number in "issue"' -and $reviewSkill -match 'workflow validator binds the selected issue identity' -and $reviewSkill -match 'High-risk changes also require the separate human plan-approval gate' -and $reviewSkill -match 'Do not modify code, run commands or Factory scripts, write workflow result files')
 Assert 'planning skill uses the selected issue and bounded recall artifact without duplicate side effects' ((Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'single GitHub issue selected by the Cezar workflow' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not query memory tools again' -and (Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')) -match 'Do not run commands or Factory scripts' -and $planWorkflow -match '\{\{task\}\}' -and $planWorkflow -notmatch 'Read `\.factory/context/memory-recall\.json`|run Factory scripts|Plan this GitHub issue')
 Assert 'investigation skill defines bounded inputs, forbidden effects and the validated result contract' ($investigateSkill -match 'single issue selected by the Cezar workflow' -and $investigateSkill -match 'Do not discover or select other work' -and $investigateSkill -match 'run Factory scripts' -and $investigateSkill -match 'investigate-result\.json' -and $investigateSkill -notmatch 'issue number.*selected task|Hindsight after normal review' -and $investigateWorkflow -match 'workflow-selected issue: \{\{task\}\}' -and $investigateWorkflow -match 'validate-result\.ps1 .* -Task "\{\{task\}\}"' -and $investigateWorkflow -notmatch 'copying the numeric issue number|Read compact evidence only')
 Assert 'typed resolved preflight owns investigation early exit without duplicate agent instructions' ($investigateWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $investigateWorkflow -match '(?s)id: investigate.*?when:.*?resolved.*?const: open' -and $investigateWorkflow -notmatch 'already-resolved\.json|reply with one\s+line saying the issue is already resolved' -and $investigateSkill -notmatch 'already-resolved\.json|Already-resolved issues|retain the lesson through Hindsight')
@@ -257,7 +258,7 @@ foreach ($entry in $resultExamples) {
     if (-not $example.Success) { continue }
     $schemaPath = Join-Path $factory "schemas/$($entry.Schema)"
     $exampleJson = $example.Groups[1].Value
-    if ($entry.Skill -in @('factory-investigate', 'factory-plan', 'factory-implement', 'factory-fix')) {
+    if ($entry.Skill -in @('factory-investigate', 'factory-plan', 'factory-implement', 'factory-fix', 'factory-review')) {
         # The model-facing shape omits issue; its workflow validator binds the
         # selected task identity before downstream steps consume the artifact.
         $investigationExample = $exampleJson | ConvertFrom-Json -AsHashtable
@@ -841,6 +842,12 @@ try {
     Assert 'validate: change-request without findings fails' ((Test-Validate 'review' $rev) -ne 0)
     Assert 'validate: change-request with findings passes' ((Test-Validate 'review' (With $rev @{ blockingFindings = 'bug at x' })) -eq 0)
     Assert 'validate: review approval requires current head and reviewer identity' ((Test-Validate 'review' (With $rev @{ approvalChangeRequestStatus = 'approval'; reviewedHeadSha = 'head'; reviewerIdentity = '' })) -ne 0)
+    $reviewIdentityPath = Join-Path $tmp 'review-identity.json'
+    $reviewWithoutIssue = With $rev @{ approvalChangeRequestStatus = 'approval'; blockingFindings = '' }; $reviewWithoutIssue.Remove('issue')
+    ($reviewWithoutIssue | ConvertTo-Json -Depth 5) | Set-Content $reviewIdentityPath
+    $boundReviewValidation = Run 'validate-result.ps1' @{ Kind = 'review'; Path = $reviewIdentityPath; Task = 'GitHub issue #7 selected by workflow' }
+    $boundReviewValidationResult = Get-Content -Raw $reviewIdentityPath | ConvertFrom-Json
+    Assert 'validate: review issue identity is bound from workflow task when omitted' ($boundReviewValidation.Code -eq 0 -and $boundReviewValidationResult.issue -eq 7)
     # The eligibility command consumes live GitHub evidence and clean, head-bound workflow receipts.
     $eligibilityScript = Join-Path $scripts 'verify-merge-eligibility.ps1'
     $eligibilityRoot = Join-Path $tmp 'eligibility-receipts'
