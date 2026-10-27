@@ -5,7 +5,28 @@ source: skills/factory-work-backlog/SKILL.md
 # Factory Work Backlog Skill
 
 Use this skill when the user asks to complete, advance, or work through the
-repository's outstanding issues.
+current repository's outstanding issues. This is a manual backlog task, not an
+issue automation or a request to run one.
+
+## Prerequisites and bounded inputs
+
+- Use the current repository's contribution instructions, policies, and
+  existing issue backlog. Do not scan for other projects or invent targets.
+- Consider one eligible issue at a time. Workflow-selected issues remain owned
+  by their workflow; do not repeat selection or task discovery already done
+  there.
+- Use the existing issue body, dependencies, lifecycle state, and available
+  validation evidence. Do not infer readiness from title or priority alone.
+
+## Required judgment
+
+- Confirm that an issue is eligible, dependencies are clear, and required plan,
+  risk, validation, and review gates can be followed before starting it.
+- Distinguish implementation completion from validated, reviewed, merged, and
+  released outcomes. Report each state accurately.
+- Resolve routine ambiguity with a documented, reversible assumption. Escalate
+  only a decision that materially changes compatibility, ownership, or the
+  system contract.
 
 ## Operating rules
 
@@ -39,3 +60,10 @@ Factory scripts run only from `command:` steps in `workflows/*.yaml`. This
 skill never instructs the model to run those scripts, extract an issue number
 for them, or repeat issue selection already performed by a workflow. The
 workflow prepares the issue context and owns state labels and result routing.
+
+## Output
+
+For each issue advanced, report its identifier, current lifecycle state,
+validation and review/release status, and any concrete blocker. If no eligible
+issue remains, summarize external blockers and work awaiting review or release;
+do not report the backlog as complete while any required gate is open.

@@ -236,6 +236,8 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+$workBacklogSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-work-backlog/SKILL.md')
+Assert 'backlog work skill defines bounded inputs, judgment, workflow ownership, and an honest progress report' ($workBacklogSkill -match '(?s)## Prerequisites and bounded inputs.*?one eligible issue at a time' -and $workBacklogSkill -match '(?s)## Required judgment.*?Confirm that an issue is eligible' -and $workBacklogSkill -match '(?s)## Workflow ownership.*?never instructs the model to run those scripts' -and $workBacklogSkill -match '(?s)## Output.*?do not report the backlog as complete while any required gate is open')
 $missingWorkflowScripts = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter '*.yaml') {
     $workflowText = Get-Content -Raw $wf.FullName
