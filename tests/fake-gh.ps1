@@ -46,8 +46,21 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'comment') {
     }
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
+    if ($state.ContainsKey('failNextIssueCloseBeforeWrite') -and $state.failNextIssueCloseBeforeWrite) {
+        $state.failNextIssueCloseBeforeWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
+    $state.issueCloseCount = [int]$state.issueCloseCount + 1
     $state.issueCloseRequested = $true
     $state.issueState = 'CLOSED'
+    $state.updatedAt = [DateTime]::UtcNow.ToString('o')
+    if ($a -contains '--comment') { $state.comments = @($state.comments) + [string]$a[$a.IndexOf('--comment') + 1] }
+    if ($state.ContainsKey('failNextIssueCloseAfterWrite') -and $state.failNextIssueCloseAfterWrite) {
+        $state.failNextIssueCloseAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
     foreach ($issue in @($state.issues | Where-Object { $_ })) { if (-not $issue.updatedAt) { $issue.updatedAt = '2026-10-25T00:00:00.0000000Z' } }

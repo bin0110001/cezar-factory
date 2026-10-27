@@ -108,7 +108,7 @@ $currentComplexity = @($labels | Where-Object { $complexityLabels -contains $_ }
 $script:effectRevision = [string]$view.updatedAt
 $script:actionReceipts = @()
 
-function Get-LiveIssue { Invoke-Gh issue view $Issue --json 'labels,comments,updatedAt' | ConvertFrom-Json }
+function Get-LiveIssue { Invoke-Gh issue view $Issue --json 'number,state,labels,comments,updatedAt' | ConvertFrom-Json }
 function Get-LabelNames($IssueView) { @($IssueView.labels | ForEach-Object { [string]$_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) }
 function Get-StateNames([string[]]$IssueLabels) { @($IssueLabels | Where-Object { $stateLabels -contains $_ } | Sort-Object) }
 function Assert-EffectRevision($IssueView, [string[]]$ExpectedStates) {
@@ -266,6 +266,57 @@ function Get-AutoMergeReceipt([string]$Body, $Action, [string]$Status) {
     $json = $Action | ConvertTo-Json -Compress -Depth 8
     $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
     $Body + "`n`n<!-- factory:auto-merge:$($Action.operationKey):$Status -->`n<!-- factory:auto-merge-action:v1:$payload -->"
+}
+function Close-DecomposedParent([string]$Summary) {
+    $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("${Issue}|decomposition-parent-close"))).ToLowerInvariant()
+    $operationKey = "factory:decomposition-close:${Issue}:$fingerprint"
+    $marker = "<!-- factory:decomposition-close:$operationKey -->"
+    $live = Get-LiveIssue
+    $matchingComments = @($live.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } } | Where-Object { $_ -match [regex]::Escape($marker) })
+    if ([string]$live.state -eq 'CLOSED') {
+        if ($matchingComments.Count -ne 1) { Fail 'decomposed issue is closed without exactly one matching close receipt; reconcile manually' }
+        $payloadMatch = [regex]::Match($matchingComments[0], 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
+        if (-not $payloadMatch.Success) { Fail 'decomposed issue close receipt is missing its action payload' }
+        $action = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payloadMatch.Groups[1].Value)) | ConvertFrom-Json
+        $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+        if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop) -or
+            $action.operationKey -ne $operationKey -or $action.operation -ne 'github.issue.close' -or
+            [int]$action.target.id -ne $Issue -or $action.arguments.reason -ne 'completed') {
+            Fail 'decomposed issue close receipt does not match this parent action'
+        }
+        Add-EffectActionReceipt $action 'verified' ([string]$live.updatedAt)
+        $script:effectRevision = [string]$live.updatedAt
+        return
+    }
+    if ([string]$live.state -ne 'OPEN') { Fail "decomposed issue has unsupported live state '$($live.state)'" }
+    if ($matchingComments.Count) { Fail 'decomposition close has a pending receipt but the issue remains open; reconcile before retrying' }
+    Assert-EffectRevision $live $current
+    $commentHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Summary))).ToLowerInvariant()
+    $action = [ordered]@{
+        schemaVersion = 1
+        target = [ordered]@{ kind = 'github_issue'; id = $Issue }
+        expectedRevision = ([DateTimeOffset]$live.updatedAt).ToUniversalTime().ToString('o')
+        operation = 'github.issue.close'
+        arguments = [ordered]@{ reason = 'completed'; commentSha256 = $commentHash }
+        rationale = 'Close a parent issue after all bounded decomposition children were created and linked.'
+        operationKey = $operationKey
+    }
+    $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) { Fail 'decomposition close action does not satisfy the shared workflow effect contract' }
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($action | ConvertTo-Json -Compress -Depth 8)))
+    $markedComment = "$Summary`n`n$marker`n<!-- factory:effect-action:v1:$payload -->"
+    Add-EffectActionReceipt $action 'applying'
+    $closeFailure = $null
+    try { Invoke-Gh issue close $Issue --reason completed --comment $markedComment | Out-Null }
+    catch { $closeFailure = $_.Exception.Message }
+    $after = Get-LiveIssue
+    $afterComments = @($after.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } } | Where-Object { $_ -match [regex]::Escape($marker) })
+    if ([string]$after.state -ne 'CLOSED' -or $afterComments.Count -ne 1) {
+        if ($closeFailure) { throw $closeFailure }
+        Fail 'decomposition close is unresolved; the issue state or receipt did not verify'
+    }
+    $script:effectRevision = [string]$after.updatedAt
+    Add-EffectActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Add-Comment([string]$Body) {
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
@@ -504,8 +555,8 @@ switch ($Event) {
             }
             $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues and queued them as ``factory:needs-plan`` for autonomous planning and implementation in dependency order. This parent is a tracking record and is closed after decomposition.`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
             Add-PlanCommentOnce ($plan + "`n`n" + $table)
+            Close-DecomposedParent "Decomposed into $($subs.Count) child issues, queued for autonomous planning and implementation in dependency order."
             Set-State 'factory:done'
-            Invoke-Gh issue close $Issue --comment "Decomposed into $($subs.Count) child issues, queued for autonomous planning and implementation in dependency order." | Out-Null
             Done 'factory:done' "decomposed into $($subs.Count) queued sub-issues"
         }
         if ($result.readyNotReadyStatus -ne 'ready') {

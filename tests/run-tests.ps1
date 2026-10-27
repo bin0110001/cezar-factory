@@ -1139,7 +1139,14 @@ try {
     Assert 'validate: bad dependsOn index fails' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @(@{ title = 't'; body = 'b'; type = 'type:bug'; risk = 'risk:low'; dependsOn = @(5) }) })) -ne 0)
     Assert 'validate: duplicate sub-issue titles fail' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'decomposed'; subIssues = @($subs[0], $subs[0]) })) -ne 0)
     Set-Gh @('factory:needs-plan')
+    $decompositionState = Get-Gh; $decompositionState | Add-Member -NotePropertyName failNextIssueCloseAfterWrite -NotePropertyValue $true -Force; $decompositionState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: decomposed parent closes without scheduling handoff' ((Invoke-Route 'plan-result' $dec) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).issueCloseRequested -and (Get-Gh).issueState -eq 'CLOSED' -and (Get-Gh).labels -notcontains 'factory:human-review')
+    $decompositionReceiptState = Get-Gh
+    $decompositionRouteResult = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    $parentCloseComment = [string](@($decompositionReceiptState.comments | Where-Object { $_ -match 'factory:decomposition-close:' })[-1])
+    $parentCloseActionMatch = [regex]::Match($parentCloseComment, 'factory:effect-action:v1:([A-Za-z0-9+/=]+)')
+    $parentCloseAction = if ($parentCloseActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parentCloseActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
+    Assert 'route: lost parent-close response reconciles through its schema-valid durable action receipt' ($decompositionReceiptState.issueCloseCount -eq 1 -and $decompositionRouteResult.actionReceipts.Count -eq 3 -and @($decompositionRouteResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.issue.close' }).Count -eq 1 -and $parentCloseAction.operationKey -match '^factory:decomposition-close:7:' -and (Test-Json -Json ($parentCloseAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
     $iss = @((Get-Gh).issues)
     Assert 'route: sub-issues queued for planning' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:needs-plan,type:feature,risk:medium,complexity:medium')
     Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
@@ -1148,7 +1155,8 @@ try {
     $subIssueActionValid = $null -ne $subIssueAction -and $subIssueAction.operation -eq 'github.issue.create_child' -and $subIssueAction.target.id -eq 7 -and ([DateTimeOffset]$subIssueAction.expectedRevision).ToString('o') -match '^2026-' -and $subIssueAction.operationKey -match '^factory:plan-result:7:child:0:[a-f0-9]{64}$' -and (Test-Json -Json ($subIssueAction | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
     if (-not $subIssueActionValid) { Write-Host "  info child action receipt: $($subIssueAction | ConvertTo-Json -Compress -Depth 8)" }
     Assert 'route: child issue carries a schema-valid revision-bound idempotency receipt' $subIssueActionValid
-    Assert 'route: parent comment lists children and dependencies' ((@((Get-Gh).comments)[-1]) -match '#100' -and (@((Get-Gh).comments)[-1]) -match '\| #101 \| Phase B .* \| #100 \|')
+    $parentDecompositionComment = [string](@((Get-Gh).comments | Where-Object { $_ -match '## Factory decomposition' })[-1])
+    Assert 'route: parent comment lists children and dependencies' ($parentDecompositionComment -match '#100' -and $parentDecompositionComment -match '\| #101 \| Phase B .* \| #100 \|')
     $st = Get-Gh; $st.labels = @('factory:needs-plan'); $st | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: re-running does not duplicate sub-issues' ((Invoke-Route 'plan-result' $dec) -eq 0 -and @((Get-Gh).issues).Count -eq 2)
     Set-Gh @('factory:needs-plan')

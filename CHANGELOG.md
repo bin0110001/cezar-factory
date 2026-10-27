@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.65] - 2026-10-27
+
+- Make decomposed parent closure replay-safe and verify its durable action
+  receipt after ambiguous GitHub responses.
+
 ## [0.3.64] - 2026-10-27
 
 - Persist and reconcile the review-gated auto-merge action against its exact
