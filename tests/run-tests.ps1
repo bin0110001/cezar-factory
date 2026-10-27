@@ -125,6 +125,11 @@ Assert 'backlog audit is a bounded candidate-only proposal with workflow-owned e
 Assert 'backlog audit standardizes classification and valid closing labels' ($backlogAuditSkill -match '(?s)factory:needs-plan.*?complexity:large' -and $backlogAuditSkill -match '(?s)Each proposal.*?durable closing state' -and $backlogAuditSkill -match 'Include every candidate\s+exactly once' -and $backlogAuditSkill -match 'allowlisted `added` labels')
 Assert 'backlog audit escalates unresolved deterministic signal conflicts' ($backlogAuditSkill -match 'ruleConflicts' -and $backlogAuditSkill -match 'factory:needs-help')
 Assert 'backlog audit has no contradictory file-writing or issue-creation instructions' ($backlogAuditSkill -notmatch 'create an issue|Create.*?issue|file-writing mechanism|shell heredocs|create a temporary audit script|PowerShell/runtime file-writing')
+$interactiveBacklogSkill = Get-Content -Raw (Join-Path $factory 'skills/interactive-github-backlog/SKILL.md')
+Assert 'interactive backlog skill defines a bounded user-requested contract and output report' ($interactiveBacklogSkill -match '(?s)## Contract.*?Prerequisites and bounded inputs.*?Required judgment.*?Effects and limits.*?## Report.*?repository.*?next_action' -and $interactiveBacklogSkill -match 'no more than 40 children')
+Assert 'interactive backlog skill preserves duplicate, lifecycle, decomposition and script-ownership guards' ($interactiveBacklogSkill -match 'never create a duplicate' -and $interactiveBacklogSkill -match '(?s)factory:working.*?factory:review.*?factory:changes-requested' -and $interactiveBacklogSkill -match 'factory:tracking' -and $interactiveBacklogSkill -match 'interactive-github-backlog: source=' -and $interactiveBacklogSkill -match 'Factory scripts run only from workflow `command:` steps')
+$interactiveBacklogLines = @($interactiveBacklogSkill -split "`r?`n").Count
+Assert 'interactive backlog skill avoids repeated checklists' ($interactiveBacklogLines -le 125)
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $planMaterializeStep = [regex]::Match($planWorkflow, '(?s)  - id: validate\r?\n(?<step>.*?)(?=  - id: )').Groups['step'].Value
 $reviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')

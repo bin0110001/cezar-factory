@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.57] - 2026-10-27
+
+- Improve workflow reliability with replay-safe effects, bounded retries, typed
+  outcomes, explicit verification deadlines, and clearer skill contracts.
+
 ## [0.3.56] - 2026-10-18
 
 - Retry shared Factory parity and automation reconciliation on every timer tick,
