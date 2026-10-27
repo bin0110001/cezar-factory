@@ -104,6 +104,22 @@ foreach ($issue in $issues) {
             $operationMaterial = "$($issue.number)`n$($issue.updatedAt)`n$reason"
             $operationDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($operationMaterial))).ToLowerInvariant()
             $marker = "<!-- factory-maintenance:working-recovery:$($issue.number):$operationDigest -->"
+            $action = [ordered]@{
+                schemaVersion = 1
+                target = [ordered]@{ kind = 'github_issue'; id = [int]$issue.number }
+                expectedRevision = ([DateTimeOffset]$live.updatedAt).ToUniversalTime().ToString('o')
+                operation = 'github.issue.update_labels'
+                arguments = [ordered]@{ addLabels = @('factory:investigate'); removeLabels = @('factory:working') }
+                rationale = "maintenance recovery: $reason"
+                operationKey = "factory:maintenance:working-recovery:$($issue.number):$operationDigest"
+            }
+            $actionJson = $action | ConvertTo-Json -Compress -Depth 8
+            $actionSchemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+            try {
+                if (-not (Test-Json -Json $actionJson -SchemaFile $actionSchemaPath -ErrorAction Stop)) { throw 'generated lifecycle action does not satisfy the shared effect contract' }
+            } catch { throw "Issue $($issue.number) maintenance action schema validation failed: $($_.Exception.Message)" }
+            $actionPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($actionJson))
+            $actionMarker = "<!-- factory:effect-action:v1:$actionPayload -->"
             try { Invoke-Gh @('issue', 'edit', [string]$issue.number, '--remove-label', 'factory:working', '--add-label', 'factory:investigate') | Out-Null }
             catch {
                 $afterAmbiguous = Get-LiveIssue ([int]$issue.number)
@@ -118,7 +134,7 @@ foreach ($issue in $issues) {
             $existingReceipt = @($after.comments | ForEach-Object { [string]$_.body } | Where-Object { $_ -match [regex]::Escape($marker) })
             if ($existingReceipt.Count -gt 1) { throw "Issue $($issue.number) has duplicate maintenance receipts; reconcile before retrying." }
             if (-not $existingReceipt.Count) {
-                $commentBody = "$marker`nFactory maintenance moved this work to ``factory:investigate`` because $reason."
+                $commentBody = "$marker`n$actionMarker`nFactory maintenance moved this work to ``factory:investigate`` because $reason."
                 try { Invoke-Gh @('issue', 'comment', [string]$issue.number, '--body', $commentBody) | Out-Null }
                 catch {
                     $afterCommentAmbiguous = Get-LiveIssue ([int]$issue.number)
@@ -130,7 +146,7 @@ foreach ($issue in $issues) {
                 if ($verifiedReceipt.Count -ne 1) { throw "Issue $($issue.number) maintenance comment could not be verified." }
             }
         }
-        $moved += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-investigate' } else { 'investigated' }; reason = if ($runFailed) { 'failed-run' } else { 'inactive' }; updatedAt = [string]$issue.updatedAt }
+        $moved += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-investigate' } else { 'investigated' }; reason = if ($runFailed) { 'failed-run' } else { 'inactive' }; updatedAt = [string]$issue.updatedAt; operationKey = if (-not $DryRun) { $action.operationKey } else { $null } }
     }
 }
 
