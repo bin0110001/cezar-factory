@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.71] - 2026-10-27
+
+- Record current configured Cezar runner profiles and Bazzite runtime parity
+  evidence, including the unresolved host/container Git SHA mismatch.
+
 ## [0.3.70] - 2026-10-27
 
 - Define the no-op response and forbidden effects for the legacy implementation
