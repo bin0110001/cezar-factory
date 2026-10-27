@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.73] - 2026-10-27
+
+- Recheck live issue revision and lifecycle state immediately before route-state
+  label, comment, child creation, and parent-close effects.
+
 ## [0.3.72] - 2026-10-27
 
 - Close the workflow effect operation schema to the supported side-effect

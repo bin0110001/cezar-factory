@@ -118,6 +118,13 @@ function Assert-EffectRevision($IssueView, [string[]]$ExpectedStates) {
         Fail "issue lifecycle state changed before the side effect; found [$($liveStates -join ', ')]"
     }
 }
+function Assert-CommitRevision([string[]]$ExpectedStates) {
+    # GitHub does not expose compare-and-set for these issue mutations. Re-read
+    # at the last practical point before the write to narrow the stale window.
+    $latest = Get-LiveIssue
+    Assert-EffectRevision $latest $ExpectedStates
+    $latest
+}
 
 function Assert-Source([string[]]$Allowed) {
     if ($current.Count -eq 0 -or -not ($current | Where-Object { $Allowed -contains $_ })) {
@@ -165,7 +172,7 @@ function Set-State([string]$Target) {
     $action = New-LabelAction @($Target) $remove "route $Event to $Target" ([string]$before.updatedAt)
     Add-EffectActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
-        try { Invoke-Gh @ghArgs | Out-Null }
+        try { Assert-CommitRevision $current | Out-Null; Invoke-Gh @ghArgs | Out-Null }
         catch {
             $afterAmbiguous = Get-LiveIssue
             $ambiguousStates = @(Get-StateNames (Get-LabelNames $afterAmbiguous))
@@ -199,7 +206,12 @@ function Set-Complexity([string]$Target) {
     $action = New-LabelAction @($Target) $remove "set issue complexity to $Target" ([string]$before.updatedAt)
     Add-EffectActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
-        try { Invoke-Gh @ghArgs | Out-Null }
+        try {
+            $commitView = Assert-CommitRevision $current
+            $commitComplexity = @(Get-LabelNames $commitView | Where-Object { $complexityLabels -contains $_ })
+            if (($commitComplexity -join "`n") -ne (@($liveComplexity | Sort-Object) -join "`n")) { Fail 'issue complexity changed before the side effect' }
+            Invoke-Gh @ghArgs | Out-Null
+        }
         catch {
             $afterAmbiguous = Get-LiveIssue
             $afterComplexity = @(Get-LabelNames $afterAmbiguous | Where-Object { $complexityLabels -contains $_ })
@@ -228,7 +240,7 @@ function Set-Classification([string]$Type, [string]$Risk) {
     $action = New-LabelAction $add @() 'apply validated intake classification' ([string]$before.updatedAt)
     Add-EffectActionReceipt $action 'applying'
     if ($add.Count) {
-        try { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
+        try { Assert-CommitRevision $current | Out-Null; Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
         catch {
             $afterAmbiguous = Get-LiveIssue
             $afterAmbiguousLabels = @(Get-LabelNames $afterAmbiguous)
@@ -307,7 +319,7 @@ function Close-DecomposedParent([string]$Summary) {
     $markedComment = "$Summary`n`n$marker`n<!-- factory:effect-action:v1:$payload -->"
     Add-EffectActionReceipt $action 'applying'
     $closeFailure = $null
-    try { Invoke-Gh issue close $Issue --reason completed --comment $markedComment | Out-Null }
+    try { Assert-CommitRevision $current | Out-Null; Invoke-Gh issue close $Issue --reason completed --comment $markedComment | Out-Null }
     catch { $closeFailure = $_.Exception.Message }
     $after = Get-LiveIssue
     $afterComments = @($after.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } } | Where-Object { $_ -match [regex]::Escape($marker) })
@@ -377,7 +389,7 @@ function Add-Comment([string]$Body) {
     $f = [IO.Path]::GetTempFileName()
     try {
         [IO.File]::WriteAllText($f, $markedBody)
-        try { Invoke-Gh issue comment $Issue --body-file $f | Out-Null }
+        try { Assert-CommitRevision $current | Out-Null; Invoke-Gh issue comment $Issue --body-file $f | Out-Null }
         catch {
             $afterAmbiguous = Get-LiveIssue
             $afterBodies = @($afterAmbiguous.comments | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.body } })
@@ -595,7 +607,7 @@ switch ($Event) {
                 $createFailure = $null
                 try {
                     [IO.File]::WriteAllText($f, $body)
-                    try { $url = (Invoke-Gh issue create --title $subTitle --body-file $f --label ($labelsForChild -join ',') | Out-String).Trim() }
+                    try { Assert-CommitRevision $current | Out-Null; $url = (Invoke-Gh issue create --title $subTitle --body-file $f --label ($labelsForChild -join ',') | Out-String).Trim() }
                     catch { $createFailure = $_ }
                 } finally { Remove-Item $f -ErrorAction SilentlyContinue }
                 if ($url -match '/issues/(\d+)') { $createdNumber = [int]$Matches[1] }
