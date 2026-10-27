@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.59] - 2026-10-27
+
+- Make stale-workable lifecycle refresh revision-bound and restart-reconcilable,
+  with durable action receipts and lost-response recovery.
+
 ## [0.3.58] - 2026-10-27
 
 - Require independent review before merge in the manual backlog skill and

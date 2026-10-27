@@ -1,5 +1,5 @@
 # Fake `gh` for route-state tests. State lives in the JSON file named by $env:FAKE_GH_STATE: { labels: [...], comments: [...] }.
-$state = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
+$state = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable -DateKind String
 $a = @($args)
 # Real gh receives plain strings; PowerShell turns unquoted `a,b` into an array, which gh would reject.
 foreach ($x in $a) { if ($x -isnot [string] -and $x -isnot [int]) { Write-Error "fake gh: non-string argument ($($x.GetType().Name)) in: $($a -join ' ')"; exit 2 } }
@@ -24,8 +24,10 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'edit') {
     if ($issue) { $issue.labels = @($issueLabels | Sort-Object -Unique) }
     if ($issue) { $issue.updatedAt = [DateTime]::UtcNow.ToString('o') }
     else { $state.updatedAt = [DateTime]::UtcNow.ToString('o') }
-    if ($state.ContainsKey('failNextEditAfterWrite') -and $state.failNextEditAfterWrite) {
+    if (($state.ContainsKey('failNextEditAfterWrite') -and $state.failNextEditAfterWrite) -or
+        ($state.ContainsKey('failAfterIssueEditNumber') -and [int]$state.failAfterIssueEditNumber -eq [int]$state.issueEditCount)) {
         $state.failNextEditAfterWrite = $false
+        $state.failAfterIssueEditNumber = 0
         $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
         exit 1
     }

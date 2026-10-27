@@ -37,6 +37,7 @@ $manualOrTerminalStates = @(
     'factory:done'
 )
 $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large')
+$PendingPath = "$OutputPath.pending.json"
 
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
@@ -55,15 +56,81 @@ function Get-LabelNames($Issue) {
 }
 
 function Write-Result($Result) {
-    $directory = Split-Path -Parent $OutputPath
-    if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
-    $Result | ConvertTo-Json -Depth 8 | Set-Content -NoNewline $OutputPath
+    Write-JsonAtomic $Result $OutputPath
     $Result | ConvertTo-Json -Depth 8
+}
+
+function Write-JsonAtomic($Value, [string]$Path) {
+    $directory = Split-Path -Parent $Path
+    if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
+    $temporary = "$Path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        [System.IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 12), [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temporary -Destination $Path -Force
+    } finally {
+        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-LiveIssue([int]$IssueNumber) {
+    $raw = Invoke-Gh @('issue', 'view', [string]$IssueNumber, '--json', 'number,state,updatedAt,labels')
+    ($raw -join "`n") | ConvertFrom-Json -DateKind String
+}
+
+function Get-NormalizedLabelKey([string[]]$Labels) {
+    (@($Labels | Sort-Object -Unique) -join "`n")
+}
+
+function Complete-PendingRefresh($Pending, [bool]$AllowUnstartedRetry) {
+    $action = $Pending.action
+    if (-not $action -or $action.schemaVersion -ne 1 -or $action.operation -ne 'github.issue.refresh_lifecycle') {
+        throw 'pending refresh action has an invalid action contract'
+    }
+    $issueNumber = [int]$action.target.id
+    $stateLabel = [string]$action.arguments.lifecycleState
+    $expectedLabels = @($action.arguments.expectedLabels | ForEach-Object { [string]$_ })
+    $withoutState = @($expectedLabels | Where-Object { $_ -ne $stateLabel })
+    $live = Get-LiveIssue $issueNumber
+    $labels = @(Get-LabelNames $live | Sort-Object -Unique)
+    if ([string]$live.state -ne 'OPEN') { throw "pending issue $issueNumber is no longer open; manual reconciliation required" }
+
+    if ($Pending.phase -eq 'removing') {
+        if ((Get-NormalizedLabelKey $labels) -eq (Get-NormalizedLabelKey $expectedLabels)) {
+            if (-not $AllowUnstartedRetry) { throw "lifecycle removal for issue $issueNumber was not confirmed; pending action retained" }
+            Invoke-Gh @('issue', 'edit', [string]$issueNumber, '--remove-label', $stateLabel) | Out-Null
+            $live = Get-LiveIssue $issueNumber
+            $labels = @(Get-LabelNames $live | Sort-Object -Unique)
+        }
+        if ((Get-NormalizedLabelKey $labels) -ne (Get-NormalizedLabelKey $withoutState)) {
+            throw "issue $issueNumber labels changed during the pending lifecycle refresh; manual reconciliation required"
+        }
+        $Pending.phase = 'removed'
+        Write-JsonAtomic $Pending $PendingPath
+    }
+
+    if ($Pending.phase -eq 'removed') {
+        $labelKey = Get-NormalizedLabelKey $labels
+        if ($labelKey -eq (Get-NormalizedLabelKey $withoutState)) {
+            Invoke-Gh @('issue', 'edit', [string]$issueNumber, '--add-label', $stateLabel) | Out-Null
+            $live = Get-LiveIssue $issueNumber
+            $labels = @(Get-LabelNames $live | Sort-Object -Unique)
+        }
+        if ([string]$live.state -ne 'OPEN' -or (Get-NormalizedLabelKey $labels) -ne (Get-NormalizedLabelKey $expectedLabels)) {
+            throw "issue $issueNumber lifecycle refresh did not reach its expected labels; pending action retained"
+        }
+        $Pending.phase = 'committed'
+        $Pending.observedRevision = [DateTimeOffset]::Parse([string]$live.updatedAt).ToUniversalTime().ToString('o')
+        $Pending.completedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        Write-JsonAtomic $Pending $PendingPath
+    }
+
+    if ($Pending.phase -ne 'committed') { throw "pending action has unsupported phase '$($Pending.phase)'" }
+    [ordered]@{ action = $action; status = 'committed'; observedRevision = $Pending.observedRevision; completedAt = $Pending.completedAt }
 }
 
 $cutoff = [DateTimeOffset]::UtcNow.AddHours(-$OlderThanHours)
 $raw = Invoke-Gh @('issue','list','--state','open','--limit','1000','--json','number,title,createdAt,updatedAt,labels,url')
-$issues = @($raw -join "`n" | ConvertFrom-Json)
+$issues = @($raw -join "`n" | ConvertFrom-Json -DateKind String)
 $candidates = @()
 $excluded = @()
 $recentlyUpdatedCount = 0
@@ -104,25 +171,86 @@ foreach ($issue in $issues) {
 $selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.updatedAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
 $refreshed = @()
 $failures = @()
+$actionReceipts = @()
+$pendingRecoveryBlocked = $false
+$pendingRecoveryCompleted = $false
+if (-not $DryRun -and (Test-Path -LiteralPath $PendingPath -PathType Leaf)) {
+    $pending = $null
+    try {
+        $pending = Get-Content -LiteralPath $PendingPath -Raw | ConvertFrom-Json -AsHashtable
+        $recoveredReceipt = Complete-PendingRefresh $pending $true
+        $actionReceipts += $recoveredReceipt
+        $refreshed += [ordered]@{ issue = [int]$pending.action.target.id; state = [string]$pending.action.arguments.lifecycleState; action = 'resumed-refresh' }
+        $pendingRecoveryCompleted = $true
+    } catch {
+        $pendingRecoveryBlocked = $true
+        $pendingIssue = 0
+        $pendingOperationKey = $null
+        if ($pending -and $pending.action) {
+            if ($pending.action.target -and $pending.action.target.id) { $pendingIssue = [int]$pending.action.target.id }
+            if ($pending.action.operationKey) { $pendingOperationKey = [string]$pending.action.operationKey }
+        }
+        $failures += [ordered]@{ issue = $pendingIssue; operationKey = $pendingOperationKey; error = $_.Exception.Message; pendingReceipt = $PendingPath }
+    }
+}
 foreach ($candidate in $selected) {
+    if ($pendingRecoveryBlocked -or $pendingRecoveryCompleted) { break }
+    $pendingAfterError = $null
     try {
         if (-not $DryRun) {
-            $liveRaw = Invoke-Gh @('issue', 'view', [string]$candidate.issue, '--json', 'number,state,updatedAt,labels')
-            $live = ($liveRaw -join "`n") | ConvertFrom-Json
+            $live = Get-LiveIssue ([int]$candidate.issue)
             $liveLabels = @(Get-LabelNames $live | Sort-Object -Unique)
             $expectedLabels = @($candidate.labels | Sort-Object -Unique)
             $liveRevision = [DateTimeOffset]::Parse([string]$live.updatedAt).ToUniversalTime().ToString('o')
             if ([string]$live.state -ne 'OPEN' -or $liveRevision -ne $candidate.updatedAt -or ($liveLabels -join "`n") -ne ($expectedLabels -join "`n")) {
-                throw 'issue state, updatedAt revision, or labels changed since stale-workable selection; refusing refresh'
+                throw "issue state, updatedAt revision, or labels changed since stale-workable selection; refusing refresh (state=$($live.state), expectedRevision=$($candidate.updatedAt), observedRevision=$liveRevision, expectedLabels=$($expectedLabels -join ','), observedLabels=$($liveLabels -join ','))"
             }
+
+            $keySource = "$($candidate.issue)|$($candidate.updatedAt)|$($candidate.state)"
+            $keyBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($keySource))
+            $operationKey = "factory:stale-workable:$($candidate.issue):$([Convert]::ToHexString($keyBytes).ToLowerInvariant())"
+            $action = [ordered]@{
+                schemaVersion = 1
+                target = [ordered]@{ kind = 'github_issue'; id = [int]$candidate.issue }
+                expectedRevision = [string]$candidate.updatedAt
+                operation = 'github.issue.refresh_lifecycle'
+                arguments = [ordered]@{ lifecycleState = [string]$candidate.state; expectedLabels = @($expectedLabels) }
+                rationale = 'Retrigger a stale eligible issue after checking its current open state, revision, and labels.'
+                operationKey = $operationKey
+            }
+            $pending = [ordered]@{ action = $action; phase = 'removing'; recordedAt = [DateTimeOffset]::UtcNow.ToString('o') }
+            Write-JsonAtomic $pending $PendingPath
             Invoke-Gh @('issue','edit',[string]$candidate.issue,'--remove-label',$candidate.state) | Out-Null
+            $pending.phase = 'removed'
+            Write-JsonAtomic $pending $PendingPath
             Invoke-Gh @('issue','edit',[string]$candidate.issue,'--add-label',$candidate.state) | Out-Null
+            $actionReceipts += Complete-PendingRefresh $pending $false
+        } else {
+            $candidate.effectAction = [ordered]@{ operation = 'github.issue.refresh_lifecycle'; target = [ordered]@{ kind = 'github_issue'; id = [int]$candidate.issue }; expectedRevision = [string]$candidate.updatedAt }
         }
         $candidate.action = if ($DryRun) { 'would-refresh' } else { 'refreshed' }
         $refreshed += $candidate
     }
     catch {
-        $failures += [ordered]@{ issue = $candidate.issue; state = $candidate.state; error = $_.Exception.Message }
+        $errorMessage = $_.Exception.Message
+        if (-not $DryRun -and (Test-Path -LiteralPath $PendingPath -PathType Leaf)) {
+            try {
+                $pendingAfterError = Get-Content -LiteralPath $PendingPath -Raw | ConvertFrom-Json -AsHashtable
+                if ([int]$pendingAfterError.action.target.id -eq [int]$candidate.issue -and $pendingAfterError.phase -in @('removing', 'removed')) {
+                    $actionReceipts += Complete-PendingRefresh $pendingAfterError $false
+                    $candidate.action = 'refreshed-after-ambiguous-response'
+                    $refreshed += $candidate
+                    continue
+                }
+            } catch { $errorMessage = "$errorMessage; reconciliation: $($_.Exception.Message)" }
+        }
+        $failures += [ordered]@{ issue = $candidate.issue; state = $candidate.state; error = $errorMessage; operationKey = if ($pendingAfterError) { $pendingAfterError.action.operationKey } else { $null } }
+        if (Test-Path -LiteralPath $PendingPath -PathType Leaf) {
+            try {
+                $unfinished = Get-Content -LiteralPath $PendingPath -Raw | ConvertFrom-Json -AsHashtable
+                if ($unfinished.phase -ne 'committed') { break }
+            } catch { break }
+        }
     }
 }
 
@@ -136,9 +264,16 @@ $result = [ordered]@{
     eligible = @($candidates).Count
     recentlyUpdated = $recentlyUpdatedCount
     refreshed = $refreshed
+    actionReceipts = $actionReceipts
     excluded = $excluded
     failures = $failures
     terminalReason = if ($failures.Count) { 'refresh-failures' } elseif ($refreshed.Count) { 'refreshed-bounded-batch' } else { 'no-stale-workable-issues' }
 }
 Write-Result $result
+if (Test-Path -LiteralPath $PendingPath -PathType Leaf) {
+    try {
+        $completedPending = Get-Content -LiteralPath $PendingPath -Raw | ConvertFrom-Json -AsHashtable
+        if ($completedPending.phase -eq 'committed') { Remove-Item -LiteralPath $PendingPath -Force }
+    } catch { }
+}
 if ($failures.Count) { exit 1 }

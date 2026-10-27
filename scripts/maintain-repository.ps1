@@ -49,7 +49,7 @@ function Get-Labels($Issue) {
 
 function Get-LiveIssue([int]$Number) {
     $raw = Invoke-Gh @('issue', 'view', [string]$Number, '--json', 'number,state,updatedAt,labels,comments')
-    ($raw -join "`n") | ConvertFrom-Json
+    ($raw -join "`n") | ConvertFrom-Json -DateKind String
 }
 
 function Write-Result($Result) {
@@ -60,7 +60,7 @@ function Write-Result($Result) {
 }
 
 $raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,updatedAt,labels,url')
-$issues = @($raw -join "`n" | ConvertFrom-Json)
+$issues = @($raw -join "`n" | ConvertFrom-Json -DateKind String)
 
 # Latest Cezar run status per issue, so failed runs can release `factory:working` without waiting 24 hours.
 $latestRunStatus = @{}

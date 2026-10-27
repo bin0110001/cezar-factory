@@ -723,6 +723,8 @@ try {
     $staleRefreshFirstResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
     $staleRefreshAfterFirst = Get-Gh
     Assert 'stale-workable refresh uses last update and reports recently touched old issues' ($staleRefreshFirst.Code -eq 0 -and @($staleRefreshFirstResult.refreshed).Count -eq 1 -and $staleRefreshFirstResult.refreshed[0].issue -eq 12 -and $staleRefreshFirstResult.recentlyUpdated -eq 1 -and $staleRefreshAfterFirst.issueEditCount -eq 2)
+    $staleAction = $staleRefreshFirstResult.actionReceipts[0].action
+    Assert 'stale-workable refresh persists the normalized revision-bound action receipt' ($staleRefreshFirstResult.actionReceipts[0].status -eq 'committed' -and $staleAction.operation -eq 'github.issue.refresh_lifecycle' -and $staleAction.target.id -eq 12 -and $staleAction.expectedRevision -eq '2020-01-01T00:00:00.0000000+00:00' -and $staleAction.operationKey -match '^factory:stale-workable:12:[a-f0-9]{64}$' -and (Test-Json -Json ($staleAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) -and -not (Test-Path "$staleRefreshPath.pending.json"))
     $staleRefreshSecond = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
     $staleRefreshSecondResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
     Assert 'stale-workable replay observes activity revision and does not repeat the trigger' ($staleRefreshSecond.Code -eq 0 -and @($staleRefreshSecondResult.refreshed).Count -eq 0 -and $staleRefreshSecondResult.recentlyUpdated -eq 2 -and (Get-Gh).issueEditCount -eq 2)
@@ -733,7 +735,63 @@ try {
     $staleRaceState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
     $staleRaceRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
     $staleRaceResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
-    Assert 'stale-workable refuses to refresh after the selected issue revision changes' ($staleRaceRun.Code -ne 0 -and @($staleRaceResult.failures).Count -eq 1 -and (Get-Gh).issueEditCount -eq 0 -and @((Get-Gh).issues[0].labels | Where-Object { $_.name -eq 'factory:ready' }).Count -eq 1)
+    $staleRaceLabels = @((Get-Gh).issues[0].labels | ForEach-Object { if ($_ -is [string]) { [string]$_ } else { [string]$_.name } })
+    Assert 'stale-workable refuses to refresh after the selected issue revision changes' ($staleRaceRun.Code -ne 0 -and @($staleRaceResult.failures).Count -eq 1 -and (Get-Gh).issueEditCount -eq 0 -and @($staleRaceLabels | Where-Object { $_ -eq 'factory:ready' }).Count -eq 1)
+
+    foreach ($failEditNumber in @(1, 2)) {
+        $ambiguousIssue = 15 + $failEditNumber
+        $ambiguousState = @{
+            labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0; failAfterIssueEditNumber = $failEditNumber
+            issues = @(@{ number = $ambiguousIssue; title = 'Ambiguous label refresh'; url = "https://github.com/x/y/issues/$ambiguousIssue"; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) })
+        }
+        $ambiguousState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+        $ambiguousRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+        $ambiguousResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+        $ambiguousAfter = Get-Gh
+        $ambiguousLabels = @($ambiguousAfter.issues[0].labels | ForEach-Object { if ($_ -is [string]) { [string]$_ } else { [string]$_.name } })
+        Assert "stale-workable reconciles a lost response after edit $failEditNumber without losing the lifecycle label" ($ambiguousRun.Code -eq 0 -and $ambiguousAfter.issueEditCount -eq 2 -and @($ambiguousLabels | Where-Object { $_ -eq 'factory:ready' }).Count -eq 1 -and $ambiguousResult.actionReceipts[0].status -eq 'committed' -and -not (Test-Path "$staleRefreshPath.pending.json"))
+    }
+
+    $restartIssue = 17
+    $restartPending = @{
+        phase = 'removing'; recordedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        action = @{
+            schemaVersion = 1; target = @{ kind = 'github_issue'; id = $restartIssue }; expectedRevision = '2020-01-01T00:00:00.0000000+00:00'; operation = 'github.issue.refresh_lifecycle'
+            arguments = @{ lifecycleState = 'factory:ready'; expectedLabels = @('complexity:small', 'factory:ready') }
+            rationale = 'Retrigger a stale eligible issue after checking its current open state, revision, and labels.'; operationKey = ('factory:stale-workable:{0}:{1}' -f $restartIssue, ('a' * 64))
+        }
+    }
+    $restartPending | ConvertTo-Json -Depth 8 | Set-Content "$staleRefreshPath.pending.json"
+    $restartState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0
+        issues = @(
+            @{ number = $restartIssue; title = 'Pending interrupted refresh'; url = "https://github.com/x/y/issues/$restartIssue"; createdAt = '2020-01-01T00:00:00Z'; updatedAt = [DateTimeOffset]::UtcNow.ToString('o'); labels = @(@{ name = 'complexity:small' }) },
+            @{ number = 18; title = 'Other stale work'; url = 'https://github.com/x/y/issues/18'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) }
+        )
+    }
+    $restartState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $restartRefresh = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+    $restartRefreshResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+    Assert 'stale-workable resumes a durable pending action after restart without overwriting its receipt' ($restartRefresh.Code -eq 0 -and (Get-Gh).issueEditCount -eq 1 -and $restartRefreshResult.actionReceipts[0].action.operationKey -eq $restartPending.action.operationKey -and $restartRefreshResult.refreshed[0].action -eq 'resumed-refresh' -and -not (Test-Path "$staleRefreshPath.pending.json"))
+
+    $blockedPending = $restartPending.Clone()
+    $blockedPending.phase = 'removed'
+    $blockedPending.action.target.id = 19
+    $blockedPending.action.arguments.expectedLabels = @('complexity:large', 'factory:ready')
+    $blockedPending.action.operationKey = 'factory:stale-workable:19:' + ('b' * 64)
+    $blockedPending | ConvertTo-Json -Depth 8 | Set-Content "$staleRefreshPath.pending.json"
+    $blockedPendingState = @{
+        labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0
+        issues = @(
+            @{ number = 17; title = 'Changed pending target'; url = 'https://github.com/x/y/issues/17'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:blocked' }) },
+            @{ number = 19; title = 'Other stale work'; url = 'https://github.com/x/y/issues/19'; createdAt = '2020-01-01T00:00:00Z'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:ready' }, @{ name = 'complexity:small' }) }
+        )
+    }
+    $blockedPendingState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $blockedPendingRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = $gh; Limit = 1; OlderThanHours = 24; OutputPath = $staleRefreshPath }
+    $blockedPendingResult = Get-Content -Raw $staleRefreshPath | ConvertFrom-Json
+    $stillPending = Get-Content -Raw "$staleRefreshPath.pending.json" | ConvertFrom-Json
+    Assert 'stale-workable preserves unresolved recovery evidence and stops the batch' ($blockedPendingRun.Code -ne 0 -and (Get-Gh).issueEditCount -eq 0 -and @($blockedPendingResult.refreshed).Count -eq 0 -and $stillPending.action.operationKey -eq $blockedPending.action.operationKey)
 
     $maintenanceState = @{
         labels = @(); comments = @(); created = @(); issueState = 'OPEN'; trackIssueEditCount = $true; issueEditCount = 0; prMerged = $false; prs = @()
@@ -747,7 +805,7 @@ try {
     $maintenanceReceiptCount = @($maintenanceAfterFirst.comments | Where-Object { $_ -match 'factory-maintenance:working-recovery:30:[a-f0-9]{64}' }).Count
     Assert 'repository maintenance rechecks and verifies a stale working-issue transition' ($maintenanceFirst.Code -eq 0 -and $maintenanceFirstResult.movedToInvestigate[0].action -eq 'investigated' -and @($maintenanceAfterFirst.issues[0].labels | Where-Object { $_ -eq 'factory:investigate' }).Count -eq 1 -and $maintenanceReceiptCount -eq 1)
     $maintenanceActionMatch = [regex]::Match([string]$maintenanceAfterFirst.comments[0], '<!-- factory:effect-action:v1:([A-Za-z0-9+/=]+) -->')
-    $maintenanceAction = if ($maintenanceActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($maintenanceActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
+    $maintenanceAction = if ($maintenanceActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($maintenanceActionMatch.Groups[1].Value)) | ConvertFrom-Json -DateKind String } else { $null }
     Assert 'repository maintenance persists a schema-valid revision-bound label action' ($null -ne $maintenanceAction -and $maintenanceAction.operation -eq 'github.issue.update_labels' -and $maintenanceAction.target.id -eq 30 -and ([DateTimeOffset]$maintenanceAction.expectedRevision).ToString('o') -match '^2020-' -and $maintenanceAction.operationKey -match '^factory:maintenance:working-recovery:30:[a-f0-9]{64}$' -and (Test-Json -Json ($maintenanceAction | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
     $maintenanceSecond = Run 'maintain-repository.ps1' @{ GhCommand = $gh; ProjectId = ''; OutputPath = $maintenanceOutput }
     $maintenanceAfterSecond = Get-Gh
