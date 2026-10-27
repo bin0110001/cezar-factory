@@ -4975,23 +4975,26 @@ export class RunManager {
     userPrompt = expandRegistrySlashSkillText(userPrompt, state.skills ?? []);
     const currentRun = this.store.getRun(runId);
     const repairChecks = currentRun?.workflowDef?.steps?.filter((candidate) => candidate.onFail?.retry === step.id) ?? [];
+    const taskSummary = currentRun?.title?.trim();
+    if (taskSummary) userPrompt += `\n\nTask summary: ${taskSummary.slice(0, 300)}`;
     const remainingRunSeconds = state.workflowDeadlineAt === undefined
       ? null
       : Math.max(0, Math.ceil((state.workflowDeadlineAt - Date.now()) / 1000));
-    if (remainingRunSeconds !== null || repairChecks.length) {
-      const budgetLines = [
-        `Active workflow time remaining: ${remainingRunSeconds === null ? 'not configured' : `${remainingRunSeconds}s`}.`,
-      ];
-      if (repairChecks.length) {
-        const maxRepairAttempts = currentRun?.workflowDef?.maxRepairAttempts ?? 3;
-        const repairAttemptsUsed = currentRun?.repairAttemptsUsed ?? 0;
-        budgetLines.push(`Shared repair budget: ${repairAttemptsUsed} of ${maxRepairAttempts} attempts used; ${Math.max(0, maxRepairAttempts - repairAttemptsUsed)} remain.`);
-        budgetLines.push(`Checks that can retry this agent: ${repairChecks.map((candidate) => `${candidate.id} (up to ${candidate.onFail?.max ?? 2} repairs)`).join(', ')}.`);
-      } else {
-        budgetLines.push('No check-to-agent repair loop is configured for this step.');
-      }
-      userPrompt += `\n\nExecution budget:\n${budgetLines.map((line) => `- ${line}`).join('\n')}`;
-    }
+    const maxRepairAttempts = currentRun?.workflowDef?.maxRepairAttempts ?? 3;
+    const repairAttemptsUsed = currentRun?.repairAttemptsUsed ?? 0;
+    const changedFiles = await worktreeDiffStat(state.cwd, currentRun?.baseBranch ?? 'HEAD').catch(() => '');
+    const boundedChangedFiles = changedFiles.length > 2_000
+      ? `${changedFiles.slice(0, 2_000)}\n… (summary truncated)`
+      : changedFiles;
+    const budgetLines = [
+      `Active workflow time remaining: ${remainingRunSeconds === null ? 'not configured' : `${remainingRunSeconds}s`}.`,
+      `Shared repair budget: ${repairAttemptsUsed} of ${maxRepairAttempts} attempts used; ${Math.max(0, maxRepairAttempts - repairAttemptsUsed)} remain.`,
+      repairChecks.length
+        ? `Checks that can retry this agent: ${repairChecks.map((candidate) => `${candidate.id} (up to ${candidate.onFail?.max ?? 2} repairs)`).join(', ')}.`
+        : 'No check-to-agent repair loop is configured for this step.',
+    ];
+    userPrompt += `\n\nExecution budget:\n${budgetLines.map((line) => `- ${line}`).join('\n')}`;
+    userPrompt += `\n\nChanged files vs task base (bounded diff summary):\n${boundedChangedFiles || '(no changes recorded yet)'}`;
     if (chainNote) userPrompt = `${chainNote}\n\n---\n\n${userPrompt}`;
     // A commander recovered after a restart opens its first session holding whatever its children
     // reported while it was gone (spec Q7). Prepended and cleared here, after the slash expansion

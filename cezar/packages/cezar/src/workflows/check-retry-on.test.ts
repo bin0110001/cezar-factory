@@ -38,6 +38,7 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     savedEnv.CEZ_MOCK_STDIN_FILE = process.env.CEZ_MOCK_STDIN_FILE;
     process.env.CEZ_DRY_RUN = '1';
     await run('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
+    writeFileSync(join(repoRoot, '.gitignore'), '.ai/cezar/\n');
     writeFileSync(join(repoRoot, 'a.txt'), 'one\n');
     await run('git', ['add', '-A'], { cwd: repoRoot });
     await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
@@ -93,6 +94,30 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
       await new Promise((r) => setTimeout(r, 100));
     }
   };
+
+  it('gives every agent an explicit budget and bounded changed-file context', async () => {
+    const stdinFile = join(repoRoot, 'execution-context.jsonl');
+    process.env.CEZ_MOCK_STDIN_FILE = stdinFile;
+    const workflow: WorkflowDef = {
+      name: 'execution-context',
+      source: 'file',
+      steps: [{ id: 'implement', prompt: '{{task}}' }],
+    };
+    const record = manager.startRun(workflow, {
+      task: 'mock:done explain the bounded task context',
+      worktree: false,
+    });
+    await settle(record.id);
+
+    const prompt = JSON.parse(readFileSync(stdinFile, 'utf8').trim()).userText as string;
+    expect(prompt).toContain('Task summary:');
+    expect(prompt).toContain('Execution budget:');
+    expect(prompt).toContain('Active workflow time remaining: not configured.');
+    expect(prompt).toContain('Shared repair budget: 0 of 3 attempts used; 3 remain.');
+    expect(prompt).toContain('No check-to-agent repair loop is configured for this step.');
+    expect(prompt).toContain('Changed files vs task base (bounded diff summary):');
+    expect(prompt).toContain('(no changes recorded yet)');
+  }, 30_000);
 
   it('fails the run on an unlisted exit code without re-running the agent', async () => {
     const record = manager.startRun(workflowFor([1]), {
