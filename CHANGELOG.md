@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.60] - 2026-10-27
+
+- Emit schema-validated, revision-bound receipts for route-state label effects.
+
 ## [0.3.59] - 2026-10-27
 
 - Make stale-workable lifecycle refresh revision-bound and restart-reconcilable,

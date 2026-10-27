@@ -93,6 +93,7 @@ $comments = @($view.comments | ForEach-Object { $_.body })
 $current = @($labels | Where-Object { $stateLabels -contains $_ })
 $currentComplexity = @($labels | Where-Object { $complexityLabels -contains $_ })
 $script:effectRevision = [string]$view.updatedAt
+$script:actionReceipts = @()
 
 function Get-LiveIssue { Invoke-Gh issue view $Issue --json 'labels,comments,updatedAt' | ConvertFrom-Json }
 function Get-LabelNames($IssueView) { @($IssueView.labels | ForEach-Object { [string]$_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) }
@@ -110,6 +111,35 @@ function Assert-Source([string[]]$Allowed) {
         Fail "illegal transition: issue #$Issue is in [$($current -join ', ')], expected one of [$($Allowed -join ', ')]"
     }
 }
+function New-LabelAction([string[]]$AddLabels, [string[]]$RemoveLabels, [string]$Rationale, [string]$Revision) {
+    $add = @($AddLabels | Sort-Object -Unique)
+    $remove = @($RemoveLabels | Sort-Object -Unique)
+    if (-not $add.Count -and -not $remove.Count) { return $null }
+    $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes((@($add) + '--' + @($remove) | ConvertTo-Json -Compress)))).ToLowerInvariant()
+    $action = [ordered]@{
+        schemaVersion = 1
+        target = [ordered]@{ kind = 'github_issue'; id = $Issue }
+        expectedRevision = ([DateTimeOffset]$Revision).ToUniversalTime().ToString('o')
+        operation = 'github.issue.update_labels'
+        arguments = [ordered]@{ addLabels = $add; removeLabels = $remove }
+        rationale = $Rationale
+        operationKey = "factory:route-labels:${Event}:${Issue}:$fingerprint"
+    }
+    $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) { Fail 'label action does not satisfy the shared workflow effect contract' }
+    $action
+}
+function Add-LabelActionReceipt($Action, [string]$Status, [string]$ObservedRevision = '') {
+    if (-not $Action) { return }
+    $receipt = [ordered]@{ operationKey = $Action.operationKey; status = $Status; action = $Action }
+    if ($ObservedRevision) { $receipt.observedRevision = $ObservedRevision }
+    $existing = -1
+    for ($i = 0; $i -lt $script:actionReceipts.Count; $i++) {
+        if ($script:actionReceipts[$i].operationKey -eq $Action.operationKey) { $existing = $i; break }
+    }
+    if ($existing -ge 0) { $script:actionReceipts[$existing] = $receipt }
+    else { $script:actionReceipts += $receipt }
+}
 function Set-State([string]$Target) {
     $before = Get-LiveIssue
     Assert-EffectRevision $before $current
@@ -119,6 +149,8 @@ function Set-State([string]$Target) {
     $ghArgs = @('issue', 'edit', $Issue)
     if ($beforeStates -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
+    $action = New-LabelAction @($Target) $remove "route $Event to $Target" ([string]$before.updatedAt)
+    Add-LabelActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
         try { Invoke-Gh @ghArgs | Out-Null }
         catch {
@@ -128,6 +160,7 @@ function Set-State([string]$Target) {
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:current = @($ambiguousStates)
             $script:labels = @(Get-LabelNames $afterAmbiguous)
+            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -137,6 +170,7 @@ function Set-State([string]$Target) {
     $script:effectRevision = [string]$after.updatedAt
     $script:current = @($afterStates)
     $script:labels = @(Get-LabelNames $after)
+    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Set-Complexity([string]$Target) {
     if ($complexityLabels -notcontains $Target) { Fail "unknown complexity label '$Target'" }
@@ -149,6 +183,8 @@ function Set-Complexity([string]$Target) {
     $ghArgs = @('issue', 'edit', $Issue)
     if ($liveComplexity -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
+    $action = New-LabelAction @($Target) $remove "set issue complexity to $Target" ([string]$before.updatedAt)
+    Add-LabelActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
         try { Invoke-Gh @ghArgs | Out-Null }
         catch {
@@ -158,6 +194,7 @@ function Set-Complexity([string]$Target) {
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:currentComplexity = @($afterComplexity)
             $script:labels = @(Get-LabelNames $afterAmbiguous)
+            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -167,6 +204,7 @@ function Set-Complexity([string]$Target) {
     $script:effectRevision = [string]$after.updatedAt
     $script:currentComplexity = @($afterComplexity)
     $script:labels = @(Get-LabelNames $after)
+    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Set-Classification([string]$Type, [string]$Risk) {
     if ($Type -notmatch '^type:' -or $Risk -notmatch '^risk:') { Fail 'intake classification labels are invalid' }
@@ -174,6 +212,8 @@ function Set-Classification([string]$Type, [string]$Risk) {
     Assert-EffectRevision $before $current
     $beforeLabels = @(Get-LabelNames $before)
     $add = @(); foreach ($label in @($Type, $Risk)) { if ($beforeLabels -notcontains $label) { $add += $label } }
+    $action = New-LabelAction $add @() 'apply validated intake classification' ([string]$before.updatedAt)
+    Add-LabelActionReceipt $action 'applying'
     if ($add.Count) {
         try { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
         catch {
@@ -182,6 +222,7 @@ function Set-Classification([string]$Type, [string]$Risk) {
             if (@($afterAmbiguousLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { throw }
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:labels = $afterAmbiguousLabels
+            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -190,6 +231,7 @@ function Set-Classification([string]$Type, [string]$Risk) {
     if (@($afterLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { Fail 'classification label effect is unresolved' }
     $script:effectRevision = [string]$after.updatedAt
     $script:labels = $afterLabels
+    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Add-Comment([string]$Body) {
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
@@ -318,7 +360,7 @@ function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence,
     "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended next step / major architectural decision**`n$Decision"
 }
 function Done([string]$To, [string]$Note = '') {
-    Write-Output (@{ status = 'ok'; event = $Event; issue = $Issue; state = $To; note = $Note } | ConvertTo-Json -Compress)
+    Write-Output (@{ status = 'ok'; event = $Event; issue = $Issue; state = $To; note = $Note; actionReceipts = @($script:actionReceipts) } | ConvertTo-Json -Compress -Depth 12)
     exit 0
 }
 

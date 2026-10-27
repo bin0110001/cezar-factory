@@ -859,11 +859,12 @@ try {
     Assert 'lease: release is idempotent' ((Invoke-Lease 'release') -eq 0 -and (Invoke-Lease 'release') -eq 0)
     function Invoke-Route([string]$Event, $Obj, [int]$Issue = 0, [string]$GatePath = '') {
         $f = Join-Path $tmp 'route-result.json'; if ($Obj) { ($Obj | ConvertTo-Json -Depth 5) | Set-Content $f }
+        $global:routeOutputPath = Join-Path $tmp 'route-output.json'
         $global:LASTEXITCODE = 0
         $a = @{ Event = $Event; GhCommand = $gh; ProjectPath = $rp }
         if ($Obj) { $a.Path = $f } else { $a.Issue = $Issue }
         if ($GatePath) { $a.GatePath = $GatePath }
-        try { & pwsh -NoProfile -File $route @a *>&1 | Out-Null } catch { $global:LASTEXITCODE = 1 }
+        try { & pwsh -NoProfile -File $route @a *>&1 | Out-File -FilePath $global:routeOutputPath -Encoding utf8 } catch { $global:LASTEXITCODE = 1 }
         $global:LASTEXITCODE
     }
     function Invoke-ImplementationFinalizer($Obj, [hashtable]$Finalization) {
@@ -906,6 +907,8 @@ try {
     $ambiguousClassificationRoute = Invoke-Route 'intake-result' $intake
     $ambiguousClassificationResult = Get-Gh
     Assert 'route: ambiguous classification response is reconciled before later effects' ($ambiguousClassificationRoute -eq 0 -and $ambiguousClassificationResult.labels -contains 'type:bug' -and $ambiguousClassificationResult.labels -contains 'risk:low' -and $ambiguousClassificationResult.labels -contains 'factory:needs-plan' -and @($ambiguousClassificationResult.comments | Where-Object { $_ -match 'factory:route-effect:intake-result:7:' }).Count -eq 1)
+    $classificationReceipt = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    Assert 'route: classification emits schema-valid verified action receipt' ($classificationReceipt.actionReceipts.Count -eq 2 -and @($classificationReceipt.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operationKey -match '^factory:route-labels:intake-result:7:' -and (Test-Json -Json ($_.action | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')) }).Count -eq 2)
     Set-Gh @('factory:new')
     Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)
@@ -1096,6 +1099,8 @@ try {
     $ambiguousLabelState = Get-Gh; $ambiguousLabelState | Add-Member -NotePropertyName failNextEditAfterWrite -NotePropertyValue $true -Force; $ambiguousLabelState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $ambiguousLabelRoute = Invoke-Route 'implement-result' $impl
     Assert 'route: ambiguous lifecycle response is reconciled from live state' ($ambiguousLabelRoute -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and (Get-Gh).labels -notcontains 'factory:working')
+    $lifecycleReceipt = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    Assert 'route: lifecycle transition emits verified revision-bound action receipt' ($lifecycleReceipt.actionReceipts.Count -eq 1 -and $lifecycleReceipt.actionReceipts[0].status -eq 'verified' -and $lifecycleReceipt.actionReceipts[0].action.expectedRevision -and $lifecycleReceipt.actionReceipts[0].observedRevision -and $lifecycleReceipt.actionReceipts[0].action.arguments.addLabels -contains 'factory:review')
     $execution = Get-Content -Raw (Join-Path $rp '.factory/execution.json') | ConvertFrom-Json
     Assert 'route: execution completion recorded' ($execution.execution.status -eq 'complete' -and $execution.execution.result -eq 'success' -and $execution.execution.pr -eq $impl.pr)
     Set-Gh @('factory:working')
