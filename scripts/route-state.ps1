@@ -352,21 +352,75 @@ switch ($Event) {
             # previous attempt already created (matched by the parent marker in the body and the title).
             $marker = "<!-- factory-parent:$Issue -->"
             $existing = @{}
+            $existingBySlot = @{}
             foreach ($e in @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body' --limit 200 | ConvertFrom-Json)) {
-                if ($e.body -like "*$marker*") { $existing[$e.title] = [int]$e.number }
+                if ($e.body -like "*$marker*") {
+                    $existing[[string]$e.title] = [int]$e.number
+                    $slotMatch = [regex]::Match([string]$e.body, "<!-- factory:plan-child:${Issue}:(?<slot>\d+):(?<digest>[a-f0-9]{64}) -->")
+                    if ($slotMatch.Success) { $existingBySlot[[int]$slotMatch.Groups['slot'].Value] = [ordered]@{ number = [int]$e.number; digest = $slotMatch.Groups['digest'].Value } }
+                }
             }
             $subs = @($result.subIssues)
             $numbers = @()
-            foreach ($sub in $subs) {
-                if ($existing.ContainsKey($sub.title)) { $numbers += $existing[$sub.title]; continue }
-                $body = "$($sub.body)`n`n---`nParent: #$Issue (decomposed by the factory planner)`n$marker"
+            $actionSchemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+            for ($i = 0; $i -lt $subs.Count; $i++) {
+                $sub = $subs[$i]
+                $subTitle = [string]$sub.title
+                $subBody = [string]$sub.body
+                $subType = [string]$sub.type
+                $subRisk = [string]$sub.risk
+                $subComplexity = [string]$sub.complexity
+                $subDependencies = if ($sub.PSObject.Properties['dependsOn']) { @($sub.dependsOn) } else { @() }
+                $specification = [ordered]@{ slot = $i; title = $subTitle; body = $subBody; type = $subType; risk = $subRisk; complexity = $subComplexity; dependsOn = $subDependencies }
+                $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($specification | ConvertTo-Json -Compress -Depth 8)))).ToLowerInvariant()
+                $slotMarker = "<!-- factory:plan-child:${Issue}:${i}:$digest -->"
+                if ($existingBySlot.ContainsKey($i)) {
+                    if ($existingBySlot[$i].digest -ne $digest) { Fail "decomposition slot $i already has a child issue with different content; reconcile before retrying" }
+                    $numbers += [int]$existingBySlot[$i].number
+                    continue
+                }
+                if ($existing.ContainsKey($subTitle)) { $numbers += $existing[$subTitle]; continue }
+                $freshParent = Get-LiveIssue
+                Assert-EffectRevision $freshParent $current
+                $expectedRevision = ([DateTimeOffset]$freshParent.updatedAt).ToUniversalTime().ToString('o')
+                $labelsForChild = @('factory:needs-plan', $subType, $subRisk, $subComplexity)
+                $operationKey = "factory:plan-result:${Issue}:child:${i}:$digest"
+                $action = [ordered]@{
+                    schemaVersion = 1
+                    target = [ordered]@{ kind = 'github_issue'; id = $Issue }
+                    expectedRevision = $expectedRevision
+                    operation = 'github.issue.create_child'
+                    arguments = [ordered]@{ slot = $i; title = $subTitle; bodySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($subBody))).ToLowerInvariant(); labels = $labelsForChild }
+                    rationale = 'plan-result decomposition'
+                    operationKey = $operationKey
+                }
+                $actionJson = $action | ConvertTo-Json -Compress -Depth 8
+                try {
+                    if (-not (Test-Json -Json $actionJson -SchemaFile $actionSchemaPath -ErrorAction Stop)) { Fail "sub-issue action for slot $i does not satisfy the shared effect contract" }
+                } catch { Fail "sub-issue action schema validation failed for slot ${i}: $($_.Exception.Message)" }
+                $actionPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($actionJson))
+                $effectMarker = "<!-- factory:effect-action:v1:$actionPayload -->"
+                $body = "$subBody`n`n---`nParent: #$Issue (decomposed by the factory planner)`n$marker`n$slotMarker`n$effectMarker"
                 $f = [IO.Path]::GetTempFileName()
+                $createdNumber = 0
+                $url = ''
+                $createFailure = $null
                 try {
                     [IO.File]::WriteAllText($f, $body)
-                    $url = (Invoke-Gh issue create --title $sub.title --body-file $f --label "factory:needs-plan,$($sub.type),$($sub.risk),$($sub.complexity)" | Out-String).Trim()
+                    try { $url = (Invoke-Gh issue create --title $subTitle --body-file $f --label ($labelsForChild -join ',') | Out-String).Trim() }
+                    catch { $createFailure = $_ }
                 } finally { Remove-Item $f -ErrorAction SilentlyContinue }
-                if ($url -notmatch '/issues/(\d+)') { throw "could not read created issue number from: $url" }
-                $numbers += [int]$Matches[1]
+                if ($url -match '/issues/(\d+)') { $createdNumber = [int]$Matches[1] }
+                if ($createdNumber -lt 1) {
+                    try {
+                        $reconciled = @(Invoke-Gh issue list --state all --search "factory-parent:$Issue in:body" --json 'number,title,body' --limit 200 | ConvertFrom-Json | Where-Object { [string]$_.body -like "*$slotMarker*" })
+                    } catch { if ($createFailure) { throw $createFailure }; throw }
+                    if ($reconciled.Count -eq 1) { $createdNumber = [int]$reconciled[0].number }
+                    elseif ($reconciled.Count -gt 1) { Fail "sub-issue creation for slot $i has multiple matching remote results; reconcile manually" }
+                    elseif ($createFailure) { throw $createFailure }
+                    else { Fail "sub-issue creation for slot $i returned no verifiable issue URL or receipt" }
+                }
+                $numbers += $createdNumber
             }
             $rows = for ($i = 0; $i -lt $subs.Count; $i++) {
                 $deps = if ($subs[$i].PSObject.Properties['dependsOn'] -and @($subs[$i].dependsOn).Count) { (@($subs[$i].dependsOn) | ForEach-Object { "#$($numbers[$_])" }) -join ', ' } else { '-' }

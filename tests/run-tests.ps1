@@ -1044,9 +1044,30 @@ try {
     $iss = @((Get-Gh).issues)
     Assert 'route: sub-issues queued for planning' ($iss.Count -eq 2 -and $iss[0].labels -eq 'factory:needs-plan,type:feature,risk:medium,complexity:medium')
     Assert 'route: sub-issue links back to parent' ($iss[0].body -match 'Parent: #7' -and $iss[0].body -match 'factory-parent:7')
+    $subIssueActionMatch = [regex]::Match([string]$iss[0].body, '<!-- factory:effect-action:v1:([A-Za-z0-9+/=]+) -->')
+    $subIssueAction = if ($subIssueActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($subIssueActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
+    $subIssueActionValid = $null -ne $subIssueAction -and $subIssueAction.operation -eq 'github.issue.create_child' -and $subIssueAction.target.id -eq 7 -and ([DateTimeOffset]$subIssueAction.expectedRevision).ToString('o') -match '^2026-' -and $subIssueAction.operationKey -match '^factory:plan-result:7:child:0:[a-f0-9]{64}$' -and (Test-Json -Json ($subIssueAction | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json'))
+    if (-not $subIssueActionValid) { Write-Host "  info child action receipt: $($subIssueAction | ConvertTo-Json -Compress -Depth 8)" }
+    Assert 'route: child issue carries a schema-valid revision-bound idempotency receipt' $subIssueActionValid
     Assert 'route: parent comment lists children and dependencies' ((@((Get-Gh).comments)[-1]) -match '#100' -and (@((Get-Gh).comments)[-1]) -match '\| #101 \| Phase B .* \| #100 \|')
     $st = Get-Gh; $st.labels = @('factory:needs-plan'); $st | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: re-running does not duplicate sub-issues' ((Invoke-Route 'plan-result' $dec) -eq 0 -and @((Get-Gh).issues).Count -eq 2)
+    Set-Gh @('factory:needs-plan')
+    $lostSubIssueState = Get-Gh; $lostSubIssueState | Add-Member -NotePropertyName failNextIssueCreateAfterWrite -NotePropertyValue $true -Force; $lostSubIssueState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $lostSubIssueCreate = Invoke-Route 'plan-result' $dec
+    $lostSubIssueResult = Get-Gh
+    if (-not ($lostSubIssueCreate -eq 0 -and @($lostSubIssueResult.issues).Count -eq 2 -and @($lostSubIssueResult.issues | Where-Object { $_.title -eq 'Phase A' }).Count -eq 1 -and $lostSubIssueResult.issueCloseRequested)) { Write-Host "  info lost child create: code=$lostSubIssueCreate state=$($lostSubIssueResult | ConvertTo-Json -Compress -Depth 8)" }
+    Assert 'route: lost child issue create response reconciles by stable operation key' ($lostSubIssueCreate -eq 0 -and @($lostSubIssueResult.issues).Count -eq 2 -and @($lostSubIssueResult.issues | Where-Object { $_.title -eq 'Phase A' }).Count -eq 1 -and $lostSubIssueResult.issueCloseRequested)
+    Set-Gh @('factory:needs-plan')
+    $racingParentState = Get-Gh; $racingParentState | Add-Member -NotePropertyName changeParentRevisionAfterIssueCreate -NotePropertyValue $true -Force; $racingParentState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $racingDecomposition = Invoke-Route 'plan-result' $dec
+    $partialDecomposition = Get-Gh
+    Assert 'route: changed parent revision stops later child effects after reconcilable partial creation' ($racingDecomposition -ne 0 -and @($partialDecomposition.issues).Count -eq 1 -and $partialDecomposition.labels -contains 'factory:needs-plan' -and -not ($partialDecomposition.PSObject.Properties['issueCloseRequested'] -and $partialDecomposition.issueCloseRequested))
+    $partialDecomposition.changeParentRevisionAfterIssueCreate = $false; $partialDecomposition | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $resumedDecomposition = Invoke-Route 'plan-result' $dec
+    $completedDecomposition = Get-Gh
+    if (-not ($resumedDecomposition -eq 0 -and @($completedDecomposition.issues).Count -eq 2 -and @($completedDecomposition.issues | Where-Object { $_.title -eq 'Phase A' }).Count -eq 1 -and $completedDecomposition.issueCloseRequested)) { Write-Host "  info resumed decomposition: code=$resumedDecomposition state=$($completedDecomposition | ConvertTo-Json -Compress -Depth 8)" }
+    Assert 'route: partial decomposition resumes without duplicate child issues after reconciliation' ($resumedDecomposition -eq 0 -and @($completedDecomposition.issues).Count -eq 2 -and @($completedDecomposition.issues | Where-Object { $_.title -eq 'Phase A' }).Count -eq 1 -and $completedDecomposition.issueCloseRequested)
 
     $labelScript = Join-Path $rp '.ai/factory/scripts/create-labels.ps1'
     Set-Gh @()

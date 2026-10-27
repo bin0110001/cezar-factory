@@ -58,9 +58,20 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
     $listJson
 }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
+    if ($state.ContainsKey('failNextIssueCreateBeforeWrite') -and $state.failNextIssueCreateBeforeWrite) {
+        $state.failNextIssueCreateBeforeWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
     $n = 100 + @($state.issues | Where-Object { $_ }).Count
     $body = [IO.File]::ReadAllText($a[$a.IndexOf('--body-file') + 1])
     $state.issues = @($state.issues | Where-Object { $_ }) + @{ number = $n; title = $a[$a.IndexOf('--title') + 1]; body = $body; labels = $a[$a.IndexOf('--label') + 1] }
+    if ($state.ContainsKey('changeParentRevisionAfterIssueCreate') -and $state.changeParentRevisionAfterIssueCreate) { $state.updatedAt = '2026-10-26T00:00:00.0000000Z' }
+    if ($state.ContainsKey('failNextIssueCreateAfterWrite') -and $state.failNextIssueCreateAfterWrite) {
+        $state.failNextIssueCreateAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
     "https://github.com/x/y/issues/$n"
 }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
