@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.64] - 2026-10-27
+
+- Persist and reconcile the review-gated auto-merge action against its exact
+  reviewed pull request head.
+
 ## [0.3.63] - 2026-10-27
 
 - Record verified replacement of implementation result recovery with typed

@@ -77,7 +77,16 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
     "https://github.com/x/y/issues/$n"
 }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
-elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { $state.prMerged = $true; $state.prMergeArgs = @($a) }
+elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') {
+    $state.prMerged = $true
+    $state.prMergeCount = [int]$state.prMergeCount + 1
+    $state.prMergeArgs = @($a)
+    if ($state.ContainsKey('failNextMergeAfterWrite') -and $state.failNextMergeAfterWrite) {
+        $state.failNextMergeAfterWrite = $false
+        $state | ConvertTo-Json -Depth 12 | Set-Content $env:FAKE_GH_STATE
+        exit 1
+    }
+}
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'view') {
     $pr = @($state.prs | Where-Object { [string]$_.url -eq [string]$a[2] -or [string]$_.number -eq [string]$a[2] }) | Select-Object -First 1
     if ($state.prDetails) { $pr = $state.prDetails }
@@ -85,6 +94,7 @@ elseif ($a[0] -eq 'pr' -and $a[1] -eq 'view') {
     $pr.state = if ($state.prMerged) { 'MERGED' } else { $(if ($pr.state) { $pr.state } else { 'OPEN' }) }
     $pr.headRefOid = if ($state.prHeadSha) { $state.prHeadSha } else { $pr.headRefOid }
     $pr.updatedAt = if ($pr.updatedAt) { $pr.updatedAt } else { '2026-10-25T00:00:00.0000000Z' }
+    $pr.autoMergeRequest = $state.autoMergeRequest
     $pr | ConvertTo-Json -Depth 8 -Compress
 }
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'edit') {

@@ -1099,8 +1099,16 @@ try {
     Assert 'route: approval without eligibility receipt cannot merge or mark done' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and -not (Get-Gh).prMerged)
     $gatePath = Join-Path $tmp 'merge-eligibility.json'
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
-    $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | Add-Member -NotePropertyName failNextMergeAfterWrite -NotePropertyValue $true -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
+    $mergeState = Get-Gh
+    $mergeResult = Get-Content -Raw $routeOutputPath | ConvertFrom-Json
+    $mergeComment = [string](@($mergeState.comments | Where-Object { $_ -match 'factory:auto-merge-action:v1:' })[-1])
+    $mergeActionMatch = [regex]::Match($mergeComment, 'factory:auto-merge-action:v1:([A-Za-z0-9+/=]+)')
+    $mergeAction = if ($mergeActionMatch.Success) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($mergeActionMatch.Groups[1].Value)) | ConvertFrom-Json } else { $null }
+    Assert 'route: lost merge response reconciles and persists a schema-valid verified action receipt' ($mergeState.prMergeCount -eq 1 -and $mergeResult.actionReceipts.Count -eq 2 -and @($mergeResult.actionReceipts | Where-Object { $_.status -eq 'verified' -and $_.action.operation -eq 'github.pull_request.enable_auto_merge' }).Count -eq 1 -and $mergeAction.operationKey -match '^factory:auto-merge:7:' -and (Test-Json -Json ($mergeAction | ConvertTo-Json -Compress -Depth 8) -SchemaFile (Join-Path $factory 'schemas/workflow-effect-action.schema.json')))
+    $mergeCommentCount = @($mergeState.comments).Count
+    Assert 'route: merged review replay reuses its durable receipt without another merge or comment' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).prMergeCount -eq 1 -and @((Get-Gh).comments).Count -eq $mergeCommentCount)
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')

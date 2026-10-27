@@ -142,7 +142,7 @@ function New-LabelAction([string[]]$AddLabels, [string[]]$RemoveLabels, [string]
     if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) { Fail 'label action does not satisfy the shared workflow effect contract' }
     $action
 }
-function Add-LabelActionReceipt($Action, [string]$Status, [string]$ObservedRevision = '') {
+function Add-EffectActionReceipt($Action, [string]$Status, [string]$ObservedRevision = '') {
     if (-not $Action) { return }
     $receipt = [ordered]@{ operationKey = $Action.operationKey; status = $Status; action = $Action }
     if ($ObservedRevision) { $receipt.observedRevision = $ObservedRevision }
@@ -163,7 +163,7 @@ function Set-State([string]$Target) {
     if ($beforeStates -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
     $action = New-LabelAction @($Target) $remove "route $Event to $Target" ([string]$before.updatedAt)
-    Add-LabelActionReceipt $action 'applying'
+    Add-EffectActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
         try { Invoke-Gh @ghArgs | Out-Null }
         catch {
@@ -173,7 +173,7 @@ function Set-State([string]$Target) {
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:current = @($ambiguousStates)
             $script:labels = @(Get-LabelNames $afterAmbiguous)
-            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
+            Add-EffectActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -183,7 +183,7 @@ function Set-State([string]$Target) {
     $script:effectRevision = [string]$after.updatedAt
     $script:current = @($afterStates)
     $script:labels = @(Get-LabelNames $after)
-    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
+    Add-EffectActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Set-Complexity([string]$Target) {
     if ($complexityLabels -notcontains $Target) { Fail "unknown complexity label '$Target'" }
@@ -197,7 +197,7 @@ function Set-Complexity([string]$Target) {
     if ($liveComplexity -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
     $action = New-LabelAction @($Target) $remove "set issue complexity to $Target" ([string]$before.updatedAt)
-    Add-LabelActionReceipt $action 'applying'
+    Add-EffectActionReceipt $action 'applying'
     if ($ghArgs.Count -gt 3) {
         try { Invoke-Gh @ghArgs | Out-Null }
         catch {
@@ -207,7 +207,7 @@ function Set-Complexity([string]$Target) {
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:currentComplexity = @($afterComplexity)
             $script:labels = @(Get-LabelNames $afterAmbiguous)
-            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
+            Add-EffectActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -217,7 +217,7 @@ function Set-Complexity([string]$Target) {
     $script:effectRevision = [string]$after.updatedAt
     $script:currentComplexity = @($afterComplexity)
     $script:labels = @(Get-LabelNames $after)
-    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
+    Add-EffectActionReceipt $action 'verified' ([string]$after.updatedAt)
 }
 function Set-Classification([string]$Type, [string]$Risk) {
     if ($Type -notmatch '^type:' -or $Risk -notmatch '^risk:') { Fail 'intake classification labels are invalid' }
@@ -226,7 +226,7 @@ function Set-Classification([string]$Type, [string]$Risk) {
     $beforeLabels = @(Get-LabelNames $before)
     $add = @(); foreach ($label in @($Type, $Risk)) { if ($beforeLabels -notcontains $label) { $add += $label } }
     $action = New-LabelAction $add @() 'apply validated intake classification' ([string]$before.updatedAt)
-    Add-LabelActionReceipt $action 'applying'
+    Add-EffectActionReceipt $action 'applying'
     if ($add.Count) {
         try { Invoke-Gh issue edit $Issue --add-label ($add -join ',') | Out-Null }
         catch {
@@ -235,7 +235,7 @@ function Set-Classification([string]$Type, [string]$Risk) {
             if (@($afterAmbiguousLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { throw }
             $script:effectRevision = [string]$afterAmbiguous.updatedAt
             $script:labels = $afterAmbiguousLabels
-            Add-LabelActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
+            Add-EffectActionReceipt $action 'verified' ([string]$afterAmbiguous.updatedAt)
             return
         }
     }
@@ -244,7 +244,28 @@ function Set-Classification([string]$Type, [string]$Risk) {
     if (@($afterLabels | Where-Object { $_ -in @($Type, $Risk) }).Count -ne 2) { Fail 'classification label effect is unresolved' }
     $script:effectRevision = [string]$after.updatedAt
     $script:labels = $afterLabels
-    Add-LabelActionReceipt $action 'verified' ([string]$after.updatedAt)
+    Add-EffectActionReceipt $action 'verified' ([string]$after.updatedAt)
+}
+function New-AutoMergeAction([string]$PullRequest, [string]$HeadSha) {
+    if ($HeadSha -notmatch '^[a-f0-9]{40}$') { Fail 'auto-merge action is missing the reviewed 40-character head SHA' }
+    $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("${Issue}|${PullRequest}|${HeadSha}"))).ToLowerInvariant()
+    $action = [ordered]@{
+        schemaVersion = 1
+        target = [ordered]@{ kind = 'pull_request'; id = $PullRequest }
+        expectedRevision = $HeadSha
+        operation = 'github.pull_request.enable_auto_merge'
+        arguments = [ordered]@{ method = 'squash'; deleteBranch = $true; matchHeadCommit = $HeadSha }
+        rationale = 'Independent review approved this exact head and the live merge eligibility gate allowed auto-merge.'
+        operationKey = "factory:auto-merge:${Issue}:$fingerprint"
+    }
+    $schemaPath = Join-Path $PSScriptRoot '../schemas/workflow-effect-action.schema.json'
+    if (-not (Test-Json -Json ($action | ConvertTo-Json -Compress -Depth 8) -SchemaFile $schemaPath -ErrorAction Stop)) { Fail 'auto-merge action does not satisfy the shared workflow effect contract' }
+    $action
+}
+function Get-AutoMergeReceipt([string]$Body, $Action, [string]$Status) {
+    $json = $Action | ConvertTo-Json -Compress -Depth 8
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+    $Body + "`n`n<!-- factory:auto-merge:$($Action.operationKey):$Status -->`n<!-- factory:auto-merge-action:v1:$payload -->"
 }
 function Add-Comment([string]$Body) {
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Body))).ToLowerInvariant()
@@ -520,8 +541,26 @@ switch ($Event) {
         Set-State 'factory:review'; Done 'factory:review'
     }
     'review-result' {
-        Assert-Source 'factory:review'
         $body = "## Factory review`n`n**Verdict:** $($result.approvalChangeRequestStatus)`n`n**Blocking findings**`n$(Text $result.blockingFindings)`n`n**Non-blocking findings**`n$(Text $result.nonBlockingFindings)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaVerification)`n`n**Test adequacy**`n$(Text $result.testAdequacy)`n`n**Risk observations**`n$(Text $result.riskObservations)"
+        $mergeAction = $null
+        if ($result.approvalChangeRequestStatus -eq 'approval' -and [string]$result.pr) {
+            $mergeAction = New-AutoMergeAction ([string]$result.pr) ([string]$result.reviewedHeadSha)
+            $verifiedMarker = "<!-- factory:auto-merge:$($mergeAction.operationKey):verified -->"
+            if ($current.Count -eq 1 -and $current[0] -eq 'factory:done' -and @($comments | Where-Object { $_ -match [regex]::Escape($verifiedMarker) }).Count) {
+                Add-EffectActionReceipt $mergeAction 'verified' ([string]$mergeAction.expectedRevision)
+                Done 'factory:done' 'reviewed auto-merge receipt already applied'
+            }
+            if ($current.Count -eq 1 -and $current[0] -eq 'factory:done') {
+                $reconciledMerge = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid,autoMergeRequest' | ConvertFrom-Json
+                if ([string]$reconciledMerge.state -eq 'MERGED' -and [string]$reconciledMerge.headRefOid -eq [string]$mergeAction.expectedRevision) {
+                    Add-Comment (Get-AutoMergeReceipt ($body + "`n`nValidated approval: GitHub reports the reviewed head merged; the earlier effect receipt was incomplete.") $mergeAction 'verified')
+                    Add-EffectActionReceipt $mergeAction 'verified' ([string]$reconciledMerge.headRefOid)
+                    Done 'factory:done' 'merged head reconciled from GitHub'
+                }
+                Fail 'issue is done without a matching reviewed auto-merge receipt; reconcile the PR before retrying'
+            }
+        }
+        Assert-Source 'factory:review'
         if ($result.approvalChangeRequestStatus -eq 'approval') {
             $autoMerge = [string]$result.pr
             if ($autoMerge) {
@@ -535,14 +574,26 @@ switch ($Event) {
                     Add-Comment ($body + "`n`nMerge was not requested. The live eligibility gate denied this PR at the reviewed head. The issue remains in review.`n`n$blockers")
                     Done 'factory:review' 'merge eligibility denied; no GitHub write made'
                 }
-                Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch --match-head-commit ([string]$gate.headSha) | Out-Null
-                $mergeState = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid' | ConvertFrom-Json
+                if ([string]$gate.headSha -ne [string]$mergeAction.expectedRevision) { Fail 'auto-merge action head differs from the live eligibility receipt' }
+                $pendingMarker = "<!-- factory:auto-merge:$($mergeAction.operationKey):applying -->"
+                if (-not @($comments | Where-Object { $_ -match [regex]::Escape($pendingMarker) }).Count) {
+                    Add-Comment (Get-AutoMergeReceipt ($body + "`n`nValidated approval: auto-merge is authorized for this reviewed head; the remote outcome is pending verification.") $mergeAction 'applying')
+                }
+                $mergeFailure = $null
+                try { Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch --match-head-commit ([string]$gate.headSha) | Out-Null }
+                catch { $mergeFailure = $_.Exception.Message }
+                $mergeState = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid,autoMergeRequest' | ConvertFrom-Json
                 if ([string]$mergeState.headRefOid -ne [string]$gate.headSha) { Fail 'PR head changed while requesting merge; issue remains open for fresh review' }
+                $autoMergeAccepted = [string]$mergeState.state -eq 'MERGED' -or $null -ne $mergeState.autoMergeRequest
+                if (-not $autoMergeAccepted) {
+                    if ($mergeFailure) { throw $mergeFailure }
+                    Fail 'GitHub did not confirm the auto-merge request; pending effect receipt remains for reconciliation'
+                }
+                Add-Comment (Get-AutoMergeReceipt ($body + "`n`nValidated approval: GitHub confirmed the auto-merge effect for the reviewed head.") $mergeAction 'verified')
+                Add-EffectActionReceipt $mergeAction 'verified' ([string]$mergeState.headRefOid)
                 if ([string]$mergeState.state -eq 'MERGED') {
-                    Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head and GitHub reports the PR merged.")
                     Set-State 'factory:done'; Done 'factory:done' 'approved, validated PR observed merged'
                 }
-                Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head. GitHub has not reported the PR merged yet; the issue remains in review for a later completion check.")
                 Done 'factory:review' 'auto-merge requested; completion not yet observed'
             }
             Add-Comment ($body + "`n`nNo PR URL was supplied. Return this issue to implementation to provide the PR link; do not wait for user review.")
