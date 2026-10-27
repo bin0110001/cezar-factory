@@ -41,8 +41,10 @@ issue automation or a request to run one.
 - Decomposition is executable queue creation. Children are planned and
   implemented automatically in dependency order; the parent is a tracking
   record and does not wait for user scheduling.
-- User review is post-delivery feedback, not an approval gate. If the user later
-  finds a defect, they will file a follow-up issue.
+- Independent review is a required gate before merge. The author cannot satisfy
+  it by reviewing their own change, and user feedback after delivery does not
+  replace it. If no independent reviewer is available, keep the change
+  unmerged, report the review blocker, and continue other eligible work.
 - Ask the user only for a major architectural decision that materially changes
   compatibility, ownership, or the system contract. Resolve routine ambiguity
   with the safest reversible assumption and document it.

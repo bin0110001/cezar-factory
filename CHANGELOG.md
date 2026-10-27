@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.58] - 2026-10-27
+
+- Require independent review before merge in the manual backlog skill and
+  explain the unmerged path when no independent reviewer is available.
+
 ## [0.3.57] - 2026-10-27
 
 - Improve workflow reliability with replay-safe effects, bounded retries, typed
