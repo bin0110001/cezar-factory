@@ -159,6 +159,26 @@ function Get-ValidationTimeoutSeconds([string]$Stage) {
     return 7200
 }
 
+function Get-ValidationDiagnosticExcerpt([byte[]]$Stdout, [byte[]]$Stderr, [string]$ProjectRoot) {
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($stream in @(@{ Name = 'stderr'; Bytes = $Stderr }, @{ Name = 'stdout'; Bytes = $Stdout })) {
+        if ($stream.Bytes.Length -eq 0) { continue }
+        $text = [Text.Encoding]::UTF8.GetString($stream.Bytes) -replace "`e\[[0-?]*[ -/]*[@-~]", ''
+        $lines = @($text -split "`r?`n" | Where-Object { $_.Trim() })
+        foreach ($line in @($lines | Select-Object -Last 6)) { $parts.Add("$($stream.Name): $line") }
+    }
+    $excerpt = ($parts -join ' ') -replace '\s+', ' '
+    if ($ProjectRoot) {
+        $normalizedRoot = [IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\', '/')
+        $excerpt = $excerpt -replace [regex]::Escape($normalizedRoot), '<project>'
+    }
+    $excerpt = $excerpt -replace '(?i)\b(?:gh[psu]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b', '[REDACTED]'
+    $excerpt = $excerpt -replace '(?i)(Bearer\s+)\S+', '$1[REDACTED]'
+    $excerpt = $excerpt -replace '(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,;]+', '$1=[REDACTED]'
+    if ($excerpt.Length -gt 1800) { $excerpt = $excerpt.Substring(0, 1800) + '…' }
+    return $excerpt
+}
+
 function Get-ValidationDiagnosticFingerprint([string]$Diagnostic, [string]$ProjectRoot) {
     $normalized = ([string]$Diagnostic).Normalize([Text.NormalizationForm]::FormC) -replace '\\', '/'
     if ($ProjectRoot) {
@@ -273,7 +293,7 @@ function Invoke-FactoryValidation {
         diagnosticComparison = $null
         changedFiles = @(); changedFilesKnown = $false
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
-        finishedAt = ''; command = ''; truncated = $false; message = ''
+        finishedAt = ''; command = ''; truncated = $false; message = ''; diagnosticExcerpt = ''
     }
     $stdout = [byte[]]@(); $stderr = [byte[]]@()
     try {
@@ -463,6 +483,9 @@ function Invoke-FactoryValidation {
         $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
         if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
             $process.Kill($true); $process.WaitForExit()
+            [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+            $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+            $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
             throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
         }
         [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
@@ -537,6 +560,9 @@ function Invoke-FactoryValidation {
             $receipt.status = 'error'; $receipt.exitCode = 1
             $receipt.reasonCode = 'validation_head_changed'
             $receipt.message = 'Project HEAD changed during validation.'
+        }
+        if ($receipt.status -in 'failed', 'error') {
+            $receipt.diagnosticExcerpt = Get-ValidationDiagnosticExcerpt $stdout $stderr $root
         }
         [IO.File]::WriteAllBytes($stdoutPath, $stdout)
         [IO.File]::WriteAllBytes($stderrPath, $stderr)

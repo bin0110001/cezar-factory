@@ -62,7 +62,8 @@
       "required": ["status", "reasonCode", "baselineSha256", "knownFingerprints", "newFingerprints", "unclassifiedCount"]
     },
     "truncated": { "type": "boolean" },
-    "message": { "type": "string" }
+    "message": { "type": "string" },
+    "diagnosticExcerpt": { "type": "string", "maxLength": 1801 }
   },
   "required": ["schemaVersion", "issue", "repository", "pr", "headSha", "stage", "status", "exitCode", "artifactPaths"]
 }

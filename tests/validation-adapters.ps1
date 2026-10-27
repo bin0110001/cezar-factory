@@ -54,6 +54,7 @@ try {
 param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
+if ($env:ADAPTER_FAILURE_LOG) { [Console]::Error.WriteLine($env:ADAPTER_FAILURE_LOG) }
 if ($env:ADAPTER_SLEEP) { Start-Sleep -Seconds ([int]$env:ADAPTER_SLEEP) }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
 if ($env:ADAPTER_EXPECT_CHANGED_FILE) {
@@ -289,6 +290,17 @@ validation:
     Check 'nonzero adapter exit fails with matching receipt' ($run.Code -ne 0 -and $run.Receipt.status -eq 'failed' -and $run.Receipt.exitCode -ne 0)
     Remove-Item Env:ADAPTER_EXIT
 
+    $env:ADAPTER_EXIT = '7'
+    $env:ADAPTER_FAILURE_LOG = "test failed at $project; token=ghp_abcdefghijklmnop12345 API_KEY=private-value"
+    $run = Run-Stage full
+    Check 'failed validation exposes a bounded sanitized diagnostic excerpt' (
+        $run.Code -ne 0 -and $run.Receipt.diagnosticExcerpt -match 'test failed' -and
+        $run.Receipt.diagnosticExcerpt -notmatch [regex]::Escape($project) -and
+        $run.Receipt.diagnosticExcerpt -notmatch 'ghp_abcdefghijklmnop12345|private-value' -and
+        $run.Receipt.diagnosticExcerpt.Length -le 1801)
+    Remove-Item Env:ADAPTER_EXIT
+    Remove-Item Env:ADAPTER_FAILURE_LOG
+
     $env:ADAPTER_HUGE = '1'
     $run = Run-Stage full
     $logPath = Join-Path $project $run.Receipt.artifactPaths[0]
@@ -367,11 +379,14 @@ validation:
     Check 'missing config is unavailable without discovery fallback' ($run.Code -ne 0 -and $run.Receipt.status -eq 'unavailable' -and $run.Receipt.reasonCode -eq 'validation_config_missing')
     Set-Content $configPath ($configText.Replace('__FACTORY_VERSION__', (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()).Replace('timeoutSeconds: 7200', 'timeoutSeconds: 1'))
     $env:ADAPTER_SLEEP = '3'
+    $env:ADAPTER_FAILURE_LOG = 'timeout diagnostic remains available'
     $run = Run-Stage full
     Check 'timed out verifier uses the normalized non-retry timeout code' (
         $run.Code -eq 16 -and $run.Receipt.status -eq 'error' -and
-        $run.Receipt.reasonCode -eq 'validation_timeout' -and $run.Receipt.message -match 'exceeded the 1-second limit')
+        $run.Receipt.reasonCode -eq 'validation_timeout' -and $run.Receipt.message -match 'exceeded the 1-second limit' -and
+        $run.Receipt.diagnosticExcerpt -match 'timeout diagnostic remains available')
     Remove-Item Env:ADAPTER_SLEEP -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_FAILURE_LOG -ErrorAction SilentlyContinue
 } finally {
     Remove-Item Env:ADAPTER_EXIT -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_HUGE -ErrorAction SilentlyContinue
@@ -380,6 +395,7 @@ validation:
     Remove-Item Env:ADAPTER_EXPECT_CHANGED_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_RESULT_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_DIAGNOSTIC -ErrorAction SilentlyContinue
+    Remove-Item Env:ADAPTER_FAILURE_LOG -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_RESULT_STATUS -ErrorAction SilentlyContinue
     Remove-Item Env:ADAPTER_SLEEP -ErrorAction SilentlyContinue
     $resolvedProject = [IO.Path]::GetFullPath($project)

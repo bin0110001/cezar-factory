@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.78] - 2026-10-27
+
+- Include a bounded, redacted validation output excerpt in failed and timed-out
+  receipts.
+
 ## [0.3.77] - 2026-10-27
 
 - Bind lease comments to the shared workflow effect receipt and reconcile lost
