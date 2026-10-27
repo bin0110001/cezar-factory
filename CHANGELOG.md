@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.61] - 2026-10-27
+
+- Route typed implementation contract failures directly from Cezar finalizer
+  context and retire the synthetic result artifact recovery script.
+
 ## [0.3.60] - 2026-10-27
 
 - Emit schema-validated, revision-bound receipts for route-state label effects.

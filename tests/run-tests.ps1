@@ -188,7 +188,7 @@ Assert 'fix-review typed resolved preflight owns early exit without duplicate ag
 Assert 'implementation typed resolved preflight owns early exit without skill duplication' ($implementWorkflow -match '(?s)id: resolved.*?outputSchema:.*?already-resolved.*?no_work' -and $implementWorkflow -notmatch 'already-resolved\.json' -and $implementSkill -notmatch 'Already-resolved issues|already-resolved\.json')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference only after an open-issue result exists' ($implementWorkflow -match '(?s)id: ensure-pr-closes-issue\s+name:.*?ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json.*?outputSchema:.*?observedRevision.*?when:.*?resolved.*?const: open')
-Assert 'implementation result is typed, workflow-bound and finalized safely' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -match 'validate-result\.ps1 -Kind implementation .* -Task "\{\{task\}\}"' -and $implementWorkflow -notmatch 'id: ensure-result' -and $implementWorkflow -match '(?s)id: recover-implementation-contract-failure.*?finalizer: true.*?idempotent: true.*?timeoutSeconds: 20' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $implementSkill -match 'workflow materializer binds the issue identity' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
+Assert 'implementation result is typed, workflow-bound and finalized safely' ($implementWorkflow -match '(?s)id: implement\s+name:.*?outputSchema:.*?required: \[status, summary' -and $implementWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey implement .* -ExpectedIssuePath \.factory/implementation-context\.json' -and $implementWorkflow -match 'validate-result\.ps1 -Kind implementation .* -Task "\{\{task\}\}"' -and $implementWorkflow -notmatch 'ensure-implementation-result\.ps1|recover-implementation-contract-failure' -and $implementWorkflow -match '(?s)id: route-finalize.*?implement-finalize.*?-Task "\{\{task\}\}".*?finalizer: true.*?idempotent: true' -and $implementSkill -match 'implement-result\.json.*Return one JSON object|Return one JSON object.*implement-result\.json' -and $implementSkill -match 'workflow materializer binds the issue identity' -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'" -and -not (Test-Path (Join-Path $scripts 'ensure-implementation-result.ps1')))
 Assert 'fix-review returns a bounded result for workflow materialization with task-bound identity' ($fixReviewWorkflow -match '(?s)id: fix\s+name:.*?outputSchema:.*?required: \[status, summary' -and $fixReviewWorkflow -match 'materialize-workflow-output\.ps1 -OutputKey fix -Path \.factory/implement-result\.json' -and $fixReviewWorkflow -match 'validate-result\.ps1 -Kind implementation .* -Task "\{\{task\}\}"' -and $fixReviewWorkflow -notmatch 'write the structured result as JSON|issue number in "issue"' -and $fixSkill -match 'Do \*\*not\*\*.*write `.factory/implement-result\.json`' -and $fixSkill -notmatch 'including the issue number in `issue`')
 Assert 'implementation verification retries only normalized test regressions' (@([regex]::Matches($implementWorkflow, '(?s)onFail:\s+retry: implement\s+max: [12]\s+retryOn: \[1\]\s+failureReasons:')).Count -eq 4 -and $implementWorkflow -match '"11": missing_command' -and $implementWorkflow -match '"16": timeout' -and $implementWorkflow -match '"18": unknown' -and $implementWorkflow -match '(?s)id: validate\s+name: Validate implementation result.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration')
 Assert 'planner, reviewer and investigator retry agents only for malformed result code 1' ($planWorkflow -match '(?s)id: validate-plan.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $reviewWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $investigateWorkflow -match '(?s)id: validate.*?retryOn: \[1\]\s+failureReasons:\s+"1": malformed_result\s+"10": configuration' -and $planMaterializeStep -notmatch 'onFail:')
@@ -643,23 +643,6 @@ try {
         finally { Pop-Location }
         $boundImplementation = Get-Content -Raw (Join-Path $rp '.factory/wrong-implement-result.json') | ConvertFrom-Json
         Assert 'implementation materializer overrides model-proposed issue with prepared identity' ($wrongImplementation.Code -eq 0 -and $boundImplementation.issue -eq 123)
-        Set-Content (Join-Path $rp '.factory/implement-result.json') '{"issue":123,"status":"success","summary":"stale attempt"}'
-        $env:CEZAR_INPUT_JSON = (@{ finalization = @{ terminal = 'failed'; outcome = @{ kind = 'contract_failure'; reasonCode = 'output_invalid'; stepId = 'implement' } } } | ConvertTo-Json -Depth 8 -Compress)
-        Push-Location $rp
-        try { $recoveredImplementation = Run 'ensure-implementation-result.ps1' @{ Path = '.factory/implement-result.json'; ContextPath = '.factory/implementation-context.json'; FinalizationRecovery = $true } }
-        finally { Pop-Location }
-        $recoveredResult = Get-Content -Raw (Join-Path $rp '.factory/implement-result.json') | ConvertFrom-Json
-        Assert 'implementation finalizer replaces stale output only for its contract failure' ($recoveredImplementation.Code -eq 0 -and $recoveredResult.issue -eq 123 -and $recoveredResult.status -eq 'failure' -and $recoveredResult.knownConcerns -match 'output_invalid')
-        Push-Location $rp
-        try { $replayedImplementationRecovery = Run 'ensure-implementation-result.ps1' @{ Path = '.factory/implement-result.json'; ContextPath = '.factory/implementation-context.json'; FinalizationRecovery = $true } }
-        finally { Pop-Location }
-        Assert 'implementation finalizer recovery is idempotent on replay' ($replayedImplementationRecovery.Code -eq 0 -and (Get-Content -Raw (Join-Path $rp '.factory/implement-result.json') | ConvertFrom-Json).summary -eq 'Cezar rejected the implementation result contract before a validated handoff was available.')
-        Set-Content (Join-Path $rp '.factory/implement-result.json') '{"issue":123,"status":"success","summary":"must survive cancellation"}'
-        $env:CEZAR_INPUT_JSON = (@{ finalization = @{ terminal = 'cancelled' } } | ConvertTo-Json -Depth 8 -Compress)
-        Push-Location $rp
-        try { $cancelledRecovery = Run 'ensure-implementation-result.ps1' @{ Path = '.factory/implement-result.json'; ContextPath = '.factory/implementation-context.json'; FinalizationRecovery = $true } }
-        finally { Pop-Location }
-        Assert 'implementation finalizer leaves handoff unchanged on cancellation' ($cancelledRecovery.Code -eq 0 -and (Get-Content -Raw (Join-Path $rp '.factory/implement-result.json') | ConvertFrom-Json).summary -eq 'must survive cancellation')
         $env:CEZAR_INPUT_JSON = (@{ outputs = @{ plan = @{ issue = 123; objective = 'test'; acceptanceCriteria = 'test'; nonGoals = ''; risks = 'none'; dependencies = 'none'; suggestedWorkBreakdown = 'one step'; requiredProjectSkills = @(); unresolvedQuestions = ''; complexity = 'complexity:small'; readyNotReadyStatus = 'ready' } } } | ConvertTo-Json -Depth 8 -Compress)
         Push-Location $rp
         try { $pathEscape = Run 'materialize-workflow-output.ps1' @{ OutputKey = 'plan'; Path = '..\outside.json' } }
@@ -873,7 +856,7 @@ try {
         $oldInput = $env:CEZAR_INPUT_JSON
         $env:CEZAR_INPUT_JSON = (@{ finalization = $Finalization } | ConvertTo-Json -Depth 8 -Compress)
         try {
-            $routeArgs = @('-NoProfile','-File',$route,'-Event','implement-finalize','-GhCommand',$gh,'-ProjectPath',$rp)
+            $routeArgs = @('-NoProfile','-File',$route,'-Event','implement-finalize','-Task','GitHub issue #7 (fixture) at https://github.com/x/y/issues/7','-GhCommand',$gh,'-ProjectPath',$rp)
             if ($Obj) { $routeArgs += @('-Path',$f) }
             $global:LASTEXITCODE = 0
             & pwsh @routeArgs *>&1 | Out-Null
@@ -1088,11 +1071,11 @@ try {
     Set-Gh @('factory:working')
     Assert 'implementation finalizer skips no-work terminal outcomes' ((Invoke-ImplementationFinalizer $null @{ terminal = 'success'; outcome = @{ kind = 'no_work'; reasonCode = 'no_work' } }) -eq 0 -and (Get-Gh).labels -contains 'factory:working')
     Set-Gh @('factory:working')
-    $contractFailureResult = With $impl @{ status = 'failure'; summary = 'Cezar rejected implementation output'; knownConcerns = 'contract failure output_invalid' }
+    Remove-Item (Join-Path $tmp 'implementation-finalizer-result.json') -Force -ErrorAction SilentlyContinue
     $contractFailureFinalization = @{ terminal = 'failed'; outcome = @{ kind = 'contract_failure'; reasonCode = 'output_invalid'; stepId = 'implement' } }
-    Assert 'implementation contract failure finalizer routes to investigation' ((Invoke-ImplementationFinalizer $contractFailureResult $contractFailureFinalization) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate' -and @((Get-Gh).comments | Where-Object { $_ -match 'output_invalid' }).Count -eq 1)
-    $investigationCommentCount = @((Get-Gh).comments).Count
-    Assert 'implementation contract recovery replay is idempotent' ((Invoke-ImplementationFinalizer $contractFailureResult $contractFailureFinalization) -eq 0 -and @((Get-Gh).comments).Count -eq $investigationCommentCount)
+    Assert 'implementation finalizer routes typed contract failure without a synthetic result artifact' ((Invoke-ImplementationFinalizer $null $contractFailureFinalization) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate' -and @((Get-Gh).comments | Where-Object { $_ -match 'output_invalid' }).Count -eq 1 -and -not (Test-Path (Join-Path $tmp 'implementation-finalizer-result.json')))
+    $contractCommentCount = @((Get-Gh).comments).Count
+    Assert 'typed implementation failure finalizer replay is idempotent without an artifact' ((Invoke-ImplementationFinalizer $null $contractFailureFinalization) -eq 0 -and @((Get-Gh).comments).Count -eq $contractCommentCount)
     Set-Gh @('factory:working')
     Assert 'route: implement success -> review' ((Invoke-Route 'implement-result' $impl) -eq 0 -and (Get-Gh).labels -contains 'factory:review')
     Set-Gh @('factory:working')

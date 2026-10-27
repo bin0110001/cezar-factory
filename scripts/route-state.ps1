@@ -42,6 +42,7 @@ if ($Event -eq 'implement-finalize') {
             Write-Output (@{ status = 'skipped'; event = $Event; reason = 'terminal-outcome-does-not-route-implementation' } | ConvertTo-Json -Compress)
             exit 0
         }
+        if ($contractRecovery) { $script:contractFailureReason = [string]$outcome.reasonCode }
         $Event = 'implement-result'
     } catch {
         Fail "cannot classify implementation finalizer: $($_.Exception.Message)"
@@ -80,9 +81,21 @@ $maxInvestigateRetries = 1
 # --- input ----------------------------------------------------------------
 $result = $null
 if ($Event -notin 'start', 'already-resolved') {
-    if (-not $Path -or -not (Test-Path $Path)) { Fail "result file not found: $Path" }
-    $result = Get-Content -Raw $Path | ConvertFrom-Json
-    $Issue = [int]$result.issue
+    if ($script:contractFailureReason) {
+        $result = [pscustomobject]@{
+            issue = $Issue
+            status = 'failure'
+            summary = 'Cezar rejected the implementation result contract before a validated handoff was available.'
+            testsRun = @()
+            testResult = 'not-run'
+            acceptanceCriteriaStatus = 'Not met'
+            knownConcerns = "Cezar terminal reason: $($script:contractFailureReason)"
+        }
+    } else {
+        if (-not $Path -or -not (Test-Path $Path)) { Fail "result file not found: $Path" }
+        $result = Get-Content -Raw $Path | ConvertFrom-Json
+        $Issue = [int]$result.issue
+    }
 }
 if ($Issue -lt 1) { Fail 'issue number required' }
 
