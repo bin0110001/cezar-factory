@@ -10,19 +10,20 @@ Use this skill when a new GitHub repository must become a Cezar/Factory project.
 ## Scope and boundaries
 
 - Work only with the explicitly named repository and the host-local target registry. Never scan drives or infer deployment targets.
-- The operator onboarding entry point is `scripts/onboard-project.ps1`. It creates or verifies `dev`, ensures the standard Factory labels, registers the target, and can seed a small bounded set of eligible issues.
+- The onboarding implementation is `scripts/onboard-project.ps1`, but Factory scripts may run only from a workflow `command:` step. This skill must not invoke the script or substitute direct `gh` mutations for it.
+- Check whether an approved onboarding workflow owns that command. If none exists, report that the workflow-owned onboarding entry point is missing and stop before creating branches, labels, registry entries, or issues.
 - The onboarding entry point does not merge pull requests, enable live automations, dispatch issue work, or repair a Bazzite checkout. Keep those actions behind the normal review and release gates.
 - Confirm that the corresponding Cezar project exists before reporting onboarding complete. A GitHub repository alone is not a configured runtime target.
 
 ## Procedure
 
-1. Resolve the canonical GitHub repository, Cezar project ID/API endpoint, project type, and target registry entry. For a first pass, seed at most three open issues unless the operator explicitly requests another bound.
-2. Use the onboarding entry point with the repository and project details. Prefer dry-run first when the target entry is new or uncertain. Review its summary for the `dev` branch, labels, registry update, and seeded issue IDs.
-3. Distinguish automation synchronization from project-layer installation. Remote-only synchronization creates Cezar automation records but does not install the project’s `.ai/cezar` workflows, skills, policies, or scripts. If Cezar’s workflow list contains only `quick-task`, perform the supported full-layer installation for that project: dry-run first, then apply it to the project checkout/mount.
-4. Enable the requested Factory features in the project-owned config before updating the layer. For maintenance, set `features.maintenance: true`; the update should materialize `factory-maintenance`, `factory-backlog-label-audit`, and the maintenance automation definition. Verify Cezar registers `factory-maintenance` before attempting a manual or scheduled run. A synchronized automation with an unregistered workflow fails immediately as `unknown workflow`.
-5. Verify that seeded issues have `factory:new` only when they have no existing `factory:*` state label. Do not overwrite existing workflow state; the intake automation owns subsequent routing.
-6. Put any Factory content changes through the required PR targeting `dev`. Obtain independent review before requesting auto-merge; do not merge a failed, unresolved, or unreviewed PR.
-7. After merge, use the `factory-release` and `factory-finish-release` flow. Promote only a fully tested commit to `stable`, synchronize the explicitly configured Cezar targets, and enable automations through that release flow.
+1. Resolve the canonical GitHub repository, Cezar project ID/API endpoint, project type, and an explicitly requested target registry entry. For a first pass, bound issue seeding to three open issues unless the operator requests another limit.
+2. Hand off the resolved inputs to the approved onboarding workflow. Prefer its dry-run mode when the target entry is new or uncertain, and review its summary for the `dev` branch, labels, registry update, and seeded issue IDs. If no such workflow exists, report the gap; do not call the script from this skill.
+3. Distinguish automation synchronization from project-layer installation. Remote-only synchronization creates Cezar automation records but does not install the project’s `.ai/cezar` workflows, skills, policies, or scripts. If Cezar’s workflow list contains only `quick-task`, use an approved workflow-owned full-layer installation with a dry run first. If that workflow is unavailable, report the gap.
+4. Enable requested Factory features in the project-owned config through the supported installation workflow. For maintenance, `features.maintenance: true` should materialize `factory-maintenance`, `factory-backlog-label-audit`, and the maintenance automation definition. Verify Cezar registers `factory-maintenance` before a manual or scheduled run. An automation with an unregistered workflow fails as `unknown workflow`.
+5. Verify seeded issues have `factory:new` only when they lack an existing `factory:*` state label. Do not overwrite workflow state; intake owns subsequent routing.
+6. Put Factory content changes through the required PR targeting `dev`. Obtain independent review before requesting auto-merge; do not merge a failed, unresolved, or unreviewed PR.
+7. After merge, follow the `factory-release` and `factory-finish-release` process. Promote only a fully tested commit to `stable`, synchronize explicitly configured Cezar targets, and enable automations through the release process.
 8. Verify runtime parity before declaring success: the Bazzite checkout is clean and on the promoted stable commit, the Factory version and mounted Cezar version agree, the `factory-autodeploy.timer` is enabled and active, and the new project reports its expected automation count and enabled state.
 
 ## Recovery and stop conditions

@@ -204,8 +204,10 @@ Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard 
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
+$onboardSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-project-onboarding/SKILL.md')
 Assert 'new-project onboarding creates dev from the default branch' ($onboardScript -match 'git/ref/heads/dev' -and $onboardScript -match 'refs/heads/dev' -and $onboardScript -match 'defaultBranchRef')
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
+Assert 'onboarding skill requires a workflow-owned command and stops when the workflow is missing' ($onboardSkill -match 'Factory scripts may run only from a workflow `command:` step' -and $onboardSkill -match 'workflow-owned onboarding entry point is missing' -and $onboardSkill -notmatch '(?i)\b(use|run|invoke|execute|call)\b.{0,100}scripts/onboard-project\.ps1')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
 $maintenanceScript = Get-Content -Raw (Join-Path $factory 'scripts/maintain-repository.ps1')
@@ -233,9 +235,10 @@ foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
         if ($inPrompt -and $line -match '(pwsh|powershell).*\.ps1|run `[^`]*\.ps1') { $scriptOwnershipViolations += "$($wf.Name): $($line.Trim())" }
     }
 }
-foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-Object { $_.Name -notin 'factory-work-backlog', 'factory-cezar-skill-operations' }) {
+foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory) {
     foreach ($line in Get-Content (Join-Path $sk.FullName 'SKILL.md')) {
-        if ($line -match '(pwsh|powershell)\s+.*\.ps1' -and $line -notmatch '(?i)\b(not|never|must not|do not)\b') { $scriptOwnershipViolations += "$($sk.Name): $($line.Trim())" }
+        $scriptInstruction = $line -match '(?i)(pwsh|powershell)\s+.*\.ps1|\b(run|invoke|execute|call|use)\b.{0,100}scripts[\\/][\w./-]+\.ps1'
+        if ($scriptInstruction -and $line -notmatch '(?i)\b(not|never|must not|do not)\b') { $scriptOwnershipViolations += "$($sk.Name): $($line.Trim())" }
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
