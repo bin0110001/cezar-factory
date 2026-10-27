@@ -236,12 +236,12 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
     expect(prompts[0]).toMatch(/Active workflow time remaining: \d+s\./);
     expect(prompts[0]).toContain('Shared repair budget: 0 of 2 attempts used; 2 remain.');
     expect(prompts[0]).toContain('Checks that can retry this agent: verify (up to 2 repairs).');
-    expect(prompts[1]).toContain('Repair attempt 1 of 2 for check "verify" (exit 1).');
+    expect(prompts[1]).toContain('Previous verification repair: check "verify" failed with exit 1; repair attempt 1 of 2.');
     expect(prompts[1]).toContain('Shared repair budget: 1 of 2 attempts used; 1 remain.');
     expect(prompts[1]).toMatch(/Active workflow time remaining: \d+s\./);
     expect(prompts[1]).toContain('login.ts');
     expect(prompts[1]).toContain('CONFIG_NOT_FOUND');
-    expect(prompts[2]).toContain('Repair attempt 2 of 2 for check "verify" (exit 1).');
+    expect(prompts[2]).toContain('Previous verification repair: check "verify" failed with exit 1; repair attempt 2 of 2.');
     expect(prompts[2]).toContain('Shared repair budget: 2 of 2 attempts used; 0 remain.');
   }, 40_000);
 
@@ -278,6 +278,15 @@ describe('onFail.retryOn gates the check retry loop by exit code', () => {
 
     store.flush();
     const reopenedStore = RunStore.open(join(repoRoot, '.ai/cezar'));
-    expect(reopenedStore.getRun(record.id)?.repairAttemptsUsed).toBe(2);
+    const reopened = reopenedStore.getRun(record.id);
+    expect(reopened?.repairAttemptsUsed).toBe(2);
+    expect(reopened?.repairContext).toMatchObject({
+      checkStepId: 'second-check',
+      agentStepId: 'implement',
+      sharedRepairsUsed: 2,
+      exitCode: 1,
+      failureOutput: expect.stringContaining('regression'),
+    });
+    expect(reopened?.repairContext?.changedFiles?.length).toBeLessThanOrEqual(2_000);
   }, 40_000);
 });

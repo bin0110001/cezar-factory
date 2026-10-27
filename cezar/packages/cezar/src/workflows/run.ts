@@ -926,6 +926,23 @@ const VARIANT_HINTS: Record<string, string | undefined> = {
 const RESTART_CONTINUATION_PROMPT =
   'The cezar process restarted while you were working on this task. Read the handoff file (CEZ_HANDOFF_FILE) to recover context, then continue the task from where you left off.';
 
+function formatRepairContext(context: NonNullable<RunRecord['repairContext']>): string {
+  return [
+    `Previous verification repair: check "${context.checkStepId}" failed with exit ${context.exitCode}; repair attempt ${context.retryAttempt} of ${context.retryLimit}.`,
+    `Shared repair budget: ${context.sharedRepairsUsed} of ${context.sharedRepairLimit} attempts used.`,
+    ...(context.failureCategory ? [`Failure category: ${context.failureCategory}.`] : []),
+    'Changed files from that attempt:',
+    context.changedFiles || '(not captured before restart)',
+    'Bounded failure output:',
+    context.failureOutput || '(no output)',
+  ].join('\n');
+}
+
+function restartContinuationPrompt(run: RunRecord): string {
+  const repair = run.repairContext ? `${formatRepairContext(run.repairContext)}\n\n` : '';
+  return `${repair}${RESTART_CONTINUATION_PROMPT}`;
+}
+
 interface PendingContinuation {
   stepId: string;
   sessionId: string | undefined;
@@ -1774,7 +1791,7 @@ export class RunManager {
       const resumed = this.continueRun(
         run.id,
         {
-          text: RESTART_CONTINUATION_PROMPT,
+          text: restartContinuationPrompt(run),
         },
         true,
       );
@@ -4598,6 +4615,10 @@ export class RunManager {
         break;
       }
       if (ok) {
+        if (this.store.getRun(runId)?.repairContext?.checkStepId === step.id) {
+          this.store.updateRun(runId, { repairContext: undefined });
+          this.store.flush({ throwOnError: true });
+        }
         if (control?.action === 'no_work') {
           this.finishStep(runId, step.id, 'done', undefined, emit);
           if (!runError) terminalOutcome = { kind: 'no_work', reasonCode: 'no_work', stepId: step.id };
@@ -4673,28 +4694,32 @@ export class RunManager {
       const maxRepairAttempts = workflow.maxRepairAttempts ?? 3;
       if (step.onFail && used < step.onFail.max && repairAttemptsUsed < maxRepairAttempts) {
         retriesUsed.set(step.id, used + 1);
-        this.store.updateRun(runId, { repairAttemptsUsed: repairAttemptsUsed + 1 });
-        // Reserve the shared repair before looping. A process restart cannot reset the budget.
+        const sharedRepairsUsed = repairAttemptsUsed + 1;
+        const failureOutput = this.store.redactRunText(runId, output).slice(0, 20_000);
+        let repairContext: NonNullable<RunRecord['repairContext']> = {
+          checkStepId: step.id,
+          agentStepId: step.onFail.retry,
+          retryAttempt: used + 1,
+          retryLimit: step.onFail.max,
+          sharedRepairsUsed,
+          sharedRepairLimit: maxRepairAttempts,
+          exitCode,
+          ...(step.failureReasons?.[String(exitCode)] ? { failureCategory: step.failureReasons[String(exitCode)] } : {}),
+          failureOutput,
+          recordedAt: new Date().toISOString(),
+        };
+        this.store.updateRun(runId, { repairAttemptsUsed: sharedRepairsUsed, repairContext });
+        // Reserve both the shared repair and its failure context before any more async work.
         this.store.flush({ throwOnError: true });
         const changedFiles = await worktreeDiffStat(state.cwd, this.store.getRun(runId)?.baseBranch ?? 'HEAD');
         const changedFilesSummary = changedFiles.trim();
         const boundedChangedFiles = changedFilesSummary.length > 4_000
           ? `${changedFilesSummary.slice(0, 4_000)}\n… (summary truncated)`
           : changedFilesSummary;
-        const remainingRunSeconds = state.workflowDeadlineAt === undefined
-          ? null
-          : Math.max(0, Math.ceil((state.workflowDeadlineAt - Date.now()) / 1000));
-        const sharedRepairsUsed = repairAttemptsUsed + 1;
-        checkFailure = [
-          `Repair attempt ${used + 1} of ${step.onFail.max} for check "${step.id}" (exit ${exitCode}).`,
-          `Shared repair budget: ${sharedRepairsUsed} of ${maxRepairAttempts} attempts used; ${Math.max(0, maxRepairAttempts - sharedRepairsUsed)} remain.`,
-          `Active workflow time remaining: ${remainingRunSeconds === null ? 'not configured' : `${remainingRunSeconds}s`}.`,
-          'The original task, acceptance criteria, and non-goals remain authoritative.',
-          'Changed files vs task base (bounded diff summary):',
-          boundedChangedFiles || '(no diff summary available)',
-          'Failure output (bounded):',
-          output,
-        ].join('\n');
+        repairContext = { ...repairContext, ...(boundedChangedFiles ? { changedFiles: boundedChangedFiles.slice(0, 2_000) } : {}) };
+        this.store.updateRun(runId, { repairContext });
+        this.store.flush({ throwOnError: true });
+        checkFailure = formatRepairContext(repairContext);
         this.finishStep(runId, step.id, 'failed', 'check failed — looping back', emit);
         const retryIdx = workflow.steps.findIndex((s) => s.id === step.onFail?.retry);
         emit({
@@ -4974,6 +4999,9 @@ export class RunManager {
     // matches; a leading `/name` that is not a known skill passes through byte-for-byte.
     userPrompt = expandRegistrySlashSkillText(userPrompt, state.skills ?? []);
     const currentRun = this.store.getRun(runId);
+    if (!checkFailure && currentRun?.repairContext?.agentStepId === step.id) {
+      checkFailure = formatRepairContext(currentRun.repairContext);
+    }
     const repairChecks = currentRun?.workflowDef?.steps?.filter((candidate) => candidate.onFail?.retry === step.id) ?? [];
     const taskSummary = currentRun?.title?.trim();
     if (taskSummary) userPrompt += `\n\nTask summary: ${taskSummary.slice(0, 300)}`;

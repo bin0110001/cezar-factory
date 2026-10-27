@@ -37,6 +37,21 @@ export const runPrRefSchema = z.object({
   origin: z.enum(['created', 'marker', 'legacy', 'derived']),
   at: z.string(),
 });
+
+/** Bounded evidence for the most recent check-to-agent repair, retained across worker restart. */
+export const repairContextSchema = z.object({
+  checkStepId: z.string().min(1).max(128),
+  agentStepId: z.string().min(1).max(128),
+  retryAttempt: z.number().int().positive(),
+  retryLimit: z.number().int().positive(),
+  sharedRepairsUsed: z.number().int().nonnegative(),
+  sharedRepairLimit: z.number().int().nonnegative(),
+  exitCode: z.number().int(),
+  failureCategory: z.string().min(1).max(64).optional(),
+  failureOutput: z.string().max(20_000),
+  changedFiles: z.string().max(2_000).optional(),
+  recordedAt: z.string().datetime(),
+});
 export type RunPrRef = z.infer<typeof runPrRefSchema>;
 
 export const runStatusSchema = z.enum([
@@ -256,6 +271,8 @@ export const runRecordSchema = z.object({
   outcome: runOutcomeSchema.optional(),
   /** Number of check-to-agent repairs already consumed; never reset by worker restart. */
   repairAttemptsUsed: z.number().int().min(0).optional(),
+  /** Last bounded check failure that authorized a repair; retained for restart context and audit. */
+  repairContext: repairContextSchema.optional(),
   /** Remaining active workflow budget and current absolute deadline, if configured. */
   workflowBudgetRemainingMs: z.number().finite().min(0).optional(),
   workflowDeadlineAt: z.string().datetime().optional(),

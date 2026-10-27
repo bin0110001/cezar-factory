@@ -13,7 +13,7 @@ import { MAX_REF } from './task-refs.ts';
 import { workflowDefSchema } from '../workflows/types.ts';
 // A contract VALUE, like `workspaceUiStateSchema` in `workspace/migrations.ts`: the persisted
 // `dispatch` object and its wire half are literally the same schema, so they cannot drift.
-import { dispatchSchema, runOutcomeSchema, trackerAssociationSchema, trackerAutomationEventSchema } from '@open-mercato/cezar-contract';
+import { dispatchSchema, repairContextSchema, runOutcomeSchema, trackerAssociationSchema, trackerAutomationEventSchema } from '@open-mercato/cezar-contract';
 
 import { RUNNER_IDS } from '../core/agent-runner.ts';
 
@@ -264,6 +264,8 @@ export const runRecordSchema = z.object({
   outcome: runOutcomeSchema.optional().catch(undefined),
   /** Number of check-to-agent repairs already consumed; never reset by worker restart. */
   repairAttemptsUsed: z.number().int().min(0).optional().catch(undefined),
+  /** Last bounded check failure that authorized a repair; retained for restart context and audit. */
+  repairContext: repairContextSchema.optional().catch(undefined),
   /** Remaining active workflow budget and current absolute deadline, if configured. */
   workflowBudgetRemainingMs: z.number().finite().min(0).optional().catch(undefined),
   workflowDeadlineAt: z.string().datetime().optional().catch(undefined),
