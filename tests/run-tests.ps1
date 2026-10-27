@@ -167,6 +167,7 @@ $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement
 $investigateSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-investigate/SKILL.md')
 $reviewSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-review/SKILL.md')
 $fixSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-fix/SKILL.md')
+Assert 'fix skill defines bounded inputs, required judgment, escalation, and forbidden effects' ($fixSkill -match '(?s)## Contract.*?Prerequisites and bounded input.*?latest review findings.*?Required judgment.*?Escalation.*?two fix rounds.*?Forbidden effects.*?Do not select other issues.*?Do not run Factory scripts')
 $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implementation.ps1')
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')

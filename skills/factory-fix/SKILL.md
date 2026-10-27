@@ -5,14 +5,25 @@ source: skills/factory-fix/SKILL.md
 -->
 # Factory Fix Skill
 
-## Responsibilities
+## Contract
 
-- Read review findings.
-- Address only valid findings.
-- Avoid unrelated cleanup.
-- Update tests as needed.
-- Re-run validation.
-- Return to review.
+- **Purpose:** Resolve the current PR's actionable review findings and return
+  the change to independent review.
+- **Prerequisites and bounded input:** Use the latest review findings, the
+  existing PR, and the issue plan already prepared by the workflow. Work only
+  on findings within that issue's acceptance criteria and non-goals.
+- **Required judgment:** Verify each finding against the current diff and
+  project guidance. Fix valid blocking findings; explain invalid or out-of-scope
+  findings without broadening the change.
+- **Output:** Return one structured implementation result for the existing PR,
+  including changed files, validation, acceptance status, concerns, and
+  follow-ups.
+- **Escalation:** Stop and report an unresolved compatibility, ownership, or
+  system-contract decision. After the configured two fix rounds, stop editing
+  and let the workflow route the issue to investigation.
+- **Forbidden effects:** Do not select other issues, create replacement tasks,
+  edit Factory lifecycle labels, write workflow artifacts, or run Factory
+  scripts. Workflow command steps own validation and result routing.
 
 ## Detailed Guidance
 
