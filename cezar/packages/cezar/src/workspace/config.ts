@@ -51,6 +51,8 @@ const workspaceProjectSchema = z
     addedAt: z.string().max(64).catch(''),
     lastOpenedAt: z.string().max(64).catch(''),
     source: z.enum(['local', 'checkout']).catch('local'),
+    /** Factory channel for new tasks; old registry rows follow stable by default. */
+    factoryChannel: z.enum(['dev', 'stable']).optional(),
     /** Per-project cap on concurrently running tasks. Absent = inherit the
      *  workspace `resources.maxParallel`. Bounded like the workspace cap; a bad
      *  value degrades to "inherit" (`.catch(undefined)`) rather than a hard

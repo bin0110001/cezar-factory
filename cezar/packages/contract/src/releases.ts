@@ -89,6 +89,25 @@ export const factoryReleaseStateSchema = z.object({
 });
 export type FactoryReleaseState = z.infer<typeof factoryReleaseStateSchema>;
 
+export const factoryReleaseChannelPointerSchema = z.object({
+  schemaVersion: z.literal('factory-release-channel-pointer/v1'),
+  channel: z.enum(['dev', 'stable']),
+  currentSha: gitShaSchema,
+  currentPath: z.string().min(1).max(4_096),
+  lastGoodSha: gitShaSchema,
+  lastGoodPath: z.string().min(1).max(4_096),
+  updatedAt: z.string().datetime(),
+}).strict();
+export type FactoryReleaseChannelPointer = z.infer<typeof factoryReleaseChannelPointerSchema>;
+
+export const factoryReleaseProvenanceSchema = z.object({
+  channel: z.enum(['dev', 'stable']),
+  sourceSha: gitShaSchema,
+  manifestDigest: sha256Schema,
+  resolvedAt: z.string().datetime(),
+}).strict();
+export type FactoryReleaseProvenance = z.infer<typeof factoryReleaseProvenanceSchema>;
+
 const compatibilityObservationSchema = z.object({
   status: z.enum(['compatible', 'incompatible']),
   cezarVersion: cleanText(128).optional(),

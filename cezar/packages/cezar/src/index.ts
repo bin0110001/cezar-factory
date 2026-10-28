@@ -42,6 +42,7 @@ import { runProjectsCommand } from './workspace/projects-cli.ts';
 import { WorkspaceSemaphore } from './workspace/semaphore.ts';
 import { runTaskCommand } from './dispatch/task-cli.ts';
 import { runAutomationCommand } from './automations/automation-cli.ts';
+import { resolveConfiguredFactoryRelease } from './factory-release/resolver.ts';
 
 import { runTrackerConnectionsCommand } from './server/tracker/connections-cli.ts';
 
@@ -456,7 +457,14 @@ async function runCommand(
     return;
   }
   await initWorkspace(repoRoot);
-  const { workflows, issues } = await loadWorkflows(repoRoot);
+  const workspace = await loadWorkspaceConfig();
+  const normalizedRoot = resolve(repoRoot).toLocaleLowerCase();
+  const project = workspace.projects.find((entry) => resolve(entry.root).toLocaleLowerCase() === normalizedRoot);
+  if (process.env.CEZ_FACTORY_RELEASE_STORE?.trim() && !project) {
+    throw new Error(`cannot resolve a Factory channel for unregistered project root: ${repoRoot}`);
+  }
+  const factoryRelease = project ? await resolveConfiguredFactoryRelease(project.id) : undefined;
+  const { workflows, issues } = await loadWorkflows(repoRoot, { factoryRelease });
   for (const issue of issues) console.error(`! skipped ${issue.path}: ${issue.message}`);
   const name = workflowName ?? 'quick-task';
   const workflow = workflows.find((w) => w.name === name);
@@ -496,7 +504,7 @@ async function runCommand(
   // 2.5) — one refreshed semaphore, even with just one manager in play.
   const semaphore = new WorkspaceSemaphore();
   await semaphore.refresh();
-  const manager = new RunManager(store, repoRoot, { semaphore });
+  const manager = new RunManager(store, repoRoot, { semaphore, projectId: project?.id });
 
   store.on('event', ({ event }) => {
     switch (event.type) {
