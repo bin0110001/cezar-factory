@@ -1,10 +1,6 @@
 {
-  "considered": [94],
-  "changed": [
-    {
-      "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
-    }
-  ],
-  "skipped": []
+  "considered": [],
+  "changed": [],
+  "skipped": [],
+  "terminalReason": "no-unmarked-open-issues"
 }

@@ -1,61 +1,11 @@
 {
-  "generatedAt": "2026-10-25T02:34:28.1742711+00:00",
-  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/1575a89e-150a-4ae9-984b-67166afaba7a",
-  "outputPath": "/projects/cezar-factory/.ai/cezar/worktrees/1575a89e-150a-4ae9-984b-67166afaba7a/.factory/backlog-label-audit-input.json",
+  "generatedAt": "2026-10-30T18:15:57.7067966+00:00",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/10e2125d-3529-491f-bcdb-e93c0f3ccb5e",
+  "outputPath": "/projects/cezar-factory/.ai/cezar/worktrees/10e2125d-3529-491f-bcdb-e93c0f3ccb5e/.factory/backlog-label-audit-input.json",
   "limit": 3,
-  "candidates": [
-    {
-      "number": 47,
-      "title": "Epic: Unified Verification and Failure Intelligence in Cezar Factory",
-      "labels": [],
-      "typeHint": null,
-      "riskHint": "medium",
-      "body": "<!-- unified-verification-2026-10-23:epic -->\n## Objective\nDeliver a backward-compatible, project-agnostic unified Verification capability inside Cezar Factory, with focused testing, nonblocking known-debt policy, persistent recurrence history and optional Hindsight contextual recall. TableFlux (blackjackandhookersGodot) is the pilot, not a hardcoded runtime dependency.\n\n## Architecture draft\n[Draft design (planning branch)](https://github.com/bin0110001/cezar-factory/blob/planning/unified-verification-2026-10-23/docs/unified-verification-draft-2026-10-23.md)\n\n## Existing related work — do not duplicate\n- #19 explicit project-owned validation adapters and #39 target migration are prerequisites for backward compatibility.\n- #22, #30, #31 bounded collector and canonical GitHub publisher stay authoritative for their respective Factory failure-audit flow. Integrate, do not replace.\n- #17 reliability audit and release gating remain independently applicable.\n\n## Decisions\n- Reuse current scheduler/workflow system; Verification is a typed execution plus results and policy layer.\n- Project-owned test implementations run standalone; no GdUnit or Gua reimplementation in Factory.\n- Normalized findings in a deterministic Cezar ledger; Hindsight only as advisory project-scoped memory, never source of truth.\n- Focused test selection explained by impact evidence, plus periodic wider coverage.\n- Existing known failures do not automatically block unrelated agent work. New/worsened regressions and incomplete coverage remain visible; stricter merge/release gates unaffected.\n- Gua remains optional and deferred until isolated evaluation passes.\n\n## Tracking and acceptance\n- [ ] Contract, adapters and isolation usable on Windows/Linux with fixture-driven negative tests.\n- [ ] Focused TableFlux verification uses Git diff + ownership/dependencies, with selection reasons.\n- [ ] Failure episodes and comparisons correctly classify existing/new/worsening/resolved/reopened/untested/infra results.\n- [ ] Hindsight offline leaves deterministic verification available.\n- [ ] Compact agent summaries, artifacts, UI/CLI and safe agent loops.\n- [ ] Independent review, risk approvals and release through explicitly registered targets; no deployment from this planning issue.\n\n## Dependencies and governance\nSee individual child issues for implementation acceptance criteria and sequencing. Plan is drafted, not a high-risk implementation approval. Read AGENTS.md, policies/risk.yaml, policies/definition-of-ready.md, docs/project-integration.md, #19, #22 and associated children. Do not place private TableFlux issue evidence or host paths into this public repository.\n\n**Risk:** high (cross-project quality gates and agent automation); **complexity:** high. Keep implementation blocked pending policy-required plan approval and prerequisite reconciliation.\n\n\n## Work packages and sequence\n- [ ] #48 — Existing context: #19, #39, #22, #30, #31. Can begin immediately.\n- [ ] #49 — Requires #48; coordinate schema migration with #19 and #39.\n- [ ] #50 — Requires #49 and compatibility with #19.\n- [ ] #51 — Requires #50; coordinate project adapter migration with #39.\n- [ ] #52 — Requires #49 and #50; coexist with #22/#30/#31, no duplicate publication.\n- [ ] #53 — Requires #49, #51; consumes finding evidence from #52 when available.\n- [ ] #54 — Requires #52 and #53, using comparison result contracts from #49.\n- [ ] #55 — Requires #52; follows redaction and collection constraints of #30; optional to all core execution.\n- [ ] #56 — Requires #53 and #54, plus #52 evidence. #55 is optional. Coordinate GitHub publishing with #31.\n- [ ] #57 — Requires #50, #52, #53 and #54.\n- [ ] #58 — Requires #50, #51 and #54; Gua adapter requires passing isolated Gua evaluation.\n- [ ] #59 — Requires #50, #54 and #57; remote worker rollout after local pilot.\n\n### Delivery lanes\nFoundation: #48 → #49 → #50 → #51. Findings and impact: #52 → #53 → #54. Optional memory: #52 → #55. Agent + UX: #54 → #56 and #57. Advanced: #58 and #59. Contract/adapter work must respect #19/#39; failure publication respects #22/#30/#31.\n\nNo issue is automatically approved for implementation solely by this plan."
-    },
-    {
-      "number": 49,
-      "title": "Define versioned verification, result and compatibility contracts",
-      "labels": [],
-      "typeHint": null,
-      "riskHint": "medium",
-      "body": "## Objective\nDefine the shared execution/check/result schema *before* implementation while keeping existing `validation.changed/full/verify` functional (#19).\n\n## Work\n- [ ] Define manifest opt-in extension, schema versioning/migration, optional capabilities, explicit no-tests/skipped/unknown statuses.\n- [ ] Define run/check/test result, diagnostics, metrics, coverage, fingerprint, environment, provenance, artifact references and bounds.\n- [ ] Specify result aggregation, semantic exit codes, cancellations, timeouts, crash and truncated/partial evidence handling.\n- [ ] Clarify that performance policy consumes existing metrics; Cezar artifacts are distinct from #30's failure-audit evidence.\n- [ ] Include valid and malformed fixtures, schema docs and independent test implementation requirements.\n\n## Acceptance\nExisting project adapters remain valid; zero tests, parse failures, unknown schema and tool crash never green; Windows/Linux contract tests demonstrate compatibility. Dependency: audit child and #19; risk high (cross-project contract), complexity medium.\n\n## Governance\nParent: #47. Design: [Unified Verification draft](https://github.com/bin0110001/cezar-factory/blob/planning/unified-verification-2026-10-23/docs/unified-verification-draft-2026-10-23.md). Required reading: AGENTS.md, policies/risk.yaml, policies/definition-of-ready.md and docs/project-integration.md. Planning-only issue; comply with risk-based approval, reviewed dev PR, full Factory verification and explicitly registered target release. Never deploy as a side effect of tests.\n\n## Sequencing and related issues\nRequires #48; coordinate schema migration with #19 and #39.\nTracking epic: #47. Related work must not be duplicated.\n\n## Linked dependencies\nDepends on #48 and compatibility with #19/#39.\nParent epic: #47."
-    },
-    {
-      "number": 50,
-      "title": "Implement isolated generic verification executor and adapter protocol",
-      "labels": [],
-      "typeHint": null,
-      "riskHint": "medium",
-      "body": "## Objective\nReusable runner invoking project-owned tools through Cezar's existing scheduler, not replacing it.\n\n## Work\n- [ ] Implement preflight, execute, collect and cleanup extension points, optional discovery, cancellation, timeout and resource requirements.\n- [ ] Enforce explicit project registry/worktree, worktree-local unique artifacts, redaction and bounded logs.\n- [ ] Normalize exit status and infrastructure failure separately from test failure, including no-tests.\n- [ ] Capture immutable run identity, environment/tool/commit provenance and execution trace.\n- [ ] Add fault-injection fixtures for hanging/crashed commands, missing executables, concurrent worktrees, spaces in paths and bad output.\n\n## Acceptance\nTwo concurrent runs have isolated artifacts, cancellation terminates child process tree, no false positives, runs local Windows/Linux; existing #19 adapters remain supported. Dependencies: contract, #19. Risk high; complexity high.\n\n## Governance\nParent: #47. Design: [Unified Verification draft](https://github.com/bin0110001/cezar-factory/blob/planning/unified-verification-2026-10-23/docs/unified-verification-draft-2026-10-23.md). Required reading: AGENTS.md, policies/risk.yaml, policies/definition-of-ready.md and docs/project-integration.md. Planning-only issue; comply with risk-based approval, reviewed dev PR, full Factory verification and explicitly registered target release. Never deploy as a side effect of tests.\n\n## Sequencing and related issues\nRequires #49 and compatibility with #19.\nTracking epic: #47. Related work must not be duplicated.\n\n## Linked dependencies\nDepends on #49; integrates with #19 rather than replacing it.\nParent epic: #47."
-    }
-  ],
+  "candidates": [],
   "resolved": [],
-  "staged": [
-    {
-      "issue": 47,
-      "added": [
-        "factory:auditing"
-      ],
-      "sourceLabels": [],
-      "reservation": "factory:auditing"
-    },
-    {
-      "issue": 49,
-      "added": [
-        "factory:auditing"
-      ],
-      "sourceLabels": [],
-      "reservation": "factory:auditing"
-    },
-    {
-      "issue": 50,
-      "added": [
-        "factory:auditing"
-      ],
-      "sourceLabels": [],
-      "reservation": "factory:auditing"
-    }
-  ],
-  "unreviewedAmbiguousCount": 29,
-  "terminalReason": "candidates-staged"
+  "staged": [],
+  "unreviewedAmbiguousCount": 0,
+  "terminalReason": "no-unmarked-open-issues"
 }
