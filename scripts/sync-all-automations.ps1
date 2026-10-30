@@ -21,9 +21,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path $FactoryPath).Path
 if (-not $RegistryPath) { $RegistryPath = Join-Path $factory 'config/factory-projects.json' }
-if (-not (Test-Path -LiteralPath $RegistryPath)) { Write-Error "No target registry at $RegistryPath; nothing was synchronized."; exit 1 }
-$targets = @(Get-Content -Raw -LiteralPath $RegistryPath | ConvertFrom-Json)
-if (-not $targets.Count) { Write-Error "Target registry $RegistryPath is empty; nothing was synchronized."; exit 1 }
+if (-not (Test-Path -LiteralPath $RegistryPath)) { Write-Error "Needs target configuration: no target registry at $RegistryPath; nothing was synchronized."; exit 1 }
+$targetData = Get-Content -Raw -LiteralPath $RegistryPath | ConvertFrom-Json
+if ($null -eq $targetData) { Write-Error "Needs target configuration: target registry $RegistryPath is empty; nothing was synchronized."; exit 1 }
+$targets = @($targetData)
+if (-not $targets.Count) { Write-Error "Needs target configuration: target registry $RegistryPath is empty; nothing was synchronized."; exit 1 }
 
 $failed = @()
 foreach ($target in $targets) {
