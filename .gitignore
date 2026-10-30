@@ -6,7 +6,6 @@
 # Test artifacts
 tests/fixtures/*/artifacts/
 .artifacts/
-.factory/
 
 # Temporary files
 *.tmp
@@ -26,7 +25,6 @@ integrations/**/cache/
 
 # Installation-specific server inventory (SSH aliases, addresses, service placement)
 config/server-topology.env
-config/factory-projects.json
 integrations/bazzite/prometheus-model-targets.generated.json
 
 
