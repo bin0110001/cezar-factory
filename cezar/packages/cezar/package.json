@@ -1,7 +1,7 @@
 {
   "name": "@open-mercato/cezar",
   "version": "0.14.0",
-  "description": "Local cockpit for running and tracking AI agent tasks in your repo. Uses your logged-in `claude` CLI and `gh` — zero config, zero database.",
+  "description": "Local cockpit for running and tracking AI agent tasks in your repo. Uses your logged-in `claude` CLI and `gh`, with an optional local SQLite workspace lifecycle registry.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -45,6 +45,7 @@
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.6.1",
     "hono": "^4.6.0",
     "proper-lockfile": "4.1.2",

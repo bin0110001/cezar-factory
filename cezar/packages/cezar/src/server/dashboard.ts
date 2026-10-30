@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
   dashboardOverviewQuerySchema,
   dashboardAutomationsQuerySchema,
@@ -10,7 +11,7 @@ import {
 } from '@open-mercato/cezar-contract';
 import { DashboardReader } from '../workspace/dashboard.ts';
 import type { CostVisibility } from '../workspace/dashboard-costs.ts';
-import { queryZodValidator } from './validators.ts';
+import { jsonZodValidator, queryZodValidator } from './validators.ts';
 
 /** Redact at response time, never in the immutable snapshot shared by other readers. */
 function visibleTask(row: DashboardTaskRow, policy: CostVisibility): DashboardTaskRow {
@@ -23,6 +24,7 @@ export function dashboardRoutes(
   reader: DashboardReader,
   visibility: () => CostVisibility = () => ({ tokens: true, cost: true }),
   automationsEnabled: () => boolean = () => true,
+  workspaceActionsEnabled: () => boolean = () => true,
 ) {
   return new Hono()
     .get(
@@ -53,6 +55,27 @@ export function dashboardRoutes(
         },
       });
     })
+    .get('/workspace/dashboard/workspaces', async (c) => c.json(await reader.workspaceLifecycle()))
+    .post(
+      '/workspace/dashboard/workspaces/action',
+      jsonZodValidator(z.object({
+        projectId: z.string().min(1).max(200),
+        issue: z.string().regex(/^#?\d+$/),
+        action: z.enum(['recover', 'validate', 'prune', 'resume']),
+        force: z.boolean().optional(),
+        confirm: z.literal(true),
+      })),
+      async (c) => {
+        if (!workspaceActionsEnabled()) return c.json({ error: 'Workspace lifecycle actions require the local checkout host.' }, 403);
+        const request = c.req.valid('json');
+        try {
+          const result = await reader.workspaceLifecycleAction(request.projectId, request.issue, request.action, request.force ?? false);
+          return c.json({ result, projects: await reader.workspaceLifecycle() });
+        } catch (error) {
+          return c.json({ error: error instanceof Error ? error.message : String(error) }, 409);
+        }
+      },
+    )
     .get(
       '/workspace/dashboard/overview',
       queryZodValidator(dashboardOverviewQuerySchema),

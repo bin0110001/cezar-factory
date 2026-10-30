@@ -247,6 +247,10 @@ switch ($Event) {
                 $mergeState = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid' | ConvertFrom-Json
                 if ([string]$mergeState.headRefOid -ne [string]$gate.headSha) { Fail 'PR head changed while requesting merge; issue remains open for fresh review' }
                 if ([string]$mergeState.state -eq 'MERGED') {
+                    if ($env:FACTORY_FENCING_TOKEN) {
+                        Add-Comment ($body + "`n`nValidated approval: GitHub reports the reviewed PR merged. The local workspace lifecycle is still verifying the merged tree before marking this issue done.")
+                        Done 'factory:review' 'merged PR awaiting workspace integration validation'
+                    }
                     Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head and GitHub reports the PR merged.")
                     Set-State 'factory:done'; Done 'factory:done' 'approved, validated PR observed merged'
                 }

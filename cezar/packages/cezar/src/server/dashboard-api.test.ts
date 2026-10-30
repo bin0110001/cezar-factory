@@ -1,5 +1,6 @@
 import { dashboardOverviewSchema } from '@open-mercato/cezar-contract';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, chmodSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +20,7 @@ import { listProjects, registerProject } from '../workspace/projects.ts';
 import { createApp } from './server.ts';
 import { ProjectContexts } from './project-context.ts';
 import { apiRequest } from './loopback-request.testkit.ts';
+import { claimWorkspace } from '../workspace/lifecycle.ts';
 const dirs: string[] = [];
 const stores: RunStore[] = [];
 const cleanups: Array<() => void> = [];
@@ -37,6 +39,56 @@ afterEach(() => {
   else process.env.CEZ_HOME = savedHome;
 });
 describe('dashboard workspace routes', () => {
+  it('lists local lifecycle claims and changed-path overlaps for registered projects', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cez-dashboard-lifecycle-'));
+    dirs.push(root);
+    execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: root });
+    writeFileSync(join(root, 'base.txt'), 'base\n');
+    execFileSync('git', ['-c', 'user.name=Dashboard Test', '-c', 'user.email=dashboard@example.test', 'add', 'base.txt'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Dashboard Test', '-c', 'user.email=dashboard@example.test', 'commit', '-q', '-m', 'base'], { cwd: root });
+    const project = await registerProject(root);
+    const store = RunStore.open(join(root, '.ai/cezar'));
+    stores.push(store);
+    const app = createApp({ repoRoot: root, store, manager: {} as RunManager,
+      version: 'test', bootProjectId: project.id, onDispose: (cleanup) => cleanups.push(cleanup) });
+    const response = await apiRequest(app, '/api/v1/workspace/dashboard/workspaces');
+    expect(response.status).toBe(200);
+    const data = await response.json() as Array<{ projectId: string; records: unknown[]; overlaps: unknown[]; error: string | null; metrics: { activeWorkspaces: number; preflightCount: number } }>;
+    expect(data).toHaveLength(1);
+    expect(data[0]).toMatchObject({ projectId: project.id, records: [], overlaps: [], error: null,
+      metrics: { activeWorkspaces: 0, preflightCount: 0 } });
+    writeFileSync(join(root, '.gitignore'), '.ai/cezar/\n');
+    writeFileSync(join(root, 'workspace-lifecycle.json'), JSON.stringify({ validation: [[process.execPath, '-e', 'process.exit(0)']] }));
+    execFileSync('git', ['-c', 'user.name=Dashboard Test', '-c', 'user.email=dashboard@example.test', 'add', '.gitignore', 'workspace-lifecycle.json'], { cwd: root });
+    execFileSync('git', ['-c', 'user.name=Dashboard Test', '-c', 'user.email=dashboard@example.test', 'commit', '-q', '-m', 'configure workspace checks'], { cwd: root });
+    await claimWorkspace({ issue: '600', cwd: root, owner: 'external:dashboard:600', base: 'dev' });
+    const endpoint = '/api/v1/workspace/dashboard/workspaces/action';
+    const postAction = (body: unknown) => apiRequest(app, endpoint, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    expect((await postAction({ projectId: project.id, issue: '600', action: 'recover' })).status).toBe(400);
+    const validation = await postAction({ projectId: project.id, issue: '600', action: 'validate', confirm: true });
+    expect(validation.status).toBe(200);
+    const validationBody = await validation.json() as { result: { result: string }; projects: Array<{ records: Array<{ issue: string; state: string }>; metrics: { activeWorkspaces: number; validationFailures: number } }> };
+    expect(validationBody.result.result).toBe('passed');
+    expect(validationBody.projects[0]?.records[0]).toMatchObject({ issue: '600', state: 'ready' });
+    expect(validationBody.projects[0]?.metrics).toMatchObject({ activeWorkspaces: 1, validationFailures: 0 });
+    const recovery = await postAction({ projectId: project.id, issue: '600', action: 'recover', force: true, confirm: true });
+    expect(recovery.status).toBe(200);
+    const recoveryBody = await recovery.json() as { result: { state: string; fencingToken: number }; projects: Array<{ metrics: { manualInterventions: number } }> };
+    expect(recoveryBody.result).toMatchObject({ state: 'working', fencingToken: 2 });
+    expect(recoveryBody.projects[0]?.metrics.manualInterventions).toBe(1);
+    expect((await postAction({ projectId: project.id, issue: '601', action: 'recover', confirm: true })).status).toBe(409);
+    const oldRemote = process.env.CEZ_REMOTE;
+    process.env.CEZ_REMOTE = '1';
+    try {
+      expect((await postAction({ projectId: project.id, issue: '600', action: 'recover', confirm: true })).status).toBe(403);
+    } finally {
+      if (oldRemote === undefined) delete process.env.CEZ_REMOTE;
+      else process.env.CEZ_REMOTE = oldRemote;
+    }
+  });
+
   it('reads cold project automations without opening contexts or changing persisted state', async () => {
     const root = mkdtempSync(join(tmpdir(), 'cez-dashboard-auto-boot-'));
     const cold = mkdtempSync(join(tmpdir(), 'cez-dashboard-auto-cold-'));
