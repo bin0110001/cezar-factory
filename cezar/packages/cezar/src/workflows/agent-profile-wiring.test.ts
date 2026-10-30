@@ -146,6 +146,18 @@ describe('RunManager agent-profile resolution', () => {
     expect(env.FACTORY_RUN_ID).toBe('');
   });
 
+  it('marks Factory phases outside the lifecycle allowlist as owned but lifecycle-disabled', () => {
+    execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: repoRoot, windowsHide: true });
+    const run = store.createRun({
+      title: 'Factory planning', workflow: 'factory-plan', task: 'Plan issue 456',
+      steps: [{ id: 'work', name: 'work', kind: 'agent' }],
+    });
+    store.updateRun(run.id, { issueNumber: 456 });
+    const env = envSeam().agentEnv(run.id);
+    expect(env.FACTORY_MANAGED).toBe('1');
+    expect(env.FACTORY_LIFECYCLE).toBe('0');
+  });
+
   it('removes only the pristine Factory task worktree when issue registration is refused', async () => {
     execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: repoRoot, windowsHide: true });
     writeFileSync(join(repoRoot, 'base.txt'), 'base\n');

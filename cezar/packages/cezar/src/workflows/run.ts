@@ -97,7 +97,8 @@ import {
   sweepAgentTmpDirs,
 } from '../runs/agent-tmpdir.ts';
 import { extractTaskRefs, refineTaskRefs, titleRefNumber } from '../runs/task-refs.ts';
-import { drainLifecycleOutbox, factoryContextForRun, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
+import { drainLifecycleOutbox, factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
+import { reconcileReadyWorkspaceIntegrations } from '../workspace/lifecycle-cli.ts';
 import { parseTaskMarkers, stripTaskMarkers } from '../runs/task-markers.ts';
 import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidateTitle } from '../runs/auto-name.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
@@ -1020,7 +1021,10 @@ export class RunManager {
   /** The stalled-queue watchdog (see `rescueStalledQueue`). */
   private readonly queueWatchdog: ReturnType<typeof setInterval>;
   private readonly telemetryOutboxTimer: ReturnType<typeof setInterval>;
+  private readonly lifecycleIntegrationTimer: ReturnType<typeof setInterval>;
   private telemetryDrainStopped = false;
+  private lifecycleIntegrationStopped = false;
+  private lifecycleIntegrationInFlight = false;
 
   /** Set by the watchdog for exactly one sweep: ignore the usage-limit hold and make progress. */
   private forceNextPump = false;
@@ -1095,6 +1099,22 @@ export class RunManager {
     this.telemetryOutboxTimer = setInterval(drainTelemetry, 60_000);
     this.telemetryOutboxTimer.unref?.();
     void this.lifecycleStartup.then(drainTelemetry);
+    const integrateReady = async () => {
+      if (this.lifecycleIntegrationStopped || this.lifecycleIntegrationInFlight) return;
+      this.lifecycleIntegrationInFlight = true;
+      try {
+        const results = await reconcileReadyWorkspaceIntegrations({ cwd: this.repoRoot });
+        for (const result of results) {
+          if (result.status === 'integrated') console.info(`[workspace-lifecycle] automatically integrated issue #${result.issue}`);
+          else if (result.status === 'failed') console.warn(`[workspace-lifecycle] integration for issue #${result.issue} will retry: ${result.detail}`);
+        }
+      } catch (error) {
+        console.warn(`[workspace-lifecycle] automatic integration sweep deferred: ${error instanceof Error ? error.message : String(error)}`);
+      } finally { this.lifecycleIntegrationInFlight = false; }
+    };
+    this.lifecycleIntegrationTimer = setInterval(() => void integrateReady(), 60_000);
+    this.lifecycleIntegrationTimer.unref?.();
+    void this.lifecycleStartup.then(integrateReady);
   }
 
   /**
@@ -1111,8 +1131,10 @@ export class RunManager {
     this.offUsage();
     this.offSemaphore();
     this.telemetryDrainStopped = true;
+    this.lifecycleIntegrationStopped = true;
     clearInterval(this.queueWatchdog);
     clearInterval(this.telemetryOutboxTimer);
+    clearInterval(this.lifecycleIntegrationTimer);
     for (const [runId, state] of this.active) {
       this.clearIdleTimer(state);
       this.clearMonitoringWakeTimer(state, runId);
@@ -1212,6 +1234,7 @@ export class RunManager {
       // registry row cannot be verified. Hooks then stop for recovery instead
       // of treating a stale managed run as an external coding session.
       FACTORY_MANAGED: factory || factoryWorkflow ? '1' : '0',
+      ...(factoryWorkflow ? { FACTORY_LIFECYCLE: factory ? '1' : factoryWorkflowParticipatesInWorkspaceLifecycle(run?.workflow ?? '') ? '1' : '0' } : {}),
       FACTORY_RUN_ID: factory?.executionId ?? '',
       FACTORY_ISSUE: factory?.issue ?? '',
       FACTORY_OWNER_ID: factory?.ownerId ?? '',
@@ -4162,12 +4185,14 @@ export class RunManager {
           baseBranch: wt.baseBranch,
         });
         const lifecycleRun = this.store.getRun(runId);
-        if (workflow.name.startsWith('factory-') && lifecycleRun?.issueNumber) {
+        const lifecycleWorkflow = factoryWorkflowParticipatesInWorkspaceLifecycle(workflow.name);
+        if (lifecycleWorkflow && lifecycleRun?.issueNumber) {
           const previous = (await lifecycleStatus({ cwd: this.repoRoot }))
             .find((item) => item.issue === String(lifecycleRun.issueNumber));
           const previousRun = previous ? this.store.getRun(previous.executionId) : undefined;
-          const allowReadyTransfer = previous?.state === 'ready' &&
-            Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
+          const previousRunTerminal = Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
+          const allowReadyTransfer = previous?.state === 'ready' && previousRunTerminal;
+          const allowTerminalTransfer = ['working', 'validating', 'blocked', 'recoverable'].includes(previous?.state ?? '') && previousRunTerminal;
           let execution: Awaited<ReturnType<typeof registerFactoryWorkspace>>;
           try {
             execution = await registerFactoryWorkspace({
@@ -4177,6 +4202,7 @@ export class RunManager {
               workspacePath: wt.path,
               baseCommit: wt.baseBranch,
               allowReadyTransfer,
+              allowTerminalTransfer,
             });
           } catch (error) {
             // A newly created Factory worktree is safe to remove only if claim

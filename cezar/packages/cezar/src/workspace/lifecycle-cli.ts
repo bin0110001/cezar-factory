@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
   adoptWorkspace, approveHindsightLesson, claimWorkspace, drainLifecycleOutbox, heartbeatWorkspace, lifecycleDoctor, lifecycleEvents, lifecycleOutbox, lifecycleStatus,
-  recordWorkspacePreflight, resumeBlockedWorkspace, retryLifecycleOutbox,
+  recordIntegrationValidationFailure, recordWorkspacePreflight, resumeBlockedWorkspace, retryLifecycleOutbox, renewReadyWorkspaceLease, finalizeIntegratedWorkspace,
   acquireIntegrationLock, completeIntegration, handoffWorkspace, pruneWorkspace, recoverWorkspace,
   releaseIntegrationLock, renewIntegrationLock, transitionWorkspace, verifiedFactoryContext, workspaceOverlaps,
   type LifecycleState,
@@ -22,6 +22,7 @@ const USAGE = `cez workspace <command>
   validate --issue <id>                run configured checks and mark work ready on success
   handoff --run <id> --fence <n>       mark a completed Factory coding phase ready for integration
   integrate --issue <id> --pr <id>     verify a merged PR, test its merge commit, then finalize
+  reconcile                            retry ready PR integration and durable GitHub status updates
   heartbeat --issue <id> --run <id> --fence <n> renew a verified execution lease
   status [--issue <id>]                show current local lifecycle records
   list                                 list current local lifecycle records
@@ -67,6 +68,20 @@ async function readPolicy(root: string): Promise<{ validation: string[][]; targe
   }
   if (lastError) throw lastError;
   throw new Error('No workspace-lifecycle.json policy found at the repository root or supported Cezar config paths.');
+}
+
+/** Load and run merged-tree checks as one unit so policy/setup errors count as validation failures. */
+export async function runPostMergeValidation(root: string): Promise<Array<{ command: string[]; stdout: string; stderr: string }>> {
+  const policy = await readPolicy(root);
+  const results: Array<{ command: string[]; stdout: string; stderr: string }> = [];
+  for (const command of policy.validation) {
+    const [file, ...args] = command;
+    const result = await execFileAsync(file!, args, {
+      cwd: root, encoding: 'utf8', windowsHide: true, timeout: 60 * 60_000, maxBuffer: 8 * 1024 * 1024,
+    });
+    results.push({ command, stdout: result.stdout, stderr: result.stderr });
+  }
+  return results;
 }
 
 async function readIntegrationTarget(root: string): Promise<string> {
@@ -214,6 +229,8 @@ export async function buildWorkspaceHookContext(input: { cwd?: string }, eventNa
   let message: string;
   if (context.managed && context.execution) {
     message = `Verified Factory-managed execution for issue #${context.execution.issue} (run ${context.execution.executionId}) at ${context.execution.workspacePath}. Factory owns claim, validation, handoff, recovery, and cleanup; external workspace lifecycle actions are inert for this run.`;
+  } else if (env.FACTORY_MANAGED === '1' && env.FACTORY_LIFECYCLE === '0') {
+    message = 'Verified Cezar Factory workflow phase without workspace lifecycle participation. Continue the assigned Factory phase; do not claim, adopt, or clean up a workspace from this phase.';
   } else if (env.FACTORY_MANAGED === '1') {
     message = `Factory context verification failed: ${context.reason} Stop before editing. Inspect cez workspace status and doctor, then have the operator recover the stale Factory run; do not make an external claim.`;
   } else {
@@ -282,9 +299,10 @@ export async function validateWorkspace(issue: string, cwd: string): Promise<unk
 
 async function integrate(issue: string, pullRequest: string, cwd: string): Promise<unknown> {
   const rows = await lifecycleStatus({ cwd, issue });
-  const record = rows[0];
+  let record = rows[0];
   if (!record) throw new Error(`Issue ${issue} has no active lifecycle workspace.`);
   if (record.state !== 'ready') throw new Error(`Issue ${issue} must be ready before integration (current state: ${record.state}).`);
+  record = await renewReadyWorkspaceLease({ issue, executionId: record.executionId, fencingToken: record.fencingToken, cwd });
   const branchCheck = await execFileAsync('git', ['check-ref-format', `refs/heads/${record.branch}`], { cwd: record.workspacePath, encoding: 'utf8', windowsHide: true }).catch(() => null);
   if (!branchCheck) throw new Error(`Recorded branch is not a safe Git ref: ${record.branch}`);
   const rootPolicy = await readPolicy(cwd);
@@ -313,6 +331,7 @@ async function integrate(issue: string, pullRequest: string, cwd: string): Promi
   let tempWorktree: string | undefined;
   let keepDiagnostics = false;
   let diagnosticMessage: string | undefined;
+  let validationPassed = false;
   let heartbeat: NodeJS.Timeout | undefined;
   try {
     tempRoot = mkdtempSync(join(tmpdir(), 'cez-lifecycle-verify-'));
@@ -325,27 +344,34 @@ async function integrate(issue: string, pullRequest: string, cwd: string): Promi
     heartbeat.unref?.();
     await transitionWorkspace({ issue, to: 'integrating', cwd, executionId: record.executionId, fencingToken: token });
     await execFileAsync('git', ['worktree', 'add', '--detach', verificationWorktree, pr.mergeCommit.oid], { cwd, encoding: 'utf8', windowsHide: true });
-    const policy = await readPolicy(verificationWorktree);
     try {
-      const results = [];
-      for (const command of policy.validation) {
-        const [file, ...args] = command;
-        const result = await execFileAsync(file!, args, { cwd: verificationWorktree, encoding: 'utf8', windowsHide: true, timeout: 60 * 60_000, maxBuffer: 8 * 1024 * 1024 });
-        results.push({ command, stdout: result.stdout, stderr: result.stderr });
-      }
+      const results = await runPostMergeValidation(verificationWorktree);
+      validationPassed = true;
       const integrated = await completeIntegration({
         issue, executionId: record.executionId, fencingToken: token, targetBranch,
         pullRequest, headCommit: head, integratedCommit: pr.mergeCommit.oid, integrationLockToken: lockToken, cwd,
       });
-      const cleanup = await transitionWorkspace({ issue, to: 'cleanup_pending', cwd, executionId: record.executionId, fencingToken: token });
+      // The GitHub issue update is intentionally after post-merge validation.
+      // If GitHub is offline, the durable `integrated` row remains for retry and
+      // the workspace is retained until that remote bookkeeping succeeds.
+      await syncIntegratedIssueState(issue, cwd);
+      const cleanup = await finalizeIntegratedWorkspace({ issue, cwd, executionId: record.executionId, fencingToken: token });
       const pruned = await pruneWorkspace({ issue, cwd });
       return { status: 'integrated', targetBranch, pullRequest, headCommit: head, integratedCommit: pr.mergeCommit.oid,
         validation: { commands: results }, cleanup: pruned,
         execution: cleanup ?? integrated };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      await transitionWorkspace({ issue, to: 'ready', cwd, executionId: record.executionId, fencingToken: token }).catch(() => undefined);
-      throw new Error(`Post-integration validation or finalization failed; workspace retained. ${detail}`);
+      let state: 'ready' | 'blocked' = 'ready';
+      let attempts: number | undefined;
+      if (!validationPassed) {
+        attempts = await recordIntegrationValidationFailure({ issue, executionId: record.executionId,
+          fencingToken: token, detail, cwd }).catch(() => undefined);
+        if (attempts === undefined || attempts >= 3) state = 'blocked';
+      }
+      await transitionWorkspace({ issue, to: state, cwd, executionId: record.executionId, fencingToken: token }).catch(() => undefined);
+      const retryMessage = attempts === undefined ? '' : ` Validation attempt ${attempts}/3${state === 'blocked' ? '; automatic retries stopped and the workspace is blocked for operator repair.' : '.'}`;
+      throw new Error(`Post-integration validation or finalization failed; workspace retained.${retryMessage} ${detail}`);
     }
   } catch (error) {
     const current = await lifecycleStatus({ cwd, issue }).then((items) => items[0]).catch(() => undefined);
@@ -374,6 +400,98 @@ async function integrate(issue: string, pullRequest: string, cwd: string): Promi
   }
 }
 
+interface MergedPullRequest {
+  url: string;
+  headRefOid: string;
+  mergeCommit: { oid: string };
+}
+
+const FACTORY_STATE_LABELS = [
+  'factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working',
+  'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked',
+  'factory:done', 'factory:investigate',
+];
+
+export function integratedIssueLabelEdits(labels: string[]): { add: string[]; remove: string[] } {
+  const present = new Set(labels);
+  return {
+    add: present.has('factory:done') ? [] : ['factory:done'],
+    remove: FACTORY_STATE_LABELS.filter((label) => label !== 'factory:done' && present.has(label)),
+  };
+}
+
+async function syncIntegratedIssueState(issue: string, cwd: string): Promise<void> {
+  const response = await execFileAsync('gh', ['issue', 'view', issue, '--json', 'labels'], {
+    cwd, encoding: 'utf8', windowsHide: true, timeout: 30_000,
+  });
+  const data = JSON.parse(response.stdout) as { labels?: Array<{ name?: string }> };
+  const labels = (data.labels ?? []).flatMap((label) => typeof label.name === 'string' ? [label.name] : []);
+  const edits = integratedIssueLabelEdits(labels);
+  if (!edits.add.length && !edits.remove.length) return;
+  const args = ['issue', 'edit', issue];
+  if (edits.add.length) args.push('--add-label', edits.add.join(','));
+  if (edits.remove.length) args.push('--remove-label', edits.remove.join(','));
+  await execFileAsync('gh', args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 30_000 });
+}
+
+async function findMergedPullRequest(record: Awaited<ReturnType<typeof lifecycleStatus>>[number], targetBranch: string, cwd: string): Promise<MergedPullRequest | null> {
+  const headCommit = (await execFileAsync('git', ['rev-parse', `refs/heads/${record.branch}`], {
+    cwd, encoding: 'utf8', windowsHide: true,
+  })).stdout.trim();
+  const response = await execFileAsync('gh', ['pr', 'list', '--state', 'merged', '--head', record.branch,
+    '--base', targetBranch, '--json', 'url,headRefOid,mergeCommit'], {
+    cwd, encoding: 'utf8', windowsHide: true, timeout: 30_000,
+  });
+  const pullRequests = JSON.parse(response.stdout) as Array<Partial<MergedPullRequest>>;
+  const matching = pullRequests.filter((pr): pr is MergedPullRequest =>
+    typeof pr.url === 'string' && pr.headRefOid === headCommit && typeof pr.mergeCommit?.oid === 'string');
+  if (matching.length > 1) throw new Error(`Multiple merged PRs match ready issue #${record.issue} at ${headCommit}.`);
+  return matching[0] ?? null;
+}
+
+/** Complete merged PRs for ready local claims without requiring a human to rerun the CLI.
+ * GitHub/CLI failures are per-item and leave the claim ready for a later sweep. */
+export async function reconcileReadyWorkspaceIntegrations(options: {
+  cwd?: string;
+  discover?: typeof findMergedPullRequest;
+  integratePr?: typeof integrate;
+  syncIssueState?: typeof syncIntegratedIssueState;
+} = {}): Promise<Array<{ issue: string; status: 'integrated' | 'pending' | 'failed'; detail?: string }>> {
+  const cwd = options.cwd ?? process.cwd();
+  const pending = (await lifecycleStatus({ cwd })).filter((record) => ['ready', 'integrated'].includes(record.state));
+  if (!pending.length) return [];
+  const targetBranch = await readIntegrationTarget(cwd);
+  const discover = options.discover ?? findMergedPullRequest;
+  const integratePr = options.integratePr ?? integrate;
+  const syncIssueState = options.syncIssueState ?? syncIntegratedIssueState;
+  const results: Array<{ issue: string; status: 'integrated' | 'pending' | 'failed'; detail?: string }> = [];
+  for (const record of pending) {
+    try {
+      if (record.state === 'integrated') {
+        // Keep the workspace as a durable retry record until GitHub status is updated.
+        await syncIssueState(record.issue, cwd);
+        await finalizeIntegratedWorkspace({ issue: record.issue, cwd,
+          executionId: record.executionId, fencingToken: record.fencingToken });
+        await pruneWorkspace({ issue: record.issue, cwd });
+        results.push({ issue: record.issue, status: 'integrated' });
+        continue;
+      }
+      await renewReadyWorkspaceLease({ issue: record.issue, executionId: record.executionId,
+        fencingToken: record.fencingToken, cwd });
+      const pullRequest = await discover(record, targetBranch, cwd);
+      if (!pullRequest) {
+        results.push({ issue: record.issue, status: 'pending' });
+        continue;
+      }
+      await integratePr(record.issue, pullRequest.url, cwd);
+      results.push({ issue: record.issue, status: 'integrated' });
+    } catch (error) {
+      results.push({ issue: record.issue, status: 'failed', detail: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return results;
+}
+
 export async function runWorkspaceCommand(args: string[], opts: { cwd?: string; io?: Io } = {}): Promise<number> {
   const io = opts.io ?? defaultIo;
   const [command, ...rest] = args;
@@ -395,6 +513,7 @@ export async function runWorkspaceCommand(args: string[], opts: { cwd?: string; 
       case 'validate': result = await validateWorkspace(required(parsed.issue, 'issue'), cwd); break;
       case 'handoff': result = await handoffWorkspace({ executionId: required(parsed.run, 'run'), fencingToken: integerFlag(parsed.fence, 'fence'), cwd }); break;
       case 'integrate': result = await integrate(required(parsed.issue, 'issue'), required(parsed.pr, 'pr'), cwd); break;
+      case 'reconcile': result = await reconcileReadyWorkspaceIntegrations({ cwd }); break;
       case 'heartbeat': result = await heartbeatWorkspace({ issue: required(parsed.issue, 'issue'), executionId: required(parsed.run, 'run'), fencingToken: integerFlag(parsed.fence, 'fence'), cwd }); break;
       case 'status':
       case 'list': result = await lifecycleStatus({ cwd, issue: typeof parsed.issue === 'string' ? parsed.issue : undefined }); break;

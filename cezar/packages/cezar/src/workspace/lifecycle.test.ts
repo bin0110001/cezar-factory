@@ -6,15 +6,16 @@ import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildWorkspaceHookContext, runWorkspaceCommand } from './lifecycle-cli.ts';
+import { buildWorkspaceHookContext, integratedIssueLabelEdits, reconcileReadyWorkspaceIntegrations, runPostMergeValidation, runWorkspaceCommand } from './lifecycle-cli.ts';
 import {
-  adoptWorkspace, claimWorkspace, heartbeatWorkspace, lifecycleDoctor, lifecycleEvents, lifecycleMetrics, lifecycleStatus,
+  adoptWorkspace, claimWorkspace, factoryWorkflowParticipatesInWorkspaceLifecycle, heartbeatWorkspace, lifecycleDoctor, lifecycleEvents, lifecycleMetrics, lifecycleStatus,
   acquireIntegrationLock, completeIntegration, factoryContextForRun, handoffWorkspace,
   pruneWorkspace, registerFactoryWorkspace, releaseIntegrationLock, transitionWorkspace, verifiedFactoryContext,
+  recordIntegrationValidationFailure,
   lifecycleOutbox, drainLifecycleOutbox,
   workspaceOverlaps, reconcileWorkspaceLifecycle,
   recoverWorkspace, resumeBlockedWorkspace, approveHindsightLesson,
-  recordWorkspacePreflight,
+  recordWorkspacePreflight, renewReadyWorkspaceLease,
 } from './lifecycle.ts';
 
 const GIT_ID = ['-c', 'user.name=Lifecycle Test', '-c', 'user.email=lifecycle@example.test'];
@@ -43,6 +44,11 @@ describe('local workspace lifecycle', () => {
     else process.env.CEZ_HOME = oldHome;
     rmSync(home, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('registers claims only for Factory workflows that perform lifecycle handoff', () => {
+    expect(['factory-implement', 'factory-review', 'factory-fix-review'].every(factoryWorkflowParticipatesInWorkspaceLifecycle)).toBe(true);
+    expect(['factory-plan', 'factory-intake', 'factory-investigate', 'factory-godot-upgrade'].some(factoryWorkflowParticipatesInWorkspaceLifecycle)).toBe(false);
   });
 
   it('upgrades a version 2 telemetry outbox without losing its delivery history', async () => {
@@ -83,6 +89,72 @@ describe('local workspace lifecycle', () => {
     const stopHook = await buildWorkspaceHookContext({ cwd: claim.workspacePath }, 'Stop', {});
     expect(JSON.stringify(stopHook)).toContain('still working');
   });
+
+  it('automatically reconciles a ready claim after its matching PR is merged', async () => {
+    const claim = await claimWorkspace({ issue: '46', cwd: repo, owner: 'external:test:46', base: 'dev' });
+    await transitionWorkspace({ issue: '46', to: 'validating', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    await transitionWorkspace({ issue: '46', to: 'ready', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    const discover = async (record: { issue: string }, target: string, cwd: string) => {
+      expect(record.issue).toBe('46');
+      expect(target).toBe('dev');
+      expect(cwd).toBe(repo);
+      return { url: 'https://github.com/example/repo/pull/46', headRefOid: 'a'.repeat(40), mergeCommit: { oid: 'b'.repeat(40) } };
+    };
+    const integrated: string[] = [];
+    const result = await reconcileReadyWorkspaceIntegrations({
+      cwd: repo, discover,
+      integratePr: async (issue, pr) => { integrated.push(`${issue}:${pr}`); },
+    });
+    expect(integrated).toEqual(['46:https://github.com/example/repo/pull/46']);
+    expect(result).toEqual([{ issue: '46', status: 'integrated' }]);
+  });
+
+  it('retains a ready lease under its fence while waiting for a remote merge', async () => {
+    const claim = await claimWorkspace({ issue: '49', cwd: repo, owner: 'external:test:49', base: 'dev', minutes: 1 });
+    await transitionWorkspace({ issue: '49', to: 'validating', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    const ready = await transitionWorkspace({ issue: '49', to: 'ready', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    const renewed = await renewReadyWorkspaceLease({ issue: '49', cwd: repo, executionId: ready.executionId, fencingToken: ready.fencingToken, minutes: 30 });
+    expect(Date.parse(renewed.leaseExpiresAt)).toBeGreaterThan(Date.now() + 15 * 60_000);
+    await expect(renewReadyWorkspaceLease({ issue: '49', cwd: repo, executionId: ready.executionId, fencingToken: ready.fencingToken + 1 }))
+      .rejects.toThrow('stale');
+  });
+
+  it('keeps ready claims queued when GitHub has no merged PR or integration fails', async () => {
+    const claim = await claimWorkspace({ issue: '47', cwd: repo, owner: 'external:test:47', base: 'dev' });
+    await transitionWorkspace({ issue: '47', to: 'validating', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    await transitionWorkspace({ issue: '47', to: 'ready', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    const pending = await reconcileReadyWorkspaceIntegrations({ cwd: repo, discover: async () => null });
+    expect(pending).toEqual([{ issue: '47', status: 'pending' }]);
+    const failed = await reconcileReadyWorkspaceIntegrations({
+      cwd: repo,
+      discover: async () => ({ url: 'https://github.com/example/repo/pull/47', headRefOid: 'a'.repeat(40), mergeCommit: { oid: 'b'.repeat(40) } }),
+      integratePr: async () => { throw new Error('post-merge validation failed'); },
+    });
+    expect(failed).toEqual([{ issue: '47', status: 'failed', detail: 'post-merge validation failed' }]);
+    expect((await lifecycleStatus({ cwd: repo, issue: '47' }))[0]?.state).toBe('ready');
+  });
+
+  it('retains an integrated workspace as a retry queue when GitHub issue bookkeeping is offline', async () => {
+    const claim = await claimWorkspace({ issue: '48', cwd: repo, owner: 'external:test:48', base: 'dev' });
+    await transitionWorkspace({ issue: '48', to: 'validating', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    await transitionWorkspace({ issue: '48', to: 'ready', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    const lockToken = await acquireIntegrationLock({ issue: '48', executionId: claim.executionId, fencingToken: claim.fencingToken, targetBranch: 'dev', cwd: repo });
+    await transitionWorkspace({ issue: '48', to: 'integrating', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    await completeIntegration({
+      issue: '48', executionId: claim.executionId, fencingToken: claim.fencingToken,
+      targetBranch: 'dev', pullRequest: 'https://github.com/example/repo/pull/48',
+      headCommit: git(claim.workspacePath, 'rev-parse', 'HEAD'), integratedCommit: git(repo, 'rev-parse', 'dev'),
+      integrationLockToken: lockToken, cwd: repo,
+    });
+    const failed = await reconcileReadyWorkspaceIntegrations({ cwd: repo, syncIssueState: async () => { throw new Error('GitHub unavailable'); } });
+    expect(failed).toEqual([{ issue: '48', status: 'failed', detail: 'GitHub unavailable' }]);
+    expect((await lifecycleStatus({ cwd: repo, issue: '48' }))[0]?.state).toBe('integrated');
+    expect(existsSync(claim.workspacePath)).toBe(true);
+    const recovered = await reconcileReadyWorkspaceIntegrations({ cwd: repo, syncIssueState: async () => undefined });
+    expect(recovered).toEqual([{ issue: '48', status: 'integrated' }]);
+    expect(existsSync(claim.workspacePath)).toBe(false);
+    expect((await lifecycleStatus({ cwd: repo, issue: '48' })).length).toBe(0);
+  }, 20_000);
 
   it('refuses to claim a pre-existing unregistered worktree as Factory-created', async () => {
     const path = join(repo, '.ai', 'cezar', 'workspaces', 'issue-43');
@@ -197,6 +269,48 @@ describe('local workspace lifecycle', () => {
       removed: false, reason: 'Adopted developer workspaces are retained.',
     });
     expect(existsSync(changed)).toBe(true);
+    for (const to of ['validating', 'ready', 'integrating', 'integrated', 'cleanup_pending'] as const) {
+      await transitionWorkspace({ issue: '7', to, cwd: adoptedPath, executionId: adopted.executionId, fencingToken: adopted.fencingToken });
+    }
+    const reconciliation = await reconcileWorkspaceLifecycle({ cwd: adoptedPath });
+    expect(reconciliation.findings).not.toContain('Issue 7: adopted workspace must never be pruned automatically.');
+    expect(existsSync(changed)).toBe(true);
+    expect(await lifecycleStatus({ cwd: adoptedPath, issue: '7' })).toEqual([]);
+  });
+
+  it('reconciles the integrated Factory label exclusively among workflow states', () => {
+    expect(integratedIssueLabelEdits(['factory:review', 'factory:blocked', 'factory:auditing', 'risk:low']))
+      .toEqual({ add: ['factory:done'], remove: ['factory:review', 'factory:blocked'] });
+    expect(integratedIssueLabelEdits(['factory:done', 'factory:auditing'])).toEqual({ add: [], remove: [] });
+  });
+
+  it('persists post-merge validation attempts under the execution fence', async () => {
+    const claim = await claimWorkspace({ issue: '318', cwd: repo, owner: 'external:test:318', base: 'dev' });
+    for (const to of ['validating', 'ready', 'integrating'] as const) {
+      await transitionWorkspace({ issue: '318', to, cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    }
+    const attempts = [];
+    for (let i = 0; i < 3; i++) attempts.push(await recordIntegrationValidationFailure({
+      issue: '318', executionId: claim.executionId, fencingToken: claim.fencingToken, detail: 'validation failed', cwd: repo,
+    }));
+    expect(attempts).toEqual([1, 2, 3]);
+    expect((await lifecycleEvents({ issue: '318', cwd: repo, limit: 10 })).slice(0, 3)).toMatchObject([
+      { type: 'integration_validation_failed', payload: { attempt: 3 } },
+      { type: 'integration_validation_failed', payload: { attempt: 2 } },
+      { type: 'integration_validation_failed', payload: { attempt: 1 } },
+    ]);
+    await transitionWorkspace({ issue: '318', to: 'blocked', cwd: repo, executionId: claim.executionId, fencingToken: claim.fencingToken });
+    expect(await lifecycleStatus({ issue: '318', cwd: repo })).toMatchObject([{ state: 'blocked' }]);
+    await expect(reconcileReadyWorkspaceIntegrations({ cwd: repo, discover: async () => { throw new Error('blocked issue must not retry'); } }))
+      .resolves.toEqual([]);
+  });
+
+  it('treats malformed merged-tree validation policy as a post-merge validation failure', async () => {
+    const mergedTree = mkdtempSync(join(tmpdir(), 'cez-invalid-merged-policy-'));
+    try {
+      writeFileSync(join(mergedTree, 'workspace-lifecycle.json'), '{');
+      await expect(runPostMergeValidation(mergedTree)).rejects.toThrow();
+    } finally { rmSync(mergedTree, { recursive: true, force: true }); }
   });
 
   it('preflights a clean integration and returns repair context for conflicting paths', async () => {
@@ -338,9 +452,12 @@ describe('local workspace lifecycle', () => {
       completedIntegrations: 1, cleanupBacklog: 1,
     });
     expect((await lifecycleMetrics({ cwd: repo })).averageTimeToIntegrationMs).toBeGreaterThanOrEqual(0);
-    const reconciled = await reconcileWorkspaceLifecycle({ cwd: repo });
+    const startup = await reconcileWorkspaceLifecycle({ cwd: repo });
+    expect(startup.cleaned).not.toContain('9');
+    expect(existsSync(claim.workspacePath)).toBe(true);
+    const reconciled = await reconcileReadyWorkspaceIntegrations({ cwd: repo, syncIssueState: async () => undefined });
     await releaseIntegrationLock({ issue: '9', executionId: claim.executionId, targetBranch: 'dev', lockToken, cwd: repo });
-    expect(reconciled.cleaned).toContain('9');
+    expect(reconciled).toContainEqual({ issue: '9', status: 'integrated' });
     expect(existsSync(claim.workspacePath)).toBe(false);
     expect((await lifecycleDoctor({ cwd: repo })).findings).toEqual([]);
   }, 20_000);
@@ -368,6 +485,11 @@ describe('local workspace lifecycle', () => {
     expect(await verifiedFactoryContext(ctx, firstPath)).toMatchObject({ managed: true });
     expect(JSON.stringify(await buildWorkspaceHookContext({ cwd: firstPath }, 'SessionStart', ctx)))
       .toContain('Verified Factory-managed execution');
+    const phaseContext = await buildWorkspaceHookContext({ cwd: firstPath }, 'SessionStart', {
+      FACTORY_MANAGED: '1', FACTORY_LIFECYCLE: '0',
+    });
+    expect(JSON.stringify(phaseContext)).toContain('without workspace lifecycle participation');
+    expect(JSON.stringify(phaseContext)).not.toContain('Stop before editing');
     expect(JSON.stringify(await buildWorkspaceHookContext({ cwd: firstPath }, 'SessionStart', { FACTORY_MANAGED: '1' })))
       .toContain('Stop before editing');
     expect(await verifiedFactoryContext({ ...ctx, FACTORY_FENCING_TOKEN: String(first.fencingToken + 1) }, firstPath)).toMatchObject({ managed: false });
@@ -386,6 +508,26 @@ describe('local workspace lifecycle', () => {
     });
     expect(next.fencingToken).toBe(first.fencingToken + 1);
     expect(factoryContextForRun(repo, 88, 'factory-run-one')).toBeNull();
+  }, 20_000);
+
+  it('recovers a failed terminal Factory phase into a new lifecycle owner without deleting its worktree', async () => {
+    const base = git(repo, 'rev-parse', 'dev');
+    const failedPath = join(repo, 'factory-failed-run');
+    const retryPath = join(repo, 'factory-retry-run');
+    git(repo, 'worktree', 'add', '-q', '-b', 'factory/failed-run', failedPath, 'dev');
+    git(repo, 'worktree', 'add', '-q', '-b', 'factory/retry-run', retryPath, 'dev');
+    const failed = await registerFactoryWorkspace({ issue: 89, runId: 'factory-run-failed', repoRoot: repo, workspacePath: failedPath, baseCommit: base });
+    writeFileSync(join(failedPath, 'preserved.txt'), 'keep this failed phase for inspection');
+    git(failedPath, ...GIT_ID, 'add', 'preserved.txt');
+    const retry = await registerFactoryWorkspace({
+      issue: 89, runId: 'factory-run-retry', repoRoot: repo, workspacePath: retryPath,
+      baseCommit: base, allowTerminalTransfer: true,
+    });
+    expect(retry.executionId).toBe('factory-run-retry');
+    expect(retry.workspacePath).toBe(retryPath);
+    expect((await lifecycleStatus({ cwd: repo, issue: '89' }))[0]?.state).toBe('working');
+    expect(existsSync(join(failedPath, 'preserved.txt'))).toBe(true);
+    expect((await lifecycleEvents({ cwd: repo, issue: '89' })).map((item) => item.type)).toContain('factory_terminal_run_recovered');
   }, 20_000);
 
   it('runs configured validation without a shell and records pass or failure', async () => {

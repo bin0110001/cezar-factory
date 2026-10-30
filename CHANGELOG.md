@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.59] - 2026-10-30
+
+- Automatically reconcile ready workspace claims after their exact reviewed PR
+  merges, retain integrated claims while GitHub issue status updates are offline,
+  preserve Factory-owned workflow phases outside lifecycle participation, and
+  close retained adopted-workspace claims without deleting developer files;
+  cap repeated post-merge validation retries and surface exhausted claims.
+
 ## [0.3.58] - 2026-10-29
 
 - Add an offline-first SQLite workspace lifecycle CLI with transactional issue

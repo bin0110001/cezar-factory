@@ -33,6 +33,11 @@ export const LIFECYCLE_STATES = [
 export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
 export type WorkspaceOrigin = 'factory-created' | 'adopted';
 
+const FACTORY_WORKSPACE_WORKFLOWS = new Set(['factory-implement', 'factory-review', 'factory-fix-review']);
+export function factoryWorkflowParticipatesInWorkspaceLifecycle(name: string): boolean {
+  return FACTORY_WORKSPACE_WORKFLOWS.has(name);
+}
+
 const TERMINAL = new Set<LifecycleState>(['closed', 'failed']);
 const ALLOWED: Record<LifecycleState, LifecycleState[]> = {
   claimed: ['working', 'blocked', 'recoverable', 'failed'],
@@ -405,7 +410,7 @@ function getActive(db: Database, repoId: string, issue: string): LifecycleRecord
 
 function saveClaim(db: Database, repoId: string, issue: string, owner: string, workspace: string,
   branch: string, base: string, origin: WorkspaceOrigin, minutes: number, requestedId?: string,
-  allowReadyTransfer = false): LifecycleRecord {
+  allowReadyTransfer = false, allowTerminalTransfer = false): LifecycleRecord {
   const now = new Date();
   const nowIso = now.toISOString();
   const run = db.transaction(() => {
@@ -431,11 +436,13 @@ function saveClaim(db: Database, repoId: string, issue: string, owner: string, w
         if (Date.parse(current.leaseExpiresAt) <= now.getTime()) throw new Error(`Issue ${issue} owner lease expired; verify process liveness and use recover before resuming.`);
         return current;
       }
-      if (!allowReadyTransfer || current?.state !== 'ready') {
+      const readyTransfer = allowReadyTransfer && current?.state === 'ready';
+      const terminalTransfer = allowTerminalTransfer && current && ['working', 'validating', 'blocked', 'recoverable'].includes(current.state);
+      if (!current || (!readyTransfer && !terminalTransfer)) {
         throw new Error(`Issue ${issue} already has active execution ${String(activeId)} owned by ${current?.ownerId ?? 'unknown'}.`);
       }
-      const released = db.prepare(`UPDATE executions SET active=0,updated_at=? WHERE id=? AND state='ready' AND active=1`)
-        .run(nowIso, current.executionId);
+      const released = db.prepare(`UPDATE executions SET active=0,state='recoverable',updated_at=? WHERE id=? AND state=? AND active=1`)
+        .run(nowIso, current.executionId, current.state);
       if (!released.changes) throw new Error(`Issue ${issue} lifecycle owner changed during transfer.`);
       transferredFrom = current;
       db.prepare('UPDATE work_items SET active_execution_id=NULL WHERE repo_id=? AND issue_key=?').run(repoId, issue);
@@ -450,9 +457,10 @@ function saveClaim(db: Database, repoId: string, issue: string, owner: string, w
     db.prepare(`UPDATE work_items SET active_execution_id=?,state='working',next_fence=?,updated_at=? WHERE repo_id=? AND issue_key=?`)
       .run(id, fence + 1, nowIso, repoId, issue);
     event(db, repoId, issue, id, 'claimed', { owner, fence, origin, workspace });
-    if (transferredFrom) event(db, repoId, issue, transferredFrom.executionId, 'factory_phase_transferred', {
+    if (transferredFrom) event(db, repoId, issue, transferredFrom.executionId,
+      transferredFrom.state === 'ready' ? 'factory_phase_transferred' : 'factory_terminal_run_recovered', {
       fromExecutionId: transferredFrom.executionId, toExecutionId: id, fromOwner: transferredFrom.ownerId,
-      toOwner: owner, fence, workspace,
+      fromState: transferredFrom.state, toOwner: owner, fence, workspace,
     });
     return getActive(db, repoId, issue)!;
   });
@@ -548,7 +556,8 @@ export async function adoptWorkspace(options: {
 /** Register an isolated Cezar automation run in the shared registry. This is
  * called by the scheduler after its own worktree has been created. */
 export async function registerFactoryWorkspace(options: {
-  issue: number; runId: string; repoRoot: string; workspacePath: string; baseCommit: string; home?: string; allowReadyTransfer?: boolean;
+  issue: number; runId: string; repoRoot: string; workspacePath: string; baseCommit: string; home?: string;
+  allowReadyTransfer?: boolean; allowTerminalTransfer?: boolean;
 }): Promise<LifecycleRecord> {
   const issue = resolveIssue(String(options.issue));
   const workspace = await gitTop(options.workspacePath);
@@ -560,7 +569,8 @@ export async function registerFactoryWorkspace(options: {
   const registry = openRegistry(repo.commonDir, options.home);
   try {
     return saveClaim(registry.db, registry.repoId, issue, `factory:${hostname()}:${options.runId}`,
-      workspace.root, workspace.branch, baseCommit, 'factory-created', 30, options.runId, options.allowReadyTransfer);
+      workspace.root, workspace.branch, baseCommit, 'factory-created', 30, options.runId,
+      options.allowReadyTransfer, options.allowTerminalTransfer);
   } finally { registry.db.close(); }
 }
 
@@ -595,6 +605,29 @@ export async function lifecycleEvents(options: { cwd?: string; issue: string; li
         executionId: row.execution_id === null ? null : String(row.execution_id),
         payload: JSON.parse(String(row.payload_json)),
       }));
+  } finally { db.close(); }
+}
+
+/** Persist a failed post-merge validation attempt under the current execution fence. */
+export async function recordIntegrationValidationFailure(options: {
+  issue: string; executionId: string; fencingToken: number; detail: string; cwd?: string; home?: string;
+}): Promise<number> {
+  const issue = resolveIssue(options.issue);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => {
+      const current = getActive(db, repoId, issue);
+      if (!current || current.executionId !== options.executionId || current.fencingToken !== options.fencingToken || current.state !== 'integrating') {
+        throw new Error('Validation failure record fenced by a newer lifecycle execution.');
+      }
+      const prior = db.prepare(`SELECT COUNT(*) AS count FROM events WHERE repo_id=? AND issue_key=? AND execution_id=? AND event_type='integration_validation_failed'`)
+        .get(repoId, issue, options.executionId);
+      const attempt = Number(prior?.count ?? 0) + 1;
+      event(db, repoId, issue, options.executionId, 'integration_validation_failed', { attempt, detail: options.detail });
+      return attempt;
+    });
+    return tx();
   } finally { db.close(); }
 }
 
@@ -849,6 +882,64 @@ export async function heartbeatWorkspace(options: {
   } finally { db.close(); }
 }
 
+/** Ready work has no live coding worker to renew its lease. The local manager
+ * may retain the verified handoff while waiting for GitHub auto-merge. */
+export async function renewReadyWorkspaceLease(options: {
+  issue: string; executionId: string; fencingToken: number; cwd?: string; minutes?: number; home?: string;
+}): Promise<LifecycleRecord> {
+  const issue = resolveIssue(options.issue);
+  const minutes = leaseMinutes(options.minutes);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => {
+      const current = getActive(db, repoId, issue);
+      if (!current || current.executionId !== options.executionId || current.fencingToken !== options.fencingToken || current.state !== 'ready') {
+        throw new Error('Ready workspace lease renewal rejected: execution is stale, closed, or no longer ready.');
+      }
+      if (Date.parse(current.leaseExpiresAt) > Date.now() + 15 * 60_000) return current;
+      const now = new Date();
+      const expires = new Date(now.getTime() + minutes * 60_000).toISOString();
+      const result = db.prepare(`UPDATE executions SET lease_expires_at=?,heartbeat_at=?,updated_at=?
+        WHERE id=? AND repo_id=? AND issue_key=? AND fencing_token=? AND state='ready' AND active=1`)
+        .run(expires, now.toISOString(), now.toISOString(), options.executionId, repoId, issue, options.fencingToken);
+      if (!result.changes) throw new Error('Ready workspace lease renewal rejected: execution changed or was fenced.');
+      event(db, repoId, issue, options.executionId, 'ready_lease_renewed', { leaseExpiresAt: expires });
+      return getActive(db, repoId, issue)!;
+    });
+    return tx();
+  } finally { db.close(); }
+}
+
+/** Resume cleanup after verified integration and durable remote bookkeeping,
+ * even if the former coding lease expired while GitHub was unavailable. */
+export async function finalizeIntegratedWorkspace(options: {
+  issue: string; executionId: string; fencingToken: number; cwd?: string; home?: string;
+}): Promise<LifecycleRecord> {
+  const issue = resolveIssue(options.issue);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => {
+      const current = getActive(db, repoId, issue);
+      if (!current || current.executionId !== options.executionId || current.fencingToken !== options.fencingToken) {
+        throw new Error('Finalization rejected: execution is stale or fenced.');
+      }
+      if (current.state !== 'integrated') throw new Error(`Finalization requires integrated state (current: ${current.state}).`);
+      const now = new Date().toISOString();
+      const changed = db.prepare(`UPDATE executions SET state='cleanup_pending',lease_expires_at=?,updated_at=?,heartbeat_at=?
+        WHERE id=? AND fencing_token=? AND active=1 AND state='integrated'`)
+        .run(new Date(Date.now() + 30 * 60_000).toISOString(), now, now, options.executionId, options.fencingToken);
+      if (!changed.changes) throw new Error('Finalization rejected: execution changed or was fenced.');
+      db.prepare(`UPDATE work_items SET state='cleanup_pending',updated_at=? WHERE repo_id=? AND issue_key=? AND active_execution_id=?`)
+        .run(now, repoId, issue, options.executionId);
+      event(db, repoId, issue, options.executionId, 'cleanup_queued', { reason: 'remote_issue_status_synchronized' });
+      return getActive(db, repoId, issue)!;
+    });
+    return tx();
+  } finally { db.close(); }
+}
+
 export async function handoffWorkspace(options: {
   executionId: string; fencingToken: number; cwd?: string; home?: string;
 }): Promise<LifecycleRecord> {
@@ -1018,7 +1109,14 @@ export async function pruneWorkspace(options: { issue: string; cwd?: string; hom
       JOIN executions e ON e.id=w.active_execution_id JOIN workspaces s ON s.execution_id=e.id
       WHERE w.repo_id=? AND w.issue_key=?`).get(repoId, issue);
     if (!row) throw new Error(`Issue ${issue} has no registered workspace.`);
-    if (row.origin === 'adopted' || row.cleanup_policy !== 'after-integration') return { removed: false, reason: 'Adopted developer workspaces are retained.' };
+    if (row.origin === 'adopted' || row.cleanup_policy !== 'after-integration') {
+      if (row.state !== 'integrated' && row.state !== 'cleanup_pending') return { removed: false, reason: 'Adopted developer workspaces are retained.' };
+      const now = new Date().toISOString();
+      db.prepare('UPDATE executions SET state=\'closed\',active=0,updated_at=? WHERE id=?').run(now, String(row.id));
+      db.prepare('UPDATE work_items SET state=\'closed\',active_execution_id=NULL,updated_at=? WHERE repo_id=? AND issue_key=?').run(now, repoId, issue);
+      event(db, repoId, issue, String(row.id), 'workspace_retained_after_integration', { path: String(row.path), origin: String(row.origin) });
+      return { removed: false, reason: 'Integrated developer workspace retained; lifecycle claim closed.' };
+    }
     if (row.state !== 'integrated' && row.state !== 'cleanup_pending') throw new Error('Prune is allowed only after verified integration.');
     const target = resolve(String(row.path));
     const allowedRoots = [resolve(root, '.ai', 'cezar', 'workspaces'), resolve(root, '.ai', 'cezar', 'worktrees')];
@@ -1050,7 +1148,7 @@ export async function pruneWorkspace(options: { issue: string; cwd?: string; hom
   } finally { db.close(); }
 }
 
-/** Reconcile crash-interrupted finalization at process startup; only integrated clean Factory trees can be removed. */
+/** Reconcile crash-interrupted finalization at process startup; only cleanup_pending Factory trees can be removed. */
 export async function reconcileWorkspaceLifecycle(options: { cwd?: string; home?: string } = {}): Promise<{
   repoRoot: string; findings: string[]; cleaned: string[];
 }> {
@@ -1058,14 +1156,19 @@ export async function reconcileWorkspaceLifecycle(options: { cwd?: string; home?
   const cleaned: string[] = [];
   const findings = [...report.findings];
   for (const record of report.registered) {
-    if (record.origin !== 'factory-created' || !['integrated', 'cleanup_pending'].includes(record.state)) continue;
+    // `integrated` is a durable pending row until the caller confirms remote
+    // issue bookkeeping. Only cleanup_pending is safe for startup pruning.
+    if (record.state !== 'cleanup_pending' || !['factory-created', 'adopted'].includes(record.origin)) continue;
     try {
       const result = await pruneWorkspace({ issue: record.issue, cwd: report.repoRoot, home: options.home });
       if (result.removed) {
         cleaned.push(record.issue);
-        for (let i = findings.length - 1; i >= 0; i--) {
-          if (findings[i]!.startsWith(`Issue ${record.issue}: registry workspace is missing`)) findings.splice(i, 1);
-        }
+      }
+      // Adopted cleanup_pending rows are closed by pruneWorkspace without
+      // removing developer files. Clear diagnostics that closure resolved.
+      if (record.origin === 'adopted' || result.removed) for (let i = findings.length - 1; i >= 0; i--) {
+        if (findings[i]!.startsWith(`Issue ${record.issue}: registry workspace is missing`) ||
+          findings[i]!.startsWith(`Issue ${record.issue}: adopted workspace`)) findings.splice(i, 1);
       }
     } catch (error) {
       findings.push(`Issue ${record.issue}: startup cleanup deferred: ${error instanceof Error ? error.message : String(error)}`);
@@ -1087,7 +1190,8 @@ export async function lifecycleDoctor(options: { cwd?: string; home?: string } =
     for (const record of registered) {
       if (!trees.some((tree) => resolve(tree.path) === resolve(record.workspacePath))) findings.push(`Issue ${record.issue}: registry workspace is missing (${record.workspacePath}).`);
       const expired = Date.parse(record.leaseExpiresAt) <= Date.now();
-      if (expired) findings.push(`Issue ${record.issue}: lease expired; verify owner liveness before recovery.`);
+      if (record.state === 'integrated') findings.push(`Issue ${record.issue}: verified integration is waiting for GitHub issue status synchronization.`);
+      else if (expired) findings.push(`Issue ${record.issue}: lease expired; verify owner liveness before recovery.`);
       if (record.origin === 'adopted' && record.state === 'cleanup_pending') findings.push(`Issue ${record.issue}: adopted workspace must never be pruned automatically.`);
     }
     const locks = db.prepare('SELECT target_branch,execution_id,lease_expires_at FROM integration_locks WHERE repo_id=?').all(repoId);

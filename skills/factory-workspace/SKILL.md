@@ -42,12 +42,19 @@ The command runs without a shell, marks the workspace `ready` only on exit code 
 and returns it to `working` on failure. Report the actual command output.
 
 `ready` means the coding phase passed validation and awaits integration. Do not claim
-that GitHub merged a PR based on a local clean merge or an auto-merge request. The
-core retains Factory-created worktrees until verified integration. After GitHub
-reports the PR as merged, `cez workspace integrate --issue <id> --pr <number-or-url>`
-verifies the merged commit is on the configured target, runs post-integration checks
-against that combined commit, records the evidence, and then attempts safe cleanup.
-It never prunes adopted developer workspaces.
+that GitHub merged a PR based on a local clean merge or an auto-merge request. When
+Cezar is running, its local lifecycle reconciler checks ready claims periodically and
+automatically runs integration when GitHub reports a merged PR matching the recorded
+branch and configured target. The reconciler verifies the merged commit, runs
+post-integration checks against that combined commit, updates the GitHub issue only
+after validation, then attempts safe cleanup. If Cezar is not running, use
+`cez workspace integrate --issue <id> --pr <number-or-url>` after the PR merges. It
+never prunes adopted developer workspaces. If post-merge validation completed while
+GitHub was unavailable, run `cez workspace reconcile` after connectivity returns; the
+integrated registry row retains the workspace until issue bookkeeping and safe cleanup
+finish.
+Post-integration validation gets at most three automatic attempts per execution;
+repeated failure leaves the claim blocked and the worktree available for repair.
 
 ## Recovery
 

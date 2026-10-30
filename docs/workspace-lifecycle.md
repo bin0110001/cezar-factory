@@ -22,6 +22,7 @@ cez workspace claim --issue 456 [--base dev]
 cez workspace adopt --issue 456
 cez workspace validate --issue 456
 cez workspace integrate --issue 456 --pr <number-or-url>
+cez workspace reconcile                retry merged PR integration and remote status updates
 cez workspace status [--issue 456]
 cez workspace list
 cez workspace inspect --issue 456        include recent audit and preflight events
@@ -48,8 +49,13 @@ the Git worktree must also be clean. Any failed command or uncommitted file
 returns the issue to `working` and keeps all files intact. Factory handoff
 applies the same clean-worktree gate.
 
-The Cezar scheduler registers runs from `factory-*` workflows only when an
-explicit issue reference was selected for the run. It injects
+The Cezar scheduler registers only the Factory implementation, review, and
+review-fix workflows, and only when an explicit issue reference was selected
+for the run. Planning, intake, investigation, and project-maintenance workflows
+do not take workspace ownership, so they cannot strand a claim before the next
+coding phase. A terminal failed coding run can transfer its claim to a retry
+under a higher fence; the previous worktree is preserved as recoverable history.
+The scheduler injects
 `FACTORY_MANAGED`, run ID, issue, workspace, owner, and fencing token into
 agent/check processes. `cez workspace context` verifies those values against
 the local active registry row, so a marker alone never suppresses external
@@ -59,7 +65,9 @@ handing the issue to review. A later Factory phase can transfer a `ready` claim
 only after Cezar confirms its previous run is terminal.
 
 At Cezar startup, the adapter reconciles registered Git worktrees and retries
-cleanup only for integrated, clean, Factory-created workspaces. Missing trees,
+cleanup only for clean, Factory-created workspaces already in `cleanup_pending`.
+An `integrated` row remains as a durable remote-status retry record until the
+GitHub issue update succeeds. Missing trees,
 expired leases, dirty workspaces, and adopted workspaces are reported for an
 operator; startup does not reset branches or discard files. `overlaps` compares
 committed, staged, unstaged, and untracked paths across active issue workspaces.
@@ -111,6 +119,20 @@ and renews execution and lock leases during validation. A failed check returns
 the issue to `ready` and keeps its workspace. Cleanup remains unavailable until
 post-integration validation passes and the lifecycle reaches `cleanup_pending`.
 Adopted developer workspaces are never automatically deleted.
+
+While Cezar is running, each project manager checks ready lifecycle claims once
+per minute for a merged PR whose head exactly matches the recorded workspace
+branch and whose base matches the configured target. A match runs the same
+verified integration path automatically. GitHub lookup failures and missing
+merged PRs leave the claim ready for a later sweep. After post-integration
+validation succeeds, Cezar updates the issue's `factory:done` state and only then
+cleans a Factory-created workspace. If the GitHub issue update fails, the row
+stays `integrated` and the workspace stays present; later sweeps retry the
+bookkeeping before cleanup. Review routing therefore leaves a managed issue in
+`factory:review` until this lifecycle check finishes.
+Post-integration validation gets at most three automatic attempts per execution.
+After the third failure the claim moves to `blocked`, the worktree and diagnostics
+remain available, and the minute sweep stops retrying it for operator repair.
 
 ## Native agent hooks
 

@@ -714,6 +714,13 @@ try {
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
+    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
+    try {
+        $env:FACTORY_FENCING_TOKEN = '12'
+        Set-Gh @('factory:review', 'risk:low'); $managedState = Get-Gh; $managedState | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $managedState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+        $managedReview = Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath
+        Assert 'route: managed workspace waits for post-integration validation before factory:done' ($managedReview -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and (Get-Gh).labels -notcontains 'factory:done' -and (Get-Gh).prMerged)
+    } finally { if ($null -eq $oldFactoryFence) { Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue } else { $env:FACTORY_FENCING_TOKEN = $oldFactoryFence } }
     Set-Gh @('factory:review')
     $chg = With $rev @{ blockingFindings = 'bug' }
     Assert 'route: review change-request -> changes-requested' ((Invoke-Route 'review-result' $chg) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested')
