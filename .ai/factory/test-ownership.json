@@ -43,6 +43,11 @@
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }; if (-not $pythonRunner) { throw 'Python 3 is required for focused Factory release tests.' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') } else { @('-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Factory release unit tests failed.' }"
     },
     {
+      "id": "factory-autodeploy-recovery-tests",
+      "patterns": ["scripts/deploy/factory-autodeploy.sh", "tests/test-factory-autodeploy.sh"],
+      "command": "bash ./tests/test-factory-autodeploy.sh"
+    },
+    {
       "id": "documentation-diff",
       "patterns": ["docs/**", "*.md", "**/*.md"],
       "command": "git diff --check \"${env:FACTORY_VALIDATION_BASE}...HEAD\""
