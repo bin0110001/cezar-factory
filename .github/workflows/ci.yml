@@ -72,4 +72,7 @@ jobs:
       - name: Autodeploy retry and parity integration tests
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        run: bash ./tests/test-factory-autodeploy.sh
+        run: |
+          bash ./tests/test-factory-autodeploy.sh
+          bash ./tests/test-deploy-cezar-runtime.sh
+          bash ./tests/test-reconcile-container-git-metadata.sh

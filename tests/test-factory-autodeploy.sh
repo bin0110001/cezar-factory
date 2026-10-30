@@ -14,10 +14,16 @@ receipt_field() { sed -n "s/^[[:space:]]*\"$2\": \"\\([^\"]*\\)\",\?$/\\1/p" "$1
 validate_receipt() { node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$1"; }
 
 mkdir -p "$TMP/seed/scripts/deploy" "$TMP/seed/config" "$TMP/seed/workflows" "$TMP/seed/skills/demo" \
-  "$TMP/seed/scripts" "$TMP/seed/routing" "$TMP/seed/automations" "$TMP/bin"
+  "$TMP/seed/scripts" "$TMP/seed/routing" "$TMP/seed/automations" "$TMP/seed/cezar" "$TMP/bin"
 cp "$ROOT/scripts/deploy/factory-autodeploy.sh" "$TMP/seed/scripts/deploy/"
 cp "$ROOT/scripts/deploy/lib-topology.sh" "$TMP/seed/scripts/deploy/"
+cat > "$TMP/seed/scripts/deploy/deploy-cezar-runtime.sh" <<'EOF'
+#!/usr/bin/env sh
+printf '%s\n' "$1" >> "$FAKE_DEPLOY_LOG"
+EOF
+chmod +x "$TMP/seed/scripts/deploy/deploy-cezar-runtime.sh"
 printf '0.1.0\n' > "$TMP/seed/VERSION"
+printf 'FROM scratch\n' > "$TMP/seed/cezar/Dockerfile"
 printf 'name: demo\n' > "$TMP/seed/workflows/demo.yaml"
 printf 'name: demo\n' > "$TMP/seed/skills/demo/SKILL.md"
 printf '{"jobs":[]}\n' > "$TMP/seed/routing/automation-catalog.json"
@@ -41,34 +47,59 @@ EOF
 cat > "$TMP/bin/podman" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-[[ "$1" == exec ]] || exit 90
-shift 2
 case "$1" in
-  git)
-    shift
-    [[ "$1" == -C ]] || exit 91
+  image)
+    case "$2" in
+      exists) [[ "$3" == localhost/cezar:local ]] || exit 95 ;;
+      inspect)
+        if [[ "$5" == *'.Labels'* ]]; then git -C "$FAKE_FACTORY_DIR" rev-parse HEAD
+        else echo sha256:runtime-image
+        fi
+        ;;
+      *) exit 95 ;;
+    esac
+    ;;
+  inspect) echo sha256:runtime-image ;;
+  exec)
     shift 2
-    exec git -C "$FAKE_FACTORY_DIR" "$@"
+    case "$1" in
+      bash)
+        [[ "$2" == *reconcile-container-git-metadata.sh ]] || exit 98
+        printf '%s\n' "$3" > "$FAKE_CONTAINER_SHA_FILE"
+        printf '%s\n' "$3" >> "$FAKE_METADATA_LOG"
+        ;;
+      git)
+        shift
+        [[ "$1" == -C ]] || exit 91
+        shift 2
+        if [[ "$1" == rev-parse && -f "$FAKE_CONTAINER_SHA_FILE" ]]; then
+          cat "$FAKE_CONTAINER_SHA_FILE"
+          exit 0
+        fi
+        exec git -C "$FAKE_FACTORY_DIR" "$@"
+        ;;
+      sh)
+        [[ "$2" == -c ]] || exit 92
+        command="$3"
+        if [[ "$command" == *"set -- VERSION workflows"* ]]; then
+          if [[ "${FAKE_CONTAINER_STALE:-0}" == 1 ]]; then echo stale-content-digest; exit 0; fi
+          exec sh -c "$command" sh "$FAKE_FACTORY_DIR"
+        fi
+        if [[ "$command" == *"tr -d"*"VERSION"* ]]; then
+          tr -d '\r\n' < "$FAKE_FACTORY_DIR/VERSION"
+          exit 0
+        fi
+        exit 93
+        ;;
+      pwsh)
+        printf 'sync\n' >> "$FAKE_SYNC_LOG"
+        echo 'Synchronized automations for demo'
+        exit "${FAKE_SYNC_EXIT:-0}"
+        ;;
+      *) exit 94 ;;
+    esac
     ;;
-  sh)
-    [[ "$2" == -c ]] || exit 92
-    command="$3"
-    if [[ "$command" == *"set -- VERSION workflows"* ]]; then
-      if [[ "${FAKE_CONTAINER_STALE:-0}" == 1 ]]; then echo stale-content-digest; exit 0; fi
-      exec bash -c "$command" sh "$FAKE_FACTORY_DIR"
-    fi
-    if [[ "$command" == *"tr -d"*"VERSION"* ]]; then
-      tr -d '\r\n' < "$FAKE_FACTORY_DIR/VERSION"
-      exit 0
-    fi
-    exit 93
-    ;;
-  pwsh)
-    printf 'sync\n' >> "$FAKE_SYNC_LOG"
-    echo 'Synchronized automations for demo'
-    exit "${FAKE_SYNC_EXIT:-0}"
-    ;;
-  *) exit 94 ;;
+  *) exit 90 ;;
 esac
 EOF
 chmod +x "$TMP/bin/podman"
@@ -89,6 +120,26 @@ cat > "$TMP/bin/flock" <<'EOF'
 exit 0
 EOF
 chmod +x "$TMP/bin/flock"
+cat > "$TMP/bin/systemctl" <<'EOF'
+#!/usr/bin/env sh
+[ "${1:-}" = --user ] || exit 96
+case "${2:-}" in
+  is-active) echo active ;;
+  restart) printf 'restart\n' >> "$FAKE_DEPLOY_LOG" ;;
+  *) exit 97 ;;
+esac
+EOF
+chmod +x "$TMP/bin/systemctl"
+cat > "$TMP/bin/curl" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+chmod +x "$TMP/bin/curl"
+cat > "$TMP/bin/sleep" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+chmod +x "$TMP/bin/sleep"
 
 git init --bare "$TMP/remote.git" >/dev/null
 git -C "$TMP/seed" init -b stable >/dev/null
@@ -107,6 +158,10 @@ export FAKE_FACTORY_DIR="$TMP/checkout"
 export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/state"
 export FACTORY_AUTODEPLOY_LOCK="$TMP/autodeploy.lock"
 export FAKE_SYNC_LOG="$TMP/sync.log"
+export FAKE_DEPLOY_LOG="$TMP/deploy.log"
+export FAKE_METADATA_LOG="$TMP/metadata.log"
+export FAKE_CONTAINER_SHA_FILE="$TMP/container-sha"
+printf '1eac4bf6d0bb726db87b4a8b472cee4da1339edf\n' > "$FAKE_CONTAINER_SHA_FILE"
 export FACTORY_RUNTIME_ROOT=/projects/cezar-factory
 AUTO="$TMP/checkout/scripts/deploy/factory-autodeploy.sh"
 
@@ -134,6 +189,9 @@ assert_text "$TMP/state/last-success.json" '"error": ""'
 validate_receipt "$TMP/state/last-success.json"
 initial_sha="$(receipt_field "$TMP/state/last-success.json" sourceSha)"
 [[ -n "$initial_sha" ]] || fail 'success receipt has no source SHA'
+[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 1 ]] || fail 'autodeploy did not invoke the Cezar runtime deployment check'
+assert_text "$TMP/state/last-success.json" "\"containerSha\": \"$initial_sha\""
+[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 1 ]] || fail 'autodeploy did not invoke the safe container Git-metadata reconciliation'
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 1 ]] || fail 'initial healthy tick did not sync exactly once'
 
 # Advance origin, then fail after checkout advancement. The next unchanged tick must retry.
@@ -154,6 +212,8 @@ assert_text "$TMP/state/last-success.json" '"status": "success"'
 [[ "$(receipt_field "$TMP/state/last-success.json" sourceSha)" == "$advanced_sha" ]] || fail 'retry receipt is not bound to the advanced SHA'
 run_auto 0
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 4 ]] || fail 'unchanged healthy tick did not reconcile again'
+[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not retry runtime verification'
+[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not verify container Git metadata'
 
 # The same Git SHA and VERSION with stale mounted content must not sync or replace success.
 last_success="$(sha256sum "$TMP/state/last-success.json" | cut -d' ' -f1)"

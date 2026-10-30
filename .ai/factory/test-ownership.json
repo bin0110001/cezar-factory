@@ -44,8 +44,8 @@
     },
     {
       "id": "factory-autodeploy-recovery-tests",
-      "patterns": ["scripts/deploy/factory-autodeploy.sh", "tests/test-factory-autodeploy.sh"],
-      "command": "bash ./tests/test-factory-autodeploy.sh"
+      "patterns": ["scripts/deploy/factory-autodeploy.sh", "scripts/deploy/deploy-cezar-runtime.sh", "scripts/deploy/reconcile-container-git-metadata.sh", "tests/test-factory-autodeploy.sh", "tests/test-deploy-cezar-runtime.sh", "tests/test-reconcile-container-git-metadata.sh"],
+      "command": "bash ./tests/test-factory-autodeploy.sh && bash ./tests/test-deploy-cezar-runtime.sh && bash ./tests/test-reconcile-container-git-metadata.sh"
     },
     {
       "id": "documentation-diff",

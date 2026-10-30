@@ -57,6 +57,25 @@ with an actionable deployment error instead of searching for scripts or
 falling back to manual issue parsing. The Cezar service receives the read-only
 runtime mount.
 
+On Bazzite, `scripts/deploy/factory-autodeploy.sh` first reconciles the root
+`stable` branch/index in Cezar's separate persistent `.git` volume with the
+read-only mounted checkout. The reconciliation verifies every tracked file
+against the promoted commit and refuses staged changes or content conflicts.
+It updates only the root stable ref and index, preserving linked task
+worktrees, their branches, and unrelated untracked files. Autodeploy then
+requires exact source SHA, version, and deterministic content-digest parity.
+The digest uses POSIX shell syntax on both sides and includes the host-local
+target registry when present.
+
+The active Bazzite Cezar service uses `localhost/cezar:local` and
+`container-cezar.service`. During autodeploy,
+`scripts/deploy/deploy-cezar-runtime.sh` compares the source revision label on
+that image with the promoted checkout. It rebuilds only when files under
+`cezar/` changed, restarts the existing systemd-managed service, and requires
+both `/api/v1/health` and `/api/v1/factory-release` to respond before Factory
+activation continues. If the new image does not recover, the script restores
+the prior image tag and fails the deployment receipt for retry.
+
 Factory workflow check commands call `$env:FACTORY_RUNTIME_ROOT/scripts/...`.
 They write result artifacts to the current worktree, while schemas and policies
 come from that versioned runtime. `route-state.ps1` therefore accepts the
