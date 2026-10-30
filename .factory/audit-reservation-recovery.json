@@ -1,10 +1,67 @@
 {
-  "generatedAt": "2026-10-25T02:33:52.9775995+00:00",
-  "cutoff": "2026-10-25T01:03:52.9775995+00:00",
+  "generatedAt": "2026-10-30T18:28:20.9259485+00:00",
+  "cutoff": "2026-10-30T16:58:20.9259485+00:00",
   "olderThanMinutes": 90,
   "dryRun": false,
   "activeRunCheck": true,
   "recovered": [],
-  "skipped": [],
+  "skipped": [
+    {
+      "issue": 137,
+      "reason": "reservation-still-fresh"
+    },
+    {
+      "issue": 133,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 132,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 131,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 127,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 126,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 125,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 93,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 92,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 91,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 73,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 72,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 71,
+      "reason": "competing-lifecycle-state"
+    },
+    {
+      "issue": 51,
+      "reason": "competing-lifecycle-state"
+    }
+  ],
   "terminalReason": "no-expired-reservations"
 }

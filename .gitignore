@@ -6,7 +6,7 @@
 # Test artifacts
 tests/fixtures/*/artifacts/
 .artifacts/
-.factory/
+factory: done - factorials audit
 
 # Temporary files
 *.tmp
