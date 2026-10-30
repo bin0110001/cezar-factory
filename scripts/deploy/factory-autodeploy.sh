@@ -121,12 +121,23 @@ if [[ -f "$registry_path" ]]; then
 fi
 host_content_digest="$(content_digest "$FACTORY_DIR")"
 
+# The read-only source mount has its own persistent writable .git volume for
+# Cezar task worktrees. Fast-forward only the root stable index/ref to the
+# mounted source after verifying that every committed file already matches;
+# linked task worktrees and non-conflicting user data remain untouched.
+podman exec "$CONTAINER" bash "$RUNTIME_ROOT/scripts/deploy/reconcile-container-git-metadata.sh" "$source_sha"
+
+# The Cezar server is a local image built from this checkout, not the remote
+# image used by the generic Compose template. The deployment script is
+# idempotent and rebuilds only when cezar/ changed since the image's revision.
+"$FACTORY_DIR/scripts/deploy/deploy-cezar-runtime.sh" "$source_sha"
+
 container_sha="$(podman exec "$CONTAINER" git -C "$RUNTIME_ROOT" rev-parse HEAD)"
 container_version="$(podman exec "$CONTAINER" sh -c "tr -d '\r\\n' < '$RUNTIME_ROOT/VERSION'")"
 container_content_digest="$(podman exec "$CONTAINER" sh -c '
   cd "$1"
   set -- VERSION workflows skills scripts routing automations
-  [[ -f config/factory-projects.json ]] && set -- "$@" config/factory-projects.json
+  [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
   digest="$(find "$@" -type f -print0 |
     LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
   printf '%s' "${digest%% *}"
