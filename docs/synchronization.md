@@ -76,6 +76,15 @@ both `/api/v1/health` and `/api/v1/factory-release` to respond before Factory
 activation continues. If the new image does not recover, the script restores
 the prior image tag and fails the deployment receipt for retry.
 
+Autodeploy selects the automation synchronization path from the running
+container's release-store configuration. Channel-managed installs require the
+verified channel pointer and use the journaled activation coordinator. Existing
+shared-mount installs without channel-pinned release storage use
+`sync-all-automations.ps1`; it reads only the explicit host registry, keeps
+existing enabled states, creates new automations paused, and leaves non-Factory
+automations untouched. A configured channel store with a missing channel
+pointer fails closed instead of falling back.
+
 Factory workflow check commands call `$env:FACTORY_RUNTIME_ROOT/scripts/...`.
 They write result artifacts to the current worktree, while schemas and policies
 come from that versioned runtime. `route-state.ps1` therefore accepts the

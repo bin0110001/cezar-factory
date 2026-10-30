@@ -1146,6 +1146,23 @@ async function probeWritableDir(dir: string, create: boolean): Promise<string | 
 // this function, and `AppType` (src/server/app-type.ts) is `ReturnType<typeof createApp>`.
 // Annotating it `Hono` here would erase every route from the type and leave the typed client
 // with nothing to offer. See the `routed` assembly at the end of the function.
+/** Remove URL userinfo and query/fragment material from the CORS-open health payload. */
+function sanitizePublicRemote(remote: string): string {
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) return remote;
+  try {
+    const url = new URL(remote);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return remote
+      .replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1')
+      .replace(/[?#].*$/, '');
+  }
+}
+
 export function createApp(deps: ServerDeps) {
   const { version, update, bindHost, bootProjectId } = deps;
   // Boot singletons keep DELIBERATELY distinct names (`boot*`): every
@@ -1595,8 +1612,7 @@ export function createApp(deps: ServerDeps) {
   // ---- meta ----------------------------------------------------------------
   // CORS — deliberately for /api/health ONLY (spec 011): the bookmarklets
   // fetch it cross-origin from github.com to discover which local ports run a
-  // cockpit and which repo each serves. Health exposes no secrets beyond the
-  // repo path/remote; every other endpoint stays same-origin.
+  // cockpit and which repo each serves. Every other endpoint stays same-origin.
   const healthCors = async (c: Context, next: Next): Promise<Response | void> => {
     c.header('access-control-allow-origin', '*');
     if (c.req.method === 'OPTIONS') {
@@ -1627,6 +1643,13 @@ export function createApp(deps: ServerDeps) {
     // externally-depended-on JSON in the app (BACKWARD_COMPATIBILITY.md §2).
     const forge = resolveForge(repo);
     const caps = capabilities();
+    const healthRepo = !repo || caps.localHandoff
+      ? repo
+      : {
+          ...repo,
+          root: basename(repo.root),
+          ...(repo.remote ? { remote: sanitizePublicRemote(repo.remote) } : {}),
+        };
     return {
       version,
       // Spread rather than `latestVersion: update?.latest`: an `undefined` VALUE is dropped by
@@ -1643,7 +1666,7 @@ export function createApp(deps: ServerDeps) {
       // no longer an absolute path. Deliberate — a hosted cockpit's paths are on
       // a machine the reader does not have anyway. See §2's `repoRoot` note.
       repoRoot: caps.localHandoff ? bootRoot : basename(bootRoot),
-      repo,
+      repo: healthRepo,
       checks,
       defaultRunner: config.defaultRunner,
       // Non-blocking: cached availability or null-until-warm — health must never pay a `gh`
