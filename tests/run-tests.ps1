@@ -119,7 +119,7 @@ $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $ciWorkflow = Get-Content -Raw (Join-Path $factory '.github/workflows/ci.yml')
 Assert 'Cezar owners run changed tests or related tests without package-wide Vitest' ($cezarTestOwners.Count -eq 3 -and @($cezarTestOwners | Where-Object { $_.command -notmatch 'vitest run \$tests' -or $_.command -notmatch 'vitest related --run \$sources' -or $_.command -match 'vitest run;|vitest run\s*;' }).Count -eq 0)
-Assert 'documentation owner passes a braced validation base to git diff' ($documentationOwner.command -match 'git diff --check \$\{env:FACTORY_VALIDATION_BASE\}\.\.\.HEAD')
+Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))
 Assert 'CI installs Cezar dependencies only when a Cezar package changed' ($ciWorkflow -match 'Detect changed Cezar packages' -and $ciWorkflow -match "steps\.cezar-scope\.outputs\.changed == 'true'" -and $ciWorkflow -notmatch 'Verification contract tests and typechecks|npm run typecheck -w @open-mercato/cezar')
 Assert 'Factory validation captures bounded command output on timeout' ($validationLibrary -match 'Preserve the bounded diagnostic output on timeouts' -and $validationLibrary -match 'Configured validation\.\$Stage exceeded')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')

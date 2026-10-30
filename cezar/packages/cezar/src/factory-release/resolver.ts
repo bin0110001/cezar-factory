@@ -80,6 +80,14 @@ function containedPath(root: string, relative: string): string {
 }
 
 async function verifyRelease(storeRoot: string, projectId: string, channel: FactoryChannel, pinned?: { sourceSha: string; manifestDigest: string }): Promise<FactoryReleaseResolution> {
+  let canonicalStoreRoot: string;
+  try { canonicalStoreRoot = await realpath(storeRoot); }
+  catch {
+    throw new FactoryReleaseResolutionError(
+      pinned ? 'release-path-mismatch' : 'pointer-missing',
+      pinned ? 'Factory release store is unavailable' : `channel pointer for ${channel} is unavailable`,
+    );
+  }
   let sourceSha = pinned?.sourceSha;
   if (!pinned) {
     const pointerPath = join(storeRoot, 'channels', `${channel}.json`);
@@ -89,15 +97,20 @@ async function verifyRelease(storeRoot: string, projectId: string, channel: Fact
     }
     const pointer = pointerResult.data;
     sourceSha = pointer.currentSha;
-    const expectedPath = resolve(storeRoot, 'releases', sourceSha);
-    if (resolve(pointer.currentPath) !== expectedPath) {
+    const expectedPath = resolve(canonicalStoreRoot, 'releases', sourceSha);
+    let canonicalPointerPath: string;
+    try { canonicalPointerPath = await realpath(pointer.currentPath); }
+    catch { throw new FactoryReleaseResolutionError('release-path-mismatch', 'channel pointer release directory is unavailable'); }
+    const normalizedPointerPath = process.platform === 'win32' ? canonicalPointerPath.toLowerCase() : canonicalPointerPath;
+    const normalizedExpectedPath = process.platform === 'win32' ? expectedPath.toLowerCase() : expectedPath;
+    if (normalizedPointerPath !== normalizedExpectedPath) {
       throw new FactoryReleaseResolutionError('release-path-mismatch', 'channel pointer path does not match its full SHA');
     }
   }
   if (!sourceSha || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sourceSha)) {
     throw new FactoryReleaseResolutionError('pointer-invalid', 'selected Factory SHA is malformed');
   }
-  const releaseRoot = resolve(storeRoot, 'releases', sourceSha);
+  const releaseRoot = resolve(canonicalStoreRoot, 'releases', sourceSha);
   let actualReleaseRoot: string;
   try {
     actualReleaseRoot = await realpath(releaseRoot);
