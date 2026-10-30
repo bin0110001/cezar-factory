@@ -94,7 +94,12 @@ describe('workspace projects API', () => {
     store.flush();
     contexts.disposeAll();
     for (const dir of [home, repoRoot, otherRoot]) {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
+      } catch (error) {
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+        console.warn(`[projects-api.test] Windows kept a locked temporary directory for runner cleanup: ${dir}`);
+      }
     }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
