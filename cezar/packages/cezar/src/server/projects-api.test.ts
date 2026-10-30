@@ -94,7 +94,7 @@ describe('workspace projects API', () => {
     store.flush();
     contexts.disposeAll();
     for (const dir of [home, repoRoot, otherRoot]) {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
     }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
