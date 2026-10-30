@@ -1,9 +1,17 @@
 {
-  "considered": [94],
+  "considered": [125, 126, 127],
   "changed": [
     {
-      "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
+      "issue": 125,
+      "added": ["factory:new", "type:refactor", "risk:medium"]
+    },
+    {
+      "issue": 126,
+      "added": ["factory:new", "type:refactor", "risk:medium"]
+    },
+    {
+      "issue": 127,
+      "added": ["factory:new", "type:refactor", "risk:medium"]
     }
   ],
   "skipped": []
