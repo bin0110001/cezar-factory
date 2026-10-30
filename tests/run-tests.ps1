@@ -74,7 +74,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/recover-audit-reservations.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
-'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh',
+'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh',
 'scripts/publish-failure-audit.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
@@ -95,6 +95,11 @@ Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A ski
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
+$fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
+$reviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')
+$lifecycleSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-workspace/SKILL.md')
+$codexLifecycleHooks = Get-Content -Raw (Join-Path $factory 'integrations/agents/workspace-lifecycle/codex-hooks.json') | ConvertFrom-Json
+$claudeLifecycleHooks = Get-Content -Raw (Join-Path $factory 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json') | ConvertFrom-Json
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
 $ensureImplementationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensure-implementation-result.ps1')
@@ -103,6 +108,9 @@ $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implement
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
+Assert 'external workspace skill uses the shared CLI and yields to a verified Factory execution' ($lifecycleSkill -match 'cez workspace context' -and $lifecycleSkill -match 'managed: true' -and $lifecycleSkill -match 'cez workspace adopt' -and $lifecycleSkill -notmatch '(?i)(pwsh|powershell).*\.ps1')
+Assert 'Codex and Claude hook fragments connect session start/stop to verified workspace context' ($codexLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $codexLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*')
+Assert 'Factory coding workflows preflight mergeability before handoff and review hands off the verified state' ($implementWorkflow -match '(?s)id: full-verification.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
@@ -853,7 +861,7 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
-$pythonRunner = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } elseif (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { $null }
+$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
     $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') }
     Push-Location $factory

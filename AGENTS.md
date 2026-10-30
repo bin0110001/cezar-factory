@@ -14,6 +14,12 @@ run an automation queues it (`cez automation run <id>`) and reports the task ID;
 it does not inspect that automation's worktree or create replacement tasks.
 `tests/run-tests.ps1` enforces the script rule.
 
+For coding sessions outside a verified Factory workflow, use the
+`factory-workspace` skill and `cez workspace` CLI to claim or adopt local work.
+The Cezar scheduler verifies Factory run identity and fencing data before
+setting `FACTORY_MANAGED=1`; a marker by itself is never trusted. Do not add
+Factory scripts to agent-facing skill instructions.
+
 When asked to complete outstanding issues, work the repository backlog
 autonomously. Select the next eligible issue from the existing queue using its
 readiness, dependencies, priority, and age; do not wait for the user to schedule

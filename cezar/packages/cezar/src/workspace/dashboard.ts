@@ -34,6 +34,8 @@ import { currentTimedUsage } from '../core/process-usage.ts';
 import { readRunIndexDiagnostic } from '../runs/run-index.ts';
 import type { RunStore } from '../runs/store.ts';
 import { getDashboardGithub } from './dashboard-forge.ts';
+import { lifecycleMetrics, lifecycleOutbox, lifecycleStatus, pruneWorkspace, recoverWorkspace, resumeBlockedWorkspace, workspaceOverlaps } from './lifecycle.ts';
+import { validateWorkspace } from './lifecycle-cli.ts';
 
 type Project = { id: string; root: string; store?: RunStore };
 type Projection = {
@@ -123,6 +125,52 @@ export class DashboardReader {
   async automations(projectId: string) {
     const project = (await this.deps.projects()).find((project) => project.id === projectId);
     return project ? readDashboardAutomations(project.root) : undefined;
+  }
+
+  async workspaceLifecycle() {
+    const projects = await this.projects();
+    return Promise.all(projects.map(async (project) => {
+      const projectName = project.root.split(/[\\/]/).filter(Boolean).at(-1) ?? project.id;
+      try {
+        const [records, metrics, telemetryOutbox] = await Promise.all([
+          lifecycleStatus({ cwd: project.root }),
+          lifecycleMetrics({ cwd: project.root }),
+          lifecycleOutbox({ cwd: project.root }),
+        ]);
+        let overlaps: Awaited<ReturnType<typeof workspaceOverlaps>> = [];
+        let error: string | null = null;
+        try { overlaps = await workspaceOverlaps({ cwd: project.root }); }
+        catch (overlapError) { error = overlapError instanceof Error ? overlapError.message : String(overlapError); }
+        return {
+          projectId: project.id,
+          projectName,
+          records,
+          metrics,
+          telemetryOutbox: { pending: telemetryOutbox.pending, failed: telemetryOutbox.failed, delivered: telemetryOutbox.delivered },
+          overlaps,
+          error,
+        };
+      } catch (error) {
+        return {
+          projectId: project.id,
+          projectName,
+          records: [],
+          metrics: null,
+          telemetryOutbox: null,
+          overlaps: [],
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }));
+  }
+
+  async workspaceLifecycleAction(projectId: string, issue: string, action: 'recover' | 'validate' | 'prune' | 'resume', force = false) {
+    const project = (await this.projects()).find((item) => item.id === projectId);
+    if (!project) throw new Error(`Project ${projectId} is not registered.`);
+    if (action === 'recover') return recoverWorkspace({ issue, cwd: project.root, force });
+    if (action === 'validate') return validateWorkspace(issue, project.root);
+    if (action === 'resume') return resumeBlockedWorkspace({ issue, cwd: project.root });
+    return pruneWorkspace({ issue, cwd: project.root });
   }
 
   dispose(): void {

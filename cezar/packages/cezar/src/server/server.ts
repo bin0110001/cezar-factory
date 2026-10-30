@@ -6442,7 +6442,12 @@ export function createApp(deps: ServerDeps) {
     .route('/', fsBrowseRoutes)
     .route('/', automationChecksRoutes)
     .route('/', runsIndexRoutes)
-    .route('/', dashboardRoutes(dashboard, () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }), () => capabilities().automations))
+    .route('/', dashboardRoutes(
+      dashboard,
+      () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }),
+      () => capabilities().automations,
+      () => capabilities().localHandoff,
+    ))
     .route('/', workspaceEventsRoutes);
 
   // ---- mount ---------------------------------------------------------------

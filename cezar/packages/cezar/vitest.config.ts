@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     name: 'server',
     environment: 'node',
+    // Windows Git worktree creation and teardown can exceed Vitest's 5s default under parallel CI load.
+    testTimeout: 20_000,
     include: ['src/**/*.test.ts'],
     // Pins CEZ_HOME to a per-worker sandbox so no case can write the developer's
     // real ~/.cezar — see the file for the failure it prevents.

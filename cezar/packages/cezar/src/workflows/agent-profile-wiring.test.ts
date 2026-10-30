@@ -1,12 +1,15 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunStore } from '../runs/store.ts';
 import { agentAccountsPath } from '../paths.ts';
 import { mergeWriteAgentAccounts } from '../workspace/agent-accounts.ts';
 import { registerProject } from '../workspace/projects.ts';
 import { RunManager } from './run.ts';
+import { claimWorkspace, lifecycleStatus } from '../workspace/lifecycle.ts';
+import { removeWorktree } from '../git-worktree.ts';
 
 /**
  * Which agent account a STEP spawns under (spec 2026-07-29-agent-profiles).
@@ -31,19 +34,38 @@ describe('RunManager agent-profile resolution', () => {
     ): Promise<{ env: Record<string, string>; profileId: string }>;
   };
   const seam = () => manager as unknown as Seam;
+  const envSeam = () => manager as unknown as { agentEnv(runId: string): Record<string, string> };
 
   beforeEach(async () => {
     home = mkdtempSync(join(realpathSync(tmpdir()), 'cez-profile-wiring-home-'));
     repoRoot = mkdtempSync(join(realpathSync(tmpdir()), 'cez-profile-wiring-repo-'));
     process.env.CEZ_HOME = home;
-    store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    store = RunStore.open(join(home, '.ai/cezar'));
     manager = new RunManager(store, repoRoot);
     await registerProject(repoRoot);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    manager.dispose();
     store.flush();
-    for (const dir of [home, repoRoot]) rmSync(dir, { recursive: true, force: true });
+    try {
+      const output = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8', windowsHide: true });
+      for (const match of output.matchAll(/^worktree (.+)$/gm)) {
+        const path = match[1]!;
+        if (resolve(path) !== resolve(repoRoot)) {
+          execFileSync('git', ['worktree', 'remove', '--force', path], { cwd: repoRoot, windowsHide: true, stdio: 'ignore' });
+        }
+      }
+      execFileSync('git', ['worktree', 'prune'], { cwd: repoRoot, windowsHide: true, stdio: 'ignore' });
+    } catch { /* tests without a Git repo have nothing to prune */ }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const dir of [home, repoRoot]) {
+      try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+      catch (error) {
+        // Windows can briefly retain a handle to a just-used temporary Git repo.
+        if ((error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+      }
+    }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
   });
@@ -112,6 +134,44 @@ describe('RunManager agent-profile resolution', () => {
     }
   });
 
+  it('keeps Factory workflow context fail-closed when its lifecycle claim cannot be verified', () => {
+    execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: repoRoot, windowsHide: true });
+    const run = store.createRun({
+      title: 'Factory task', workflow: 'factory-implement', task: 'Implement issue 456',
+      steps: [{ id: 'work', name: 'work', kind: 'agent' }],
+    });
+    store.updateRun(run.id, { issueNumber: 456 });
+    const env = envSeam().agentEnv(run.id);
+    expect(env.FACTORY_MANAGED).toBe('1');
+    expect(env.FACTORY_RUN_ID).toBe('');
+  });
+
+  it('removes only the pristine Factory task worktree when issue registration is refused', async () => {
+    execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: repoRoot, windowsHide: true });
+    writeFileSync(join(repoRoot, 'base.txt'), 'base\n');
+    execFileSync('git', ['add', 'base.txt'], { cwd: repoRoot, windowsHide: true });
+    execFileSync('git', ['-c', 'user.name=Lifecycle Test', '-c', 'user.email=lifecycle@example.test', 'commit', '-q', '-m', 'base'], { cwd: repoRoot, windowsHide: true });
+    await claimWorkspace({ issue: '456', cwd: repoRoot, owner: 'external:test:456', base: 'dev' });
+    const workflow = {
+      name: 'factory-implement', source: 'built-in' as const,
+      steps: [{ id: 'work', name: 'Work', prompt: '{{task}}' }],
+    };
+    const run = manager.startRun(workflow, { task: 'Implement issue #456' });
+    store.updateRun(run.id, { issueNumber: 456 });
+    const expectedPath = join(repoRoot, '.ai', 'cezar', 'worktrees', run.id);
+    const deadline = Date.now() + 20_000;
+    while (store.getRun(run.id)?.status !== 'failed') {
+      if (Date.now() > deadline) throw new Error('Factory registration refusal did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(store.getRun(run.id)?.error).toContain('already has active execution');
+    expect(existsSync(expectedPath)).toBe(false);
+    expect(execFileSync('git', ['branch', '--list', `cez/${run.id.slice(0, 8)}`], { cwd: repoRoot, encoding: 'utf8' }).trim()).toBe('');
+    const retainedClaim = (await lifecycleStatus({ cwd: repoRoot, issue: '456' }))[0];
+    expect(retainedClaim?.state).toBe('working');
+    if (retainedClaim) await removeWorktree(repoRoot, retainedClaim.workspacePath, retainedClaim.branch);
+  }, 20_000);
+
   it('redacts turn context before a late title update outlives secret cleanup', async () => {
     const run = newRun();
     const token = 'synthetic-private-value';
@@ -143,6 +203,12 @@ describe('RunManager agent-profile resolution', () => {
       'CEZ_HANDOFF_FILE',
       'CEZ_TASK_ID',
       'CEZ_TODOS_FILE',
+      'FACTORY_FENCING_TOKEN',
+      'FACTORY_ISSUE',
+      'FACTORY_MANAGED',
+      'FACTORY_OWNER_ID',
+      'FACTORY_RUN_ID',
+      'FACTORY_WORKSPACE',
       'TEMP',
       'TMP',
       'TMPDIR',

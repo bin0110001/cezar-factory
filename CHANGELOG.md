@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.58] - 2026-10-29
+
+- Add an offline-first SQLite workspace lifecycle CLI with transactional issue
+  claims, verified Factory execution context, lease fencing, safe adoption,
+  validation handoff, recovery, and cleanup safeguards.
+- Integrate Factory and external-agent hooks with serialized integration and
+  verified post-merge validation, bounded conflict repair/escalation, dashboard
+  recovery actions and local lifecycle metrics.
+- Add an asynchronous Langfuse OTLP outbox and an operator-approved Hindsight
+  lesson queue with retry tracking.
+
 ## [0.3.57] - 2026-10-27
 
 - Publish bounded Factory failure evidence to one canonical issue per project

@@ -1,7 +1,7 @@
 import type { TrackerAssociation } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
@@ -51,7 +51,7 @@ import { materializeSkillDir } from '../skills-remote.ts';
 import { seedAgentConfigLocalLayer } from '../agent-config/seed.ts';
 import { readAgentModelProvider } from '../agent-config/models.ts';
 import { loadConfig, resolveWorktreeRetention } from '../config.ts';
-import { autosaveCommit, chooseForkBase, createWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
+import { autosaveCommit, chooseForkBase, createWorktree, removeWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
 import { loadWorkflows } from './load.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
@@ -97,6 +97,7 @@ import {
   sweepAgentTmpDirs,
 } from '../runs/agent-tmpdir.ts';
 import { extractTaskRefs, refineTaskRefs, titleRefNumber } from '../runs/task-refs.ts';
+import { drainLifecycleOutbox, factoryContextForRun, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
 import { parseTaskMarkers, stripTaskMarkers } from '../runs/task-markers.ts';
 import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidateTitle } from '../runs/auto-name.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
@@ -371,6 +372,8 @@ interface ActiveRun {
   monitoringWakeIntervalMinutes?: number;
   monitoringWakeups?: number;
   autosaveTimer?: NodeJS.Timeout;
+  /** Scheduler heartbeat keeps a Factory issue claim alive independently of agent turns. */
+  lifecycleHeartbeat?: NodeJS.Timeout;
   cancellationTimer?: NodeJS.Timeout;
   /* The screenshot counter lives on `RunManager.queuedImageSeq` (#472), keyed by
    * run id — a queued run persists attachments with no `ActiveRun` at all. */
@@ -1016,6 +1019,8 @@ export class RunManager {
 
   /** The stalled-queue watchdog (see `rescueStalledQueue`). */
   private readonly queueWatchdog: ReturnType<typeof setInterval>;
+  private readonly telemetryOutboxTimer: ReturnType<typeof setInterval>;
+  private telemetryDrainStopped = false;
 
   /** Set by the watchdog for exactly one sweep: ignore the usage-limit hold and make progress. */
   private forceNextPump = false;
@@ -1039,6 +1044,8 @@ export class RunManager {
 
   /** See the constructor option of the same name. */
   private readonly resolveTrackerEnv: ((root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>) | undefined;
+  /** Startup workspace reconciliation completes before this manager launches agent work. */
+  private readonly lifecycleStartup: Promise<void>;
 
   constructor(
     private readonly store: RunStore,
@@ -1057,6 +1064,14 @@ export class RunManager {
     this.dataDir = join(repoRoot, '.ai/cezar');
     this.projectId = options.projectId;
     this.resolveTrackerEnv = options.resolveTrackerEnv;
+    this.lifecycleStartup = getHeadCommit(repoRoot).then(async (head) => {
+      if (!head) return;
+      const report = await reconcileWorkspaceLifecycle({ cwd: repoRoot });
+      for (const issue of report.cleaned) console.info(`[workspace-lifecycle] finalized cleanup for issue ${issue}`);
+      for (const finding of report.findings) console.warn(`[workspace-lifecycle] ${finding}`);
+    }).catch((error: unknown) => {
+      console.warn(`[workspace-lifecycle] startup reconciliation deferred: ${error instanceof Error ? error.message : String(error)}`);
+    });
     this.semaphore = options.semaphore ?? new WorkspaceSemaphore();
     this.offSemaphore = this.semaphore.register({
       busySlots: () => this.busySlots(),
@@ -1069,6 +1084,17 @@ export class RunManager {
     this.offUsage = onUsage((snapshot) => void this.enforceMemoryLimit(snapshot));
     this.queueWatchdog = setInterval(() => void this.rescueStalledQueue(), QUEUE_WATCHDOG_MS);
     this.queueWatchdog.unref?.();
+    // Telemetry is drained independently of an agent step and never blocks task
+    // execution. The local outbox remains authoritative when a sink is offline.
+    const drainTelemetry = () => {
+      if (this.telemetryDrainStopped) return;
+      void drainLifecycleOutbox({ cwd: this.repoRoot, limit: 20 }).then((result) => {
+      if (result.deferred) console.warn(`[workspace-lifecycle] deferred ${result.deferred} telemetry delivery attempt(s)`);
+      }).catch((error: unknown) => console.warn(`[workspace-lifecycle] telemetry drain deferred: ${error instanceof Error ? error.message : String(error)}`));
+    };
+    this.telemetryOutboxTimer = setInterval(drainTelemetry, 60_000);
+    this.telemetryOutboxTimer.unref?.();
+    void this.lifecycleStartup.then(drainTelemetry);
   }
 
   /**
@@ -1084,7 +1110,9 @@ export class RunManager {
   dispose(): void {
     this.offUsage();
     this.offSemaphore();
+    this.telemetryDrainStopped = true;
     clearInterval(this.queueWatchdog);
+    clearInterval(this.telemetryOutboxTimer);
     for (const [runId, state] of this.active) {
       this.clearIdleTimer(state);
       this.clearMonitoringWakeTimer(state, runId);
@@ -1169,12 +1197,26 @@ export class RunManager {
    *  turning into empty command output inside a running agent. */
   private agentEnv(runId: string, generateFollowups = true): Record<string, string> {
     const dispatch = this.dispatchOf(runId);
+    const run = this.store.getRun(runId);
+    const factoryWorkflow = Boolean(run?.workflow.startsWith('factory-') && run.issueNumber);
+    const factory = factoryWorkflow && run?.issueNumber
+      ? factoryContextForRun(this.repoRoot, run.issueNumber, runId)
+      : null;
     // The same ONE gate the dispatch prompt uses, so an agent is never told about a CLI whose
     // address it was not given (and never given an address it was not told about).
     const apiUrl = this.dispatchReachable() ? process.env.CEZ_API_URL : undefined;
     return {
       CEZ_HANDOFF_FILE: handoffPath(this.dataDir, runId),
       CEZ_TASK_ID: runId,
+      // Preserve the fail-closed marker for Factory workflows even if their
+      // registry row cannot be verified. Hooks then stop for recovery instead
+      // of treating a stale managed run as an external coding session.
+      FACTORY_MANAGED: factory || factoryWorkflow ? '1' : '0',
+      FACTORY_RUN_ID: factory?.executionId ?? '',
+      FACTORY_ISSUE: factory?.issue ?? '',
+      FACTORY_OWNER_ID: factory?.ownerId ?? '',
+      FACTORY_FENCING_TOKEN: factory ? String(factory.fencingToken) : '',
+      FACTORY_WORKSPACE: factory?.workspacePath ?? '',
       CEZ_TODOS_FILE: generateFollowups ? todosPath(this.dataDir) : '',
       ...agentTmpEnv(this.dataDir, runId),
       // Task dispatch (spec 2026-09-10-dispatch): where the `cez task` CLI reaches this server and
@@ -1794,6 +1836,8 @@ export class RunManager {
     if (state) state.releaseRepoRoot = undefined;
     if (state?.cancellationTimer) clearTimeout(state.cancellationTimer);
     if (state) state.cancellationTimer = undefined;
+    if (state?.lifecycleHeartbeat) clearInterval(state.lifecycleHeartbeat);
+    if (state) state.lifecycleHeartbeat = undefined;
     this.waiting.delete(runId);
     this.leaveMonitoring(runId);
     if (state) this.clearMonitoringWakeTimer(state, runId);
@@ -4015,6 +4059,7 @@ export class RunManager {
   // ---- execution -----------------------------------------------------------
 
   private async execute(runId: string, workflow: WorkflowDef, input: StartRunInput, ownerToken?: symbol): Promise<void> {
+    await this.lifecycleStartup;
     const state: ActiveRun = {
       ownerToken: ownerToken ?? Symbol('run-owner'),
       cancelled: false,
@@ -4116,6 +4161,58 @@ export class RunManager {
           branch: wt.branch,
           baseBranch: wt.baseBranch,
         });
+        const lifecycleRun = this.store.getRun(runId);
+        if (workflow.name.startsWith('factory-') && lifecycleRun?.issueNumber) {
+          const previous = (await lifecycleStatus({ cwd: this.repoRoot }))
+            .find((item) => item.issue === String(lifecycleRun.issueNumber));
+          const previousRun = previous ? this.store.getRun(previous.executionId) : undefined;
+          const allowReadyTransfer = previous?.state === 'ready' &&
+            Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
+          let execution: Awaited<ReturnType<typeof registerFactoryWorkspace>>;
+          try {
+            execution = await registerFactoryWorkspace({
+              issue: lifecycleRun.issueNumber,
+              runId,
+              repoRoot: this.repoRoot,
+              workspacePath: wt.path,
+              baseCommit: wt.baseBranch,
+              allowReadyTransfer,
+            });
+          } catch (error) {
+            // A newly created Factory worktree is safe to remove only if claim
+            // registration failed, no row owns this run, and the tree is clean.
+            // Otherwise retain it for recovery rather than discard agent state.
+            try {
+              const registered = (await lifecycleStatus({ cwd: this.repoRoot })).some((item) => item.executionId === runId);
+              let dirty = 'unknown';
+              try { dirty = execFileSync('git', ['status', '--porcelain'], { cwd: wt.path, encoding: 'utf8', windowsHide: true }).trim(); }
+              catch { /* preserve the worktree when its cleanliness cannot be verified */ }
+              if (!registered && !dirty) {
+                await removeWorktree(this.repoRoot, wt.path, wt.branch);
+                state.cwd = this.repoRoot;
+                this.store.updateRun(runId, { worktreePath: undefined, branch: undefined });
+              } else {
+                emit({ type: 'note', message: `unregistered worktree retained for recovery: ${wt.path}` });
+              }
+            } catch (cleanupError) {
+              emit({ type: 'note', message: `unregistered worktree cleanup deferred: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}` });
+            }
+            throw error;
+          }
+          state.lifecycleHeartbeat = setInterval(() => {
+            if (this.active.get(runId) !== state || state.cancelled) return;
+            void heartbeatWorkspace({
+              issue: execution.issue,
+              executionId: execution.executionId,
+              fencingToken: execution.fencingToken,
+              cwd: this.repoRoot,
+            }).catch((error: unknown) => emit({
+              type: 'note',
+              message: `workspace lease heartbeat failed: ${error instanceof Error ? error.message : String(error)}`,
+            }));
+          }, 5 * 60_000);
+          state.lifecycleHeartbeat.unref?.();
+        }
         emit({ type: 'note', message: `worktree ready — branch ${wt.branch} (base ${wt.baseBranch})` });
         // Seed from this manager's project root: each multi-project context has
         // its own manager/repoRoot and must never copy another project's layer.
@@ -4296,7 +4393,7 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode } = await this.runCheckStep(state, step, input.task, emit);
+      const { ok, output, exitCode } = await this.runCheckStep(runId, state, step, input.task, emit);
       if (state.cancelled) break;
       if (ok) {
         this.finishStep(runId, step.id, 'done', undefined, emit);
@@ -5639,6 +5736,7 @@ export class RunManager {
   }
 
   private runCheckStep(
+    runId: string,
     state: ActiveRun,
     step: WorkflowStepDef,
     task: string,
@@ -5650,7 +5748,10 @@ export class RunManager {
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env: { ...process.env, CEZAR_TASK: task } });
+      const child = spawn('bash', ['-lc', command], {
+        cwd: state.cwd,
+        env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task },
+      });
       state.interrupt = () => child.kill('SIGTERM');
 
       let output = '';
