@@ -1,0 +1,20 @@
+[Unit]
+Description=Validate and activate the latest reviewed Factory dev SHA locally
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+CPUQuota=200%
+MemoryMax=8G
+TasksMax=64
+Nice=10
+IOSchedulingClass=idle
+Environment=FACTORY_WORKER_CONCURRENCY=1
+Environment=FACTORY_GPU_SLOTS=0
+ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/factory_local_scheduler.py run --repo %h/cezar-factory --store %h/.local/share/cezar-factory/release-store --config %h/cezar-factory/config/local-release-scheduler.json --registry %h/cezar-factory/config/factory-projects.json --remote origin --branch dev
+TimeoutStartSec=8h

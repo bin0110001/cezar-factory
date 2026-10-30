@@ -1,4 +1,4 @@
-import { trackerReadScope } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type {
@@ -86,6 +86,7 @@ import type {
   RemoveProjectResponse,
   UpdateProjectInput,
   UpdateProjectResponse,
+  FullRegressionRunResponse,
   RemoveTodoResponse,
   RepoBranchResponse,
   RepoCommitPayload,
@@ -458,7 +459,7 @@ export async function getProviderStatus(
 /** The bookmarklet auto-start secret (spec 011). Fetched to compare against `/new?key=` —
  *  never rendered, never logged, never put back into a URL. */
 export async function getLaunchKey(opts?: ReadOptions): Promise<LaunchKeyResponse> {
-  return unwrap(
+  return await unwrap(
     await cez.api.v1.p[':projectId']['launch-key'].$get(
       { param: { projectId: queryScope() } },
       init(opts),
@@ -607,6 +608,21 @@ export async function getWorkflows(opts?: ReadOptions): Promise<WorkflowsRespons
     ),
     '/workflows',
   )
+}
+
+export type FactoryReleaseStatus =
+  | { status: 'resolved'; projectId: string; channel: 'dev' | 'stable'; sourceSha: string; manifestDigest: string }
+  | { status: 'legacy'; projectId: string; channel: 'stable' }
+  | { status: 'error'; projectId: string; error: string }
+
+export async function getFactoryRelease(opts?: ReadOptions): Promise<FactoryReleaseStatus> {
+  return (await unwrap(
+    await cez.api.v1.p[':projectId']['factory-release'].$get(
+      { param: { projectId: queryScope() } },
+      init(opts),
+    ),
+    '/factory-release',
+  )) as unknown as FactoryReleaseStatus
 }
 
 export async function getSkills(opts?: ReadOptions): Promise<Skill[]> {
@@ -1256,6 +1272,17 @@ export async function updateProject(
     }),
     `/projects/${encodeURIComponent(projectId)}`,
   )
+}
+
+/** Queue a full regression run for the project's exact current commit. */
+export async function runFullRegression(projectId: string): Promise<FullRegressionRunResponse> {
+  const path = `/projects/${encodeURIComponent(projectId)}/verification/full-regression`
+  const response = await fetchOrThrow(apiPath(path), { method: 'POST' })
+  const body = await response.text()
+  if (!response.ok) throw errorFor(response.status, response.statusText, body)
+  const result = fullRegressionRunResponseSchema.safeParse(parseJson(body))
+  if (!result.success) throw new ApiError(response.status, `the cezar server answered ${path} with an unexpected body`)
+  return result.data
 }
 
 // ---- run mutations ------------------------------------------------------------------------

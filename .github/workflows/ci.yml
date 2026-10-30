@@ -13,27 +13,62 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: cezar/package-lock.json
       - name: Independent verification fixture consumer
         run: node ./cezar/packages/cezar/src/verification/fixture-consumer.mjs
-      - name: Verification contract tests and typechecks
-        working-directory: ./cezar
+      - name: Detect changed Cezar packages
+        id: cezar-scope
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          npm ci
-          npm run test -w @open-mercato/cezar -- src/verification/contract.test.ts
-          npm run typecheck:contract
-          npm run typecheck -w @open-mercato/cezar
-      - name: Factory self-test (static checks, install/update/diff/verify on fixtures)
+          $base = $env:BASE_SHA
+          $null = git rev-parse --verify "$base^{commit}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            $base = (& git rev-parse --verify 'HEAD^' 2>$null | Out-String).Trim()
+          }
+          if (-not $base) {
+            "changed=true" >> $env:GITHUB_OUTPUT
+            Write-Host 'No comparison base exists; installing dependencies for conservative Cezar validation.'
+            exit 0
+          }
+          $paths = @(& git diff --name-only "$base...HEAD")
+          if ($LASTEXITCODE -ne 0) { throw "Could not determine changed paths from $base." }
+          $changed = @($paths | Where-Object { $_ -match '^cezar/packages/(contract|api-client|cezar|web)/' }).Count -gt 0
+          "changed=$($changed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Cezar package changes: $changed"
+      - name: Install Cezar dependencies for focused checks
+        if: steps.cezar-scope.outputs.changed == 'true'
+        working-directory: ./cezar
+        run: npm ci
+      - name: Factory changed-scope validation (focused checks, full fallback on uncertainty)
+        id: changed-validation
+        continue-on-error: true
         shell: pwsh
-        run: ./tests/run-tests.ps1
-      - name: Validate deterministic automation catalog
+        run: ./scripts/factory/test-changed.ps1 -Task "GitHub pull request ${{ github.event.pull_request.number }}"
+      - name: Print bounded validation diagnostics
+        if: steps.changed-validation.outcome == 'failure'
         shell: pwsh
-        run: ./scripts/validate-automation-catalog.ps1
-      - name: Release metadata validation
-        shell: pwsh
-        run: ./scripts/release/validate-release.ps1 -SkipTests
+        run: |
+          $receiptFile = Get-ChildItem .factory/artifacts/validation/changed -Filter receipt.json -Recurse |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $receiptFile) { throw 'Changed validation failed without writing a receipt.' }
+          $receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json
+          Write-Host "Validation receipt: status=$($receipt.status), exitCode=$($receipt.exitCode), message=$($receipt.message)"
+          foreach ($name in @('stdout.log', 'stderr.log')) {
+            $path = Join-Path $receiptFile.DirectoryName $name
+            if (Test-Path -LiteralPath $path) {
+              Write-Host "--- $name (bounded to 64 KiB) ---"
+              Get-Content -LiteralPath $path -Raw
+            }
+          }
+          exit 1
       - name: Autodeploy retry and parity integration tests
         if: matrix.os == 'ubuntu-latest'
         shell: bash

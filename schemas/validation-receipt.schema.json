@@ -24,7 +24,10 @@
     "finishedAt": { "type": "string" },
     "command": { "type": "string" },
     "truncated": { "type": "boolean" },
-    "message": { "type": "string" }
+    "message": { "type": "string" },
+    "selectedChecks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "unmappedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
   },
   "required": ["schemaVersion", "issue", "repository", "pr", "headSha", "stage", "status", "exitCode", "artifactPaths"]
 }

@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { sharedDirs } from '../shared-dirs.ts';
+import { factoryReleaseProvenance, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 import {
   QUICK_TASK_WORKFLOW,
   normalizeWorkflowDoc,
@@ -28,10 +29,16 @@ export interface WorkflowLoadIssue {
  */
 export async function loadWorkflows(
   repoRoot: string,
+  options: { factoryRelease?: FactoryReleaseResolution } = {},
 ): Promise<{ workflows: WorkflowDef[]; issues: WorkflowLoadIssue[] }> {
   const issues: WorkflowLoadIssue[] = [];
   const fromFiles: WorkflowDef[] = [];
-  const dirs = [resolve(repoRoot, WORKFLOWS_DIR), ...sharedDirs('CEZ_SHARED_WORKFLOWS_DIRS')];
+  const dirs = [
+    resolve(repoRoot, WORKFLOWS_DIR),
+    ...(options.factoryRelease
+      ? [join(options.factoryRelease.runtimeRoot, 'workflows')]
+      : sharedDirs('CEZ_SHARED_WORKFLOWS_DIRS')),
+  ];
   const seenNames = new Set<string>();
 
   for (const dir of dirs) {
@@ -64,7 +71,7 @@ export async function loadWorkflows(
         // Earlier directories (the repo's own) shadow later (shared) ones of the same name.
         if (seenNames.has(normalized.name)) continue;
         seenNames.add(normalized.name);
-        fromFiles.push({ ...normalized, source: 'file', path });
+        fromFiles.push({ ...normalized, source: 'file', path, ...(options.factoryRelease ? { factoryRelease: factoryReleaseProvenance(options.factoryRelease) } : {}) });
       } catch (err) {
         issues.push({ path, message: err instanceof Error ? err.message : String(err) });
       }
@@ -74,7 +81,10 @@ export async function loadWorkflows(
   const fileNames = new Set(fromFiles.map((w) => w.name));
   const workflows = [
     ...fromFiles,
-    ...[QUICK_TASK_WORKFLOW].filter((w) => !fileNames.has(w.name)),
+    ...[QUICK_TASK_WORKFLOW].filter((w) => !fileNames.has(w.name)).map((workflow) => ({
+      ...workflow,
+      ...(options.factoryRelease ? { factoryRelease: factoryReleaseProvenance(options.factoryRelease) } : {}),
+    })),
   ];
   workflows.sort((a, b) => a.name.localeCompare(b.name));
   return { workflows, issues };

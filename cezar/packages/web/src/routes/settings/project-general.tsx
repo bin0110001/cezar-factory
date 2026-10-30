@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-import { useProjects, useWorkspaceConfig } from '@/api/queries'
-import type { Capabilities, ProjectListEntry } from '@open-mercato/cezar-api-client'
+import { useFactoryRelease, useProjects, useRunFullRegression, useUpdateProject, useWorkspaceConfig } from '@/api/queries'
+import type { Capabilities, FullRegressionPolicy, ProjectListEntry } from '@open-mercato/cezar-api-client'
 import { Button } from '@/components/ui/button'
 import { useActiveProjectId } from '@/lib/project-router'
 import { ProjectFolderField } from './project-location'
@@ -51,6 +51,9 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
   const projectId = useActiveProjectId()
   const projects = useProjects()
   const config = useWorkspaceConfig()
+  const factoryRelease = useFactoryRelease()
+  const updateProject = useUpdateProject()
+  const fullRegression = useRunFullRegression()
 
   if (projects.isPending) {
     return (
@@ -97,6 +100,56 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
       {managesRegistry ? (
         <>
           <SettingsField
+            title="Factory channel"
+            hint="New tasks resolve this channel to one verified Factory version and keep that version for retries and resumes. Existing tasks keep their saved version."
+          >
+            {factoryRelease.data?.status === 'resolved' ? (
+              <div className="flex flex-col items-start gap-2">
+                <select
+                  aria-label="Factory channel"
+                  data-slot="factory-channel"
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={project.factoryChannel ?? factoryRelease.data.channel}
+                  disabled={updateProject.isPending}
+                  onChange={(event) => updateProject.mutate({ id: project.id, factoryChannel: event.target.value as 'dev' | 'stable' })}
+                >
+                  <option value="stable">stable</option>
+                  <option value="dev">dev</option>
+                </select>
+                <span className="text-[11px] text-soft-foreground">Current version: {factoryRelease.data.sourceSha.slice(0, 12)}</span>
+              </div>
+            ) : factoryRelease.data?.status === 'legacy' ? (
+              <p className="text-[13px] text-soft-foreground">Channel releases are not configured for this Cezar instance.</p>
+            ) : factoryRelease.isError || factoryRelease.data?.status === 'error' ? (
+              <p className="text-[13px] text-danger">Factory release unavailable: {factoryRelease.data?.status === 'error' ? factoryRelease.data.error : factoryRelease.error?.message ?? 'request failed'}</p>
+            ) : (
+              <p className="text-[13px] text-soft-foreground">Loading Factory release status…</p>
+            )}
+            {updateProject.isError ? <p role="alert" className="text-[13px] text-danger">{updateProject.error.message}</p> : null}
+          </SettingsField>
+          <SettingsField
+            title="Full regression cadence"
+            hint="Focused checks run with each task. This policy controls expensive full suites; missing settings mean on-demand only. Runs share this project's task concurrency cap and coalesce updates into at most one follow-up."
+          >
+            <FullRegressionPolicyEditor
+              project={project}
+              disabled={updateProject.isPending}
+              onSave={(fullRegressionPolicy) => updateProject.mutate({ id: project.id, fullRegressionPolicy })}
+            />
+            <div className="mt-3 flex flex-col items-start gap-1">
+              <Button type="button" size="sm" variant="outline" disabled={fullRegression.isPending} onClick={() => fullRegression.mutate(project.id)}>
+                {fullRegression.isPending ? 'Queueing…' : 'Run full regression now'}
+              </Button>
+              {fullRegression.data ? <span role="status" className="text-xs text-soft-foreground">
+                {fullRegression.data.status === 'limited' || fullRegression.data.status === 'not-configured'
+                  ? fullRegression.data.reason
+                  : `Run ${fullRegression.data.runId} will test ${fullRegression.data.testedHead.slice(0, 12)}${fullRegression.data.followUpPending ? ' · one follow-up is pending' : ''}`}
+              </span> : null}
+              {fullRegression.isError ? <span role="alert" className="text-xs text-danger">{fullRegression.error.message}</span> : null}
+            </div>
+          </SettingsField>
+          {updateProject.isError ? <p role="alert" className="text-[13px] text-danger">{updateProject.error.message}</p> : null}
+          <SettingsField
             title="Max parallel tasks"
             hint={
               config.data
@@ -115,6 +168,144 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
           <RemoveProject project={project} bootProject={registry.bootProject} />
         </>
       ) : null}
+    </div>
+  )
+}
+
+function defaultFullRegressionPolicy(): FullRegressionPolicy {
+  return { mode: 'on-demand', windowHours: 168, maxRunsPerWindow: 1, maxUpdatesPerWindow: 100, maxQueuedRuns: 1 }
+}
+
+function FullRegressionPolicyEditor({
+  project,
+  disabled,
+  onSave,
+}: {
+  project: ProjectListEntry
+  disabled: boolean
+  onSave: (policy: FullRegressionPolicy) => void
+}) {
+  const [draft, setDraft] = useState<FullRegressionPolicy>(project.fullRegressionPolicy ?? defaultFullRegressionPolicy())
+  useEffect(() => setDraft(project.fullRegressionPolicy ?? defaultFullRegressionPolicy()), [project.id, project.fullRegressionPolicy])
+  const budget = {
+    windowHours: draft.windowHours,
+    maxRunsPerWindow: draft.maxRunsPerWindow,
+    maxUpdatesPerWindow: draft.maxUpdatesPerWindow,
+    maxQueuedRuns: draft.maxQueuedRuns,
+  }
+  const setNumber = (key: 'windowHours' | 'maxRunsPerWindow' | 'maxUpdatesPerWindow', value: string) => {
+    const number = Number(value)
+    const bounds = key === 'windowHours' ? [1, 8760] : key === 'maxRunsPerWindow' ? [1, 100] : [1, 100000]
+    if (!Number.isInteger(number) || number < bounds[0]! || number > bounds[1]!) return
+    setDraft((current) => ({ ...current, [key]: number }))
+  }
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-3" data-slot="full-regression-policy">
+      <select
+        aria-label="Full regression mode"
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        value={draft.mode}
+        disabled={disabled}
+        onChange={(event) => {
+          const common = budget
+          if (event.target.value === 'scheduled') {
+            setDraft({ ...common, mode: 'scheduled', schedule: draft.mode === 'scheduled' ? draft.schedule : { type: 'daily', hour: 3, minute: 0 } })
+          } else if (event.target.value === 'after_changes') {
+            setDraft({ ...common, mode: 'after_changes', changesPerBatch: draft.mode === 'after_changes' ? draft.changesPerBatch : 25 })
+          } else {
+            setDraft({ ...common, mode: 'on-demand' })
+          }
+        }}
+      >
+        <option value="on-demand">On demand</option>
+        <option value="scheduled">Scheduled</option>
+        <option value="after_changes">After a change batch</option>
+      </select>
+      {draft.mode === 'scheduled' ? (
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="Full regression schedule"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={draft.schedule.type}
+            disabled={disabled}
+            onChange={(event) => setDraft((current) => {
+              const type = event.target.value
+              const prior = current.mode === 'scheduled' && current.schedule.type !== 'hours' ? current.schedule : undefined
+              if (type === 'hours') return { ...current, mode: 'scheduled', schedule: { type, every: 6 } }
+              if (type === 'weekly') return { ...current, mode: 'scheduled', schedule: { type, hour: prior?.hour ?? 3, minute: prior?.minute ?? 0, day: current.mode === 'scheduled' && current.schedule.type === 'weekly' ? current.schedule.day : 1 } }
+              return { ...current, mode: 'scheduled', schedule: { type: type === 'weekdays' ? 'weekdays' : 'daily', hour: prior?.hour ?? 3, minute: prior?.minute ?? 0 } }
+            })}
+          >
+            <option value="daily">Daily</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="weekly">Weekly</option>
+            <option value="hours">Every few hours</option>
+          </select>
+          {draft.schedule.type === 'hours' ? (
+            <select
+              aria-label="Schedule interval hours"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              value={draft.schedule.every ?? 6}
+              disabled={disabled}
+              onChange={(event) => setDraft((current) => current.mode === 'scheduled'
+                ? { ...current, schedule: { type: 'hours', every: Number(event.target.value) as 1 | 2 | 3 | 4 | 6 | 8 | 12 } }
+                : current)}
+            >
+              {[1, 2, 3, 4, 6, 8, 12].map((hours) => <option key={hours} value={hours}>{hours} hours</option>)}
+            </select>
+          ) : (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-soft-foreground">Hour
+                <input type="number" min={0} max={23} value={draft.schedule.hour ?? 3} disabled={disabled} onChange={(event) => {
+                  const hour = Number(event.target.value)
+                  if (Number.isInteger(hour) && hour >= 0 && hour <= 23) setDraft((current) => current.mode === 'scheduled' && current.schedule.type !== 'hours' ? { ...current, schedule: { ...current.schedule, hour } } : current)
+                }} className="ml-1 h-8 w-16 rounded-md border border-input bg-background px-2 text-sm text-foreground" />
+              </label>
+              <label className="text-xs text-soft-foreground">Minute
+                <input type="number" min={0} max={59} value={draft.schedule.minute ?? 0} disabled={disabled} onChange={(event) => {
+                  const minute = Number(event.target.value)
+                  if (Number.isInteger(minute) && minute >= 0 && minute <= 59) setDraft((current) => current.mode === 'scheduled' && current.schedule.type !== 'hours' ? { ...current, schedule: { ...current.schedule, minute } } : current)
+                }} className="ml-1 h-8 w-16 rounded-md border border-input bg-background px-2 text-sm text-foreground" />
+              </label>
+              {draft.schedule.type === 'weekly' ? <label className="text-xs text-soft-foreground">Day
+                <select aria-label="Weekly regression day" value={draft.schedule.day ?? 1} disabled={disabled} onChange={(event) => {
+                  const day = Number(event.target.value) as 1 | 2 | 3 | 4 | 5 | 6 | 7
+                  setDraft((current) => current.mode === 'scheduled' && current.schedule.type === 'weekly' ? { ...current, schedule: { ...current.schedule, day } } : current)
+                }} className="ml-1 h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+                  {[['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday'], ['7', 'Sunday']].map(([day, name]) => <option key={day} value={day}>{name}</option>)}
+                </select>
+              </label> : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+      {draft.mode === 'after_changes' ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span>Run after</span>
+          <input aria-label="Changes per full regression batch" type="number" min={1} max={100000} value={draft.changesPerBatch} disabled={disabled} onChange={(event) => {
+            const value = Number(event.target.value)
+            if (Number.isInteger(value) && value >= 1 && value <= 100000) setDraft((current) => current.mode === 'after_changes' ? { ...current, changesPerBatch: value } : current)
+          }} className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm" />
+          <span>integrated changes</span>
+        </label>
+      ) : null}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1 text-xs text-soft-foreground">Maximum runs per window
+          <input type="number" min={1} max={100} value={draft.maxRunsPerWindow} disabled={disabled} onChange={(event) => setNumber('maxRunsPerWindow', event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-soft-foreground">Window hours
+          <input type="number" min={1} max={8760} value={draft.windowHours} disabled={disabled} onChange={(event) => setNumber('windowHours', event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-soft-foreground">Maximum updates per window
+          <input type="number" min={1} max={100000} value={draft.maxUpdatesPerWindow} disabled={disabled} onChange={(event) => setNumber('maxUpdatesPerWindow', event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-soft-foreground">Queued follow-ups
+          <select value={draft.maxQueuedRuns} disabled={disabled} onChange={(event) => setDraft((current) => ({ ...current, maxQueuedRuns: Number(event.target.value) as 0 | 1 }))} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground">
+            <option value={0}>None</option><option value={1}>One coalesced follow-up</option>
+          </select>
+        </label>
+      </div>
+      <Button type="button" size="sm" disabled={disabled} onClick={() => onSave(draft)}>Save regression policy</Button>
     </div>
   )
 }

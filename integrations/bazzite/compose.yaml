@@ -7,6 +7,9 @@ services:
     environment:
       CEZ_AUTOMATIONS: ${CEZAR_AUTOMATIONS}
       CEZ_API_URL: ${CEZ_API_URL}
+      # Enable only after the host release controller has staged verified channel pointers.
+      CEZ_FACTORY_RELEASE_STORE: ${CEZ_FACTORY_RELEASE_STORE:-}
+      FACTORY_RUNTIME_SOURCE_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
       # Cezar executes Factory workflows in Linux; this is the in-container
       # mount path, not a Windows host path.
       FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
@@ -20,6 +23,8 @@ services:
       # overlays only /projects/cezar-factory.
       - openhands-projects:/projects
       - ${FACTORY_RUNTIME_HOST_DIR}:/projects/cezar-factory:ro,Z
+      # Cezar must update the controller's SQLite lease table so active runs stay protected from GC.
+      - ${FACTORY_RELEASE_STORE_HOST_DIR:-/var/home/bin0110001/.local/share/cezar-factory/release-store}:/var/lib/cezar-factory/release-store:Z
       # The Factory checkout is immutable at runtime; Cezar still needs a
       # persistent writable home for run receipts and worktree metadata.
       - cezar-factory-runtime:/projects/cezar-factory/.ai/cezar:Z

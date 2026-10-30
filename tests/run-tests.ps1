@@ -1,5 +1,6 @@
 #!/usr/bin/env pwsh
 # Factory self-test: static checks plus install/update/diff/verify scenarios against fixture projects.
+param([switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $scripts = Join-Path $factory 'scripts'
@@ -75,9 +76,10 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'scripts/recover-audit-reservations.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
-'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'tests/test_factory_release_controller.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
+'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh',
 'scripts/publish-failure-audit.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
+'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
@@ -106,11 +108,20 @@ $ensureImplementationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensu
 $investigateSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-investigate/SKILL.md')
 $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implementation.ps1')
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
+$validationLibrary = Get-Content -Raw (Join-Path $factory 'scripts/lib.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
 Assert 'external workspace skill uses the shared CLI and yields to a verified Factory execution' ($lifecycleSkill -match 'cez workspace context' -and $lifecycleSkill -match 'managed: true' -and $lifecycleSkill -match 'cez workspace adopt' -and $lifecycleSkill -notmatch '(?i)(pwsh|powershell).*\.ps1')
 Assert 'Codex and Claude hook fragments connect session start/stop to verified workspace context' ($codexLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $codexLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*')
-Assert 'Factory coding workflows preflight mergeability before handoff and review hands off the verified state' ($implementWorkflow -match '(?s)id: full-verification.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
+Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
+$testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
+$cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+$documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
+$ciWorkflow = Get-Content -Raw (Join-Path $factory '.github/workflows/ci.yml')
+Assert 'Cezar owners run changed tests or related tests without package-wide Vitest' ($cezarTestOwners.Count -eq 3 -and @($cezarTestOwners | Where-Object { $_.command -notmatch 'vitest run \$tests' -or $_.command -notmatch 'vitest related --run \$sources' -or $_.command -match 'vitest run;|vitest run\s*;' }).Count -eq 0)
+Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))
+Assert 'CI installs Cezar dependencies only when a Cezar package changed' ($ciWorkflow -match 'Detect changed Cezar packages' -and $ciWorkflow -match "steps\.cezar-scope\.outputs\.changed == 'true'" -and $ciWorkflow -notmatch 'Verification contract tests and typechecks|npm run typecheck -w @open-mercato/cezar')
+Assert 'Factory validation captures bounded command output on timeout' ($validationLibrary -match 'Preserve the bounded diagnostic output on timeouts' -and $validationLibrary -match 'Configured validation\.\$Stage exceeded')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
@@ -275,6 +286,7 @@ $stagedReceipt = Get-Content -Raw (Join-Path $releaseFixtures 'receipt-staged.js
 $verifiedState = Get-Content -Raw (Join-Path $releaseFixtures 'state-verified.json')
 $activeLease = Get-Content -Raw (Join-Path $releaseFixtures 'lease-active.json')
 $expiredLease = Get-Content -Raw (Join-Path $releaseFixtures 'lease-expired.json')
+$healthyPromotion = Get-Content -Raw (Join-Path $releaseFixtures 'promotion-healthy.json')
 Assert 'release contracts: valid immutable manifest fixture satisfies JSON Schema' (Test-Json -Json $manifestFixture -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json'))
 Assert 'release contracts: unknown manifest schema fixture is rejected by v1 schema' (-not (Test-Json -Json $manifestUnknown -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
 Assert 'release contracts: active target receipt fixture satisfies JSON Schema' (Test-Json -Json $activeReceipt -SchemaFile (Join-Path $releaseSchemas 'receipt.schema.json'))
@@ -282,6 +294,7 @@ Assert 'release contracts: incompatible target is distinct from a failed release
 Assert 'release contracts: interrupted activation remains a recoverable staged receipt' (Test-Json -Json $stagedReceipt -SchemaFile (Join-Path $releaseSchemas 'receipt.schema.json'))
 Assert 'release contracts: verified release requires passing evidence' (Test-Json -Json $verifiedState -SchemaFile (Join-Path $releaseSchemas 'state.schema.json'))
 Assert 'release contracts: active and expired task pins satisfy lease shape' ((Test-Json -Json $activeLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')) -and (Test-Json -Json $expiredLease -SchemaFile (Join-Path $releaseSchemas 'lease.schema.json')))
+Assert 'release contracts: local promotion evidence fixture satisfies its versioned schema' (Test-Json -Json $healthyPromotion -SchemaFile (Join-Path $releaseSchemas 'promotion-record.schema.json'))
 $unsafeManifest = (Get-Content -Raw (Join-Path $releaseFixtures 'manifest-valid.json') | ConvertFrom-Json -AsHashtable); $unsafeManifest.files[0].path = '../VERSION'
 Assert 'release contracts: path traversal is rejected' (-not (Test-Json -Json ($unsafeManifest | ConvertTo-Json -Depth 20) -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
 foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
@@ -331,6 +344,12 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$null)
     $bad = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in 'gh', 'git', 'uv', 'npm', 'pwsh', 'node' }, $true))
     Assert "no command-shadowing functions in $($f.Name)" ($bad.Count -eq 0)
+}
+
+if ($StaticOnly) {
+    if ($script:fail) { Write-Error "$script:fail static checks failed."; exit 1 }
+    Write-Host 'STATIC CHECKS PASSED'
+    exit 0
 }
 
 # ---- Scenarios -----------------------------------------------------------
@@ -611,14 +630,14 @@ try {
     # The eligibility command consumes live GitHub evidence and clean, head-bound workflow receipts.
     $eligibilityScript = Join-Path $scripts 'verify-merge-eligibility.ps1'
     $eligibilityRoot = Join-Path $tmp 'eligibility-receipts'
-    foreach ($stage in @('full','verify')) {
+    foreach ($stage in @('changed','full','verify')) {
         $dir = Join-Path $eligibilityRoot "$stage/attempt"
         New-Item -ItemType Directory -Force $dir | Out-Null
         @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = $stage; status = 'passed'; exitCode = 0; artifactPaths = @(".factory/artifacts/validation/$stage/receipt.json"); worktreeClean = $true } | ConvertTo-Json | Set-Content (Join-Path $dir 'receipt.json')
     }
     $eligibilityState = @{
         labels = @('factory:review'); comments = @(); prHeadSha = ('a' * 40)
-        prDetails = @{ number = 1; url = $rev.pr; body = 'Closes #7'; state = 'OPEN'; isDraft = $false; baseRefName = 'dev'; headRefOid = ('a' * 40); author = @{ login = 'implementer' }; reviewDecision = 'APPROVED'; statusCheckRollup = @(@{ name = 'Factory CI'; conclusion = 'SUCCESS' }); reviews = @(@{ state = 'APPROVED'; commit = @{ oid = ('a' * 40) }; author = @{ login = 'independent-reviewer' } }); closingIssuesReferences = @(@{ number = 7 }) }
+        prDetails = @{ number = 1; url = $rev.pr; body = 'Closes #7'; state = 'OPEN'; isDraft = $false; baseRefName = 'dev'; headRefOid = ('a' * 40); author = @{ login = 'implementer' }; labels = @(@{ name = 'risk:medium' }); reviewDecision = 'APPROVED'; statusCheckRollup = @(@{ name = 'Factory CI'; conclusion = 'SUCCESS' }); reviews = @(@{ state = 'APPROVED'; commit = @{ oid = ('a' * 40) }; author = @{ login = 'independent-reviewer' } }); closingIssuesReferences = @(@{ number = 7 }) }
         repoSettings = @{ allow_auto_merge = $true }
         rules = @(
             @{ type = 'pull_request'; parameters = @{ required_approving_review_count = 1; dismiss_stale_reviews_on_push = $true; require_last_push_approval = $true } },
@@ -637,6 +656,14 @@ try {
     $approvedReview = With $rev @{ approvalChangeRequestStatus = 'approval'; blockingFindings = '' }
     $eligible = Test-Eligibility $approvedReview 'valid'
     Assert 'merge gate allows current reviewed head with clean receipts and effective rules' ($eligible.Code -eq 0 -and $eligible.Output.decision -eq 'allowed')
+    Assert 'medium-risk changes can merge with focused and integration receipts without a full-suite receipt requirement' (-not $eligible.Output.validation.fullRequired -and $eligible.Output.validation.changed -and $eligible.Output.validation.verify)
+    $highRiskFullReceipt = Join-Path $eligibilityRoot 'full/attempt/receipt.json'
+    Remove-Item -LiteralPath $highRiskFullReceipt -Force
+    $eligibilityState.prDetails.labels = @(@{ name = 'risk:high' }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $highRiskWithoutFull = Test-Eligibility $approvedReview 'high-risk-needs-full'
+    Assert 'merge gate retains the full-suite requirement for high-risk changes' ($highRiskWithoutFull.Output.decision -eq 'denied' -and $highRiskWithoutFull.Output.validation.fullRequired)
+    $eligibilityState.prDetails.labels = @(@{ name = 'risk:medium' }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = 'full'; status = 'passed'; exitCode = 0; artifactPaths = @('.factory/artifacts/validation/full/attempt/receipt.json'); worktreeClean = $true } | ConvertTo-Json | Set-Content $highRiskFullReceipt
     $failedReceiptPath = Join-Path $eligibilityRoot 'full/newer/receipt.json'; New-Item -ItemType Directory -Force (Split-Path $failedReceiptPath) | Out-Null
     @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = 'full'; status = 'failed'; exitCode = 1; artifactPaths = @('.factory/artifacts/validation/full/newer/receipt.json'); worktreeClean = $true } | ConvertTo-Json | Set-Content $failedReceiptPath
     (Get-Item $failedReceiptPath).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(2)
@@ -870,13 +897,13 @@ try {
 Write-Host '== shared factory =='
 $pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
-    $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_release_controller.py', '-v') }
+    $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_*.py', '-v') }
     Push-Location $factory
     try {
         $pythonOutput = & $pythonRunner @pythonArgs *>&1 | Out-String
         $pythonCode = $LASTEXITCODE
         Write-Host $pythonOutput
-        Assert 'release controller unit tests pass' ($pythonCode -eq 0)
+        Assert 'release activation and controller unit tests pass' ($pythonCode -eq 0)
     }
     finally { Pop-Location }
 } else {
@@ -887,8 +914,15 @@ Assert 'Cezar loads Factory workflows and skills from the mounted checkout' ($ba
 $autodeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/factory-autodeploy.sh')
 Assert 'autodeploy only fast-forwards, refuses dirty or diverged checkouts, and never resets' ($autodeploy -match 'merge-base --is-ancestor' -and $autodeploy -match 'BLOCKED' -and $autodeploy -notmatch 'reset --hard|git clean|git stash')
 Assert 'autodeploy tracks the tested stable branch' ($autodeploy -match 'FACTORY_DEPLOY_BRANCH:-stable')
-Assert 'autodeploy retries reconciliation on unchanged SHA and records atomic receipts' ($autodeploy -match 'last-success\.json' -and $autodeploy -match 'last-attempt\.json' -and $autodeploy -notmatch 'changed.*==.*0.*exit 0' -and $autodeploy -match 'registryDigest' -and $autodeploy -match 'mv -f --')
-Assert 'autodeploy detects same-version container content drift before sync' ($autodeploy -match 'container_content_digest' -and $autodeploy -match 'host_content_digest' -and $autodeploy -match 'source_sha.*container_sha')
+Assert 'autodeploy uses the journaled activation coordinator' ($autodeploy -match 'factory_activation.py' -and $autodeploy -notmatch 'sync-all-automations')
+Assert 'autodeploy detects same-version container content drift before activation' ($autodeploy -match 'container_content_digest' -and $autodeploy -match 'host_content_digest' -and $autodeploy -match 'source_sha.*container_sha')
+$localPromotion = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_local_scheduler.py')
+$localPromotionExample = Get-Content -Raw (Join-Path $factory 'config/local-release-scheduler.json.example')
+$promotionUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/factory-local-promotion.service')
+Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' ($localPromotion -match 'reviewDecision' -and $localPromotion -match 'APPROVED' -and $localPromotion -notmatch 'gh run|workflow_dispatch|actions/')
+Assert 'local promotion is single-flight and hardware bounded' ($promotionUnit -match 'CPUQuota=200%' -and $promotionUnit -match 'MemoryMax=8G' -and $promotionUnit -match 'FACTORY_GPU_SLOTS=0' -and $promotionUnit -match 'branch dev')
+Assert 'local promotion service uses exact-SHA scheduler' ($promotionUnit -match 'factory_local_scheduler.py run')
+Assert 'local dev promotion example does not run the full suite on every commit' ($localPromotionExample -notmatch 'tests/run-tests\.ps1|release-wide-suite')
 
 $sg = Join-Path $tmp 'shared'
 New-Item -ItemType Directory $sg | Out-Null

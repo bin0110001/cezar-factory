@@ -28,6 +28,7 @@ try {
 param([string]$Stage)
 Add-Content .factory/counter.txt $Stage
 if ($env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }
+if ($env:FACTORY_CHANGED_PATHS) { Set-Content .factory/changed-paths.json $env:FACTORY_CHANGED_PATHS }
 if ($env:ADAPTER_DIRTY) { Set-Content ./adapter-output.tmp dirty }
 if ($env:ADAPTER_COMMIT) {
     Set-Content ./adapter-commit.txt changed
@@ -67,6 +68,38 @@ validation:
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)
     }
     Check 'each configured adapter ran once' (@(Get-Content (Join-Path $project '.factory/counter.txt')).Count -eq 3)
+
+    $ownershipMapPath = Join-Path $project '.ai/factory/test-ownership.json'
+    @{
+        schemaVersion = 1; unmapped = 'full'
+        checks = @(@{ id = 'owned-source'; patterns = @('owned-check.txt', 'staged-check.txt'); command = 'pwsh ./runner.ps1 focused' })
+    } | ConvertTo-Json -Depth 5 | Set-Content $ownershipMapPath
+    & git -C $project add .ai/factory/test-ownership.json
+    & git -C $project commit -qm ownership-map
+    $ownershipBase = (& git -C $project rev-parse HEAD).Trim()
+    @{ environment = @{ baseCommit = $ownershipBase } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    Set-Content (Join-Path $project 'owned-check.txt') 'focused selection'
+    & git -C $project add owned-check.txt
+    & git -C $project commit -qm owned-change
+    $ownedRun = Run-Stage changed
+    Check 'changed ownership map runs the focused owner command and records its selection' ($ownedRun.Code -eq 0 -and $ownedRun.Receipt.status -eq 'passed' -and $ownedRun.Receipt.selectedChecks -contains 'owned-source' -and $ownedRun.Receipt.changedPaths -contains 'owned-check.txt')
+    $ownedPaths = @(Get-Content -Raw (Join-Path $project '.factory/changed-paths.json') | ConvertFrom-Json)
+    Check 'owner command receives only its selected changed paths' ($ownedPaths.Count -eq 1 -and $ownedPaths[0] -eq 'owned-check.txt')
+    Set-Content (Join-Path $project 'unowned-check.txt') 'unmapped source'
+    & git -C $project add unowned-check.txt
+    & git -C $project commit -qm unowned-change
+    $unownedRun = Run-Stage changed
+    Check 'unmapped changed files expand to full validation and remain visible in the receipt' ($unownedRun.Code -eq 0 -and $unownedRun.Receipt.status -eq 'passed' -and $unownedRun.Receipt.selectedChecks -contains 'unmapped-full-regression' -and $unownedRun.Receipt.unmappedPaths -contains 'unowned-check.txt')
+
+    @{ environment = @{ baseCommit = ((& git -C $project rev-parse HEAD).Trim()) } } |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    Set-Content (Join-Path $project 'staged-check.txt') 'staged focused selection'
+    & git -C $project add staged-check.txt
+    $stagedRun = Run-Stage changed
+    Check 'staged but uncommitted files select their focused owner' ($stagedRun.Code -eq 0 -and $stagedRun.Receipt.selectedChecks -contains 'owned-source' -and $stagedRun.Receipt.changedPaths -contains 'staged-check.txt')
+    & git -C $project reset -q -- staged-check.txt
+    Remove-Item (Join-Path $project 'staged-check.txt')
+
     $priorValidationRoot = $env:FACTORY_VALIDATION_ROOT
     $env:FACTORY_VALIDATION_ROOT = $factory
     try { $otherWorktreeRun = Run-Stage full }
@@ -96,9 +129,11 @@ validation:
     Remove-Item Env:ADAPTER_EXIT
 
     $env:ADAPTER_HUGE = '1'
+    (Get-Content -Raw (Join-Path $project 'runner.ps1')).Replace("if (`$env:ADAPTER_HUGE) { Write-Output ('x' * 120000) }", "if (`$env:ADAPTER_HUGE) { Write-Output 'BEGIN-OUTPUT'; Write-Output ('x' * 120000); Write-Output 'END-OUTPUT' }") | Set-Content (Join-Path $project 'runner.ps1')
     $run = Run-Stage full
     $logPath = Join-Path $project $run.Receipt.artifactPaths[0]
-    Check 'huge output is bounded and marked truncated' ($run.Code -eq 0 -and $run.Receipt.truncated -and (Get-Item $logPath).Length -le 65536)
+    $boundedLog = Get-Content -Raw $logPath
+    Check 'huge output is bounded, marked truncated, and preserves its beginning and end' ($run.Code -eq 0 -and $run.Receipt.truncated -and (Get-Item $logPath).Length -le 65536 -and $boundedLog.Contains('BEGIN-OUTPUT') -and $boundedLog.Contains('END-OUTPUT') -and $boundedLog.Contains('middle output truncated'))
     Remove-Item Env:ADAPTER_HUGE
 
     $env:ADAPTER_DIRTY = '1'
@@ -147,6 +182,8 @@ validation:
     $configText.Replace('pwsh ./runner.ps1 full', 'skip') | Set-Content $configPath
     $run = Run-Stage full
     Check 'required full stage cannot be skipped' ($run.Code -ne 0 -and $run.Receipt.status -eq 'error')
+    Remove-Item -LiteralPath $ownershipMapPath -Force
+    Remove-Item -LiteralPath (Join-Path $project '.factory/implementation-context.json') -Force
     $configText.Replace('pwsh ./runner.ps1 changed', 'skip') | Set-Content $configPath
     $run = Run-Stage changed
     Check 'explicit unsupported targeted stage is skipped, not passed' ($run.Code -eq 0 -and $run.Receipt.status -eq 'skipped')
