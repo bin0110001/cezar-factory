@@ -49,8 +49,9 @@ function Test-FactoryConfig($Config) {
     $errs
 }
 
-# Drain both child streams while retaining at most 64 KiB of each. In
-# particular, one enormous line must not defeat the output bound.
+# Drain both child streams while retaining the beginning and end (at most 64
+# KiB combined) of each. The tail preserves test failure summaries after noisy
+# progress output, while one enormous line still cannot defeat the bound.
 function New-ValidationCapture {
     if (-not ('FactoryValidationCappedStream' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -59,15 +60,43 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 public sealed class FactoryValidationCappedStream : Stream {
-    private readonly MemoryStream saved = new MemoryStream();
-    private readonly int limit;
+    private readonly int headLimit;
+    private readonly byte[] tail;
+    private int tailCount;
+    private int tailStart;
+    private static readonly byte[] Marker = System.Text.Encoding.UTF8.GetBytes("\r\n... middle output truncated ...\r\n");
     public long BytesSeen { get; private set; }
-    public FactoryValidationCappedStream(int limit) { this.limit = limit; }
-    public byte[] SavedBytes() { return saved.ToArray(); }
+    public int CapturedCapacity { get { return headLimit + tail.Length; } }
+    public FactoryValidationCappedStream(int limit) {
+        headLimit = limit / 2;
+        tail = new byte[limit - headLimit - Marker.Length];
+    }
+    private readonly MemoryStream head = new MemoryStream();
+    public byte[] SavedBytes() {
+        byte[] first = head.ToArray();
+        bool truncated = BytesSeen > CapturedCapacity;
+        int markerLength = truncated ? Marker.Length : 0;
+        byte[] result = new byte[first.Length + markerLength + tailCount];
+        Buffer.BlockCopy(first, 0, result, 0, first.Length);
+        if (truncated) Buffer.BlockCopy(Marker, 0, result, first.Length, markerLength);
+        int tailOffset = tailStart;
+        for (int i = 0; i < tailCount; i++) result[first.Length + markerLength + i] = tail[(tailOffset + i) % tail.Length];
+        return result;
+    }
+    private void SaveTail(byte[] buffer, int offset, int count) {
+        for (int i = 0; i < count; i++) {
+            int slot = (tailStart + tailCount) % tail.Length;
+            tail[slot] = buffer[offset + i];
+            if (tailCount < tail.Length) tailCount++;
+            else tailStart = (tailStart + 1) % tail.Length;
+        }
+    }
     public override void Write(byte[] buffer, int offset, int count) {
+        int keepHead = Math.Min(count, Math.Max(0, headLimit - (int)head.Length));
+        if (keepHead > 0) head.Write(buffer, offset, keepHead);
+        int tailCountInWrite = count - keepHead;
+        if (tailCountInWrite > 0) SaveTail(buffer, offset + keepHead, tailCountInWrite);
         BytesSeen += count;
-        int keep = Math.Min(count, Math.Max(0, limit - (int)saved.Length));
-        if (keep > 0) saved.Write(buffer, offset, keep);
     }
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken token) {
         Write(buffer, offset, count);
@@ -76,8 +105,8 @@ public sealed class FactoryValidationCappedStream : Stream {
     public override bool CanRead { get { return false; } }
     public override bool CanSeek { get { return false; } }
     public override bool CanWrite { get { return true; } }
-    public override long Length { get { return saved.Length; } }
-    public override long Position { get { return saved.Position; } set { throw new NotSupportedException(); } }
+    public override long Length { get { return SavedBytes().Length; } }
+    public override long Position { get { return 0; } set { throw new NotSupportedException(); } }
     public override void Flush() { }
     public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
@@ -221,6 +250,9 @@ function Invoke-FactoryValidation {
             foreach ($check in $selection.checks) {
                 $checkId = ([string]$check.id).Replace("'", "''")
                 $checkCommand = ([string]$check.command).Replace("'", "''")
+                $changedPathsJson = ConvertTo-Json -InputObject @($check.paths) -Compress
+                $changedPathsLiteral = $changedPathsJson.Replace("'", "''")
+                $commandLines.Add("`$env:FACTORY_CHANGED_PATHS = '$changedPathsLiteral'")
                 $commandLines.Add("Write-Output 'CHECK_START: $checkId'")
                 $commandLines.Add('$global:LASTEXITCODE = 0')
                 $commandLines.Add("Invoke-Expression '$checkCommand'")
@@ -267,13 +299,13 @@ function Invoke-FactoryValidation {
             try {
                 [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
                 $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-                $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
+                $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
             } catch { }
             throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
         }
         [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
         $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-        $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
+        $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
         $receipt.exitCode = [int]$process.ExitCode
         $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }

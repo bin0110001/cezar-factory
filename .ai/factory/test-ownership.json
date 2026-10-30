@@ -15,17 +15,17 @@
     {
       "id": "cezar-api-client",
       "patterns": ["cezar/packages/api-client/**"],
-      "command": "Push-Location cezar; npm run typecheck -w @open-mercato/cezar-api-client; if ($LASTEXITCODE -ne 0) { throw 'API client typecheck failed.' }; npm exec --workspace @open-mercato/cezar-api-client -- vitest run; if ($LASTEXITCODE -ne 0) { throw 'API client tests failed.' }; Pop-Location"
+      "command": "Push-Location cezar; $paths = @(ConvertFrom-Json $env:FACTORY_CHANGED_PATHS | Where-Object { $_ -match '^cezar/packages/api-client/' } | ForEach-Object { $_ -replace '^cezar/packages/api-client/', '' }); $tests = @($paths | Where-Object { $_ -match '\\.(test|spec)\\.[cm]?[jt]sx?$' }); $sources = @($paths | Where-Object { $_ -match '\\.[cm]?[jt]sx?$' -and $_ -notmatch '\\.(test|spec)\\.' }); npm run typecheck -w @open-mercato/cezar-api-client; if ($LASTEXITCODE -ne 0) { throw 'API client typecheck failed.' }; if ($tests.Count -gt 0) { npm exec --workspace @open-mercato/cezar-api-client -- vitest run $tests } elseif ($sources.Count -gt 0) { npm exec --workspace @open-mercato/cezar-api-client -- vitest related --run $sources }; if ($LASTEXITCODE -ne 0) { throw 'API client focused tests failed.' }; Pop-Location"
     },
     {
       "id": "cezar-server",
       "patterns": ["cezar/packages/cezar/**"],
-      "command": "Push-Location cezar; npm run typecheck -w @open-mercato/cezar; if ($LASTEXITCODE -ne 0) { throw 'Cezar server typecheck failed.' }; npm exec --workspace @open-mercato/cezar -- vitest run; if ($LASTEXITCODE -ne 0) { throw 'Cezar server tests failed.' }; Pop-Location"
+      "command": "Push-Location cezar; $paths = @(ConvertFrom-Json $env:FACTORY_CHANGED_PATHS | Where-Object { $_ -match '^cezar/packages/cezar/' } | ForEach-Object { $_ -replace '^cezar/packages/cezar/', '' }); $tests = @($paths | Where-Object { $_ -match '\\.(test|spec)\\.[cm]?[jt]sx?$' }); $sources = @($paths | Where-Object { $_ -match '\\.[cm]?[jt]sx?$' -and $_ -notmatch '\\.(test|spec)\\.' }); npm run typecheck -w @open-mercato/cezar; if ($LASTEXITCODE -ne 0) { throw 'Cezar server typecheck failed.' }; if ($tests.Count -gt 0) { npm exec --workspace @open-mercato/cezar -- vitest run $tests } elseif ($sources.Count -gt 0) { npm exec --workspace @open-mercato/cezar -- vitest related --run $sources }; if ($LASTEXITCODE -ne 0) { throw 'Cezar server focused tests failed.' }; Pop-Location"
     },
     {
       "id": "cezar-web",
       "patterns": ["cezar/packages/web/**"],
-      "command": "Push-Location cezar; npm run typecheck -w @open-mercato/cezar-web; if ($LASTEXITCODE -ne 0) { throw 'Cezar web typecheck failed.' }; npm exec --workspace @open-mercato/cezar-web -- vitest run; if ($LASTEXITCODE -ne 0) { throw 'Cezar web tests failed.' }; Pop-Location"
+      "command": "Push-Location cezar; $paths = @(ConvertFrom-Json $env:FACTORY_CHANGED_PATHS | Where-Object { $_ -match '^cezar/packages/web/' } | ForEach-Object { $_ -replace '^cezar/packages/web/', '' }); $tests = @($paths | Where-Object { $_ -match '\\.(test|spec)\\.[cm]?[jt]sx?$' }); $sources = @($paths | Where-Object { $_ -match '\\.[cm]?[jt]sx?$' -and $_ -notmatch '\\.(test|spec)\\.' }); npm run typecheck -w @open-mercato/cezar-web; if ($LASTEXITCODE -ne 0) { throw 'Cezar web typecheck failed.' }; if ($tests.Count -gt 0) { npm exec --workspace @open-mercato/cezar-web -- vitest run $tests } elseif ($sources.Count -gt 0) { npm exec --workspace @open-mercato/cezar-web -- vitest related --run $sources }; if ($LASTEXITCODE -ne 0) { throw 'Cezar web focused tests failed.' }; Pop-Location"
     },
     {
       "id": "factory-validation-adapters",
@@ -34,13 +34,13 @@
     },
     {
       "id": "factory-static-contracts",
-      "patterns": ["scripts/**", "workflows/**", "policies/**", "templates/**", "schemas/**", "integrations/**", "config/**", ".ai/factory/**", ".github/**"],
+      "patterns": ["scripts/**", "workflows/**", "policies/**", "templates/**", "schemas/**", "integrations/**", "config/**", ".ai/factory/**", ".github/**", "tests/run-tests.ps1"],
       "command": "pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly"
     },
     {
       "id": "factory-release-unit-tests",
-      "patterns": ["scripts/release/**", "tests/test_factory_local_scheduler.py"],
-      "command": "python3 -m unittest tests.test_factory_local_scheduler"
+      "patterns": ["scripts/release/**", "tests/test_factory_local_scheduler.py", "tests/test_factory_activation.py", "tests/test_factory_release_controller.py"],
+      "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }; if (-not $pythonRunner) { throw 'Python 3 is required for focused Factory release tests.' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') } else { @('-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Factory release unit tests failed.' }"
     },
     {
       "id": "documentation-diff",
