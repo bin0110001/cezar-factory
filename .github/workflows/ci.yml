@@ -28,8 +28,27 @@ jobs:
           npm run typecheck:contract
           npm run typecheck -w @open-mercato/cezar
       - name: Factory changed-scope validation (focused checks, full fallback on uncertainty)
+        id: changed-validation
+        continue-on-error: true
         shell: pwsh
         run: ./scripts/factory/test-changed.ps1 -Task "GitHub pull request ${{ github.event.pull_request.number }}"
+      - name: Print bounded validation diagnostics
+        if: steps.changed-validation.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $receiptFile = Get-ChildItem .factory/artifacts/validation/changed -Filter receipt.json -Recurse |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $receiptFile) { throw 'Changed validation failed without writing a receipt.' }
+          $receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json
+          Write-Host "Validation receipt: status=$($receipt.status), exitCode=$($receipt.exitCode), message=$($receipt.message)"
+          foreach ($name in @('stdout.log', 'stderr.log')) {
+            $path = Join-Path $receiptFile.DirectoryName $name
+            if (Test-Path -LiteralPath $path) {
+              Write-Host "--- $name (bounded to 64 KiB) ---"
+              Get-Content -LiteralPath $path -Raw
+            }
+          }
+          exit 1
       - name: Autodeploy retry and parity integration tests
         if: matrix.os == 'ubuntu-latest'
         shell: bash
