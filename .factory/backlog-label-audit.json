@@ -1,10 +1,16 @@
 {
-  "considered": [94],
-  "changed": [
+  "considered": [
     {
-      "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
+      "number": 137,
+      "title": "Model evaluation: historical coding-run dataset, routing outcomes and cost per accepted change"
     }
   ],
-  "skipped": []
+  "changed": [],
+  "skipped": [
+    {
+      "issue": 137,
+      "reason": "no defensible classification from existing labels (typeHint is null, no legacy type marker present)",
+      "added": []
+    }
+  ]
 }
