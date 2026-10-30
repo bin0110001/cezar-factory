@@ -1,0 +1,10 @@
+{
+  "considered": [94],
+  "changed": [
+    {
+      "issue": 94,
+      "added": ["factory:new", "type:feature", "risk:medium"]
+    }
+  ],
+  "skipped": []
+}

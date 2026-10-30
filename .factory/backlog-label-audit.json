@@ -3,7 +3,7 @@
   "changed": [
     {
       "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
+      "added": ["factory:new", "type:feature", "risk:medium"]
     }
   ],
   "skipped": []
