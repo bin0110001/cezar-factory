@@ -4,6 +4,20 @@ This document describes the optional local project integration layer. The
 default Factory release path synchronizes automations directly to Cezar and
 does not require this checkout layout.
 
+## Explicit targets and deployment boundary
+
+Release and synchronization commands use only the host-local
+`config/factory-projects.json` registry or a `-ProjectPath` supplied explicitly
+by the operator. They do not search drives or infer projects from nearby
+checkouts. If neither source provides a target, the command returns a
+`Needs target configuration` error before changing a project or contacting
+Cezar.
+
+`scripts/verify.ps1` checks only the project path passed to it (or the current
+directory) and does not deploy. `tests/run-tests.ps1` uses local fixtures and
+dry runs; it must not invoke a live Bazzite or other deployment. Live Bazzite
+changes use the supported deployment flow and the explicit server inventory.
+
 ## Project Structure
 
 Projects that need Factory workflows, skills, policies, scripts, or pinned
