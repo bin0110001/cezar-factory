@@ -1,10 +1,10 @@
 {
-  "considered": [94],
+  "considered": [128, 129, 130],
   "changed": [
-    {
-      "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
-    }
+    {"issue": 128, "added": ["factory:new", "type:maintenance", "risk:medium"]},
+    {"issue": 129, "added": ["factory:new", "type:maintenance", "risk:medium"]},
+    {"issue": 130, "added": ["factory:new", "type:maintenance", "risk:medium"]}
   ],
+  "resolved": [],
   "skipped": []
 }
