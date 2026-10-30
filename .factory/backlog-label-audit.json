@@ -1,10 +1,31 @@
 {
-  "considered": [94],
-  "changed": [
-    {
-      "issue": 94,
-      "added": ["factory:new", "type:maintenance", "risk:medium"]
-    }
+  "considered": [
+    47,
+    49,
+    50
   ],
-  "skipped": []
+  "changed": [],
+  "skipped": [
+    {
+      "issue": 47,
+      "reason": "already resolved with factory:tracking",
+      "added": [
+        "factory:tracking"
+      ]
+    },
+    {
+      "issue": 49,
+      "reason": "already resolved with factory:working",
+      "added": [
+        "factory:working"
+      ]
+    },
+    {
+      "issue": 50,
+      "reason": "already resolved with factory:needs-help",
+      "added": [
+        "factory:needs-help"
+      ]
+    }
+  ]
 }
