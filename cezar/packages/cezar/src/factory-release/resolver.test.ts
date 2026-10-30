@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -31,7 +31,7 @@ async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
   await writeFile(join(release, 'artifact.tar'), artifact);
   await writeFile(join(release, 'verification', `${sha}.json`), evidence);
   await writeFile(join(store, 'channels', `${channel}.json`), JSON.stringify({ schemaVersion: 'factory-release-channel-pointer/v1', channel, currentSha: sha, currentPath: release, lastGoodSha: sha, lastGoodPath: release, updatedAt: '2026-10-23T12:00:00Z' }));
-  return { store, release, sha, manifest };
+  return { store, release: await realpath(release), sha, manifest };
 }
 
 const project = (factoryChannel?: 'dev' | 'stable') => [{ id: 'shop', root: 'C:\\shop', name: 'Shop', addedAt: '', lastOpenedAt: '', source: 'local' as const, ...(factoryChannel ? { factoryChannel } : {}) }];
