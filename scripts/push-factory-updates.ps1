@@ -53,9 +53,9 @@ elseif (Test-Path $TargetsPath) {
     $targets = @(Get-Content -Raw $TargetsPath | ConvertFrom-Json)
 }
 else {
-    throw "No targets supplied. Pass -ProjectPath or create the host-local target registry '$TargetsPath' from config/factory-projects.json.example."
+    throw "Needs target configuration: pass -ProjectPath explicitly or create the host-local target registry '$TargetsPath' from config/factory-projects.json.example."
 }
-if (-not $targets.Count) { throw 'No Factory update targets configured.' }
+if (-not $targets.Count) { throw 'Needs target configuration: no Factory update targets are configured.' }
 
 & (Join-Path $factory 'scripts/validate-automation-catalog.ps1')
 

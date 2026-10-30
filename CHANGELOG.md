@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.60] - 2026-10-30
+
+- Make missing Factory target configuration explicit and verify that
+  verification and test entry points cannot invoke live deployment tools.
+
 ## [0.3.59] - 2026-10-30
 
 - Automatically reconcile ready workspace claims after their exact reviewed PR

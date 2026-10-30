@@ -963,7 +963,39 @@ try {
 finally { Pop-Location }
 
 $noRegistry = & pwsh -NoProfile -File (Join-Path $scripts 'sync-all-automations.ps1') -FactoryPath $factory -RegistryPath (Join-Path $sg 'missing.json') *>&1 | Out-String
-Assert 'sync-all refuses to run without a target registry' ($LASTEXITCODE -ne 0 -and $noRegistry -match 'No target registry')
+$noRegistryExit = $LASTEXITCODE
+Assert 'sync-all requires explicit target configuration and makes no synchronization' ($noRegistryExit -ne 0 -and $noRegistry -match 'Needs target configuration' -and $noRegistry -match 'nothing was synchronized')
+$emptyTargetRegistry = Join-Path $sg 'empty-target-registry.json'
+[IO.File]::WriteAllText($emptyTargetRegistry, '[]', [Text.UTF8Encoding]::new($false))
+$emptyTargets = & pwsh -NoProfile -File (Join-Path $scripts 'sync-all-automations.ps1') -FactoryPath $factory -RegistryPath $emptyTargetRegistry *>&1 | Out-String
+$emptyTargetsExit = $LASTEXITCODE
+Assert 'sync-all refuses an empty target registry before contacting projects' ($emptyTargetsExit -ne 0 -and $emptyTargets -match 'Needs target configuration')
+$missingUpdateTargets = Join-Path $sg 'missing-update-targets.json'
+$missingUpdateReport = Join-Path $tmp 'missing-update-target-report.jsonl'
+$noUpdateTarget = & pwsh -NoProfile -File (Join-Path $scripts 'push-factory-updates.ps1') -FactoryPath $factory -TargetsPath $missingUpdateTargets -SyncAutomations -DryRun -ReportPath $missingUpdateReport *>&1 | Out-String
+$noUpdateTargetExit = $LASTEXITCODE
+Assert 'Factory update requires an explicit target and writes no release receipt' ($noUpdateTargetExit -ne 0 -and $noUpdateTarget -match 'Needs target configuration' -and -not (Test-Path $missingUpdateReport))
+
+$targetResolutionPaths = @('scripts/sync-all-automations.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/factory-preflight.ps1')
+$diskDiscoveryPattern = '(?i)\bGet-ChildItem\b|\bGet-PSDrive\b|\bWin32_LogicalDisk\b|\[IO\.Directory\]::(?:GetLogicalDrives|EnumerateDirectories|GetDirectories)'
+foreach ($relative in $targetResolutionPaths) {
+    $source = Get-Content -Raw (Join-Path $factory $relative)
+    Assert "target resolution does not scan disks ($relative)" ($source -notmatch $diskDiscoveryPattern)
+}
+
+$runtimeBoundaryPaths = @('scripts/verify.ps1', 'tests/run-tests.ps1')
+foreach ($relative in $runtimeBoundaryPaths) {
+    $tokens = $null; $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $factory $relative), [ref]$tokens, [ref]$parseErrors)
+    $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    $liveHostCalls = @($commands | Where-Object { $_.GetCommandName() -in @('ssh', 'ssh.exe', 'podman', 'podman.exe') })
+    $liveDeployCalls = @($commands | Where-Object {
+        $commandName = $_.GetCommandName()
+        $_.Extent.Text -match '(?i)scripts[\\/]deploy[\\/](?:deploy-bazzite|factory-autodeploy|deploy-cezar-runtime)\.(?:sh|ps1|bat)' -and
+        $commandName -notin @('Get-Content', 'Assert', 'Join-Path')
+    })
+    Assert "verification/test entry point has no live host or deployment invocation ($relative)" ($parseErrors.Count -eq 0 -and $liveHostCalls.Count -eq 0 -and $liveDeployCalls.Count -eq 0)
+}
 
 $mp = Join-Path $tmp 'migrate-project'
 Copy-Item (Join-Path $PSScriptRoot 'fixtures/godot-project') $mp -Recurse
