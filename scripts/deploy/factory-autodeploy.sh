@@ -157,14 +157,34 @@ fi
 
 STORE="${FACTORY_RELEASE_STORE_HOST_DIR:-$HOME/.local/share/cezar-factory/release-store}"
 REGISTRY="${FACTORY_PROJECTS_REGISTRY:-$registry_path}"
-if ! sync_output="$(python3 "$FACTORY_DIR/scripts/release/factory_activation.py" activate \
-  --repo "$FACTORY_DIR" --store "$STORE" --registry "$REGISTRY" --channel "$BRANCH" 2>&1)"; then
-  failure="Factory activation failed: $sync_output"
-  log "FAILED: $failure" >&2
-  exit 24
+container_release_store="$(podman exec "$CONTAINER" printenv CEZ_FACTORY_RELEASE_STORE 2>/dev/null || true)"
+if [[ -n "$container_release_store" ]]; then
+  if ! podman exec "$CONTAINER" test -f "$container_release_store/channels/$BRANCH.json"; then
+    failure="Cezar release store is configured but has no verified $BRANCH channel pointer"
+    log "BLOCKED: $failure" >&2
+    exit 24
+  fi
+  if ! sync_output="$(python3 "$FACTORY_DIR/scripts/release/factory_activation.py" activate \
+    --repo "$FACTORY_DIR" --store "$STORE" --registry "$REGISTRY" --channel "$BRANCH" 2>&1)"; then
+    failure="Factory activation failed: $sync_output"
+    log "FAILED: $failure" >&2
+    exit 24
+  fi
+  completion="activated Factory"
+else
+  # Existing Cezar installs may use the shared checkout without channel-pinned
+  # release storage. Keep those projects deployable through the legacy
+  # coordinator; it creates new definitions paused and preserves enabled state.
+  if ! sync_output="$(podman exec "$CONTAINER" pwsh -NoProfile -File \
+    "$RUNTIME_ROOT/scripts/sync-all-automations.ps1" -FactoryPath "$RUNTIME_ROOT" 2>&1)"; then
+    failure="Legacy Factory automation synchronization failed: $sync_output"
+    log "FAILED: $failure" >&2
+    exit 24
+  fi
+  completion="synchronized legacy Factory automations"
 fi
 
 write_receipt "$STATE_DIR/last-success.json" success ""
 write_receipt "$STATE_DIR/last-attempt.json" success ""
 trap - EXIT
-log "activated Factory $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}; $sync_output"
+log "$completion $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}; $sync_output"

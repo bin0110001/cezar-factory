@@ -68,6 +68,18 @@ case "$1" in
         printf '%s\n' "$3" > "$FAKE_CONTAINER_SHA_FILE"
         printf '%s\n' "$3" >> "$FAKE_METADATA_LOG"
         ;;
+      printenv)
+        [[ "$2" == CEZ_FACTORY_RELEASE_STORE ]] || exit 98
+        if [[ -n "${FAKE_CEZ_FACTORY_RELEASE_STORE:-}" ]]; then
+          printf '%s\n' "$FAKE_CEZ_FACTORY_RELEASE_STORE"
+        else
+          exit 1
+        fi
+        ;;
+      test)
+        [[ "$2" == -f && "$3" == "${FAKE_CEZ_FACTORY_RELEASE_STORE:-}/channels/stable.json" ]] || exit 98
+        [[ "${FAKE_CHANNEL_POINTER_PRESENT:-0}" == 1 ]]
+        ;;
       git)
         shift
         [[ "$1" == -C ]] || exit 91
@@ -92,6 +104,7 @@ case "$1" in
         exit 93
         ;;
       pwsh)
+        [[ "$2" == -NoProfile && "$4" == *sync-all-automations.ps1 ]] || exit 99
         printf 'sync\n' >> "$FAKE_SYNC_LOG"
         echo 'Synchronized automations for demo'
         exit "${FAKE_SYNC_EXIT:-0}"
@@ -107,7 +120,7 @@ cat > "$TMP/bin/python3" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 if [[ "${1##*/}" == factory_activation.py && "${2:-}" == activate ]]; then
-  printf 'sync\n' >> "$FAKE_SYNC_LOG"
+  printf 'activate\n' >> "$FAKE_ACTIVATION_LOG"
   echo 'Synchronized automations for demo'
   exit "${FAKE_SYNC_EXIT:-0}"
 fi
@@ -158,6 +171,7 @@ export FAKE_FACTORY_DIR="$TMP/checkout"
 export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/state"
 export FACTORY_AUTODEPLOY_LOCK="$TMP/autodeploy.lock"
 export FAKE_SYNC_LOG="$TMP/sync.log"
+export FAKE_ACTIVATION_LOG="$TMP/activation.log"
 export FAKE_DEPLOY_LOG="$TMP/deploy.log"
 export FAKE_METADATA_LOG="$TMP/metadata.log"
 export FAKE_CONTAINER_SHA_FILE="$TMP/container-sha"
@@ -193,6 +207,7 @@ initial_sha="$(receipt_field "$TMP/state/last-success.json" sourceSha)"
 assert_text "$TMP/state/last-success.json" "\"containerSha\": \"$initial_sha\""
 [[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 1 ]] || fail 'autodeploy did not invoke the safe container Git-metadata reconciliation'
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 1 ]] || fail 'initial healthy tick did not sync exactly once'
+[[ ! -f "$FAKE_ACTIVATION_LOG" ]] || fail 'legacy deployment unexpectedly invoked channel activation'
 
 # Advance origin, then fail after checkout advancement. The next unchanged tick must retry.
 printf 'next\n' > "$TMP/seed/release-note"
@@ -214,6 +229,16 @@ run_auto 0
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 4 ]] || fail 'unchanged healthy tick did not reconcile again'
 [[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not retry runtime verification'
 [[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not verify container Git metadata'
+
+# A configured channel store uses journaled activation. Missing pointers fail
+# closed and never fall back to legacy automation sync.
+export FAKE_CEZ_FACTORY_RELEASE_STORE=/var/lib/cezar-factory/release-store
+run_auto 24
+[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 4 ]] || fail 'missing channel pointer fell back to legacy synchronization'
+export FAKE_CHANNEL_POINTER_PRESENT=1
+run_auto 0
+[[ "$(wc -l < "$FAKE_ACTIVATION_LOG")" -eq 1 ]] || fail 'configured verified channel did not invoke activation exactly once'
+unset FAKE_CEZ_FACTORY_RELEASE_STORE FAKE_CHANNEL_POINTER_PRESENT
 
 # The same Git SHA and VERSION with stale mounted content must not sync or replace success.
 last_success="$(sha256sum "$TMP/state/last-success.json" | cut -d' ' -f1)"
