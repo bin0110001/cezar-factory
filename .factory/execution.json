@@ -3,11 +3,11 @@
     "provider": "openhands",
     "agent": "codex",
     "status": "selected",
-    "issue": 7,
+    "issue": 111,
     "metadata": {
-      "project": "cezar-factory",
+      "project": "14e351d3-220b-4994-bd51-e8eb1ee293a8",
       "workflow": "factory-start",
-      "github_issue": 7,
+      "github_issue": 111,
       "worker": "codex",
       "provider": "openhands",
       "model": "codex"
