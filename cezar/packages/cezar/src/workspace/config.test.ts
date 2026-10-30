@@ -374,6 +374,13 @@ describe('workspace config', () => {
     expect(config.projects[1]?.source).toBe('local');
   });
 
+  it('accepts native absolute project roots on Windows', async () => {
+    if (process.platform !== 'win32') return;
+    write({ projects: [{ ...project('windows-root'), root: 'C:\\cezar\\project' }] });
+    const config = await loadWorkspaceConfig();
+    expect(config.projects.map((entry) => entry.id)).toEqual(['windows-root']);
+  });
+
   it('per-project maxParallel: keeps a valid value, degrades a bad one to inherit, absent stays absent', async () => {
     write({
       projects: [
