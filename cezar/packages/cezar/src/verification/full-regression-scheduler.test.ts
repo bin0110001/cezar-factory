@@ -16,10 +16,17 @@ function git(root: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
 }
 
-function commit(root: string, content: string): string {
+function commit(root: string, content: string, date?: Date): string {
   writeFileSync(join(root, 'source.txt'), `${content}\n`);
   git(root, 'add', 'source.txt');
-  git(root, 'commit', '-m', content);
+  if (date) {
+    execFileSync('git', ['commit', '-m', content], {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+      env: { ...process.env, GIT_AUTHOR_DATE: date.toISOString(), GIT_COMMITTER_DATE: date.toISOString() },
+    });
+  } else git(root, 'commit', '-m', content);
   return git(root, 'rev-parse', 'HEAD');
 }
 
@@ -198,5 +205,25 @@ describe('full regression scheduler', () => {
     };
     expect(await test.scheduler.runNow('cezar-factory')).toMatchObject({ status: 'limited' });
     expect(test.starts).toHaveLength(2);
+  });
+
+  it('counts updates when observed, even when imported commit timestamps predate the budget window', async () => {
+    const initialTime = Date.UTC(2026, 9, 30, 12);
+    const test = fixture({
+      mode: 'after_changes', changesPerBatch: 1,
+      windowHours: 24, maxRunsPerWindow: 5, maxUpdatesPerWindow: 1, maxQueuedRuns: 1,
+    }, initialTime);
+    await test.scheduler.start();
+    const backdated = new Date(Date.UTC(2020, 0, 1));
+    commit(test.root, 'first backdated update', backdated);
+    await test.scheduler.tick();
+    expect(test.starts).toHaveLength(1);
+
+    const first = test.runs.get('run-1');
+    if (first) first.status = 'done';
+    commit(test.root, 'second backdated update', backdated);
+    await test.scheduler.tick();
+    test.scheduler.stop();
+    expect(test.starts).toHaveLength(1);
   });
 });

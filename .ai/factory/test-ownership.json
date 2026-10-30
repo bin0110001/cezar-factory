@@ -45,7 +45,7 @@
     {
       "id": "documentation-diff",
       "patterns": ["docs/**", "*.md", "**/*.md"],
-      "command": "git diff --check $env:FACTORY_VALIDATION_BASE...HEAD"
+      "command": "git diff --check ${env:FACTORY_VALIDATION_BASE}...HEAD"
     }
   ]
 }

@@ -75,9 +75,9 @@ describe('workspace projects API', () => {
   let store: RunStore;
 
   beforeEach(() => {
-    home = mkdtempSync(join(realpathSync(tmpdir()), 'cez-workspace-'));
-    repoRoot = mkdtempSync(join(realpathSync(tmpdir()), 'cez-projects-boot-'));
-    otherRoot = mkdtempSync(join(realpathSync(tmpdir()), 'cez-projects-other-'));
+    home = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-workspace-')));
+    repoRoot = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-projects-boot-')));
+    otherRoot = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-projects-other-')));
     process.env.CEZ_HOME = home; // paths.ts sends all workspace paths here
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
     delete process.env.CEZ_REMOTE;

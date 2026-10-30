@@ -187,11 +187,8 @@ export class FullRegressionScheduler {
       if (next.lastObservedSha !== sha) {
         const count = updateCount(context.root, next.lastObservedSha, sha);
         if (count > 0) {
-          const log = git(context.root, 'log', '--format=%H:%ct', `${next.lastObservedSha}..${sha}`).split(/\r?\n/).filter(Boolean);
-          for (const row of log) {
-            const [updateSha, epoch] = row.split(':');
-            if (updateSha && epoch && /^\d+$/.test(epoch)) next.updates.push({ sha: updateSha, at: new Date(Number(epoch) * 1000).toISOString() });
-          }
+          const updates = git(context.root, 'log', '--format=%H', `${next.lastObservedSha}..${sha}`).split(/\r?\n/).filter(Boolean);
+          for (const updateSha of updates) next.updates.push({ sha: updateSha, at: nowIso });
         }
         next.lastObservedSha = sha;
       }
@@ -267,11 +264,8 @@ export class FullRegressionScheduler {
       if (current.lastObservedSha !== targetSha) {
         const count = updateCount(context.root, current.lastObservedSha, targetSha);
         if (count > 0) {
-          const log = git(context.root, 'log', '--format=%H:%ct', `${current.lastObservedSha}..${targetSha}`).split(/\r?\n/).filter(Boolean);
-          for (const row of log) {
-            const [updateSha, epoch] = row.split(':');
-            if (updateSha && epoch && /^\d+$/.test(epoch)) current.updates.push({ sha: updateSha, at: new Date(Number(epoch) * 1000).toISOString() });
-          }
+          const updates = git(context.root, 'log', '--format=%H', `${current.lastObservedSha}..${targetSha}`).split(/\r?\n/).filter(Boolean);
+          for (const updateSha of updates) current.updates.push({ sha: updateSha, at: nowIso });
         }
         current.lastObservedSha = targetSha;
       }

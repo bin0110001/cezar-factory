@@ -71,7 +71,9 @@ function containedPath(root: string, relative: string): string {
     throw new FactoryReleaseResolutionError('manifest-invalid', 'manifest contains an unsafe relative path');
   }
   const path = resolve(root, ...relative.split('/'));
-  if (path !== root && !path.startsWith(`${root}${sep}`)) {
+  const comparisonPath = process.platform === 'win32' ? path.toLowerCase() : path;
+  const comparisonRoot = process.platform === 'win32' ? root.toLowerCase() : root;
+  if (comparisonPath !== comparisonRoot && !comparisonPath.startsWith(`${comparisonRoot}${sep}`)) {
     throw new FactoryReleaseResolutionError('manifest-invalid', 'manifest path escapes the release root');
   }
   return path;
@@ -103,7 +105,9 @@ async function verifyRelease(storeRoot: string, projectId: string, channel: Fact
   } catch {
     throw new FactoryReleaseResolutionError('release-path-mismatch', 'channel pointer release directory is unavailable');
   }
-  if (actualReleaseRoot !== releaseRoot) {
+  const actualPath = process.platform === 'win32' ? actualReleaseRoot.toLowerCase() : actualReleaseRoot;
+  const expectedPath = process.platform === 'win32' ? releaseRoot.toLowerCase() : releaseRoot;
+  if (actualPath !== expectedPath) {
     throw new FactoryReleaseResolutionError('release-path-mismatch', 'release directory resolves outside its immutable path');
   }
 
