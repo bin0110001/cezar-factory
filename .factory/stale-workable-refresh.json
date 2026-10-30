@@ -1,122 +1,86 @@
 {
-  "generatedAt": "2026-11-06T13:00:33.2451067+00:00",
-  "cutoff": "2026-11-05T13:00:25.2150853+00:00",
+  "generatedAt": "2026-10-30T18:28:17.6160078+00:00",
+  "cutoff": "2026-10-29T18:28:09.3285586+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 98,
-  "eligible": 56,
+  "considered": 70,
+  "eligible": 37,
   "refreshed": [
     {
-      "issue": 55,
-      "title": "Add optional Hindsight incident memory and historical repair recall",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/55",
-      "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 14:03:29",
-      "ageHours": 334.9,
+      "issue": 50,
+      "title": "Implement isolated generic verification executor and adapter protocol",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/50",
+      "state": "factory:new",
+      "createdAt": "10/23/2026 14:02:02",
+      "ageHours": 172.4,
       "labels": [
         "risk:medium",
-        "factory:needs-plan",
-        "type:feature",
-        "complexity:medium"
+        "factory:new",
+        "type:feature"
       ],
       "action": "refreshed"
     },
     {
-      "issue": 66,
-      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
+      "issue": 52,
+      "title": "Build stable verification finding ledger and recurrence episodes",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/52",
       "state": "factory:investigate",
-      "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 328.0,
+      "createdAt": "10/23/2026 14:03:22",
+      "ageHours": 172.4,
       "labels": [
-        "type:maintenance",
         "risk:medium",
         "factory:investigate",
-        "complexity:small"
+        "type:refactor",
+        "complexity:large"
       ],
       "action": "refreshed"
     }
   ],
   "excluded": [
     {
-      "issue": 228,
-      "state": "factory:working",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 222,
-      "state": null,
-      "reason": "no-single-lifecycle-state"
-    },
-    {
-      "issue": 213,
-      "state": null,
-      "reason": "no-single-lifecycle-state"
-    },
-    {
-      "issue": 192,
-      "state": null,
-      "reason": "no-single-lifecycle-state"
-    },
-    {
-      "issue": 174,
-      "state": null,
-      "reason": "no-single-lifecycle-state"
-    },
-    {
-      "issue": 145,
+      "issue": 137,
       "state": null,
       "reason": "no-single-lifecycle-state"
     },
     {
       "issue": 133,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 132,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 131,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 127,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 126,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 125,
-      "state": "factory:needs-plan",
+      "state": "factory:new",
       "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 120,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
     },
     {
       "issue": 116,
       "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 107,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 105,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 100,
-      "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
     },
     {
@@ -126,8 +90,8 @@
     },
     {
       "issue": 92,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
+      "state": "factory:ready",
+      "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 91,
@@ -155,27 +119,7 @@
       "reason": "audit-or-tracking-marker"
     },
     {
-      "issue": 70,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 67,
-      "state": "factory:needs-help",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 65,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
       "issue": 64,
-      "state": "factory:blocked",
-      "reason": "manual-or-terminal-state"
-    },
-    {
-      "issue": 61,
       "state": "factory:blocked",
       "reason": "manual-or-terminal-state"
     },
@@ -185,9 +129,19 @@
       "reason": "no-single-lifecycle-state"
     },
     {
+      "issue": 55,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
       "issue": 51,
-      "state": "factory:needs-plan",
-      "reason": "audit-or-tracking-marker"
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 49,
+      "state": "factory:new,factory:investigate",
+      "reason": "multiple-lifecycle-states"
     },
     {
       "issue": 47,
