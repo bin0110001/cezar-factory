@@ -611,6 +611,10 @@ export interface StartRunInput {
    *  working tree instead of an isolated worktree. Undefined/`true` keeps the
    *  default per-task worktree. Ignored for variants (they always isolate). */
   worktree?: boolean;
+  /** Internal immutable worktree base for scheduled verification. Not accepted from HTTP input. */
+  baseCommit?: string;
+  /** Internal command-only jobs skip the optional model-backed task-title suggestion. */
+  skipAutoName?: boolean;
   /** Autonomous mode (#autonomous): the run never parks at `waiting` for the
    *  user — turn-ends auto-continue until the agent signals done or the safety
    *  cap is hit. No "needs you" is ever raised. */
@@ -1401,6 +1405,7 @@ export class RunManager {
       // Persist the explicit opt-out so queued-run restart recovery and the
       // session Git routes can distinguish it from a removed isolated worktree.
       worktree: !group && !input.dispatchIntent && input.worktree === false ? false : undefined,
+      baseBranch: input.baseCommit,
       groupId: group?.groupId,
       variant: group?.variant,
       steps: workflow.steps.map((s) => ({ id: s.id, name: s.name ?? s.id, kind: stepKind(s) })),
@@ -1449,11 +1454,20 @@ export class RunManager {
     // Fire-and-forget LLM naming (task auto-naming spec): the heuristic title
     // above shows instantly; the namer's short title replaces it when (and if)
     // the model answers. Never awaited, never fails the run.
-    void this.autoNameRun(run.id, skillHint, input.task);
+    if (!input.skipAutoName) void this.autoNameRun(run.id, skillHint, input.task);
     this.pendingJobs.set(run.id, { workflow, input: effectiveInput });
     this.queue.push(run.id);
     void this.pump();
     return run;
+  }
+
+  /** Whether an automatic maintenance run would start immediately rather than waiting in this
+   *  project's task queue or exceeding the shared workspace cap. Used only when a policy sets
+   *  `maxQueuedRuns` to zero; ordinary user and automation runs continue through the normal FIFO. */
+  canStartImmediately(): boolean {
+    return this.queue.length === 0
+      && this.busySlots() < this.semaphore.projectMaxParallel(this.repoRoot)
+      && this.semaphore.busy() < this.semaphore.maxParallel();
   }
 
   /**

@@ -28,6 +28,7 @@ import { loadWorkspaceConfig, mergeWriteWorkspaceConfig } from '../workspace/con
 import { workspaceConfigPath } from '../paths.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import type { CloneRunner } from './checkout.ts';
+import type { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import {
   WorkspaceEventBus,
   createApp,
@@ -846,6 +847,43 @@ describe('workspace projects API', () => {
       expect(cleared.status).toBe(200);
       expect(cleared.body.project.factoryChannel).toBeUndefined();
       expect((await patch(other.id, { factoryChannel: 'canary' })).status).toBe(400);
+    });
+
+    it('stores a bounded full regression policy, preserves other project settings, and clears it', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { factoryChannel: 'dev', maxParallel: 2 });
+      const { status, body } = await patch(other.id, {
+        fullRegressionPolicy: { mode: 'after_changes', changesPerBatch: 25, maxRunsPerWindow: 3, maxUpdatesPerWindow: 200, maxQueuedRuns: 1, windowHours: 168 },
+      });
+      expect(status).toBe(200);
+      expect(body.project.fullRegressionPolicy).toEqual({
+        mode: 'after_changes', changesPerBatch: 25, maxRunsPerWindow: 3,
+        maxUpdatesPerWindow: 200, maxQueuedRuns: 1, windowHours: 168,
+      });
+      expect(body.project.factoryChannel).toBe('dev');
+      expect(body.project.maxParallel).toBe(2);
+      expect((await getProjects()).projects.find((p) => p.id === other.id)?.fullRegressionPolicy?.mode).toBe('after_changes');
+      expect((await patch(other.id, { fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'hours', every: 6 }, maxRunsPerWindow: 0 } })).status).toBe(400);
+      expect((await patch(other.id, { fullRegressionPolicy: null })).body.project.fullRegressionPolicy).toBeUndefined();
+    });
+
+    it('queues an on-demand full regression for the named project and returns the tested SHA', async () => {
+      const other = await registerProject(otherRoot);
+      const requested: string[] = [];
+      const scheduler = {
+        runNow: async (projectId: string) => {
+          requested.push(projectId);
+          return { status: 'queued' as const, runId: 'run-full-1', testedHead: 'a'.repeat(40), followUpPending: false };
+        },
+      } as unknown as FullRegressionScheduler;
+      const response = await apiRequest(
+        makeApp({ fullRegressionScheduler: scheduler }),
+        `/api/v1/projects/${encodeURIComponent(other.id)}/verification/full-regression`,
+        { method: 'POST' },
+      );
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ status: 'queued', runId: 'run-full-1', testedHead: 'a'.repeat(40), followUpPending: false });
+      expect(requested).toEqual([other.id]);
     });
 
     it('clears tags on null and on [], storing no key at all', async () => {

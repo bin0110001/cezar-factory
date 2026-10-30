@@ -3,7 +3,8 @@
 .SYNOPSIS
 Read-only, fail-closed eligibility check for a reviewed Factory pull request.
 .DESCRIPTION
-Checks the live PR head, workflow review identity, head-bound full/verify receipts,
+Checks the live PR head, workflow review identity, head-bound changed/verify receipts and,
+for high-risk changes, a full regression receipt,
 GitHub checks, effective dev rules, review threads, and repository auto-merge setting.
 Writes an auditable decision receipt and never performs a GitHub write.
 ##>
@@ -29,7 +30,7 @@ function Normalize-Url([string]$Url) { $Url.TrimEnd('/').ToLowerInvariant() }
 $decision = [ordered]@{
     schemaVersion = 1; decision = 'denied'; issue = 0; repository = ''; pr = ''; headSha = ''
     reviewedHeadSha = ''; reviewerIdentity = ''; checkedAt = [DateTime]::UtcNow.ToString('o')
-    requiredChecks = @(); validation = [ordered]@{ full = $false; verify = $false }
+    requiredChecks = @(); validation = [ordered]@{ changed = $false; full = $false; verify = $false; fullRequired = $false }
     effectiveRules = @(); blockers = @()
 }
 try {
@@ -46,8 +47,11 @@ try {
     if ($decision.pr -match '^https://github\.com/([^/\s]+)/([^/\s]+)/pull/([1-9][0-9]*)/?$') {
         $owner = $Matches[1]; $repoName = $Matches[2]; $prNumber = [int]$Matches[3]
         $decision.repository = "$owner/$repoName"
-        $pr = Get-GhJson @('pr','view',$decision.pr,'--json','number,url,body,state,isDraft,baseRefName,headRefOid,author,statusCheckRollup,reviews,reviewDecision')
+        $pr = Get-GhJson @('pr','view',$decision.pr,'--json','number,url,body,state,isDraft,baseRefName,headRefOid,author,labels,statusCheckRollup,reviews,reviewDecision')
         $decision.headSha = [string]$pr.headRefOid
+        $riskLabels = @($pr.labels | ForEach-Object { [string]$_.name } | Where-Object { $_ -in @('risk:low','risk:medium','risk:high') })
+        if ($riskLabels.Count -ne 1) { Add-Blocker 'PR must have exactly one recognized risk label' }
+        $decision.validation.fullRequired = ($riskLabels.Count -eq 1 -and $riskLabels[0] -eq 'risk:high')
         if ([string]$pr.state -ne 'OPEN') { Add-Blocker "PR state is $($pr.state), not OPEN" }
         if ($pr.isDraft) { Add-Blocker 'PR is a draft' }
         if ([string]$pr.baseRefName -ne 'dev') { Add-Blocker "PR base is '$($pr.baseRefName)', expected 'dev'" }
@@ -103,7 +107,10 @@ try {
         if (@($threadData.nodes | Where-Object { -not $_.isResolved }).Count) { Add-Blocker 'PR has unresolved review conversations' }
 
         $receiptFiles = if (Test-Path -LiteralPath $ReceiptRoot) { @(Get-ChildItem -LiteralPath $ReceiptRoot -Filter receipt.json -File -Recurse) } else { @() }
-        foreach ($stage in @('full','verify')) {
+        $requiredStages = @('changed','verify')
+        if ($decision.validation.fullRequired) { $requiredStages += 'full' }
+        $stagesToInspect = @($requiredStages + 'full' | Select-Object -Unique)
+        foreach ($stage in $stagesToInspect) {
             $matchingReceipts = @()
             foreach ($file in $receiptFiles) {
                 try { $receipt = Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json } catch { continue }
@@ -115,7 +122,8 @@ try {
             $valid = $null -ne $latestReceipt -and [string]$latestReceipt.Receipt.status -eq 'passed' -and
                 [int]$latestReceipt.Receipt.exitCode -eq 0 -and $latestReceipt.Receipt.worktreeClean -eq $true
             $decision.validation[$stage] = $valid
-            if (-not $valid) { Add-Blocker "no passed, clean, current-head '$stage' validation receipt exists for this issue and PR" }
+            if ($stage -in $requiredStages -and -not $valid) { Add-Blocker "no passed, clean, current-head '$stage' validation receipt exists for this issue and PR" }
+            if ($stage -notin $requiredStages -and $null -ne $latestReceipt -and -not $valid) { Add-Blocker "the latest current-head '$stage' validation attempt failed" }
         }
     }
 } catch { Add-Blocker "eligibility evidence could not be read: $($_.Exception.Message)" }

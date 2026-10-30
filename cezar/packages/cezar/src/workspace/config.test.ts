@@ -390,6 +390,21 @@ describe('workspace config', () => {
     expect(config.projects[2]?.maxParallel).toBeUndefined();
   });
 
+  it('full regression policy defaults to no automatic runs and discards malformed persisted policy', async () => {
+    write({ projects: [
+      project('on-demand'),
+      { ...project('scheduled'), fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'weekly', day: 1, hour: 3, minute: 0 } } },
+      { ...project('invalid-policy'), fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'cron', value: '* * * * *' } } },
+    ] });
+    const config = await loadWorkspaceConfig();
+    expect(config.projects[0]?.fullRegressionPolicy).toBeUndefined();
+    expect(config.projects[1]?.fullRegressionPolicy).toEqual({
+      mode: 'scheduled', schedule: { type: 'weekly', day: 1, hour: 3, minute: 0 },
+      windowHours: 168, maxRunsPerWindow: 1, maxUpdatesPerWindow: 100, maxQueuedRuns: 1,
+    });
+    expect(config.projects[2]?.fullRegressionPolicy).toBeUndefined();
+  });
+
   it('memoryLimitMb keeps an explicit null and a real value', async () => {
     write({ resources: { memoryLimitMb: null } });
     expect((await loadWorkspaceConfig()).resources.memoryLimitMb).toBeNull();

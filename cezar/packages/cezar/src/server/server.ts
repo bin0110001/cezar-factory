@@ -5,6 +5,7 @@ import {
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
+import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -326,6 +327,8 @@ export interface ServerDeps {
   hostSampler?: HostSampler;
   /** Re-arm the workspace automation timer after definition mutations. */
   automationsChanged?: () => void;
+  /** Explicit project-local full-suite scheduling and on-demand execution. */
+  fullRegressionScheduler?: FullRegressionScheduler;
 }
 
 // ---- project-scoped routing (multi-project spec, step 2.2) -----------------
@@ -1311,7 +1314,7 @@ export function createApp(deps: ServerDeps) {
   const trackerWatches = new TrackerWatches(trackers, deps.socketHub);
   const capabilities = () => resolveCapabilities(process.env, bindHost);
   const singleProjectRefusal = (
-    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing',
+    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing' | 'scheduling full regression',
   ) => ({ error: `single-project mode is enabled; ${action} is disabled` });
   // Inbox live updates (spec 007). Opt-in (#471): no capability, no watcher —
   // and since step 2.3 the per-dataDir watch is created lazily by the first
@@ -2662,7 +2665,7 @@ export function createApp(deps: ServerDeps) {
       const parsed = { data: c.req.valid('json') };
       // `default` is the boot alias the cockpit is allowed to use everywhere else.
       const id = raw === 'default' ? await resolveBootProject() : raw;
-      const { maxParallel, tags, factoryChannel } = parsed.data;
+      const { maxParallel, tags, factoryChannel, fullRegressionPolicy } = parsed.data;
 
       // Read-first (mirroring DELETE, server.ts:1252-1258): a well-formed but
       // unknown id must 404 WITHOUT rewriting the config — otherwise it would both
@@ -2703,6 +2706,10 @@ export function createApp(deps: ServerDeps) {
             if (factoryChannel === null) delete entry.factoryChannel;
             else entry.factoryChannel = factoryChannel;
           }
+          if (fullRegressionPolicy !== undefined) {
+            if (fullRegressionPolicy === null) delete entry.fullRegressionPolicy;
+            else entry.fullRegressionPolicy = fullRegressionPolicy;
+          }
           updated = entry;
         });
       } catch (err) {
@@ -2719,7 +2726,19 @@ export function createApp(deps: ServerDeps) {
       const body: UpdateProjectResponse = {
         project: { ...updated, ...(await probeProjectStatus(updated.root)) },
       };
+      void deps.fullRegressionScheduler?.tick();
       return c.json(body);
+    })
+
+    .post('/projects/:projectId/verification/full-regression', async (c) => {
+      if (capabilities().singleProject) return c.json(singleProjectRefusal('scheduling full regression'), 409);
+      const raw = c.req.param('projectId');
+      if (!projectIdSchema.safeParse(raw).success) return c.json({ error: `unknown project: ${raw}` }, 404);
+      if (!deps.fullRegressionScheduler) return c.json({ error: 'full regression scheduler is unavailable' }, 503);
+      const result = await deps.fullRegressionScheduler.runNow(raw === 'default' ? await resolveBootProject() : raw);
+      if (result.status === 'not-configured') return c.json({ error: result.reason }, 404);
+      if (result.status === 'limited') return c.json({ error: result.reason, ...(result.retryAt ? { retryAt: result.retryAt } : {}) }, 429);
+      return c.json(result, 202);
     })
 
     .post('/projects/checkout', jsonZodValidator(() => checkoutSchema, { message: 'url must be a GitHub repository' }), async (c) => {
@@ -6542,6 +6561,13 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     semaphore: deps.semaphore,
     automationStore: (projectId, root) => automationCoordinator.store(projectId, root)!,
   });
+  const fullRegressionScheduler = deps.fullRegressionScheduler ?? new FullRegressionScheduler({
+    listProjects,
+    context: async (projectId) => projectId === (deps.bootProjectId ?? 'default')
+      ? { root: deps.repoRoot, manager: deps.manager, store: deps.store }
+      : await sharedContexts.context(projectId),
+    warn: (message) => process.stderr.write(`${message}\n`),
+  });
   // #801: GitHub automations are opt-in. Off, the flag must remove the BEHAVIOR and not merely
   // the UI — no scheduler, no GitHub polling, no launched runs — so every entry point into the
   // workspace scheduler below is gated on it. Read per call rather than captured, for the same
@@ -6553,6 +6579,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     ...deps,
     onDispose: (cleanup) => { appCleanups.push(cleanup); deps.onDispose?.(cleanup); },
     contexts: sharedContexts,
+    fullRegressionScheduler,
     automationStore: bootAutomationStore,
     workspaceEvents,
     skillsUpdate,
@@ -6627,6 +6654,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // stated here rather than inherited from that detail: a definition saved while the flag is off
   // must not even ask the coordinator to refresh.
   rescheduleAutomations = () => {
+    void fullRegressionScheduler.tick();
     if (!automationsEnabled()) return;
     void automationScheduler.reschedule();
   };
@@ -6652,6 +6680,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       const all = projects.some((project) => project.root === deps.repoRoot)
         ? projects : [{ id: deps.bootProjectId ?? 'default', root: deps.repoRoot, status: 'ok' as const }, ...projects];
       coordinator.start(all);
+      void fullRegressionScheduler.start();
       // #801: with automations off there is nothing to warm — no remote to resolve, no receipts
       // to reconcile, and above all no scheduler to start. The skills-update coordinator above is
       // a separate feature and starts either way.
@@ -6667,7 +6696,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); });
+  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }

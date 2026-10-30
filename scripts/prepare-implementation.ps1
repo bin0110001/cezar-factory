@@ -82,6 +82,7 @@ $context = [ordered]@{
         workingDirectory = $workingDirectory
         repositoryRoot = $repoRoot
         gitBranch = if ($repoRoot) { (& git -C $repoRoot branch --show-current 2>$null) -join '' } else { $null }
+        baseCommit = if ($repoRoot) { ((& git -C $repoRoot rev-parse HEAD 2>$null) -join '').Trim() } else { $null }
         gitStatus = if ($repoRoot) { @(& git -C $repoRoot status --short 2>$null) } else { @() }
         factoryRuntimeRoot = if ($env:FACTORY_RUNTIME_ROOT) { $env:FACTORY_RUNTIME_ROOT } else { $null }
         tools = [ordered]@{ git = [bool](Get-Command git -ErrorAction SilentlyContinue); gh = [bool](Get-Command $GhCommand -ErrorAction SilentlyContinue); pwsh = [bool](Get-Command pwsh -ErrorAction SilentlyContinue) }

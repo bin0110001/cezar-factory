@@ -975,6 +975,8 @@ export class RunStore extends EventEmitter {
     worktree?: false;
     groupId?: string;
     variant?: string;
+    /** Internal pinned base for a command-only verification run. */
+    baseBranch?: string;
     steps: Array<Pick<StepState, 'id' | 'name' | 'kind'>>;
   }): RunRecord {
     const run: RunRecord = {
@@ -996,6 +998,7 @@ export class RunStore extends EventEmitter {
       worktree: input.worktree,
       groupId: input.groupId,
       variant: input.variant,
+      baseBranch: input.baseBranch,
       status: 'queued',
       createdAt: new Date().toISOString(),
       tokensUsed: 0,

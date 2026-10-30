@@ -84,6 +84,7 @@ import {
   selectAgentProfile,
   updateAgentProfile,
   updateProject,
+  runFullRegression,
   sendMessage,
   sendProjectRunMessage,
   putAgentConfigFile,
@@ -664,6 +665,19 @@ export function useUpdateProject() {
   })
 }
 
+export function useRunFullRegression() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectId: string) => runFullRegression(projectId),
+    retry: false,
+    onSuccess: (_result, projectId) => {
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.projects })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.runsIndex })
+    },
+  })
+}
+
 /** One registry entry with a PATCH body applied — the same per-key rule the route follows: a
  *  field changes only when the body NAMED it, and `null` (or, for tags, an empty list) clears. */
 function applyProjectPatch(
@@ -680,6 +694,10 @@ function applyProjectPatch(
   if ('factoryChannel' in patch) {
     if (patch.factoryChannel === null) delete next.factoryChannel
     else if (patch.factoryChannel !== undefined) next.factoryChannel = patch.factoryChannel
+  }
+  if ('fullRegressionPolicy' in patch) {
+    if (patch.fullRegressionPolicy === null) delete next.fullRegressionPolicy
+    else if (patch.fullRegressionPolicy !== undefined) next.fullRegressionPolicy = patch.fullRegressionPolicy
   }
   return next
 }

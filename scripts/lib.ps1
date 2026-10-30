@@ -93,6 +93,63 @@ function Get-ValidationTimeoutSeconds([string]$Stage) {
     return 7200
 }
 
+function Get-ChangedValidationSelection([string]$Root, $Config) {
+    $mapPath = Join-Path $Root '.ai/factory/test-ownership.json'
+    if (-not (Test-Path -LiteralPath $mapPath)) { return $null }
+    $map = Get-Content -Raw -LiteralPath $mapPath | ConvertFrom-Json -AsHashtable
+    if ($map.schemaVersion -ne 1 -or -not ($map.checks -is [array]) -or $map.checks.Count -eq 0) {
+        throw "Changed-test ownership map is invalid: $mapPath"
+    }
+    $base = ''
+    $contextPath = Join-Path $Root '.factory/implementation-context.json'
+    if (Test-Path -LiteralPath $contextPath) {
+        try { $base = [string](Get-Content -Raw -LiteralPath $contextPath | ConvertFrom-Json).environment.baseCommit } catch { }
+    }
+    if ($base -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') {
+        foreach ($candidate in @('origin/dev', 'origin/stable', 'HEAD^')) {
+            $null = & git -C $Root rev-parse --verify "$candidate^{commit}" 2>$null
+            if ($LASTEXITCODE -ne 0) { continue }
+            $base = ((& git -C $Root merge-base HEAD $candidate 2>$null) -join '').Trim()
+            if ($LASTEXITCODE -eq 0 -and $base) { break }
+        }
+    }
+    if ($base -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { throw 'Cannot establish a trusted base commit for changed-test selection.' }
+    $paths = @(& git -C $Root diff --name-only "$base...HEAD" 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw "Could not compare changed files with base commit $base." }
+    $paths += @(& git -C $Root diff --name-only 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate unstaged changed files.' }
+    $paths += @(& git -C $Root diff --cached --name-only 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate staged changed files.' }
+    $paths += @(& git -C $Root ls-files --others --exclude-standard 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate untracked changed files.' }
+    $paths = @($paths | ForEach-Object { ([string]$_).Trim().Replace('\', '/') } | Where-Object { $_ } | Sort-Object -Unique)
+    if (-not $paths.Count) { throw 'No changed files were found for targeted validation; refusing to report a pass.' }
+    $selected = [System.Collections.Generic.List[object]]::new()
+    $covered = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($check in $map.checks) {
+        if (-not $check.id -or -not $check.command -or -not ($check.patterns -is [array]) -or -not $check.patterns.Count) {
+            throw "Changed-test map entry in $mapPath requires id, patterns, and command."
+        }
+        $matched = [System.Collections.Generic.List[string]]::new()
+        foreach ($path in $paths) {
+            foreach ($pattern in $check.patterns) {
+                $regex = '^' + [regex]::Escape([string]$pattern).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$'
+                if ($path -match $regex) { $matched.Add($path); $null = $covered.Add($path); break }
+            }
+        }
+        if ($matched.Count) { $selected.Add([pscustomobject]@{ id = [string]$check.id; command = [string]$check.command; paths = @($matched | Sort-Object -Unique) }) }
+    }
+    $unmapped = @($paths | Where-Object { -not $covered.Contains($_) })
+    if ($unmapped.Count) {
+        if ($map.unmapped -ne 'full' -or -not $Config.validation.full) {
+            throw "Changed files have no focused-test owner; refusing a green result: $($unmapped -join ', ')"
+        }
+        $selected.Add([pscustomobject]@{ id = 'unmapped-full-regression'; command = [string]$Config.validation.full; paths = $unmapped })
+    }
+    if (-not $selected.Count) { throw 'No changed-test owner matched the changed files.' }
+    return [pscustomobject]@{ baseCommit = $base; changedPaths = $paths; unmappedPaths = $unmapped; checks = @($selected) }
+}
+
 function Invoke-FactoryValidation {
     param(
         [ValidateSet('changed', 'full', 'verify')][string]$Stage,
@@ -115,6 +172,7 @@ function Invoke-FactoryValidation {
         stage = $Stage; status = 'error'; exitCode = 1
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
+        selectedChecks = @(); changedPaths = @(); unmappedPaths = @()
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
@@ -154,12 +212,29 @@ function Invoke-FactoryValidation {
         }
         $command = ([string]$config.validation[$Stage]).Trim()
         if (-not $command) { throw "Configured validation.$Stage command is empty." }
+        $selection = if ($Stage -eq 'changed') { Get-ChangedValidationSelection $root $config } else { $null }
+        if ($selection) {
+            $receipt.changedPaths = @($selection.changedPaths)
+            $receipt.unmappedPaths = @($selection.unmappedPaths)
+            $receipt.selectedChecks = @($selection.checks | ForEach-Object { [string]$_.id })
+            $commandLines = [System.Collections.Generic.List[string]]::new()
+            foreach ($check in $selection.checks) {
+                $checkId = ([string]$check.id).Replace("'", "''")
+                $checkCommand = ([string]$check.command).Replace("'", "''")
+                $commandLines.Add("Write-Output 'CHECK_START: $checkId'")
+                $commandLines.Add('$global:LASTEXITCODE = 0')
+                $commandLines.Add("Invoke-Expression '$checkCommand'")
+                $commandLines.Add("if (`$LASTEXITCODE -ne 0) { throw 'Changed validation check $checkId failed with exit code ' + `$LASTEXITCODE }")
+            }
+            $command = [string]::Join("`n", $commandLines)
+            $receipt.command = [string]::Join(' ; ', @($selection.checks | ForEach-Object { "$($_.id): $($_.command)" }))
+        }
         if ($command -eq 'skip' -and $Stage -eq 'changed') {
             $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
             return 0
         }
         if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
-        $receipt.command = $command
+        if (-not $selection) { $receipt.command = $command }
         foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
             $candidate = $match.Value.Trim('"', "'")
             $candidatePath = if ([IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $root $candidate }
@@ -177,6 +252,7 @@ function Invoke-FactoryValidation {
         $start.RedirectStandardOutput = $true
         $start.RedirectStandardError = $true
         $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
+        if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
         $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
@@ -184,6 +260,15 @@ function Invoke-FactoryValidation {
         $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
         if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
             $process.Kill($true); $process.WaitForExit()
+            # Preserve the bounded diagnostic output on timeouts too. Without
+            # joining these readers before throwing, a two-hour full-suite
+            # timeout left empty stdout/stderr artifacts and only a generic
+            # non-zero workflow step for the operator to inspect.
+            try {
+                [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+                $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+                $receipt.truncated = ($outCapture.BytesSeen -gt 65536 -or $errCapture.BytesSeen -gt 65536)
+            } catch { }
             throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
         }
         [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()

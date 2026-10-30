@@ -13,6 +13,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -25,15 +27,9 @@ jobs:
           npm run test -w @open-mercato/cezar -- src/verification/contract.test.ts
           npm run typecheck:contract
           npm run typecheck -w @open-mercato/cezar
-      - name: Factory self-test (static checks, install/update/diff/verify on fixtures)
+      - name: Factory changed-scope validation (focused checks, full fallback on uncertainty)
         shell: pwsh
-        run: ./tests/run-tests.ps1
-      - name: Validate deterministic automation catalog
-        shell: pwsh
-        run: ./scripts/validate-automation-catalog.ps1
-      - name: Release metadata validation
-        shell: pwsh
-        run: ./scripts/release/validate-release.ps1 -SkipTests
+        run: ./scripts/factory/test-changed.ps1 -Task "GitHub pull request ${{ github.event.pull_request.number }}"
       - name: Autodeploy retry and parity integration tests
         if: matrix.os == 'ubuntu-latest'
         shell: bash
