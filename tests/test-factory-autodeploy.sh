@@ -72,6 +72,17 @@ case "$1" in
 esac
 EOF
 chmod +x "$TMP/bin/podman"
+cat > "$TMP/bin/python3" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${1##*/}" == factory_activation.py && "${2:-}" == activate ]]; then
+  printf 'sync\n' >> "$FAKE_SYNC_LOG"
+  echo 'Synchronized automations for demo'
+  exit "${FAKE_SYNC_EXIT:-0}"
+fi
+exec /usr/bin/python3 "$@"
+EOF
+chmod +x "$TMP/bin/python3"
 cat > "$TMP/bin/flock" <<'EOF'
 #!/usr/bin/env bash
 # The harness is serial; emulate a successfully acquired non-blocking lock.

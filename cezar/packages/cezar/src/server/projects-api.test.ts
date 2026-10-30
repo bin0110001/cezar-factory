@@ -73,6 +73,7 @@ describe('workspace projects API', () => {
   let repoRoot: string;
   let otherRoot: string;
   let store: RunStore;
+  let contexts: ProjectContexts;
 
   beforeEach(() => {
     home = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-workspace-')));
@@ -80,6 +81,7 @@ describe('workspace projects API', () => {
     otherRoot = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-projects-other-')));
     process.env.CEZ_HOME = home; // paths.ts sends all workspace paths here
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    contexts = new ProjectContexts({ listProjects });
     delete process.env.CEZ_REMOTE;
     delete process.env.CEZ_FOLLOWUPS;
     delete process.env.CEZ_SINGLE_PROJECT;
@@ -90,6 +92,7 @@ describe('workspace projects API', () => {
 
   afterEach(() => {
     store.flush();
+    contexts.disposeAll();
     for (const dir of [home, repoRoot, otherRoot]) rmSync(dir, { recursive: true, force: true });
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
@@ -109,6 +112,7 @@ describe('workspace projects API', () => {
       store,
       manager: {} as RunManager,
       version: '0.0.0-test',
+      contexts: over.contexts ?? contexts,
       ...over,
     });
 
