@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.58] - 2026-10-27
+
+- Make the maintenance backlog-label audit deterministic: workflow command steps
+  collect, validate, and prepare the audit, and the agent plus proposal step is
+  skipped via typed no-work when no ambiguous candidates remain.
 ## [0.3.59] - 2026-10-30
 
 - Automatically reconcile ready workspace claims after their exact reviewed PR

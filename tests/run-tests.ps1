@@ -73,7 +73,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'scripts/recover-audit-reservations.ps1',
+'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
@@ -92,9 +92,15 @@ Assert 'planning routes every complexity tier to Claude Sonnet' ($catalog.automa
 Assert 'maintenance is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-maintenance'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-maintenance'.model -eq 'factory-gateway/factory-code')
 Assert 'backlog reconciliation is pinned to the Factory gateway code model' ($catalog.automationProfiles.'factory-backlog-reconciliation'.runner -eq 'codex' -and $catalog.automationProfiles.'factory-backlog-reconciliation'.model -eq 'factory-gateway/factory-code')
 $backlogAuditSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-backlog-label-audit/SKILL.md')
-Assert 'backlog audit requires the stable Cezar candidate script' ($backlogAuditSkill -match 'installed audit script' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
-Assert 'backlog audit rejects unlabeled skips' ($backlogAuditSkill -match 'A skipped issue without one of these durable closing labels is an audit failure')
+Assert 'backlog audit documents read-only collector and deterministic preparation' ($backlogAuditSkill -match 'read-only collector' -and $backlogAuditSkill -match 'deterministic preparation consumer' -and $backlogAuditSkill -match '/projects/cezar-factory/scripts/audit-backlog-labels\.ps1' -and $backlogAuditSkill -match 'Do not call `gh issue list`')
+Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
+Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
+$maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
+Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
+Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
+$planSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
 $implementWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
 $fixReviewWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')
@@ -145,6 +151,9 @@ Assert 'maintenance recovery uses Cezar loopback API and selected worktree ident
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
+Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
+$auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
+Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 $scriptOwnershipViolations = @()
 foreach ($wf in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     # Only `prompt:` blocks are model-facing; `command:` lines are the workflow's own script steps.
@@ -796,12 +805,12 @@ try {
     Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & pwsh -NoProfile -File $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
 
     $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'
-    @{ labels = @(); comments = @(); created = @(); issues = @(
-        @{ number = 3; title = 'Unmarked test'; labels = @(@{ name = 'test' }) },
-        @{ number = 2; title = 'Already audited'; labels = @(@{ name = 'factory:needs-help' }) },
-        @{ number = 1; title = 'Unmarked docs'; labels = @(@{ name = 'documentation' }) },
-        @{ number = 4; title = 'Blocked legacy work'; labels = @(@{ name = 'blocker' }) },
-        @{ number = 5; title = 'Ambiguous legacy work'; labels = @(@{ name = 'question' }) }
+    @{ labels = @(); comments = @(); created = @(); issueState = 'OPEN'; issues = @(
+        @{ number = 3; title = 'Unmarked test'; body = ''; labels = @(@{ name = 'test' }) },
+        @{ number = 2; title = 'Already audited'; body = ''; labels = @(@{ name = 'factory:needs-help' }) },
+        @{ number = 1; title = 'Unmarked docs'; body = ''; labels = @(@{ name = 'documentation' }) },
+        @{ number = 4; title = 'Blocked legacy work'; body = ''; labels = @(@{ name = 'blocker' }) },
+        @{ number = 5; title = 'Ambiguous legacy work'; body = ''; labels = @(@{ name = 'question' }) }
     ) } | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     $auditScript = Join-Path $rp '.ai/factory/scripts/audit-backlog-labels.ps1'
     & pwsh -NoProfile -File $auditScript -GhCommand $gh -Limit 1 -OutputPath $auditInput *>&1 | Out-Null
@@ -811,12 +820,52 @@ try {
     Assert 'backlog audit input: only unmarked issues are fetched for evaluation' ($LASTEXITCODE -eq 0 -and $candidateIssues -notcontains 2 -and $resolvedIssues -notcontains 2)
     Assert 'backlog audit input: static normalization is not bounded by the LLM limit' (@($auditCandidates.resolved).Count -eq 3)
     Assert 'backlog audit input: classification hints resolve test taxonomy' (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'type:test' -and (@($auditCandidates.resolved | Where-Object { $_.issue -eq 3 }).added -contains 'risk:low'))
-    Assert 'backlog audit input: clear markers resolve without human escalation' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -notcontains 'factory:needs-help')
+    Assert 'backlog audit collector performs no issue-label or comment effects' (@($auditCandidates.resolved).Count -eq 3 -and (Get-Gh).labels.Count -eq 0 -and @((Get-Gh).comments).Count -eq 0)
     Assert 'backlog audit input: blocked marker resolves to factory:blocked' ((@($auditCandidates.resolved | Where-Object { $_.issue -eq 4 }).added) -contains 'factory:blocked')
-    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit input: rule hits and ambiguity are recorded' ($auditCandidates.classificationMetrics.deterministicRuleHits -eq 3 -and $auditCandidates.classificationMetrics.ambiguousIssues -eq 1 -and $auditCandidates.classificationMetrics.ambiguousIssuesSelectedForReview -eq 1 -and $auditCandidates.classificationMetrics.ruleHits.legacy_blocked_marker -eq 1)
+    Assert 'backlog audit input: only ambiguous work is returned to the LLM' (@($auditCandidates.candidates).Count -eq 1 -and $auditCandidates.candidates[0].number -eq 5 -and (Get-Gh).labels.Count -eq 0)
     Assert 'backlog audit input: candidate body is fetched before the LLM step' ($auditCandidates.candidates[0].PSObject.Properties.Name -contains 'body')
-    Assert 'backlog audit input: reservation marker is durable' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
-    Assert 'backlog audit input: label setup uses the installed sibling script' (@((Get-Gh).created).Count -gt 0)
+    $auditPreparationPath = Join-Path $tmp 'backlog-label-audit-preparation.json'
+    $auditApplyScript = Join-Path $scripts 'apply-backlog-label-audit.ps1'
+    $prepareAudit = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true }
+    $preparation = Get-Content -Raw $auditPreparationPath | ConvertFrom-Json
+    Assert 'backlog audit preparation applies deterministic labels and reserves bounded candidates' ($prepareAudit.Code -eq 0 -and $preparation.status -eq 'prepared' -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'factory:blocked' -and (Get-Gh).labels -contains 'factory:auditing')
+    Assert 'backlog audit preparation creates one durable reservation marker' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
+    Assert 'backlog audit preparation ensures taxonomy through its installed sibling script' (@((Get-Gh).created).Count -gt 0)
+    $prepareAgain = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; OutputPath = $auditPreparationPath; GhCommand = $gh; Prepare = $true }
+    Assert 'backlog audit preparation recognizes static labels and reservation on retry' ($prepareAgain.Code -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-reservation:5' }).Count -eq 1)
+    $emptyAuditInput = Join-Path $tmp 'backlog-label-audit-empty.json'
+    $emptyAudit = Get-Content -Raw $auditInput | ConvertFrom-Json -AsHashtable
+    $emptyAudit.candidates = @(); $emptyAudit.staged = @()
+    $emptyAudit | ConvertTo-Json -Depth 10 | Set-Content $emptyAuditInput
+    $emptyPrep = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $emptyAuditInput; OutputPath = (Join-Path $tmp 'backlog-label-audit-empty-prep.json'); GhCommand = $gh; Prepare = $true; WorkflowContract = $true }
+    $emptySummaryLine = $emptyPrep.Out -split "`r?`n" | Where-Object { $_ -match '^\s*\{"status":"prepared"' } | Select-Object -Last 1
+    $emptySummary = $emptySummaryLine | ConvertFrom-Json
+    Assert 'backlog audit has typed no-work after deterministic preparation when no candidates remain' ($emptyPrep.Code -eq 0 -and $emptySummary.status -eq 'prepared' -and $emptySummary.candidateCount -eq 0 -and $emptySummary.resolvedCount -eq 3 -and $emptySummary.'$cezar'.action -eq 'no_work')
+
+    $auditProposalPath = Join-Path $tmp 'backlog-label-audit.json'
+    $auditApplicationPath = Join-Path $tmp 'backlog-label-audit-application.json'
+    @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium'); reason = 'No objective legacy type marker; routine maintenance classification.' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $auditProposalPath
+    $state = Get-Gh; $state.labels = @($state.labels) + 'factory:ready'; $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels) + 'factory:ready'; $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer refuses changed live labels' ($staleApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -contains 'factory:auditing')
+    $state = Get-Gh; $state.labels = @($state.labels | Where-Object { $_ -ne 'factory:ready' }); $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels | Where-Object { $_ -ne 'factory:ready' }); $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $badProposalPath = Join-Path $tmp 'backlog-label-audit-invalid.json'
+    @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium', 'factory:done'); reason = 'invalid multiple states' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $badProposalPath
+    $invalidApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $badProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $candidateIssueState = @((Get-Gh).issues | Where-Object { $_.number -eq 5 })[0]
+    Assert 'backlog audit consumer rejects unsupported or conflicting proposal before mutation' ($invalidApply.Code -ne 0 -and $candidateIssueState.labels -contains 'factory:auditing' -and $candidateIssueState.labels -notcontains 'factory:new')
+    $revisionState = Get-Gh; $revisionIssue = @($revisionState.issues | Where-Object { $_.number -eq 5 })[0]; $preparedRevision = @((Get-Content -Raw $auditPreparationPath | ConvertFrom-Json).receipts | Where-Object { $_.issue -eq 5 })[0].revision
+    $revisionIssue.updatedAt = '2026-10-25T12:34:56.0000000Z'; $revisionState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $staleRevisionApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer rejects changed issue revision with unchanged labels' ($staleRevisionApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:auditing')
+    $revisionState = Get-Gh; $revisionIssue = @($revisionState.issues | Where-Object { $_.number -eq 5 })[0]; $revisionIssue.updatedAt = $preparedRevision; $revisionState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $apply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    Assert 'backlog audit consumer applies and verifies the allowlisted proposal' ($apply.Code -eq 0 -and (Get-Gh).labels -contains 'factory:new' -and (Get-Gh).labels -contains 'type:maintenance' -and (Get-Gh).labels -contains 'risk:medium' -and (Get-Gh).labels -notcontains 'factory:auditing')
+    $applyAgain = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $receipt = Get-Content -Raw $auditApplicationPath | ConvertFrom-Json
+    $candidateReceipt = @($receipt.receipts | Where-Object { $_.issue -eq 5 })[0]
+    Assert 'backlog audit consumer recognizes an already-applied effect on retry' ($applyAgain.Code -eq 0 -and $candidateReceipt.alreadyApplied -and $candidateReceipt.status -eq 'verified')
 
     $recoveryOutput = Join-Path $tmp 'audit-reservation-recovery.json'
     $expired = @{ issue = 5; owner = 'test'; createdAt = '2020-01-01T00:00:00Z'; expiresAt = '2020-01-01T01:00:00Z' } | ConvertTo-Json -Compress
