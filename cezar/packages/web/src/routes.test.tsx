@@ -170,6 +170,7 @@ describe('pageTitleContext', () => {
     ['/p/cezar/github/issues/543', 'GitHub'],
     ['/p/cezar/skills', 'Skills'],
     ['/p/cezar/inbox', 'Inbox'],
+    ['/p/cezar/dependencies', 'Dependencies'],
     ['/p/cezar/workflows/quick-task', 'Workflows'],
     ['/p/cezar/settings/agents', 'Settings'],
     ['/settings/global/projects', 'Settings'],

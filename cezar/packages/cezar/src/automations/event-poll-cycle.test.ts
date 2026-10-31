@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AutomationStore } from './store.ts';
-import { launchEventCandidate, runEventPollCycle } from './event-poll-cycle.ts';
+import { AutomationAdmissionDeferredError, launchEventCandidate, runEventPollCycle } from './event-poll-cycle.ts';
 
 describe('shared event cycle', () => {
   it('stops after the guard is compromised during awaited polling without publishing error state', async () => {
@@ -121,6 +121,20 @@ it('does not replay an event after its definition revision changes', async () =>
   expect(firstLaunch).toHaveBeenCalledTimes(1);
   expect(secondLaunch).not.toHaveBeenCalled();
   expect(store.latestReceipts().size).toBe(1);
+});
+
+it('keeps a deferred issue receipt durable and reports it instead of losing it as a duplicate', async () => {
+  const store = AutomationStore.open(mkdtempSync(join(tmpdir(), 'event-cycle-')));
+  const definition = store.create({ kind: 'github', enabled: true, name: 'test', events: ['issue.opened'], intervalSeconds: 300, filters: { lookbackDays: 7, maxRecords: 25 }, task: { prompt: 'test' } });
+  const candidate = { eventId: 'acme/work:node-2:issue.opened:2026-09-19T00:00:00.000Z', event: 'issue.opened' as const, timestamp: '2026-09-19T00:00:00.000Z', tieBreaker: 'event-2', repo: 'acme/work', nodeId: 'node-2', number: 2, title: 'Blocked issue', url: 'https://github.com/acme/work/issues/2', author: 'user', assignees: [], labels: [] };
+  await launchEventCandidate({ store, definition, receipt: { eventId: candidate.eventId, candidate }, log: { event: candidate.event, githubNumber: candidate.number }, launch: async () => { throw new AutomationAdmissionDeferredError('blocked by issue 1'); } });
+  const first = store.latestReceipt(definition.id, candidate.eventId);
+  expect(first).toMatchObject({ status: 'deferred', deferReason: 'blocked by issue 1', candidate });
+  const launch = vi.fn(async () => ({ runId: 'unexpected' }));
+  await launchEventCandidate({ store, definition, receipt: { eventId: candidate.eventId, candidate }, log: { event: candidate.event }, launch });
+  expect(launch).not.toHaveBeenCalled();
+  expect(store.latestReceipt(definition.id, candidate.eventId)?.status).toBe('deferred');
+  expect(store.logs({ automationId: definition.id, result: 'deferred' })).toHaveLength(2);
 });
 
 it('reads another process new baseline before polling the current revision', async () => {

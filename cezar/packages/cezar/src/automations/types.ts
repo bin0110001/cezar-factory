@@ -202,11 +202,12 @@ export const automationReceiptSchema = z
     eventId: z.string().min(1),
     automationId: z.string().min(1),
     revision: z.number().int().positive(),
-    status: z.enum(['reserved', 'launched', 'launch-error']),
+    status: z.enum(['reserved', 'deferred', 'launched', 'launch-error']),
     runId: z.string().optional(),
     observedAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     error: z.string().max(2_000).optional(),
+    deferReason: z.string().max(2_000).optional(),
     /** schedule kind: the occurrence this receipt reserved, so a retry can fire it again. */
     occurrenceAt: z.string().datetime().optional(),
     candidate: z
@@ -256,6 +257,8 @@ export const automationLogResultSchema = z.enum([
   'catch-up',
   'skipped',
   'failed',
+  'deferred',
+  'admission-override',
 ]);
 
 export const automationLogRecordSchema = z

@@ -1,4 +1,4 @@
-import { runEventPollCycle, launchEventCandidate } from './event-poll-cycle.ts';
+import { AutomationAdmissionDeferredError, runEventPollCycle, launchEventCandidate } from './event-poll-cycle.ts';
 import type { AutomationCoordinator } from './coordinator.ts';
 import { POLL_RECORD_CEILING } from './github-poller.ts';
 import type { GithubCandidate, GithubPoller, GithubPollResult } from './github-poller.ts';
@@ -7,6 +7,7 @@ import type { AutomationStore } from './store.ts';
 import type { TrackerDriver } from '../server/tracker/types.ts';
 import type { TrackerFailure } from '@open-mercato/cezar-contract';
 import { TrackerPoller, type TrackerAutomationCandidate } from './tracker-poller.ts';
+import type { DependencyAdmission } from '../server/dependency-graph/admission.ts';
 import { isGithubAutomation, isScheduleAutomation, isTrackerAutomation, type AutomationRuntimeState, type GithubAutomationDefinition, type TrackerAutomationDefinition } from './types.ts';
 
 const CURSOR_OVERLAP_MS = 120_000;
@@ -18,7 +19,9 @@ export type AutomationLauncher = (
   definition: GithubAutomationDefinition,
   candidate: GithubCandidate,
   receiptId: string,
+  admission?: Extract<DependencyAdmission, { status: 'ready' }>,
 ) => Promise<AutomationLaunchResult>;
+export type AutomationAdmissionCheck = (candidate: GithubCandidate) => Promise<DependencyAdmission>;
 export type TrackerAutomationLauncher = (
   definition: TrackerAutomationDefinition,
   candidate: TrackerAutomationCandidate,
@@ -41,6 +44,7 @@ export interface ProjectAutomationHandle {
    *  removed or reconnected between ticks) rather than being captured once at handle build time. */
   tracker?: { getDriver: () => Promise<TrackerDriver | TrackerFailure>; poller: TrackerPoller };
   launch?: AutomationLauncher;
+  admit?: AutomationAdmissionCheck;
   launchSchedule?: ScheduleLauncher;
   launchTracker?: TrackerAutomationLauncher;
   onChange?: (automationId: string, revision: number) => void;
@@ -84,6 +88,45 @@ export class ProjectAutomationScheduler {
     let polledState: AutomationRuntimeState = {};
     return runEventPollCycle({
       store, definition, mode, scheduled, onChange: this.handle.onChange,
+      beforePoll: async () => {
+        if (!this.handle.admit || !this.handle.launch) return;
+        // Recheck a small bounded batch each scheduler turn. Receipts stay durable and ordered;
+        // unknown or blocked work remains deferred for a later graph sync and poll.
+        for (const deferred of store.deferredReceipts(definition.id).slice(0, 10)) {
+          if (deferred.revision !== definition.revision) continue;
+          const candidate = deferred.candidate;
+          if (!candidate || !candidate.event.startsWith('issue.')) continue;
+          let admission: Extract<DependencyAdmission, { status: 'ready' }>;
+          try {
+            const result = await this.handle.admit(candidate);
+            if (result.status !== 'ready') continue;
+            admission = result;
+          } catch {
+            continue;
+          }
+          const mutation = store.acquireMutationLease();
+          if (!mutation) break;
+          try {
+            const reserved = store.reserveDeferred(deferred.receiptId);
+            if (!reserved) continue;
+            try {
+              const launched = await this.handle.launch(definition, candidate, reserved.receiptId, admission);
+              store.appendReceipt({ ...reserved, status: 'launched', runId: launched.runId, updatedAt: new Date().toISOString() });
+              store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url, result: 'launched', reason: `Deferred issue event admitted at graph revision ${admission.graphRevision}.`, receiptId: reserved.receiptId, runId: launched.runId });
+            } catch (error) {
+              if (error instanceof AutomationAdmissionDeferredError) {
+                const next = store.deferReceipt(reserved.receiptId, error.reason);
+                store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url, result: 'deferred', reason: error.reason, receiptId: next?.receiptId ?? reserved.receiptId });
+              } else {
+                store.appendReceipt({ ...reserved, status: 'launch-error', error: error instanceof Error ? error.message : String(error), updatedAt: new Date().toISOString() });
+                store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, result: 'error', reason: error instanceof Error ? error.message : String(error), receiptId: reserved.receiptId });
+              }
+            }
+          } finally {
+            mutation.release();
+          }
+        }
+      },
       poll: async state => {
         polledState = state;
         const since = state.cursor?.timestamp ?? state.baselineAt;
@@ -154,7 +197,16 @@ export class ProjectAutomationScheduler {
     await launchEventCandidate({ store: this.handle.store, definition,
       receipt: { eventId: candidate.eventId, candidate },
       log: { event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url },
-      launch: receiptId => this.handle.launch!(definition, candidate, receiptId),
+      launch: async receiptId => {
+        let admission: Extract<DependencyAdmission, { status: 'ready' }> | undefined;
+        if (candidate.event.startsWith('issue.')) {
+          if (!this.handle.admit) throw new Error('Dependency readiness admission is not configured.');
+          const result = await this.handle.admit(candidate);
+          if (result.status !== 'ready') throw new AutomationAdmissionDeferredError(result.reason);
+          admission = result;
+        }
+        return this.handle.launch!(definition, candidate, receiptId, admission);
+      },
     });
   }
 

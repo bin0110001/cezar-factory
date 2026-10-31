@@ -5,6 +5,7 @@ import { stepsIssue, type WorkflowDef } from '../workflows/types.ts';
 import type { RunStore } from '../runs/store.ts';
 import type { RunManager, StartRunInput } from '../workflows/run.ts';
 import type { GithubCandidate } from './github-poller.ts';
+import type { DependencyAdmission } from '../server/dependency-graph/admission.ts';
 import type { ScheduleOccurrence } from './schedule-runner.ts';
 import type { TrackerAutomationCandidate } from './tracker-poller.ts';
 import type { AutomationDefinition, GithubAutomationDefinition, ScheduleAutomationDefinition, TrackerAutomationDefinition } from './types.ts';
@@ -160,11 +161,26 @@ export async function launchAutomationRun(options: {
   definition: GithubAutomationDefinition;
   candidate: GithubCandidate;
   receiptId: string;
+  admission?: Extract<DependencyAdmission, { status: 'ready' }>;
+  /** Revalidate the graph immediately before RunManager creates work. */
+  recheckAdmission?: () => Promise<DependencyAdmission>;
+  admissionOverride?: { actor: string; reason: string; graphRevision: number };
   /** `capabilities.dispatch` — off, the automation's dispatch setting is ignored, never refused. */
   dispatchEnabled?: boolean;
 }): Promise<{ runId: string }> {
   const { definition, candidate } = options;
   const workflow = await resolveWorkflow(options.root, options.manager, definition);
+  if (!options.admissionOverride && options.recheckAdmission) {
+    const current = await options.recheckAdmission();
+    if (current.status !== 'ready') {
+      const { AutomationAdmissionDeferredError } = await import('./event-poll-cycle.ts');
+      throw new AutomationAdmissionDeferredError(current.reason);
+    }
+    if (options.admission && current.graphRevision !== options.admission.graphRevision) {
+      const { AutomationAdmissionDeferredError } = await import('./event-poll-cycle.ts');
+      throw new AutomationAdmissionDeferredError(`Dependency graph changed from revision ${options.admission.graphRevision} to ${current.graphRevision} before dispatch; waiting for the next scheduler check.`);
+    }
+  }
   const input = startInput(definition, renderAutomationTask(definition, candidate), options.dispatchEnabled ?? false);
   const runs = (definition.task.variants ?? 1) > 1
     ? options.manager.startVariants(workflow, input, definition.task.variants ?? 1)
@@ -175,6 +191,8 @@ export async function launchAutomationRun(options: {
     receiptId: options.receiptId,
     event: candidate.event,
     githubUrl: candidate.url,
+    ...(options.admission ? { dependencyAdmission: { graphRevision: options.admission.graphRevision, nodeId: options.admission.nodeId } } : {}),
+    ...(options.admissionOverride ? { dependencyAdmissionOverride: options.admissionOverride } : {}),
   };
   for (const run of runs) options.store.updateRun(run.id, { automation: provenance });
   const first = runs[0];

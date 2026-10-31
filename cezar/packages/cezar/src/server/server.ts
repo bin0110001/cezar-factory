@@ -2,6 +2,7 @@ import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
+  githubRepositoryKeySchema, type GithubRepositoryKey,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
@@ -9,7 +10,7 @@ import { FullRegressionScheduler } from '../verification/full-regression-schedul
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AutomationStore } from '../automations/store.ts';
 import { AutomationCoordinator } from '../automations/coordinator.ts';
 import { GithubPoller } from '../automations/github-poller.ts';
@@ -209,6 +210,17 @@ import { isLoopbackHostHeader, normalizeHostname, resolveCapabilities } from './
 import { createSocketHub, type SocketHub, type WsUpgradeVerdict } from './ws.ts';
 import { browseDirectory, isInsideBrowseRoot, isLexicallyInsideBrowseRoot, resolveBrowseRoot } from './fs-browse.ts';
 import { parseRemote, resolveForge, type ForgeAvailability } from './forge/index.ts';
+import { DependencyGraphService } from './dependency-graph/service.ts';
+import { discoverDecisionCandidates } from './dependency-graph/discovery.ts';
+import { planCycleRepairs } from './dependency-graph/repair-planner.ts';
+import { evaluateDependencyAdmission } from './dependency-graph/admission.ts';
+import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts';
+import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
+import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
+import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
+import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
+import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
+import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyDecisionResearchDispatchSchema } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
 import { ensureLaunchKey } from './launch-key.ts';
 import { openInTerminal } from './open-in-terminal.ts';
@@ -336,6 +348,11 @@ export interface ServerDeps {
 /** Hono env for the mirrored project-route table: the scope resolver puts the
  *  request's `ProjectContext` on the context, handlers read `c.get('project')`. */
 type ProjectApiEnv = { Variables: { project: ProjectContext } };
+
+function publicDependencyNode<T extends object>(node: T): Omit<T, 'bodyText'> {
+  const { bodyText: _bodyText, ...publicNode } = node as T & { bodyText?: unknown };
+  return publicNode as Omit<T, 'bodyText'>;
+}
 
 /** `projectId` gate at the route boundary (spec "Project identity"): the slug
  *  shape or the reserved `default` alias — validated BEFORE touching any map
@@ -1171,6 +1188,20 @@ export function createApp(deps: ServerDeps) {
   // handler body would silently pin it to the boot project, which the rename
   // turns into a compile error instead.
   const bootRoot = deps.repoRoot;
+  const dependencyGraphServices = new Map<string, DependencyGraphService>();
+  const dependencyGraphService = (root: string) => {
+    let service = dependencyGraphServices.get(root);
+    if (!service) {
+      service = new DependencyGraphService(root);
+      dependencyGraphServices.set(root, service);
+      deps.onDispose?.(() => { service?.close(); dependencyGraphServices.delete(root); });
+    }
+    return service;
+  };
+  const checkDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate) => {
+    const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
+    return evaluateDependencyAdmission(dependencyGraphService(root).read(repository), repository, candidate.number);
+  };
   const bootDataDir = join(bootRoot, '.ai/cezar');
   const modelCatalog = deps.modelCatalog ?? new RunnerModelCatalog({
     adapters: {
@@ -3924,8 +3955,9 @@ export function createApp(deps: ServerDeps) {
             timeZone: localTimeZone(),
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
+            admit: candidate => Promise.resolve(checkDependencyAdmission(project.root, candidate)),
             launch: parsed.data.mode === 'execute'
-              ? (definition, candidate, receiptId) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, dispatchEnabled: capabilities().dispatch })
+              ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => Promise.resolve(checkDependencyAdmission(project.root, candidate)), dispatchEnabled: capabilities().dispatch })
               : undefined,
             onChange: (automationId, revision) => emitAutomationChange(project, automationId, revision),
           });
@@ -3959,6 +3991,43 @@ export function createApp(deps: ServerDeps) {
       const project = c.get('project');
       const records = project.automationStore.logs(c.req.valid('query'));
       return c.json({ records, runs: logRunsOf(project.store, records) });
+    })
+
+    .post('/dependency-graph/admission-override', jsonZodValidator(z.object({
+      automationId: z.string().min(1).max(200),
+      eventId: z.string().min(1).max(1_000),
+      expectedGraphRevision: z.number().int().nonnegative(),
+      rationale: z.string().trim().min(8).max(1_000),
+    })), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'admission overrides are available only from the local operator surface' }, 403);
+      const project = c.get('project');
+      const input = c.req.valid('json');
+      const definition = project.automationStore.get(input.automationId);
+      if (!definition || !isGithubAutomation(definition)) return c.json({ error: 'GitHub automation not found' }, 404);
+      const receipt = project.automationStore.latestReceipt(input.automationId, input.eventId);
+      if (!receipt || receipt.status !== 'deferred' || !receipt.candidate?.event.startsWith('issue.')) return c.json({ error: 'deferred issue event not found' }, 404);
+      let repository: GithubRepositoryKey;
+      try { repository = githubRepositoryKeySchema.parse(receipt.candidate.repo) as GithubRepositoryKey; }
+      catch { return c.json({ error: 'event repository is invalid' }, 400); }
+      const graph = dependencyGraphService(project.root).read(repository);
+      if (graph.revision !== input.expectedGraphRevision) return c.json({ error: `dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${graph.revision}` }, 409);
+      const mutation = project.automationStore.acquireMutationLease();
+      if (!mutation) return c.json({ error: 'automation state is busy; retry the override' }, 409);
+      try {
+        const reserved = project.automationStore.reserveDeferred(receipt.receiptId);
+        if (!reserved) return c.json({ error: 'deferred issue event was already handled' }, 409);
+        const override = { actor: 'local-operator', reason: input.rationale, graphRevision: graph.revision };
+        project.automationStore.appendLog({ automationId: definition.id, revision: definition.revision, event: receipt.candidate.event, githubNumber: receipt.candidate.number, result: 'admission-override', reason: `Local operator approved admission at graph revision ${graph.revision}: ${input.rationale}`, receiptId: receipt.receiptId });
+        try {
+          const run = await launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate: receipt.candidate, receiptId: receipt.receiptId, admissionOverride: override, dispatchEnabled: capabilities().dispatch });
+          project.automationStore.appendReceipt({ ...reserved, status: 'launched', runId: run.runId, updatedAt: new Date().toISOString() });
+          project.automationStore.appendLog({ automationId: definition.id, revision: definition.revision, event: receipt.candidate.event, githubNumber: receipt.candidate.number, result: 'launched', reason: 'Launched under the audited local operator admission override.', receiptId: receipt.receiptId, runId: run.runId });
+          return c.json({ runId: run.runId, receiptId: receipt.receiptId, graphRevision: graph.revision }, 202);
+        } catch (error) {
+          project.automationStore.appendReceipt({ ...reserved, status: 'launch-error', error: error instanceof Error ? error.message : String(error), updatedAt: new Date().toISOString() });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'run launch failed' }, 409);
+        }
+      } finally { mutation.release(); }
     })
 
     .post('/automation-log/:receiptId/retry', async (c) => {
@@ -5773,6 +5842,323 @@ export function createApp(deps: ServerDeps) {
         return c.json(await fetchGithub(repoRoot, query.refresh === '1', Number.isFinite(limit) ? limit : 30));
       },
     )
+    .get('/dependency-graph', queryZodValidator(z.object({
+      limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0),
+      revision: z.coerce.number().int().nonnegative().optional(),
+      kind: z.enum(['issue', 'epic', 'decision', 'milestone', 'external-blocker']).optional(),
+      state: z.string().trim().min(1).max(128).optional(), search: z.string().trim().max(200).optional(), repository: z.string().trim().min(3).max(256).optional(),
+      readiness: z.enum(['ready', 'blocked', 'unknown']).optional(),
+    })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const { limit, offset, revision, kind, state, search, repository: repositoryFilter, readiness: readinessFilter } = c.req.valid('query');
+        const snapshot = revision === undefined ? service.read(repository) : service.readAt(repository, revision);
+        let filteredNodes = snapshot.nodes;
+        if (kind) filteredNodes = filteredNodes.filter((node) => node.kind === kind);
+        if (state) filteredNodes = filteredNodes.filter((node) => node.state === state);
+        if (repositoryFilter) filteredNodes = filteredNodes.filter((node) => node.repository.toLocaleLowerCase() === repositoryFilter.toLocaleLowerCase());
+        if (search) {
+          const needle = search.toLocaleLowerCase();
+          filteredNodes = filteredNodes.filter((node) => node.title.toLocaleLowerCase().includes(needle) || node.id.toLocaleLowerCase().includes(needle) || ('number' in node && String(node.number) === search));
+        }
+        if (readinessFilter) {
+          const eligibleIds = new Set(filteredNodes.filter((node) => node.kind === 'issue' || node.kind === 'epic').map((node) => node.id));
+          const readinessResults = revision === undefined
+            ? service.analysis(repository).readiness
+            : readiness(snapshot);
+          const selected = new Set(readinessResults.filter((item) => eligibleIds.has(item.nodeId) && item.readiness === readinessFilter).map((item) => item.nodeId));
+          filteredNodes = filteredNodes.filter((node) => selected.has(node.id));
+        }
+        const pageNodes = filteredNodes.slice(offset, offset + limit);
+        const nodes = pageNodes.map(publicDependencyNode);
+        const ids = new Set(nodes.map((node) => node.id));
+        const edges = snapshot.edges.filter((edge) => ids.has(edge.from) || ids.has(edge.to)).slice(0, 1_000);
+        const pageIds = new Set(pageNodes.map((node) => node.id));
+        return c.json({ ...snapshot, nodes, edges, decisions: snapshot.decisions.filter((decision) => pageIds.has(decision.id)), page: { limit, offset, totalNodes: filteredNodes.length, hasMore: offset + nodes.length < filteredNodes.length } });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/node', queryZodValidator(z.object({ id: dependencyNodeIdSchema, limit: z.coerce.number().int().min(1).max(200).default(50) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const { id, limit } = c.req.valid('query');
+        const node = snapshot.nodes.find((item) => item.id === id);
+        if (!node) return c.json({ error: 'dependency node not found' }, 404);
+        const neighbors = snapshot.edges.filter((edge) => edge.from === id || edge.to === id).slice(0, limit);
+        return c.json({ revision: snapshot.revision, source: snapshot.source, node: publicDependencyNode(node), edges: neighbors, impact: downstreamImpact(snapshot, id, limit) });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/neighborhood', queryZodValidator(z.object({
+      id: dependencyNodeIdSchema,
+      direction: z.enum(['upstream', 'downstream', 'both']).default('both'),
+      depth: z.coerce.number().int().min(1).max(5).default(2),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+      kind: z.enum(['BLOCKS', 'PART_OF', 'RELATED_TO', 'INFORMS', 'SUPERSEDES', 'CONFLICTS']).optional(),
+    })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const query = c.req.valid('query');
+        const result = dependencyNeighborhood(service.read(repository), query.id, {
+          direction: query.direction, depth: query.depth, limit: query.limit, ...(query.kind ? { kinds: [query.kind] } : {}),
+        });
+        return result ? c.json({ ...result, nodes: result.nodes.map(publicDependencyNode) }) : c.json({ error: 'dependency node not found' }, 404);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency neighborhood unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/readiness', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const snapshot = analysis.snapshot;
+        const { limit, offset } = c.req.valid('query');
+        const selected = snapshot.nodes.slice(offset, offset + limit).map((node) => node.id);
+        const selectedIds = new Set(selected);
+        return c.json({ revision: snapshot.revision, source: snapshot.source, results: analysis.readiness.filter((result) => selectedIds.has(result.nodeId)), total: snapshot.nodes.length, limit, offset });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/cycles', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const { snapshot, cycles } = analysis;
+        const { limit } = c.req.valid('query');
+        return c.json({ revision: snapshot.revision, source: snapshot.source, cycles: cycles.slice(0, limit), total: cycles.length, truncated: cycles.length > limit });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle analysis unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/repair-candidates', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(planCycleRepairs(service.read(repository), c.req.valid('query').limit));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'repair planning failed' }, 503);
+      }
+    })
+    .post('/dependency-graph/cycle-plans/dispatch', jsonZodValidator(dependencyCyclePlanDispatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle planning runs can be started only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const project = c.get('project');
+        const service = dependencyGraphService(project.root);
+        const repository = await service.repositoryKey();
+        return c.json(await dispatchCycleReplan({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, candidateId: input.candidateId }), 202);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle planning dispatch failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .post('/dependency-graph/decision-research/dispatch', jsonZodValidator(dependencyDecisionResearchDispatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision research runs can be started only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const project = c.get('project');
+        const service = dependencyGraphService(project.root);
+        const repository = await service.repositoryKey();
+        return c.json(await dispatchDecisionResearch({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, decisionId: input.decisionId }), 202);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision research dispatch failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .get('/dependency-graph/decision-ranking', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(service.decisionRanking(repository, c.req.valid('query').limit));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'decision ranking unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/discovery-candidates', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), scanLimit: z.coerce.number().int().min(1).max(2_000).default(2_000) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(discoverDecisionCandidates(service.read(repository), c.req.valid('query')));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'decision discovery unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/health', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(service.analysis(repository).health);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency health unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/events', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), before: z.coerce.number().int().positive().optional() })), async (c) => {
+      try {
+        const { limit, before } = c.req.valid('query');
+        const events = await dependencyGraphService(c.get('project').root).readEvents(limit, before);
+        return c.json({ events, limit, nextCursor: events.at(-1)?.cursor ?? null, hasMore: events.length === limit });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency history unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/history/trends', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(service.historicalTrends(repository));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph history unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/diagnostics/export', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const candidates = discoverDecisionCandidates(analysis.snapshot, { limit: 50, scanLimit: 2_000 });
+        return c.json({
+          schemaVersion: 1,
+          repository,
+          revision: analysis.snapshot.revision,
+          source: analysis.snapshot.source,
+          health: analysis.health,
+          decisionRanking: service.decisionRanking(repository, 50),
+          cycles: analysis.cycles.slice(0, 50).map((cycle) => ({ nodeIds: cycle.nodeIds, witnessNodeIds: cycle.witnessNodeIds, edges: cycle.witnessEdges })),
+          discoveryCandidates: candidates.candidates.map(({ evidence, ...candidate }) => ({
+            ...candidate, evidence: evidence.map(({ nodeId, url }) => ({ nodeId, url })),
+          })),
+          trends: service.historicalTrends(repository),
+          redaction: { issueBodiesIncluded: false, evidenceExcerptsIncluded: false },
+        });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency diagnostics export unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/snapshot-diff', queryZodValidator(z.object({ from: z.coerce.number().int().nonnegative(), to: z.coerce.number().int().positive(), limit: z.coerce.number().int().min(1).max(500).default(200) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const { from, to, limit } = c.req.valid('query');
+        return c.json(diffDependencySnapshots(service.readAt(repository, from), service.readAt(repository, to), limit));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'snapshot diff unavailable';
+        return c.json({ error: message }, /increasing|requires/.test(message) ? 400 : 404);
+      }
+    })
+    .post('/dependency-graph/sync', async (c) => {
+      try { return c.json(await dependencyGraphService(c.get('project').root).sync()); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency sync unavailable' }, 503); }
+    })
+    .post('/dependency-graph/simulate', jsonZodValidator(dependencySimulationInputSchema), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(simulateDependencyGraph(service.read(repository), c.req.valid('json')));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'simulation failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : /not found|invalid|cannot assert|duplicate/.test(message) ? 400 : 503);
+      }
+    })
+    .post('/dependency-graph/decisions', jsonZodValidator(dependencyDecisionWriteSchema), async (c) => {
+      const input = c.req.valid('json');
+      if (input.state !== 'proposed') return c.json({ error: 'Decision writes must remain proposals; state changes require a separate authorized action.' }, 403);
+      if (input.requiredAuthorization !== 'agent-proposal' && !capabilities().localHandoff) return c.json({ error: 'Only the local operator can create decisions requiring elevated authorization.' }, 403);
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const current = service.read(repository);
+        const prior = current.decisions.find((item) => item.id === input.id);
+        if (prior && !['proposed', 'reopened'].includes(prior.state)) return c.json({ error: 'Only proposed or reopened decisions can be edited.' }, 409);
+        if (prior && prior.requiredAuthorization !== 'agent-proposal' && !capabilities().localHandoff) return c.json({ error: 'This decision can only be edited by the local operator.' }, 403);
+        const at = new Date().toISOString();
+        const decision = {
+          id: input.id, repository, question: input.question, options: input.options,
+          rationale: input.rationale, evidence: input.evidence, reversible: input.reversible,
+          ...(input.owner ? { owner: input.owner } : {}), requiredAuthorization: input.requiredAuthorization,
+          state: 'proposed' as const, affectedNodeIds: input.affectedNodeIds,
+          ...(input.supersedes ? { supersedes: input.supersedes } : {}),
+          createdBy: prior?.createdBy ?? (capabilities().localHandoff ? 'local-operator' : 'local-agent'),
+          createdAt: prior?.createdAt ?? at, updatedAt: at, revision: prior?.revision ?? 0,
+        };
+        if (!hasValidDependencyNodeIdentity({ kind: 'decision', id: input.id, repository, title: input.question, state: 'proposed', requiredAuthorization: 'agent-proposal', revision: 0, updatedAt: at })) {
+          return c.json({ error: 'decision id does not match this repository' }, 400);
+        }
+        const revision = await service.writeDecision(decision, input.expectedGraphRevision);
+        return c.json({ revision, decision }, prior ? 200 : 201);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision write failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .post('/dependency-graph/decision-transition', jsonZodValidator(dependencyDecisionTransitionSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision approvals are available only from the local operator surface' }, 403);
+      try { return c.json(await dependencyGraphService(c.get('project').root).transitionDecision(
+        c.req.valid('json').decisionId, c.req.valid('json').to, c.req.valid('json').expectedGraphRevision, c.req.valid('json').resolution,
+      )); }
+      catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision transition failed';
+        const status = /revision conflict/.test(message) ? 409 : /not found/.test(message) ? 404 : /read-only/.test(message) ? 403 : 400;
+        return c.json({ error: message }, status);
+      }
+    })
+    .post('/dependency-graph/decision-metadata', jsonZodValidator(dependencyDecisionMetadataPatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision metadata corrections are available only on the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const current = service.read(repository);
+        if (current.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${current.revision}`);
+        const decision = current.decisions.find((item) => item.id === input.decisionId);
+        if (!decision) return c.json({ error: 'decision not found' }, 404);
+        if (decision.revision !== input.expectedDecisionRevision) throw new Error(`decision revision conflict: expected ${input.expectedDecisionRevision}, found ${decision.revision}`);
+        const sha = createHash('sha256').update(JSON.stringify(decision)).digest('hex');
+        if (sha !== input.expectedDecisionSha.toLowerCase()) throw new Error('decision content fingerprint conflict');
+        if (decision.requiredAuthorization !== 'policy-approved-low-risk' || !['proposed', 'reopened'].includes(decision.state)) {
+          return c.json({ error: 'only proposed low-risk decisions may receive automatic metadata corrections' }, 403);
+        }
+        const updated = { ...decision,
+          ...(input.owner !== undefined ? (input.owner === null ? { owner: undefined } : { owner: input.owner }) : {}),
+          ...(input.evidence !== undefined ? { evidence: input.evidence } : {}),
+          updatedAt: new Date().toISOString(),
+        };
+        const revision = await service.writeDecision(updated, input.expectedGraphRevision, 'policy-approved-low-risk', { rationale: input.rationale });
+        return c.json({ revision, decision: { ...updated, revision: decision.revision + 1 } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision metadata correction failed';
+        return c.json({ error: message }, /revision conflict|fingerprint conflict/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/decision-metadata/rollback', jsonZodValidator(dependencyDecisionMetadataRollbackSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision metadata rollback is available only on the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const currentSnapshot = service.read(repository);
+        if (currentSnapshot.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${currentSnapshot.revision}`);
+        const current = currentSnapshot.decisions.find((item) => item.id === input.decisionId);
+        const previous = service.readAt(repository, input.targetRevision).decisions.find((item) => item.id === input.decisionId);
+        if (!current || !previous) return c.json({ error: 'decision version not found' }, 404);
+        if (current.requiredAuthorization !== 'policy-approved-low-risk' || previous.requiredAuthorization !== current.requiredAuthorization) return c.json({ error: 'only low-risk metadata corrections can be rolled back automatically' }, 403);
+        const stable = (record: typeof current) => JSON.stringify({ ...record, owner: undefined, evidence: undefined, revision: 0, updatedAt: '' });
+        if (stable(current) !== stable(previous)) return c.json({ error: 'rollback target contains structural or lifecycle changes requiring human review' }, 409);
+        const revision = await service.writeDecision(previous, input.expectedGraphRevision, 'local-operator-rollback', { rationale: `Rollback of metadata correction to graph revision ${input.targetRevision}.` });
+        return c.json({ revision, restored: { ...previous, revision: current.revision + 1 } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision metadata rollback failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : /not found/.test(message) ? 404 : 400);
+      }
+    })
 
     .get('/github/comments/:kind/:number', queryZodValidator(refreshQuery), async (c) => {
       const { root: repoRoot } = c.get('project');
@@ -6624,6 +7010,21 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // Every registered project gets a handle (spec 2026-09-14): `github` only when the remote is
   // on github.com — a project without one still fires its scheduled automations.
   const automationProjects = new Map<string, { root: string; github?: { owner: string; repo: string } }>();
+  const schedulerGraphServices = new Map<string, DependencyGraphService>();
+  const graphServiceForScheduler = (root: string) => {
+    let service = schedulerGraphServices.get(root);
+    if (!service) {
+      service = new DependencyGraphService(root);
+      schedulerGraphServices.set(root, service);
+      deps.onDispose?.(() => { service?.close(); schedulerGraphServices.delete(root); });
+    }
+    return service;
+  };
+  const checkScheduledDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate) => {
+    const service = graphServiceForScheduler(root);
+    const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
+    return evaluateDependencyAdmission(service.read(repository), repository, candidate.number);
+  };
   // A second instance from the one the HTTP routes use (out of scope here, built inside the app
   // function) — cheap: `createTrackerService` performs no I/O at construction, only a small
   // per-connection provider cache that duplicating costs nothing correctness-wise.
@@ -6632,6 +7033,46 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     const parsed = parseRemote((await getRepoInfo(root))?.remote ?? '');
     automationProjects.set(id, { root, ...(parsed?.host === 'github.com' ? { github: { owner: parsed.owner, repo: parsed.repo } } : {}) });
   };
+  let dependencyDiscoveryBusy = false;
+  const runDependencyDiscovery = async (): Promise<void> => {
+    if (dependencyDiscoveryBusy || !resolveCapabilities(process.env, deps.bindHost).localHandoff) return;
+    dependencyDiscoveryBusy = true;
+    try {
+      for (const [projectId, project] of automationProjects.entries()) {
+        if (!project.github) continue;
+        const service = graphServiceForScheduler(project.root);
+        const sync = await service.sync();
+        if (sync.status === 'fresh') {
+          await scanAndProposeDecisions(service);
+          const snapshot = service.read(await service.repositoryKey());
+          if (snapshot.source.status === 'fresh') {
+            const bootId = deps.bootProjectId ?? 'default';
+            const context = projectId === bootId || project.root === deps.repoRoot
+              ? { manager: deps.manager }
+              : await sharedContexts.context(projectId);
+            const researchTargets = [...snapshot.decisions]
+              .filter((decision) => decision.createdBy === 'dependency-discovery-scanner' && decision.affectedNodeIds.length >= 3 && ['proposed', 'reopened'].includes(decision.state))
+              .sort((a, b) => b.affectedNodeIds.length - a.affectedNodeIds.length || a.id.localeCompare(b.id));
+            for (const decision of researchTargets) {
+              const research = await dispatchDecisionResearch({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, decisionId: decision.id });
+              if (research.status === 'started') break;
+            }
+            for (const candidate of planCycleRepairs(snapshot, 10).candidates) {
+              const dispatch = await dispatchCycleReplan({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, candidateId: candidate.id });
+              if (dispatch.status === 'started') break;
+            }
+          }
+        }
+      }
+    } catch {
+      // A failed background discovery scan leaves the durable graph and proposals untouched;
+      // the next bounded interval retries from the last successful watermark.
+    } finally { dependencyDiscoveryBusy = false; }
+  };
+  const dependencyDiscoveryStartup = setTimeout(() => { void runDependencyDiscovery(); }, 15 * 60_000);
+  const dependencyDiscoveryInterval = setInterval(() => { void runDependencyDiscovery(); }, 6 * 60 * 60_000);
+  dependencyDiscoveryStartup.unref?.();
+  dependencyDiscoveryInterval.unref?.();
   const automationScheduler = new WorkspaceAutomationScheduler({
     coordinator: automationCoordinator,
     handle: (projectId, store): ProjectAutomationHandle | undefined => {
@@ -6649,6 +7090,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         store,
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
+        admit: candidate => Promise.resolve(checkScheduledDependencyAdmission(project.root, candidate)),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,
         // by `getDriver()` — a project with none simply fails that call and the scheduler backs off.
@@ -6658,9 +7100,9 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         },
         onChange: (automationId, revision) =>
           workspaceEvents.emit('automation-change', { project: projectId, automationId, revision }),
-        launch: async (definition, candidate, receiptId) => {
+        launch: async (definition, candidate, receiptId, admission) => {
           const context = await contextOf();
-          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, dispatchEnabled });
+          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, admission, recheckAdmission: () => Promise.resolve(checkScheduledDependencyAdmission(context.root, candidate)), dispatchEnabled });
         },
         launchSchedule: async (definition, occurrence, receiptId) => {
           const context = await contextOf();
@@ -6719,7 +7161,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
+  server.once('close', () => { clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }
