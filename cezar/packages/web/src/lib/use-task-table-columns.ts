@@ -13,6 +13,26 @@ import {
   type NormalizedExpandedColumns,
   type TaskColumnId,
 } from './task-columns'
+import type { TaskSortState } from './tasks-table'
+
+const TASK_SORT_STORAGE_KEY = 'cezar.tasks.table.sort'
+const DEFAULT_TASK_SORT: TaskSortState = { column: 'started', direction: 'desc' }
+
+function readTaskSort(): TaskSortState {
+  if (typeof window === 'undefined') return DEFAULT_TASK_SORT
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(TASK_SORT_STORAGE_KEY) ?? 'null')
+    if (parsed === null || typeof parsed !== 'object') return DEFAULT_TASK_SORT
+    const value = parsed as Partial<TaskSortState>
+    const column = TASK_COLUMNS.find((item) => item.id === value.column)
+    return column && (!('sortable' in column) || column.sortable !== false) &&
+      (value.direction === 'asc' || value.direction === 'desc')
+      ? { column: value.column!, direction: value.direction }
+      : DEFAULT_TASK_SORT
+  } catch {
+    return DEFAULT_TASK_SORT
+  }
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -30,17 +50,28 @@ export function useTaskTableColumns(): {
   isExpanded: (id: TaskColumnId) => boolean
   toggleColumn: (id: TaskColumnId) => void
   isPending: boolean
+  sort: TaskSortState
+  setSort: (sort: TaskSortState) => void
 } {
   const queryClient = useQueryClient()
   const uiState = useWorkspaceUiState()
   const sequence = React.useRef(0)
   const newestSequence = React.useRef(0)
   const writeChain = React.useRef<Promise<void>>(Promise.resolve())
+  const [sort, setSortState] = React.useState<TaskSortState>(readTaskSort)
 
   const expandedColumns = React.useMemo(
     () => normalizeExpandedColumns(uiState.data?.taskTable?.expandedColumns),
     [uiState.data?.taskTable?.expandedColumns],
   )
+  const setSort = React.useCallback((next: TaskSortState) => {
+    setSortState(next)
+    try {
+      window.localStorage.setItem(TASK_SORT_STORAGE_KEY, JSON.stringify(next))
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), { tone: 'danger' })
+    }
+  }, [])
 
   const toggleColumn = React.useCallback(
     (id: TaskColumnId) => {
@@ -84,5 +115,5 @@ export function useTaskTableColumns(): {
     [expandedColumns],
   )
 
-  return { expandedColumns, isExpanded, toggleColumn, isPending: uiState.isPending }
+  return { expandedColumns, isExpanded, toggleColumn, isPending: uiState.isPending, sort, setSort }
 }
