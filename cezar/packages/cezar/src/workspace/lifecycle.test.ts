@@ -365,13 +365,19 @@ describe('local workspace lifecycle', () => {
     });
     await expect(resumeBlockedWorkspace({ issue: '302', cwd: repo })).resolves.toMatchObject({ state: 'working' });
     expect((await lifecycleMetrics({ cwd: repo })).manualInterventions).toBe(1);
-    try { execFileSync('git', ['merge', 'dev'], { cwd: conflicting.workspacePath, encoding: 'utf8', stdio: 'ignore' }); } catch { /* expected content conflict, resolved below */ }
+    let mergeError = '';
+    try { execFileSync('git', [...GIT_ID, 'merge', 'origin/dev'], { cwd: conflicting.workspacePath, encoding: 'utf8' }); }
+    catch (error) { mergeError = String((error as { stderr?: string }).stderr ?? error); /* expected content conflict, resolved below */ }
     writeFileSync(join(conflicting.workspacePath, 'overlap.txt'), 'reconciled issue and target change\n');
     git(conflicting.workspacePath, ...GIT_ID, 'add', 'overlap.txt');
     git(conflicting.workspacePath, ...GIT_ID, 'commit', '-q', '-m', 'resolve integration conflict');
-    expect(await runWorkspaceCommand(['preflight', '--issue', '302', '--json'], {
-      cwd: repo, io: { log: () => undefined, error: (line) => { throw new Error(line); } },
-    })).toBe(0);
+    const repairedOutput: string[] = [];
+    const repairedStatus = await runWorkspaceCommand(['preflight', '--issue', '302', '--json'], {
+      cwd: repo, io: { log: (line) => repairedOutput.push(line), error: (line) => { throw new Error(line); } },
+    });
+    const targetHead = git(repo, 'rev-parse', 'dev');
+    const repairedParents = git(conflicting.workspacePath, 'rev-list', '--parents', '-n', '1', 'HEAD');
+    expect(repairedStatus, `merge=${mergeError}\ntarget=${targetHead}\nbranch=${repairedParents}\n${repairedOutput.join('\n')}`).toBe(0);
     expect(await lifecycleMetrics({ cwd: repo })).toMatchObject({
       autoRepairAttempts: 1, autoRepairSuccesses: 1, autoRepairSuccessRate: 1,
     });

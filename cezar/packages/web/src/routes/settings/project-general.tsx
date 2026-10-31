@@ -108,7 +108,7 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
                 <select
                   aria-label="Factory channel"
                   data-slot="factory-channel"
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   value={project.factoryChannel ?? factoryRelease.data.channel}
                   disabled={updateProject.isPending}
                   onChange={(event) => updateProject.mutate({ id: project.id, factoryChannel: event.target.value as 'dev' | 'stable' })}
@@ -203,7 +203,7 @@ function FullRegressionPolicyEditor({
     <div className="flex w-full max-w-lg flex-col gap-3" data-slot="full-regression-policy">
       <select
         aria-label="Full regression mode"
-        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
         value={draft.mode}
         disabled={disabled}
         onChange={(event) => {
@@ -225,7 +225,7 @@ function FullRegressionPolicyEditor({
         <div className="grid grid-cols-2 gap-2">
           <select
             aria-label="Full regression schedule"
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             value={draft.schedule.type}
             disabled={disabled}
             onChange={(event) => setDraft((current) => {
@@ -244,7 +244,7 @@ function FullRegressionPolicyEditor({
           {draft.schedule.type === 'hours' ? (
             <select
               aria-label="Schedule interval hours"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               value={draft.schedule.every ?? 6}
               disabled={disabled}
               onChange={(event) => setDraft((current) => current.mode === 'scheduled'
@@ -271,7 +271,7 @@ function FullRegressionPolicyEditor({
                 <select aria-label="Weekly regression day" value={draft.schedule.day ?? 1} disabled={disabled} onChange={(event) => {
                   const day = Number(event.target.value) as 1 | 2 | 3 | 4 | 5 | 6 | 7
                   setDraft((current) => current.mode === 'scheduled' && current.schedule.type === 'weekly' ? { ...current, schedule: { ...current.schedule, day } } : current)
-                }} className="ml-1 h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+                }} className="ml-1 h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
                   {[['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday'], ['7', 'Sunday']].map(([day, name]) => <option key={day} value={day}>{name}</option>)}
                 </select>
               </label> : null}
@@ -300,7 +300,7 @@ function FullRegressionPolicyEditor({
           <input type="number" min={1} max={100000} value={draft.maxUpdatesPerWindow} disabled={disabled} onChange={(event) => setNumber('maxUpdatesPerWindow', event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-soft-foreground">Queued follow-ups
-          <select value={draft.maxQueuedRuns} disabled={disabled} onChange={(event) => setDraft((current) => ({ ...current, maxQueuedRuns: Number(event.target.value) as 0 | 1 }))} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground">
+          <select value={draft.maxQueuedRuns} disabled={disabled} onChange={(event) => setDraft((current) => ({ ...current, maxQueuedRuns: Number(event.target.value) as 0 | 1 }))} className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <option value={0}>None</option><option value={1}>One coalesced follow-up</option>
           </select>
         </label>

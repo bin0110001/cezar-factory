@@ -7,7 +7,7 @@ import {
   parseFactoryReleaseManifest,
 } from '@open-mercato/cezar-api-client';
 
-const fixtures = resolve(process.cwd(), '../../../schemas/factory-release/fixtures');
+const fixtures = resolve(import.meta.dirname, '../../../../schemas/factory-release/fixtures');
 async function readFixture(name: string): Promise<unknown> {
   return JSON.parse(await readFile(resolve(fixtures, name), 'utf8'));
 }
