@@ -64,6 +64,10 @@ source: skills/factory-plan/SKILL.md
 - Other modules or services that the change affects.
 - Configuration or environment setup required.
 - Database migrations or data model changes.
+- Describe these dependencies in the plan. They are not permission to add a
+  native GitHub blocker relationship or set `factory:blocked`. An explicit
+  user request authorizes the GitHub relationship; only a verified external
+  blocker justifies the `factory:blocked` label.
 
 ### 5. Define Acceptance Criteria
 
@@ -103,6 +107,12 @@ source: skills/factory-plan/SKILL.md
   - `body`: self-contained. State the objective, the concrete tasks, acceptance criteria, and a pointer to the source (document path and section). A planner reading only this issue must be able to plan it without the parent.
   - `type`: one of `type:bug|feature|refactor|test|docs|maintenance`. `risk`: `risk:low|medium|high` per the project's risk guidance. `complexity`: one of `complexity:small|medium|large`.
   - `dependsOn`: zero-based indexes of earlier entries in `subIssues` that must land first. Never self-reference.
+- `dependsOn` is sequencing metadata for the decomposition and parent summary.
+  The workflow records it in the plan table; it does not create native GitHub
+  blocker relationships. Never mark a child `factory:blocked` because it has
+  a `dependsOn` entry. Use `factory:blocked` only when the issue itself has a
+  verified external blocker and the required external input or event is
+  identified.
 - Size each sub-issue to roughly one reviewable PR; group tiny related tasks together, split anything spanning several layers. Prefer fewer, meaningful issues over one per checkbox; the cap is `max_sub_issues` in `policies/retry.yaml` (default 40).
 - Order `subIssues` in a sensible delivery order. Skip work already completed (for example checked-off items in a plan document, or things the repository already implements; verify in the code, not just the checkboxes). Say what you skipped in `nonGoals`.
 - In decomposition mode `acceptanceCriteria` describes what "decomposition done" means (for example "every unchecked item in section 31 is covered by exactly one sub-issue"), and `suggestedWorkBreakdown` summarises the grouping.
