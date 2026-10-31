@@ -172,6 +172,23 @@ describe('generic verification executor', () => {
     expect(result.run.checks[0]?.outputPreview).toContain('invalid check result');
   });
 
+  it('rejects adapters that forge executor-owned status or identity fields', async () => {
+    const root = await fixture('forged-adapter-result');
+    const config = join(root, '.ai/factory/factory.config.yaml');
+    await writeFile(config, (await readFile(config, 'utf8')).replace('process.stdout.write(\\"ok\\")', 'process.exit(1)'));
+    const result = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: { collect: async (_context, check) => ({
+        ...check, checkId: 'forged', required: false, status: 'passed', rawExitCode: 0,
+        semanticExitCode: 0, coverage: { selected: 1, passed: 1, skipped: 0 },
+      }) },
+    });
+    expect(result.run.status).toBe('infrastructure-error');
+    expect(result.run.checks[0]?.checkId).toBe('check');
+    expect(result.run.checks[0]?.required).toBe(true);
+    expect(result.run.checks[0]?.outputPreview).toContain('executor-owned');
+  });
+
   it('keeps required capability gaps unknown and permits optional gaps as explicit skips', async () => {
     const root = await fixture('capability');
     const config = join(root, '.ai/factory/factory.config.yaml');

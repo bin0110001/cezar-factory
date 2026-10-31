@@ -102,6 +102,20 @@ function checkRunConsistent(check: VerificationCheckRun): boolean {
     && check.coverage.skipped === expectedCoverage[2];
 }
 
+function adapterPreservedExecutionFields(candidate: VerificationCheckRun, executed: VerificationCheckRun): boolean {
+  return candidate.checkId === executed.checkId
+    && candidate.required === executed.required
+    && candidate.attempt === executed.attempt
+    && candidate.status === executed.status
+    && candidate.rawExitCode === executed.rawExitCode
+    && candidate.semanticExitCode === executed.semanticExitCode
+    && candidate.durationMs === executed.durationMs
+    && candidate.outputTruncated === executed.outputTruncated
+    && candidate.coverage.selected === executed.coverage.selected
+    && candidate.coverage.passed === executed.coverage.passed
+    && candidate.coverage.skipped === executed.coverage.skipped;
+}
+
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
@@ -333,11 +347,17 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       durationMs, outputPreview: safeOutput.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), outputTruncated: truncated,
       diagnostics: [], metrics: [], coverage: { selected: 1, passed: status === 'passed' ? 1 : 0, skipped: status === 'skipped' ? 1 : 0 }, artifacts: [],
     };
-    try { if (input.adapter?.collect) checkRun = await input.adapter.collect(context, checkRun); }
-    catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter collect failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
+    const executedCheckRun = structuredClone(checkRun);
+    try {
+      if (input.adapter?.collect) checkRun = await input.adapter.collect(context, structuredClone(executedCheckRun));
+    } catch (error) {
+      checkRun = { ...executedCheckRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter collect failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
+    }
     const validCheck = verificationCheckRunSchema.safeParse(checkRun);
-    const consistencyError = validCheck.success && !checkRunConsistent(validCheck.data)
-      ? 'adapter returned check semantics or coverage inconsistent with its status'
+    const consistencyError = validCheck.success
+      ? !adapterPreservedExecutionFields(validCheck.data, executedCheckRun)
+        ? 'adapter changed executor-owned identity, status, exit, duration, truncation, or coverage fields'
+        : !checkRunConsistent(validCheck.data) ? 'adapter returned check semantics or coverage inconsistent with its status' : undefined
       : undefined;
     if (!validCheck.success || consistencyError) {
       const issueMessages = validCheck.success ? consistencyError : validCheck.error.issues.map((issue) => issue.message).join('; ');
