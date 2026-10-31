@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -29,8 +30,8 @@ describe('local workspace lifecycle', () => {
   let oldHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(realpathSync(tmpdir()), 'cez-lifecycle-home-'));
-    repo = mkdtempSync(join(realpathSync(tmpdir()), 'cez-lifecycle-repo-'));
+    home = mkdtempSync(join(tmpdir(), 'cez-lifecycle-home-'));
+    repo = mkdtempSync(join(tmpdir(), 'cez-lifecycle-repo-'));
     oldHome = process.env.CEZ_HOME;
     process.env.CEZ_HOME = home;
     git(repo, 'init', '-q', '-b', 'dev');
@@ -53,7 +54,7 @@ describe('local workspace lifecycle', () => {
 
   it('upgrades a version 2 telemetry outbox without losing its delivery history', async () => {
     const commonRaw = git(repo, 'rev-parse', '--git-common-dir');
-    const commonDir = realpathSync(isAbsolute(commonRaw) ? commonRaw : resolve(repo, commonRaw));
+    const commonDir = await realpath(isAbsolute(commonRaw) ? commonRaw : resolve(repo, commonRaw));
     const repoId = createHash('sha256').update(commonDir.toLowerCase()).digest('hex').slice(0, 24);
     const registryDir = join(home, 'workspace-lifecycle', repoId);
     mkdirSync(registryDir, { recursive: true });
