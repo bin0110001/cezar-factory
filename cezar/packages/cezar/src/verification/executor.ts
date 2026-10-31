@@ -376,8 +376,43 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     check.semanticExitCode = 2;
     check.coverage = { selected: 1, passed: 0, skipped: 0 };
   }
+  let diagnosticBytes = 0;
+  let metricBytes = 0;
+  let artifactCount = 0;
+  const diagnosticBudget = Math.floor(VERIFICATION_LIMITS.resultBytes / 4);
+  const metricBudget = Math.floor(VERIFICATION_LIMITS.resultBytes / 16);
+  for (const check of checkRuns) {
+    const diagnostics = [];
+    for (const diagnostic of check.diagnostics) {
+      const bytes = Buffer.byteLength(JSON.stringify(diagnostic), 'utf8');
+      if (diagnosticBytes + bytes > diagnosticBudget) continue;
+      diagnostics.push(diagnostic);
+      diagnosticBytes += bytes;
+    }
+    const metrics = [];
+    for (const metric of check.metrics) {
+      const bytes = Buffer.byteLength(JSON.stringify(metric), 'utf8');
+      if (metricBytes + bytes > metricBudget) continue;
+      metrics.push(metric);
+      metricBytes += bytes;
+    }
+    const artifacts = check.artifacts.slice(0, Math.max(0, VERIFICATION_LIMITS.artifactRefsPerRun - artifactCount));
+    artifactCount += artifacts.length;
+    const detailsOmitted = diagnostics.length !== check.diagnostics.length
+      || metrics.length !== check.metrics.length || artifacts.length !== check.artifacts.length;
+    check.diagnostics = diagnostics;
+    check.metrics = metrics;
+    check.artifacts = artifacts;
+    if (detailsOmitted) {
+      check.outputPreview = truncateUtf8(`${check.outputPreview} [details omitted to fit the aggregate verification result limit]`, perCheckPreviewBudget);
+      check.outputTruncated = true;
+      check.status = 'unknown';
+      check.semanticExitCode = 2;
+      check.coverage = { selected: 1, passed: 0, skipped: 0 };
+    }
+  }
   const status = aggregate(checkRuns);
-  const run: VerificationRun = verificationRunSchema.parse({
+  const runRecord = {
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
     commitSha: initialHead,
@@ -386,7 +421,23 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
     coverage: { selected: checkRuns.length, passed: checkRuns.filter((c) => c.status === 'passed').length, failed: checkRuns.filter((c) => c.status === 'failed').length, skipped: checkRuns.filter((c) => c.status === 'skipped').length, unknown: checkRuns.filter((c) => ['unknown', 'infrastructure-error', 'cancelled', 'no-tests'].includes(c.status)).length },
     checks: checkRuns, artifacts: [],
-  });
+  };
+  if (Buffer.byteLength(JSON.stringify(runRecord), 'utf8') > VERIFICATION_LIMITS.resultBytes) {
+    for (const check of checkRuns) {
+      check.status = 'unknown';
+      check.semanticExitCode = 2;
+      check.outputPreview = 'verification details omitted to fit the aggregate result size limit';
+      check.outputTruncated = true;
+      check.diagnostics = [];
+      check.metrics = [];
+      check.artifacts = [];
+      check.coverage = { selected: 1, passed: 0, skipped: 0 };
+    }
+    runRecord.status = aggregate(checkRuns);
+    runRecord.semanticExitCode = semanticExit(runRecord.status);
+    runRecord.coverage = { selected: checkRuns.length, passed: 0, failed: 0, skipped: 0, unknown: checkRuns.length };
+  }
+  const run: VerificationRun = verificationRunSchema.parse(runRecord);
   const artifactPath = await writeResult(root, id, run);
   return { run, artifactPath, output: sanitizeOutput(combined, root, secretValues) };
 }

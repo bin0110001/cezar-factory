@@ -306,12 +306,20 @@ describe('generic verification executor', () => {
     const checkConfig = checks.map((id) => `    ${id}:\n      runner: command\n      executable: ${JSON.stringify(process.execPath)}\n      args: ["-e", ${JSON.stringify('process.stdout.write("x".repeat(20000))')}]\n      cwd: .\n      timeoutSeconds: 5\n      optional: false`).join('\n');
     const config = `verification:\n  version: 1\n  checks:\n${checkConfig}\n  suites:\n    quick: [${checks.join(', ')}]\n`;
     await writeFile(join(root, '.ai/factory/factory.config.yaml'), config);
-    const result = await executeVerification({ worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick' });
+    const result = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: {
+        collect: async (context, check) => Number(context.checkId.slice(5)) < 4
+          ? { ...check, diagnostics: Array.from({ length: 200 }, (_, index) => ({ code: `diag-${index}`, severity: 'warning' as const, message: 'd'.repeat(2000) })) }
+          : check,
+      },
+    });
     const serialized = JSON.stringify(result.run);
     expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(1024 * 1024);
     expect(result.run.checks).toHaveLength(60);
     expect(result.run.status).toBe('unknown');
     expect(result.run.checks.some((check) => check.outputTruncated && check.status === 'unknown')).toBe(true);
+    expect(result.run.checks.reduce((count, check) => count + check.diagnostics.length, 0)).toBeLessThan(800);
     expect(JSON.parse(await readFile(result.artifactPath, 'utf8'))).toEqual(result.run);
   }, 30_000);
 
