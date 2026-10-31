@@ -253,6 +253,53 @@ describe('generic verification executor', () => {
     }
   }, 15_000);
 
+  it('redacts a secret split across child output chunks before streaming it', async () => {
+    const root = await fixture('split-secret');
+    const secret = 'split-secret-value-that-must-never-escape';
+    const config = join(root, '.ai/factory/factory.config.yaml');
+    const splitAt = Math.floor(secret.length / 2);
+    const script = `process.stdout.write(${JSON.stringify(secret.slice(0, splitAt))}); setTimeout(() => process.stdout.write(${JSON.stringify(secret.slice(splitAt))}), 50);`;
+    const value = (await readFile(config, 'utf8')).replace(/^      args:.*$/m, `      args: ${JSON.stringify(['-e', script])}`);
+    await writeFile(config, value);
+    const old = process.env.VERIFICATION_SECRET;
+    process.env.VERIFICATION_SECRET = secret;
+    const streamed: string[] = [];
+    try {
+      const result = await executeVerification({
+        worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+        onOutput: (text) => streamed.push(text),
+      });
+      expect(result.run.status).toBe('passed');
+      expect(result.output).not.toContain(secret);
+      expect(streamed.join('')).not.toContain(secret);
+      expect(streamed.join('')).toContain('[REDACTED]');
+    } finally {
+      if (old === undefined) delete process.env.VERIFICATION_SECRET;
+      else process.env.VERIFICATION_SECRET = old;
+    }
+  });
+
+  it('redacts a secret prefix when bounded output truncates in the middle of it', async () => {
+    const root = await fixture('truncated-secret');
+    const secret = 'secret-prefix-hidden-at-truncation-boundary';
+    const config = join(root, '.ai/factory/factory.config.yaml');
+    const script = `process.stdout.write("x".repeat(19990)); process.stdout.write(${JSON.stringify(secret)});`;
+    const value = (await readFile(config, 'utf8')).replace(/^      args:.*$/m, `      args: ${JSON.stringify(['-e', script])}`);
+    await writeFile(config, value);
+    const old = process.env.VERIFICATION_SECRET;
+    process.env.VERIFICATION_SECRET = secret;
+    try {
+      const result = await executeVerification({ worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick' });
+      expect(result.run.status).toBe('unknown');
+      expect(result.run.checks[0]?.outputTruncated).toBe(true);
+      expect(result.output).not.toContain(secret.slice(0, 10));
+      expect(result.output).toContain('[REDACTED]');
+    } finally {
+      if (old === undefined) delete process.env.VERIFICATION_SECRET;
+      else process.env.VERIFICATION_SECRET = old;
+    }
+  });
+
   it('terminates the full descendant process tree after cancellation', async () => {
     const root = await fixture('process-tree');
     const config = join(root, '.ai/factory/factory.config.yaml');
@@ -266,9 +313,10 @@ describe('generic verification executor', () => {
       .replace(/^      args:.*$/m, `      args: ${JSON.stringify(['-e', script])}`)
       .replace('timeoutSeconds: 5', 'timeoutSeconds: 10'));
     let childPid: number | undefined;
+    const started = Date.now();
     const result = await executeVerification({
       worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
-      cancelled: () => childPid !== undefined,
+      cancelled: () => Date.now() - started > 500,
       onOutput: (text) => { childPid = Number.parseInt(text, 10) || childPid; },
     });
     expect(result.run.status).toBe('cancelled');

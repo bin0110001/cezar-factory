@@ -107,7 +107,33 @@ function inside(root: string, path: string): boolean {
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
 }
 
-function sanitizeOutput(text: string, root: string, secretValues: readonly string[]): string {
+function trailingSecretPrefixLength(text: string, secret: string): number {
+  const patternLength = Math.min(secret.length - 1, text.length, VERIFICATION_LIMITS.outputCharsPerCheck);
+  if (patternLength <= 0) return 0;
+  const pattern = secret.slice(0, patternLength);
+  const prefix = new Uint32Array(patternLength);
+  for (let i = 1, matched = 0; i < patternLength; i++) {
+    while (matched > 0 && pattern[i] !== pattern[matched]) matched = prefix[matched - 1]!;
+    if (pattern[i] === pattern[matched]) matched++;
+    prefix[i] = matched;
+  }
+  const tail = text.slice(-patternLength);
+  let matched = 0;
+  for (let i = 0; i < tail.length; i++) {
+    while (matched > 0 && tail[i] !== pattern[matched]) matched = prefix[matched - 1]!;
+    if (tail[i] === pattern[matched]) matched++;
+    if (matched === patternLength && i < tail.length - 1) matched = prefix[matched - 1]!;
+  }
+  return matched;
+}
+
+function sanitizeOutput(text: string, root: string, secretValues: readonly string[], truncated = false): string {
+  if (truncated) {
+    let overlappingPrefix = 0;
+    for (const secret of secretValues) overlappingPrefix = Math.max(overlappingPrefix, trailingSecretPrefixLength(text, secret));
+    if (overlappingPrefix > 0) text = `${text.slice(0, -overlappingPrefix)}[REDACTED]`;
+    text = text.replace(/(?:gh[pousr]_[A-Za-z0-9]{4,}|github_pat_[A-Za-z0-9_]{4,}|sk-ant-[A-Za-z0-9_-]{4,}|sk-[A-Za-z0-9_-]{4,}|AKIA[0-9A-Z]{4,}|ASIA[0-9A-Z]{4,}|AIza[0-9A-Za-z_-]{4,}|ya29\.[0-9A-Za-z_-]{4,}|xox[baprs]-[0-9A-Za-z-]{4,}|glpat-[0-9A-Za-z_-]{4,})$/i, '[REDACTED]');
+  }
   const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const withoutRoot = text.replace(new RegExp(escaped, 'gi'), '.').replaceAll(root.replaceAll('\\', '/'), '.');
   return redactSecrets(withoutRoot, secretValues);
@@ -136,7 +162,7 @@ async function killTree(child: ReturnType<typeof spawn>): Promise<void> {
   }
 }
 
-async function runCommand(executable: string, args: string[], cwd: string, timeoutMs: number, cancelled: () => boolean, onOutput?: (s: string) => void) {
+async function runCommand(executable: string, args: string[], cwd: string, timeoutMs: number, cancelled: () => boolean, onOutput?: (s: string, truncated: boolean) => void) {
   return new Promise<{ status: VerificationCheckRun['status']; code: number | null; output: string; truncated: boolean; durationMs: number }>((resolveResult) => {
     const started = Date.now();
     const [command, commandArgs] = nodeScriptCommand(executable, args);
@@ -151,7 +177,6 @@ async function runCommand(executable: string, args: string[], cwd: string, timeo
       if (room > 0) {
         const accepted = text.slice(0, room);
         output += accepted;
-        onOutput?.(accepted);
       }
       if (text.length > room) truncated = true;
     };
@@ -167,6 +192,7 @@ async function runCommand(executable: string, args: string[], cwd: string, timeo
     });
     child.on('close', (code) => {
       clearTimeout(timer); clearInterval(cancelTimer);
+      onOutput?.(output, truncated);
       const noTests = output.includes('CEZAR_VERIFICATION_STATUS=no-tests');
       const status: VerificationCheckRun['status'] = wasCancelled ? 'cancelled' : timedOut ? 'infrastructure-error' : truncated ? 'unknown' : noTests ? 'no-tests' : code === 0 ? 'passed' : code === null ? 'infrastructure-error' : code === 1 ? 'failed' : 'infrastructure-error';
       resolveResult({ status, code, output, truncated, durationMs: Date.now() - started });
@@ -278,7 +304,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
           status = 'cancelled';
           output = 'verification cancelled during tool discovery';
         } else {
-          const execute = () => runCommand(check.executable, check.args, realTarget, check.timeoutSeconds * 1000, () => Boolean(input.cancelled?.()), (text) => input.onOutput?.(sanitizeOutput(text, root, secretValues)));
+          const execute = () => runCommand(check.executable, check.args, realTarget, check.timeoutSeconds * 1000, () => Boolean(input.cancelled?.()), (text, outputTruncated) => input.onOutput?.(sanitizeOutput(text, root, secretValues, outputTruncated)));
           const result = await withResources(check.resources ?? [], () => Boolean(input.cancelled?.()), () => input.adapter?.execute ? input.adapter.execute(context, execute) : execute());
           ({ status, code: rawExitCode, output, truncated, durationMs } = result);
         }
@@ -286,7 +312,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
         status = input.cancelled?.() ? 'cancelled' : 'infrastructure-error'; output = error instanceof Error ? error.message : String(error); durationMs = Date.now() - checkStarted;
       }
     }
-    const safeOutput = sanitizeOutput(output, root, secretValues);
+    const safeOutput = sanitizeOutput(output, root, secretValues, truncated);
     combined += `${checkId}: ${safeOutput}\n`;
     let checkRun: VerificationCheckRun = {
       checkId, required, attempt: 1, status, rawExitCode,
@@ -302,7 +328,11 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       : undefined;
     if (!validCheck.success || consistencyError) {
       const issueMessages = validCheck.success ? consistencyError : validCheck.error.issues.map((issue) => issue.message).join('; ');
-      checkRun = { ...checkRun, checkId, required, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter returned an invalid check result: ${issueMessages}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
+      checkRun = {
+        checkId, required, attempt: 1, status: 'infrastructure-error', rawExitCode: null, semanticExitCode: 3,
+        durationMs: Math.max(0, Math.trunc(durationMs)), outputPreview: `adapter returned an invalid check result: ${issueMessages}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck),
+        outputTruncated: false, diagnostics: [], metrics: [], coverage: { selected: 1, passed: 0, skipped: 0 }, artifacts: [],
+      };
     } else checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
     try { await input.adapter?.cleanup?.(context); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter cleanup failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
