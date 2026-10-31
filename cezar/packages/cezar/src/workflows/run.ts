@@ -118,6 +118,7 @@ import {
 import { freshContinuationContext } from './continuation-context.ts';
 import { resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 import { executeVerification } from '../verification/executor.ts';
+import { listProjects } from '../workspace/projects.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -5874,6 +5875,34 @@ export class RunManager {
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
     if (step.verificationSuite) {
+      if (!this.projectId) {
+        const message = 'verification requires a registered project';
+        emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
+        return { ok: false, output: message, exitCode: 3 };
+      }
+      const registered = await listProjects({ projectId: this.projectId }).catch(() => []);
+      const registeredProject = registered[0];
+      const registeredRoot = registeredProject?.root ? resolve(registeredProject.root) : undefined;
+      const managerRoot = resolve(this.repoRoot);
+      const worktreeRoot = resolve(state.cwd);
+      const samePath = (left: string, right: string) => process.platform === 'win32'
+        ? left.toLowerCase() === right.toLowerCase()
+        : left === right;
+      let isGitWorktree = false;
+      try {
+        const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: managerRoot, encoding: 'utf8' })
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('worktree '))
+          .map((line) => resolve(line.slice('worktree '.length)));
+        isGitWorktree = worktrees.some((candidate) => samePath(candidate, worktreeRoot)
+          && !samePath(candidate, managerRoot));
+      } catch { /* a worktree that cannot be verified must be refused */ }
+      if (!registeredRoot || !samePath(registeredRoot, managerRoot)
+        || !isGitWorktree) {
+        const message = 'verification requires a worktree inside the registered project';
+        emit({ type: 'verification-result', stepId: step.id, status: 'infrastructure-error', error: message, exitCode: 3 });
+        return { ok: false, output: message, exitCode: 3 };
+      }
       const snapshot = await autosaveCommit(state.cwd, 'periodic');
       if (snapshot === 'refused' || snapshot === 'failed') {
         const message = `verification could not snapshot worktree (${snapshot})`;
@@ -5883,7 +5912,7 @@ export class RunManager {
       return executeVerification({
         worktreePath: state.cwd,
         cezarRunId: runId,
-        projectId: createHash('sha256').update(this.repoRoot.toLowerCase()).digest('hex'),
+        projectId: this.projectId,
         suite: step.verificationSuite,
         cancelled: () => state.cancelled,
         onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),

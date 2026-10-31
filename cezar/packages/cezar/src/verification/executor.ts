@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { nodeScriptCommand } from '../core/disclaim-spawn.ts';
 import {
   VERIFICATION_LIMITS, verificationCheckRunSchema, verificationManifestSchema, verificationRunSchema,
   type VerificationCheckRun, type VerificationManifest, type VerificationRun,
@@ -37,6 +38,8 @@ export interface VerificationAdapterContext {
 /** Lifecycle hooks for project-owned adapters layered over the safe command runner. */
 export interface VerificationAdapter {
   discover?(root: string): Promise<string[]>;
+  /** Report the version from the same environment that executes the check. */
+  toolVersion?(context: VerificationAdapterContext): Promise<string | undefined>;
   preflight?(context: VerificationAdapterContext): Promise<{ status?: 'skipped' | 'unknown' | 'infrastructure-error'; message?: string }>;
   execute?(context: VerificationAdapterContext, runCommand: () => Promise<{ status: VerificationCheckRun['status']; code: number | null; output: string; truncated: boolean; durationMs: number }>): ReturnType<typeof runCommand>;
   collect?(context: VerificationAdapterContext, result: VerificationCheckRun): Promise<VerificationCheckRun>;
@@ -88,6 +91,17 @@ function aggregate(checks: VerificationCheckRun[]): VerificationRun['status'] {
   return 'passed';
 }
 
+function checkRunConsistent(check: VerificationCheckRun): boolean {
+  const expectedExit = check.status === 'passed' ? 0 : check.status === 'failed' ? 1
+    : check.status === 'infrastructure-error' ? 3 : check.status === 'cancelled' ? 4 : 2;
+  const expectedCoverage = check.status === 'passed' ? [1, 1, 0]
+    : check.status === 'skipped' ? [1, 0, 1] : [1, 0, 0];
+  return check.semanticExitCode === expectedExit
+    && check.coverage.selected === expectedCoverage[0]
+    && check.coverage.passed === expectedCoverage[1]
+    && check.coverage.skipped === expectedCoverage[2];
+}
+
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
@@ -125,7 +139,8 @@ async function killTree(child: ReturnType<typeof spawn>): Promise<void> {
 async function runCommand(executable: string, args: string[], cwd: string, timeoutMs: number, cancelled: () => boolean, onOutput?: (s: string) => void) {
   return new Promise<{ status: VerificationCheckRun['status']; code: number | null; output: string; truncated: boolean; durationMs: number }>((resolveResult) => {
     const started = Date.now();
-    const child = spawn(executable, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: safeEnvironment() });
+    const [command, commandArgs] = nodeScriptCommand(executable, args);
+    const child = spawn(command, commandArgs, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: safeEnvironment() });
     let output = '';
     let truncated = false;
     let timedOut = false;
@@ -190,6 +205,8 @@ async function incompleteRun(input: VerificationExecutionInput, root: string, ra
 /** Execute an explicitly selected project suite; shell parsing and host secrets are excluded. */
 export async function executeVerification(input: VerificationExecutionInput): Promise<VerificationExecutionResult> {
   const root = await realpath(input.worktreePath);
+  const initialHead = await (await import('../server/git.ts')).getHeadCommit(root);
+  if (!initialHead) throw new Error('verification worktree has no readable HEAD commit');
   const manifestFile = join(root, MANIFEST_PATH);
   let raw = '';
   const manifestReal = await realpath(manifestFile).catch(() => undefined);
@@ -204,13 +221,14 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
   const manifest = parsed.data;
   const selected = manifest.suites[input.suite];
   if (!selected) return incompleteRun(input, root, raw, `unknown verification suite: ${input.suite}`);
+  const secretValues = collectSecretValues();
   let discovered: string[] = [];
   try { discovered = (await input.adapter?.discover?.(root)) ?? []; }
   catch { /* discovery is optional; an undeclared requirement remains unknown/skipped */ }
   const availableCapabilities = new Set([...(input.availableCapabilities ?? []), ...(discovered ?? [])]);
+  const toolVersions: Record<string, string> = { node: process.versions.node };
   const id = randomUUID();
   const startedAt = new Date().toISOString();
-  const secretValues = collectSecretValues();
   const checkRuns: VerificationCheckRun[] = [];
   let combined = '';
 
@@ -244,9 +262,26 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       status = 'cancelled'; output = 'verification cancelled before launch';
     } else {
       try {
-        const execute = () => runCommand(check.executable, check.args, realTarget, check.timeoutSeconds * 1000, () => Boolean(input.cancelled?.()), (text) => input.onOutput?.(sanitizeOutput(text, root, secretValues)));
-        const result = await withResources(check.resources ?? [], () => Boolean(input.cancelled?.()), () => input.adapter?.execute ? input.adapter.execute(context, execute) : execute());
-        ({ status, code: rawExitCode, output, truncated, durationMs } = result);
+        let versionCancelled = false;
+        if (!Object.hasOwn(toolVersions, checkId)) {
+          if (input.adapter?.execute) {
+            let reported: string | undefined;
+            try { reported = await input.adapter.toolVersion?.(context); } catch { /* version evidence is optional */ }
+            toolVersions[checkId] = sanitizeOutput(reported ?? 'unavailable (adapter-managed)', root, secretValues).trim().slice(0, 256);
+          } else {
+            const version = await runCommand(check.executable, ['--version'], realTarget, 3_000, () => Boolean(input.cancelled?.()));
+            toolVersions[checkId] = sanitizeOutput(version.output, root, secretValues).trim().slice(0, 256) || 'unavailable';
+            versionCancelled = version.status === 'cancelled';
+          }
+        }
+        if (versionCancelled || input.cancelled?.()) {
+          status = 'cancelled';
+          output = 'verification cancelled during tool discovery';
+        } else {
+          const execute = () => runCommand(check.executable, check.args, realTarget, check.timeoutSeconds * 1000, () => Boolean(input.cancelled?.()), (text) => input.onOutput?.(sanitizeOutput(text, root, secretValues)));
+          const result = await withResources(check.resources ?? [], () => Boolean(input.cancelled?.()), () => input.adapter?.execute ? input.adapter.execute(context, execute) : execute());
+          ({ status, code: rawExitCode, output, truncated, durationMs } = result);
+        }
       } catch (error) {
         status = input.cancelled?.() ? 'cancelled' : 'infrastructure-error'; output = error instanceof Error ? error.message : String(error); durationMs = Date.now() - checkStarted;
       }
@@ -262,22 +297,37 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     try { if (input.adapter?.collect) checkRun = await input.adapter.collect(context, checkRun); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter collect failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
     const validCheck = verificationCheckRunSchema.safeParse(checkRun);
-    if (!validCheck.success) {
-      checkRun = { ...checkRun, checkId, required, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter returned an invalid check result: ${validCheck.error.issues.map((issue) => issue.message).join('; ')}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
+    const consistencyError = validCheck.success && !checkRunConsistent(validCheck.data)
+      ? 'adapter returned check semantics or coverage inconsistent with its status'
+      : undefined;
+    if (!validCheck.success || consistencyError) {
+      const issueMessages = validCheck.success ? consistencyError : validCheck.error.issues.map((issue) => issue.message).join('; ');
+      checkRun = { ...checkRun, checkId, required, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter returned an invalid check result: ${issueMessages}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
     } else checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
     try { await input.adapter?.cleanup?.(context); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter cleanup failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
     checkRuns.push(checkRun);
   }
-  const status = aggregate(checkRuns);
   const headSha = await (await import('../server/git.ts')).getHeadCommit(root);
   if (!headSha) throw new Error('verification worktree has no readable HEAD commit');
+  if (headSha !== initialHead) {
+    const last = checkRuns[checkRuns.length - 1];
+    if (last) {
+      last.status = 'infrastructure-error';
+      last.semanticExitCode = 3;
+      last.outputPreview = 'worktree HEAD changed during verification; result is not attributable to the tested commit';
+      last.outputTruncated = false;
+      last.coverage = { selected: 1, passed: 0, skipped: 0 };
+      combined += `${last.checkId}: worktree HEAD changed during verification; result is not attributable to the tested commit\n`;
+    }
+  }
+  const status = aggregate(checkRuns);
   const run: VerificationRun = verificationRunSchema.parse({
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
-    commitSha: headSha,
+    commitSha: initialHead,
     manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt, finishedAt: new Date().toISOString(),
-    toolVersions: { node: process.versions.node, ...Object.fromEntries(Object.entries(manifest.checks).map(([key, value]) => [key, `unreported (${value.executable})`])) },
+    toolVersions,
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
     coverage: { selected: checkRuns.length, passed: checkRuns.filter((c) => c.status === 'passed').length, failed: checkRuns.filter((c) => c.status === 'failed').length, skipped: checkRuns.filter((c) => c.status === 'skipped').length, unknown: checkRuns.filter((c) => ['unknown', 'infrastructure-error', 'cancelled', 'no-tests'].includes(c.status)).length },
     checks: checkRuns, artifacts: [],

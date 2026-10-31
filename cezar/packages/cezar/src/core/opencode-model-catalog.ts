@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { trackChildExit } from './agent-runner.ts';
 import { buildChildEnv } from './agent-env.ts';
+import { nodeScriptCommand } from './disclaim-spawn.ts';
 import type { ModelOption } from './runner-model-catalog.ts';
 
 export interface OpencodeModelDiscoveryOptions {
@@ -136,7 +137,8 @@ function spawnOpencode(
   args: readonly string[],
   cwd: string,
 ): ChildProcessWithoutNullStreams {
-  const child = nodeSpawn(bin, [...args], {
+  const [file, argv] = nodeScriptCommand(bin, args);
+  const child = nodeSpawn(file, argv, {
     cwd,
     env: buildChildEnv({ backend: 'opencode' }),
   });
