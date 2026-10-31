@@ -5,6 +5,10 @@ export class LeaseHeldError extends Error {
   constructor() { super('automation polling lease is held by another process'); }
 }
 
+export class AutomationAdmissionDeferredError extends Error {
+  constructor(readonly reason: string) { super(reason); }
+}
+
 /** One lease/eligibility/launch/checkpoint protocol for every event provider. */
 export async function runEventPollCycle<C extends { timestamp: string }, R extends { candidates: C[] }>(input: {
   store: AutomationStore;
@@ -14,6 +18,8 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
   poll: (state: AutomationRuntimeState) => Promise<R>;
   /** Runs under the snapshot mutation lease, only for a current execute cycle. */
   prepareState?: (state: AutomationRuntimeState) => void;
+  /** Runs while the polling lease is held and after the current definition/state are captured. */
+  beforePoll?: () => Promise<void>;
   eligible?: (candidate: C, state: AutomationRuntimeState) => boolean;
   isCurrent?: () => Promise<boolean>;
   launch?: (candidate: C) => Promise<void>;
@@ -60,6 +66,7 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
       snapshotLease.release();
     }
     const state = capturedState;
+    if (mode === 'execute' && current() && input.beforePoll) await input.beforePoll();
     if (state.backoffUntil && Date.parse(state.backoffUntil) > Date.now()) {
       throw new Error(`automation is backed off until ${state.backoffUntil}`);
     }
@@ -155,6 +162,11 @@ export async function launchEventCandidate(input: {
   const identity = { automationId: definition.id, revision: definition.revision };
   const receipt = store.reserveReceipt({ ...identity, ...input.receipt });
   if (!receipt) {
+    const existing = store.latestReceipt(definition.id, input.receipt.eventId);
+    if (existing?.status === 'deferred') {
+      store.appendLog({ ...identity, ...input.log, result: 'deferred', reason: existing.deferReason ?? 'Awaiting verified dependency readiness.', receiptId: existing.receiptId });
+      return;
+    }
     store.appendLog({
       ...identity, ...input.log, result: 'duplicate',
       reason: 'A durable receipt already exists for this automation and event.',
@@ -166,6 +178,13 @@ export async function launchEventCandidate(input: {
     store.appendReceipt({ ...receipt, status: 'launched', runId: launched.runId, updatedAt: new Date().toISOString() });
     store.appendLog({ ...identity, ...input.log, result: 'launched', receiptId: receipt.receiptId, runId: launched.runId });
   } catch (error) {
+    if (error instanceof AutomationAdmissionDeferredError) {
+      const deferred = store.deferReceipt(receipt.receiptId, error.reason);
+      if (deferred) {
+        store.appendLog({ ...identity, ...input.log, result: 'deferred', reason: deferred.deferReason, receiptId: deferred.receiptId });
+        return;
+      }
+    }
     store.appendReceipt({
       ...receipt, status: 'launch-error',
       error: error instanceof Error ? error.message : String(error),

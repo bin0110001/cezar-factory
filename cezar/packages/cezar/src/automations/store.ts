@@ -199,6 +199,32 @@ export class AutomationStore {
     return latest;
   }
 
+  latestReceipt(automationId: string, eventId: string): AutomationReceipt | undefined {
+    return this.latestReceipts().get(receiptKeyFor(automationId, eventId));
+  }
+
+  deferredReceipts(automationId: string): AutomationReceipt[] {
+    return [...this.latestReceipts().values()]
+      .filter((receipt) => receipt.automationId === automationId && receipt.status === 'deferred' && Boolean(receipt.candidate))
+      .sort((a, b) => a.observedAt.localeCompare(b.observedAt) || a.eventId.localeCompare(b.eventId));
+  }
+
+  reserveDeferred(receiptId: string): AutomationReceipt | undefined {
+    const current = [...this.latestReceipts().values()].find((receipt) => receipt.receiptId === receiptId);
+    if (!current || current.status !== 'deferred' || !current.candidate) return undefined;
+    const reserved = automationReceiptSchema.parse({ ...current, status: 'reserved', deferReason: undefined, error: undefined, updatedAt: this.now().toISOString() });
+    this.appendReceipt(reserved);
+    return reserved;
+  }
+
+  deferReceipt(receiptId: string, reason: string): AutomationReceipt | undefined {
+    const current = [...this.latestReceipts().values()].find((receipt) => receipt.receiptId === receiptId);
+    if (!current || !['reserved', 'deferred'].includes(current.status) || !current.candidate) return undefined;
+    const deferred = automationReceiptSchema.parse({ ...current, status: 'deferred', runId: undefined, error: undefined, deferReason: reason.slice(0, 2_000), updatedAt: this.now().toISOString() });
+    this.appendReceipt(deferred);
+    return deferred;
+  }
+
   appendReceipt(receipt: AutomationReceipt): void {
     this.appendNdjson(RECEIPTS, redactDeep(automationReceiptSchema.parse(receipt), this.secrets));
   }

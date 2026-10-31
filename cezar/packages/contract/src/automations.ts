@@ -211,6 +211,8 @@ export const automationLogResultSchema = z.enum([
   'catch-up',
   'skipped',
   'failed',
+  'deferred',
+  'admission-override',
 ]);
 export type AutomationLogResult = z.infer<typeof automationLogResultSchema>;
 

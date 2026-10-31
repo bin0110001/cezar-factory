@@ -1,6 +1,7 @@
 import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
+import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyDecisionResearchDispatch } from '@open-mercato/cezar-contract'
 import type {
   AgentConfigFileContent,
   AgentAccountDetailsResponse,
@@ -819,6 +820,113 @@ export async function getGithub(
     ),
     '/github',
   )
+}
+
+export type DependencyGraphData = {
+  schemaVersion: number; repository: string; revision: number; createdAt: string;
+  source: { status: 'fresh' | 'stale' | 'offline' | 'unknown'; lastSuccessfulSyncAt?: string; watermark?: string; warning?: string };
+  nodes: Array<{ id: string; kind: string; title: string; state: string; number?: number; url?: string }>;
+  edges: Array<{ id: string; kind: string; from: string; to: string; provenance: { authority: string; origin: string } }>;
+  decisions: Array<{ id: string; question: string; options: string[]; rationale: string; state: string; revision: number; requiredAuthorization: string; createdBy: string; evidence: Array<{ url: string; label: string }>; reversible: boolean; owner?: string; affectedNodeIds: string[] }>;
+  page: { limit: number; offset: number; totalNodes: number; hasMore: boolean };
+}
+
+export async function getDependencyGraph(params: { limit?: number; offset?: number; revision?: number; kind?: 'issue' | 'epic' | 'decision' | 'milestone' | 'external-blocker'; state?: string; search?: string; repository?: string; readiness?: 'ready' | 'blocked' | 'unknown' } = {}, opts?: ReadOptions): Promise<DependencyGraphData> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].$get({
+    param: { projectId: queryScope() },
+    query: { limit: String(params.limit ?? 100), offset: String(params.offset ?? 0), revision: params.revision === undefined ? undefined : String(params.revision), kind: params.kind, state: params.state, search: params.search, repository: params.repository, readiness: params.readiness },
+  }, init(opts)), '/dependency-graph');
+}
+export type DependencyNeighborhood = { revision: number; source: DependencyGraphData['source']; rootId: string; direction: string; depth: number; nodes: DependencyGraphData['nodes']; edges: DependencyGraphData['edges']; truncated: boolean }
+export async function getDependencyNeighborhood(params: { id: string; direction?: 'upstream' | 'downstream' | 'both'; depth?: number; limit?: number; kind?: 'BLOCKS' | 'PART_OF' | 'RELATED_TO' | 'INFORMS' | 'SUPERSEDES' | 'CONFLICTS' }, opts?: ReadOptions): Promise<DependencyNeighborhood> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].neighborhood.$get({
+    param: { projectId: queryScope() }, query: {
+      id: params.id, direction: params.direction ?? 'both', depth: String(params.depth ?? 2),
+      limit: String(params.limit ?? 50), kind: params.kind,
+    },
+  }, init(opts)), '/dependency-graph/neighborhood');
+}
+
+export async function syncDependencyGraph(): Promise<{ repository: string; revision: number; status: string; full: boolean; complete: boolean; nodesReceived: number; edgesReceived: number; warning?: string }> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].sync.$post({ param: { projectId: queryScope() } }), '/dependency-graph/sync');
+}
+export async function proposeDependencyDecision(input: { expectedGraphRevision: number; id: string; question: string; options: string[]; rationale?: string; evidence?: Array<{ url: string; label: string }>; reversible?: boolean; owner?: string; requiredAuthorization?: 'agent-proposal' | 'human-approval'; affectedNodeIds?: string[] }): Promise<{ revision: number; decision: { id: string; question: string; state: string; revision: number } }> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].decisions.$post({
+    param: { projectId: queryScope() }, json: { ...input, evidence: input.evidence ?? [], reversible: input.reversible ?? false, requiredAuthorization: input.requiredAuthorization ?? 'agent-proposal', state: 'proposed', affectedNodeIds: input.affectedNodeIds ?? [] },
+  }), '/dependency-graph/decisions');
+}
+export async function transitionDependencyDecision(input: { expectedGraphRevision: number; decisionId: string; to: 'approved' | 'resolved' | 'deferred' | 'reopened' | 'superseded' | 'rejected'; resolution?: string }): Promise<{ revision: number; decision: { id: string; question: string; state: string; revision: number } }> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['decision-transition'].$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/decision-transition');
+}
+
+export type DependencyGraphEvents = { events: Array<{ cursor: number; revision: number; kind: string; entityId: string; actor: string; payload: unknown; createdAt: string }>; limit: number; nextCursor: number | null; hasMore: boolean }
+export async function getDependencyGraphEvents(params: { limit?: number; before?: number } = {}, opts?: ReadOptions): Promise<DependencyGraphEvents> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].events.$get({
+    param: { projectId: queryScope() }, query: { limit: String(params.limit ?? 25), before: params.before === undefined ? undefined : String(params.before) },
+  }, init(opts)), '/dependency-graph/events');
+}
+export type DependencyGraphTrends = { repository: string; fromRevision: number; toRevision: number; truncated: boolean; points: Array<{ week: string; revision: number; sourceStatus: string; readiness: { ready: number; blocked: number; unknown: number }; cycles: number; oldestBlockedIssueAgeDays: number | null; resolvedDecisions: number; resolvedDecisionDelta: number; recurringCycleSignatures: string[] }> }
+export async function getDependencyGraphTrends(opts?: ReadOptions): Promise<DependencyGraphTrends> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].history.trends.$get({
+    param: { projectId: queryScope() },
+  }, init(opts)), '/dependency-graph/history/trends');
+}
+export async function getDependencyDiagnosticsExport(opts?: ReadOptions): Promise<Record<string, unknown>> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].diagnostics.export.$get({
+    param: { projectId: queryScope() },
+  }, init(opts)), '/dependency-graph/diagnostics/export');
+}
+export type DependencySnapshotDiff = { repository: string; fromRevision: number; toRevision: number; fromSource: DependencyGraphData['source']; toSource: DependencyGraphData['source']; nodes: unknown; edges: unknown; decisions: unknown; truncated: boolean }
+export async function getDependencySnapshotDiff(from: number, to: number, limit = 200, opts?: ReadOptions): Promise<DependencySnapshotDiff> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['snapshot-diff'].$get({
+    param: { projectId: queryScope() }, query: { from: String(from), to: String(to), limit: String(limit) },
+  }, init(opts)), '/dependency-graph/snapshot-diff');
+}
+export type DependencyCycles = { revision: number; source: DependencyGraphData['source']; cycles: Array<{ nodeIds: string[]; witnessNodeIds: string[]; witnessEdges: DependencyGraphData['edges'] }>; total: number; truncated: boolean }
+export async function getDependencyCycles(limit = 20, opts?: ReadOptions): Promise<DependencyCycles> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].cycles.$get({
+    param: { projectId: queryScope() }, query: { limit: String(limit) },
+  }, init(opts)), '/dependency-graph/cycles');
+}
+export type DependencyRepairCandidates = { revision: number; source: DependencyGraphData['source']; totalCycles: number; truncated: boolean; candidates: Array<{ id: string; kind: 'contract-first-decomposition'; graphRevision: number; sourceStatus: string; requiresHumanReview: true; cycleNodeIds: string[]; evidence: Array<{ edgeId: string; from: string; to: string; sourceUrl?: string }>; affectedIssueIds: string[]; proposal: string; patch: { addEdges: unknown[]; removeEdgeIds: string[] }; simulation: { cyclesBefore: number; cyclesAfter: number; changedReadiness: string[]; persisted: false }; rollback: { restoreEdges: string[]; removeEdges: string[]; required: false }; rationale: string }> }
+export async function getDependencyRepairCandidates(limit = 20, opts?: ReadOptions): Promise<DependencyRepairCandidates> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['repair-candidates'].$get({
+    param: { projectId: queryScope() }, query: { limit: String(limit) },
+  }, init(opts)), '/dependency-graph/repair-candidates');
+}
+export async function dispatchDependencyCyclePlan(input: DependencyCyclePlanDispatch): Promise<DependencyCyclePlanDispatchResponse> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['cycle-plans'].dispatch.$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/cycle-plans/dispatch')
+}
+export async function dispatchDependencyDecisionResearch(input: DependencyDecisionResearchDispatch): Promise<DependencyCyclePlanDispatchResponse> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['decision-research'].dispatch.$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/decision-research/dispatch')
+}
+export type DependencyDecisionRanking = { revision: number; source: DependencyGraphData['source']; decisions: Array<{ id: string; question: string; immediateUnlock: number | null; downstreamReach: number; weightedPriorityReach: number; unknownPriorityReach: number; oldestAffectedIssueAgeDays: number | null; unknownAgeReach: number; blockedDuration: { status: 'unavailable'; reason: string }; score: number | null }>; bundles: Array<{ decisionIds: string[]; newlyUnlocked: number; taskIds: string[] }>; truncated: boolean }
+export async function getDependencyDecisionRanking(limit = 20, opts?: ReadOptions): Promise<DependencyDecisionRanking> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['decision-ranking'].$get({
+    param: { projectId: queryScope() }, query: { limit: String(limit) },
+  }, init(opts)), '/dependency-graph/decision-ranking');
+}
+export type DependencySimulationResult = { revision: number; persisted: false; freshness: string; before: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>; after: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>; hypotheticalCompletions: string[]; hypotheticalDecisionOutcomes: string[]; criticalPath: { status: 'unavailable'; reason: string }; cyclesBefore: string[][]; cyclesAfter: string[][]; truncatedCycles: boolean }
+export async function simulateDependencyGraph(input: { expectedRevision: number; addEdges?: DependencyGraphEdge[]; removeEdgeIds?: string[]; completeNodeIds?: string[]; resolveDecisionIds?: string[] }): Promise<DependencySimulationResult> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].simulate.$post({
+    param: { projectId: queryScope() }, json: { ...input, addEdges: input.addEdges ?? [], removeEdgeIds: input.removeEdgeIds ?? [], completeNodeIds: input.completeNodeIds ?? [], resolveDecisionIds: input.resolveDecisionIds ?? [] },
+  }), '/dependency-graph/simulate');
+}
+export type DependencyGraphHealth = { revision: number; source: DependencyGraphData['source']; counts: { ready: number; blocked: number; unknown: number; openIssues: number; verifiedBlockers: number; cycles: number; orphanWork: number; oversizedHubs: number }; aging: { oldestOpenIssueAgeDays: number | null; unknownIssueAgeCount: number; oldestBlockedIssueAgeDays: number | null; unknownBlockedAgeCount: number; blockedDuration: { status: 'unavailable'; reason: string } }; diagnostics: { cycles: string[][]; orphanNodeIds: string[]; hubs: Array<{ nodeId: string; edgeCount: number }>; bottlenecks: Array<{ nodeId: string; directBlockedIssues: number }>; obsoleteBlockers: Array<{ edgeId: string; blockerId: string; dependentId: string }> }; truncated: boolean }
+export async function getDependencyGraphHealth(opts?: ReadOptions): Promise<DependencyGraphHealth> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].health.$get({ param: { projectId: queryScope() } }, init(opts)), '/dependency-graph/health');
+}
+export type DecisionDiscoveryCandidates = { revision: number; source: DependencyGraphData['source']; scannedIssues: number; truncated: boolean; candidates: Array<{ id: string; signature: string; question: string; affectedNodeIds: string[]; sharedBlockerIds: string[]; evidence: Array<{ nodeId: string; url: string; excerpt: string }>; confidence: number }> }
+export async function getDecisionDiscoveryCandidates(params: { limit?: number; scanLimit?: number } = {}, opts?: ReadOptions): Promise<DecisionDiscoveryCandidates> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['discovery-candidates'].$get({
+    param: { projectId: queryScope() }, query: { limit: String(params.limit ?? 50), scanLimit: String(params.scanLimit ?? 2_000) },
+  }, init(opts)), '/dependency-graph/discovery-candidates');
 }
 
 // ---- read-only issue trackers --------------------------------------------------------------

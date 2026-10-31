@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AutomationStore } from './store.ts';
-import { ProjectAutomationScheduler, WorkspaceAutomationScheduler } from './scheduler.ts';
+import { ProjectAutomationScheduler, WorkspaceAutomationScheduler, type ProjectAutomationHandle } from './scheduler.ts';
 import type { GithubAutomationDefinition } from './types.ts';
 
 const dirs: string[] = [];
@@ -31,7 +31,7 @@ describe('ProjectAutomationScheduler', () => {
   it('previews without cursor, receipt, or launch mutation', async () => {
     const { store, definition } = await setup();
     const launch = vi.fn(async () => ({ runId: 'run' }));
-    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never }, launch });
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never }, admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
     await scheduler.check(definition, 'preview');
     expect(store.state(definition.id)).toBeUndefined();
     expect(store.receipts()).toEqual([]);
@@ -45,11 +45,29 @@ describe('ProjectAutomationScheduler', () => {
   it('reserves before launch and deduplicates the overlap window', async () => {
     const { store, definition } = await setup();
     const launch = vi.fn(async () => ({ runId: 'run' }));
-    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never }, launch });
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never }, admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
     await scheduler.check(definition);
     await scheduler.check(definition);
     expect(launch).toHaveBeenCalledTimes(1);
     expect(store.latestReceipts().get('one:event')).toMatchObject({ status: 'launched', runId: 'run' });
+  });
+
+  it('replays a durably deferred issue event after readiness changes', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async () => ({ runId: 'run-after-unblock' }));
+    const handle: ProjectAutomationHandle = {
+      projectId: 'p', timeZone: 'UTC', store,
+      github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never },
+      admit: async () => ({ status: 'blocked' as const, repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, blockers: ['issue:github.com/acme/demo:1'], reason: 'blocked by issue 1' }),
+      launch,
+    };
+    const scheduler = new ProjectAutomationScheduler(handle);
+    await scheduler.check(definition);
+    expect(store.latestReceipt(definition.id, candidate.eventId)?.status).toBe('deferred');
+    handle.admit = async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 2, reason: 'ready' });
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'run-after-unblock' });
   });
 
   it('deduplicates review-request bursts that straddle two polls', async () => {
