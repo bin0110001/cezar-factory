@@ -139,6 +139,19 @@ function sanitizeOutput(text: string, root: string, secretValues: readonly strin
   return redactSecrets(withoutRoot, secretValues);
 }
 
+function truncateUtf8(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let end = 0;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0)!;
+    const characterBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+    if (bytes + characterBytes > maxBytes) break;
+    bytes += characterBytes;
+    end += character.length;
+  }
+  return end === text.length ? text : `${text.slice(0, end)} [preview omitted to fit the aggregate verification result limit]`;
+}
+
 async function writeResult(root: string, id: string, run: VerificationRun): Promise<string> {
   const base = join(root, ARTIFACT_ROOT);
   await mkdir(base, { recursive: true });
@@ -350,6 +363,18 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       last.coverage = { selected: 1, passed: 0, skipped: 0 };
       combined += `${last.checkId}: worktree HEAD changed during verification; result is not attributable to the tested commit\n`;
     }
+  }
+  // Keep substantial room under the contract's 1 MiB serialized-result cap
+  // for per-check diagnostics, metrics, artifacts, and JSON structure.
+  const previewBudget = Math.floor(VERIFICATION_LIMITS.resultBytes / 4);
+  const perCheckPreviewBudget = Math.floor(previewBudget / Math.max(1, checkRuns.length));
+  for (const check of checkRuns) {
+    if (Buffer.byteLength(check.outputPreview, 'utf8') <= perCheckPreviewBudget) continue;
+    check.outputPreview = truncateUtf8(check.outputPreview, perCheckPreviewBudget);
+    check.outputTruncated = true;
+    check.status = 'unknown';
+    check.semanticExitCode = 2;
+    check.coverage = { selected: 1, passed: 0, skipped: 0 };
   }
   const status = aggregate(checkRuns);
   const run: VerificationRun = verificationRunSchema.parse({

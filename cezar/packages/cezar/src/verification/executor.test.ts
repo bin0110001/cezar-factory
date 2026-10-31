@@ -300,6 +300,21 @@ describe('generic verification executor', () => {
     }
   });
 
+  it('keeps large multi-check results under the aggregate contract limit', async () => {
+    const root = await fixture('aggregate-preview-limit');
+    const checks = Array.from({ length: 60 }, (_, index) => `check${index}`);
+    const checkConfig = checks.map((id) => `    ${id}:\n      runner: command\n      executable: ${JSON.stringify(process.execPath)}\n      args: ["-e", ${JSON.stringify('process.stdout.write("x".repeat(20000))')}]\n      cwd: .\n      timeoutSeconds: 5\n      optional: false`).join('\n');
+    const config = `verification:\n  version: 1\n  checks:\n${checkConfig}\n  suites:\n    quick: [${checks.join(', ')}]\n`;
+    await writeFile(join(root, '.ai/factory/factory.config.yaml'), config);
+    const result = await executeVerification({ worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick' });
+    const serialized = JSON.stringify(result.run);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(1024 * 1024);
+    expect(result.run.checks).toHaveLength(60);
+    expect(result.run.status).toBe('unknown');
+    expect(result.run.checks.some((check) => check.outputTruncated && check.status === 'unknown')).toBe(true);
+    expect(JSON.parse(await readFile(result.artifactPath, 'utf8'))).toEqual(result.run);
+  }, 30_000);
+
   it('terminates the full descendant process tree after cancellation', async () => {
     const root = await fixture('process-tree');
     const config = join(root, '.ai/factory/factory.config.yaml');
