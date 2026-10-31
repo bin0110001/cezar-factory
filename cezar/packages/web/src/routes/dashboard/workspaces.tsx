@@ -1,7 +1,32 @@
+import { useState } from 'react'
 import { useWorkspaceLifecycle, useWorkspaceLifecycleAction } from '@/api/dashboard-workspaces'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { shortAge } from '@/lib/format'
+
+type WorkspaceAction = {
+  projectId: string
+  issue: string
+  action: 'recover' | 'validate' | 'prune' | 'resume'
+  force?: boolean
+}
+
+type PendingConfirmation = {
+  action: WorkspaceAction
+  title: string
+  description: string
+  confirmLabel: string
+}
 
 const stateLabel: Record<string, string> = {
   claimed: 'Claimed', working: 'Working', validating: 'Validating', ready: 'Ready',
@@ -10,6 +35,7 @@ const stateLabel: Record<string, string> = {
 }
 
 export function WorkspaceLifecycle() {
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const query = useWorkspaceLifecycle()
   const action = useWorkspaceLifecycleAction()
   const projects = query.data ?? []
@@ -95,28 +121,36 @@ export function WorkspaceLifecycle() {
                           <div>Lease expires {new Date(record.leaseExpiresAt).toLocaleTimeString()}</div>
                           <div className="mt-2 flex flex-wrap gap-2 md:justify-end">
                             {record.state === 'working' && (
-                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => {
-                                if (window.confirm(`Run the configured validation checks for issue #${record.issue}?`))
-                                  action.mutate({ projectId: project.projectId, issue: record.issue, action: 'validate' })
-                              }}>Retry validation</Button>
+                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => setPendingConfirmation({
+                                action: { projectId: project.projectId, issue: record.issue, action: 'validate' },
+                                title: `Run validation for issue #${record.issue}?`,
+                                description: 'This runs the configured validation checks for this workspace.',
+                                confirmLabel: 'Run validation',
+                              })}>Retry validation</Button>
                             )}
                             {record.state === 'blocked' && (
-                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => {
-                                if (window.confirm(`Resume issue #${record.issue} under its current lifecycle owner? This is recorded in the audit log.`))
-                                  action.mutate({ projectId: project.projectId, issue: record.issue, action: 'resume' })
-                              }}>Resume blocked work</Button>
+                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => setPendingConfirmation({
+                                action: { projectId: project.projectId, issue: record.issue, action: 'resume' },
+                                title: `Resume issue #${record.issue}?`,
+                                description: 'The current lifecycle owner will resume. This action is recorded in the audit log.',
+                                confirmLabel: 'Resume work',
+                              })}>Resume blocked work</Button>
                             )}
                             {Date.parse(record.leaseExpiresAt) <= Date.now() && !['integrated', 'cleanup_pending'].includes(record.state) && (
-                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => {
-                                if (window.confirm(`Force recover issue #${record.issue}? Confirm that the previous owner process is stopped. The override fences that execution and is recorded in the audit log.`))
-                                  action.mutate({ projectId: project.projectId, issue: record.issue, action: 'recover', force: true })
-                              }}>Force recover</Button>
+                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => setPendingConfirmation({
+                                action: { projectId: project.projectId, issue: record.issue, action: 'recover', force: true },
+                                title: `Force recover issue #${record.issue}?`,
+                                description: 'Confirm that the previous owner process is stopped. This override fences that execution and is recorded in the audit log.',
+                                confirmLabel: 'Force recover',
+                              })}>Force recover</Button>
                             )}
                             {record.origin === 'factory-created' && ['integrated', 'cleanup_pending'].includes(record.state) && (
-                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => {
-                                if (window.confirm(`Remove the clean, integrated workspace for issue #${record.issue}?`))
-                                  action.mutate({ projectId: project.projectId, issue: record.issue, action: 'prune' })
-                              }}>Retry cleanup</Button>
+                              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => setPendingConfirmation({
+                                action: { projectId: project.projectId, issue: record.issue, action: 'prune' },
+                                title: `Remove the workspace for issue #${record.issue}?`,
+                                description: 'This removes the clean, integrated workspace from the local checkout.',
+                                confirmLabel: 'Remove workspace',
+                              })}>Retry cleanup</Button>
                             )}
                           </div>
                         </div>
@@ -136,6 +170,23 @@ export function WorkspaceLifecycle() {
           {projects.length === 0 && <p className="text-sm text-muted-foreground">No projects are registered.</p>}
         </>
       )}
+      <AlertDialog open={pendingConfirmation !== null} onOpenChange={(open) => !open && setPendingConfirmation(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingConfirmation?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{pendingConfirmation?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={action.isPending}
+              onClick={() => pendingConfirmation && action.mutate(pendingConfirmation.action)}
+            >
+              {pendingConfirmation?.confirmLabel ?? 'Confirm'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }
