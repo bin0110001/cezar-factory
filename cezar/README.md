@@ -175,6 +175,51 @@ browser: [browser and mobile e2e as a verification step](docs/e2e-verification.m
 turns an agentic e2e run — or an independent QA exploration — into the gate a
 task has to pass.
 
+### Local workspace lifecycle
+
+For coding outside a managed Factory run, `cez workspace` provides host-local
+issue claims and safe worktree recovery. It works without the cockpit server or
+GitHub connectivity. Adopt an existing developer worktree without changing it,
+or claim an issue to create an isolated `factory/issue-<id>` worktree:
+
+```sh
+cez workspace context
+cez workspace adopt --issue 456
+cez workspace claim --issue 457
+cez workspace status
+cez workspace preflight --issue 457 --json
+cez workspace overlaps
+cez workspace doctor
+```
+
+Configure validation in a tracked root `workspace-lifecycle.json` (or the
+supported `.cezar` / `.ai/cezar` config paths) as one argv array or ordered
+argv arrays, then run
+`cez workspace validate --issue 457`. Claims use a per-host SQLite registry
+under `~/.cezar`; do not copy that registry between machines. Factory-created
+worktrees are retained until integration is verified, and adopted worktrees are
+never automatically removed. See the [workspace lifecycle guide](../docs/workspace-lifecycle.md)
+for the full command and recovery contract. After GitHub confirms a PR merged,
+`cez workspace integrate --issue 457 --pr <number-or-url>` verifies and tests
+the combined target commit before cleanup. Optional Codex and Claude Code
+session hooks are in `../integrations/agents/workspace-lifecycle/`.
+
+`preflight` compares an issue branch with `origin/<target>` when locally available
+(otherwise the local target branch) using Git `merge-tree`. It returns commit IDs,
+shared-path overlaps, and conflict diagnostics for a targeted repair run without
+changing refs or files; a conflict exits with status 2 so Factory can perform one
+bounded repair retry before handoff.
+The cockpit's **Workspaces** dashboard view shows active claims, overlaps, and
+local lifecycle metrics across registered projects. Confirmed retry, recovery,
+and cleanup actions use the same fenced lifecycle operations; hosted mode is
+read-only for workspace ownership.
+
+Optional event delivery runs from a local SQLite outbox. Langfuse receives
+coarse lifecycle spans when its host-local credentials are configured. A
+successfully resolved conflict can create a Hindsight lesson candidate; inspect
+it with `cez workspace outbox`, review it, then explicitly publish it with
+`cez workspace outbox --approve-hindsight <event-id>`.
+
 ## Automations
 
 Turn repeatable work into an automation: check dependencies every morning, draft

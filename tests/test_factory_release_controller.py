@@ -61,6 +61,13 @@ class ReleaseControllerTests(unittest.TestCase):
         self.assertEqual(manifest["source"]["sha"], self.sha)
         self.assertEqual([f["path"] for f in manifest["files"]], ["VERSION", "nested/file.txt"])
 
+    def test_stage_sha_verifies_exact_commit_without_advancing_channel_pointer(self) -> None:
+        result = self.controller.stage_sha(self.sha)
+        self.assertEqual(result["status"], "staged")
+        self.assertEqual(result["sourceSha"], self.sha)
+        self.assertTrue((self.store / "releases" / self.sha / "manifest.json").is_file())
+        self.assertFalse((self.store / "channels" / "stable.json").exists())
+
     def test_tampered_bundle_is_rejected_without_replacing_channel_pointer(self) -> None:
         self.controller.sync()
         pointer = json.loads((self.store / "channels" / "stable.json").read_text(encoding="utf-8"))["currentSha"]

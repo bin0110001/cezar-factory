@@ -4,6 +4,8 @@ import {
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
+import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
+import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -31,7 +33,7 @@ import { trackerTriggerSchema, trackerAutomationOptionsSchema, trackerAutomation
 import type { IncomingMessage } from 'node:http';
 import { access, constants as fsConstants, mkdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import type { Next } from 'hono';
@@ -325,6 +327,8 @@ export interface ServerDeps {
   hostSampler?: HostSampler;
   /** Re-arm the workspace automation timer after definition mutations. */
   automationsChanged?: () => void;
+  /** Explicit project-local full-suite scheduling and on-demand execution. */
+  fullRegressionScheduler?: FullRegressionScheduler;
 }
 
 // ---- project-scoped routing (multi-project spec, step 2.2) -----------------
@@ -1142,6 +1146,23 @@ async function probeWritableDir(dir: string, create: boolean): Promise<string | 
 // this function, and `AppType` (src/server/app-type.ts) is `ReturnType<typeof createApp>`.
 // Annotating it `Hono` here would erase every route from the type and leave the typed client
 // with nothing to offer. See the `routed` assembly at the end of the function.
+/** Remove URL userinfo and query/fragment material from the CORS-open health payload. */
+function sanitizePublicRemote(remote: string): string {
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) return remote;
+  try {
+    const url = new URL(remote);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return remote
+      .replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1')
+      .replace(/[?#].*$/, '');
+  }
+}
+
 export function createApp(deps: ServerDeps) {
   const { version, update, bindHost, bootProjectId } = deps;
   // Boot singletons keep DELIBERATELY distinct names (`boot*`): every
@@ -1310,7 +1331,7 @@ export function createApp(deps: ServerDeps) {
   const trackerWatches = new TrackerWatches(trackers, deps.socketHub);
   const capabilities = () => resolveCapabilities(process.env, bindHost);
   const singleProjectRefusal = (
-    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing',
+    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing' | 'scheduling full regression',
   ) => ({ error: `single-project mode is enabled; ${action} is disabled` });
   // Inbox live updates (spec 007). Opt-in (#471): no capability, no watcher —
   // and since step 2.3 the per-dataDir watch is created lazily by the first
@@ -1591,8 +1612,7 @@ export function createApp(deps: ServerDeps) {
   // ---- meta ----------------------------------------------------------------
   // CORS — deliberately for /api/health ONLY (spec 011): the bookmarklets
   // fetch it cross-origin from github.com to discover which local ports run a
-  // cockpit and which repo each serves. Health exposes no secrets beyond the
-  // repo path/remote; every other endpoint stays same-origin.
+  // cockpit and which repo each serves. Every other endpoint stays same-origin.
   const healthCors = async (c: Context, next: Next): Promise<Response | void> => {
     c.header('access-control-allow-origin', '*');
     if (c.req.method === 'OPTIONS') {
@@ -1623,6 +1643,13 @@ export function createApp(deps: ServerDeps) {
     // externally-depended-on JSON in the app (BACKWARD_COMPATIBILITY.md §2).
     const forge = resolveForge(repo);
     const caps = capabilities();
+    const healthRepo = !repo || caps.localHandoff
+      ? repo
+      : {
+          ...repo,
+          root: basename(repo.root),
+          ...(repo.remote ? { remote: sanitizePublicRemote(repo.remote) } : {}),
+        };
     return {
       version,
       // Spread rather than `latestVersion: update?.latest`: an `undefined` VALUE is dropped by
@@ -1639,7 +1666,7 @@ export function createApp(deps: ServerDeps) {
       // no longer an absolute path. Deliberate — a hosted cockpit's paths are on
       // a machine the reader does not have anyway. See §2's `repoRoot` note.
       repoRoot: caps.localHandoff ? bootRoot : basename(bootRoot),
-      repo,
+      repo: healthRepo,
       checks,
       defaultRunner: config.defaultRunner,
       // Non-blocking: cached availability or null-until-warm — health must never pay a `gh`
@@ -2661,7 +2688,7 @@ export function createApp(deps: ServerDeps) {
       const parsed = { data: c.req.valid('json') };
       // `default` is the boot alias the cockpit is allowed to use everywhere else.
       const id = raw === 'default' ? await resolveBootProject() : raw;
-      const { maxParallel, tags } = parsed.data;
+      const { maxParallel, tags, factoryChannel, fullRegressionPolicy } = parsed.data;
 
       // Read-first (mirroring DELETE, server.ts:1252-1258): a well-formed but
       // unknown id must 404 WITHOUT rewriting the config — otherwise it would both
@@ -2698,6 +2725,14 @@ export function createApp(deps: ServerDeps) {
             if (normalized === undefined) delete entry.tags;
             else entry.tags = normalized;
           }
+          if (factoryChannel !== undefined) {
+            if (factoryChannel === null) delete entry.factoryChannel;
+            else entry.factoryChannel = factoryChannel;
+          }
+          if (fullRegressionPolicy !== undefined) {
+            if (fullRegressionPolicy === null) delete entry.fullRegressionPolicy;
+            else entry.fullRegressionPolicy = fullRegressionPolicy;
+          }
           updated = entry;
         });
       } catch (err) {
@@ -2714,7 +2749,19 @@ export function createApp(deps: ServerDeps) {
       const body: UpdateProjectResponse = {
         project: { ...updated, ...(await probeProjectStatus(updated.root)) },
       };
+      void deps.fullRegressionScheduler?.tick();
       return c.json(body);
+    })
+
+    .post('/projects/:projectId/verification/full-regression', async (c) => {
+      if (capabilities().singleProject) return c.json(singleProjectRefusal('scheduling full regression'), 409);
+      const raw = c.req.param('projectId');
+      if (!projectIdSchema.safeParse(raw).success) return c.json({ error: `unknown project: ${raw}` }, 404);
+      if (!deps.fullRegressionScheduler) return c.json({ error: 'full regression scheduler is unavailable' }, 503);
+      const result = await deps.fullRegressionScheduler.runNow(raw === 'default' ? await resolveBootProject() : raw);
+      if (result.status === 'not-configured') return c.json({ error: result.reason }, 404);
+      if (result.status === 'limited') return c.json({ error: result.reason, ...(result.retryAt ? { retryAt: result.retryAt } : {}) }, 429);
+      return c.json(result, 202);
     })
 
     .post('/projects/checkout', jsonZodValidator(() => checkoutSchema, { message: 'url must be a GitHub repository' }), async (c) => {
@@ -2788,7 +2835,7 @@ export function createApp(deps: ServerDeps) {
     // dialog hands back absolute paths, but a hand-written body (curl, a
     // future CLI) spells home the way a shell does.
     const requested = expandTilde(spelled);
-    if (!requested.startsWith('/')) {
+    if (!isAbsolute(requested)) {
       return {
         status: 400,
         body: { error: `not a folder: ${spelled} is not an absolute path` },
@@ -3118,7 +3165,7 @@ export function createApp(deps: ServerDeps) {
         // exist; checkout roots use `mkdir -p`. Both get a real write probe.
         // Any failure → 400 and NO change persisted.
         const expanded = expandTilde(configuredRoot);
-        if (!expanded.startsWith('/')) {
+        if (!isAbsolute(expanded)) {
           return c.json({ error: `not writable: ${configuredRoot} is not an absolute path` }, 400);
         }
         if (!create) {
@@ -3292,12 +3339,16 @@ export function createApp(deps: ServerDeps) {
   // ---- chained family: skills (project-scoped) ----
   const skillsRoutes = new Hono<ProjectApiEnv>()
     .get('/skills', queryZodValidator(waitQuery), async (c) => {
-      const repoRoot = c.get('project').root;
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       // The default read stays fast and starts the team load in the background.
       // The cockpit follows it with `wait=1`, off the render path, so a cold
       // cache converges without polling or a manual reload (spec 005 / #555).
       if (c.req.valid('query').wait === '1') await waitForTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     })
 
     // The opt-in catalog for the "Import skills" panel: every skill a default
@@ -3327,9 +3378,13 @@ export function createApp(deps: ServerDeps) {
     // then return the merged catalog. Degrades quietly — offline just means the
     // team entries stay as they were (or absent).
     .post('/skills/refresh', async (c) => {
-      const { root: repoRoot } = c.get('project');
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       await refreshTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     });
 
   // ---- chained family: GUI prefs / ui-state (project-scoped) ----
@@ -3360,7 +3415,26 @@ export function createApp(deps: ServerDeps) {
   // table and the versioned `v1` one — see `healthRoutes` for why the chain
   // shape (not the statement shape) is what carries the types.
   const workflowsRoutes = new Hono<ProjectApiEnv>()
-    .get('/workflows', async (c) => c.json(await loadWorkflows(c.get('project').root)))
+    .get('/factory-release', async (c) => {
+      const project = c.get('project');
+      try {
+        const release = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(release
+          ? { status: 'resolved', projectId: project.id, channel: release.channel, sourceSha: release.sourceSha, manifestDigest: release.manifestDigest }
+          : { status: 'legacy', projectId: project.id, channel: 'stable' });
+      } catch (error) {
+        return c.json({ status: 'error', projectId: project.id, error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
+    .get('/workflows', async (c) => {
+      const project = c.get('project');
+      try {
+        const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(await loadWorkflows(project.root, { factoryRelease }));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
 
     // Save an approved plan as a reusable chain (spec 008): YAML in
     // `.ai/cezar/workflows/<slug>.yaml` — from then on it's in the dropdown
@@ -4108,11 +4182,15 @@ export function createApp(deps: ServerDeps) {
     })
 
     .post('/runs', jsonZodValidator(startRunSchema), async (c) => {
-      const { root: repoRoot, dataDir, manager } = c.get('project');
+      const project = c.get('project');
+      const { root: repoRoot, dataDir, manager } = project;
       const parsed = { data: c.req.valid('json') };
       if (agentModelsLocked(repoRoot) && parsed.data.model?.trim()) {
         return c.json({ error: AGENT_MODELS_LOCKED_ERROR }, 409);
       }
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       let workflow: WorkflowDef | undefined;
       if (parsed.data.steps) {
         // Inline chain (spec 008): an approved plan runs as an ad-hoc workflow.
@@ -4122,9 +4200,10 @@ export function createApp(deps: ServerDeps) {
           name: '(planned)',
           source: 'built-in',
           steps: parsed.data.steps,
+          ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
         };
       } else {
-        const { workflows } = await loadWorkflows(repoRoot);
+        const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
         workflow = workflows.find((w) => w.name === parsed.data.workflow);
         if (!workflow) return c.json({ error: `unknown workflow: ${parsed.data.workflow}` }, 404);
       }
@@ -5217,7 +5296,11 @@ export function createApp(deps: ServerDeps) {
       todoMustExist,
       jsonZodValidator(startTodoSchema, { absent: undefined, malformed: null }),
       async (c) => {
-        const { root: repoRoot, dataDir, manager } = c.get('project');
+        const project = c.get('project');
+        const { root: repoRoot, dataDir, manager } = project;
+        let factoryRelease;
+        try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
         const id = c.req.param('id');
         const todo = c.get('todo');
         const parsed = { data: c.req.valid('json') };
@@ -5231,7 +5314,7 @@ export function createApp(deps: ServerDeps) {
 
         let workflow: WorkflowDef | undefined;
         if (todo.suggestedSkill) {
-          const skills = await discoverSkills(repoRoot);
+          const skills = await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot });
           if (skills.some((s) => s.name === todo.suggestedSkill)) {
             workflow = {
               name: '(inbox)',
@@ -5245,11 +5328,12 @@ export function createApp(deps: ServerDeps) {
                   prompt: '{{task}}',
                 },
               ],
+              ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
             };
           }
         }
         if (!workflow) {
-          const { workflows } = await loadWorkflows(repoRoot);
+          const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
           workflow = workflows.find((w) => w.name === 'quick-task') ?? QUICK_TASK_WORKFLOW;
         }
 
@@ -6442,7 +6526,12 @@ export function createApp(deps: ServerDeps) {
     .route('/', fsBrowseRoutes)
     .route('/', automationChecksRoutes)
     .route('/', runsIndexRoutes)
-    .route('/', dashboardRoutes(dashboard, () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }), () => capabilities().automations))
+    .route('/', dashboardRoutes(
+      dashboard,
+      () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }),
+      () => capabilities().automations,
+      () => capabilities().localHandoff,
+    ))
     .route('/', workspaceEventsRoutes);
 
   // ---- mount ---------------------------------------------------------------
@@ -6495,6 +6584,13 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     semaphore: deps.semaphore,
     automationStore: (projectId, root) => automationCoordinator.store(projectId, root)!,
   });
+  const fullRegressionScheduler = deps.fullRegressionScheduler ?? new FullRegressionScheduler({
+    listProjects,
+    context: async (projectId) => projectId === (deps.bootProjectId ?? 'default')
+      ? { root: deps.repoRoot, manager: deps.manager, store: deps.store }
+      : await sharedContexts.context(projectId),
+    warn: (message) => process.stderr.write(`${message}\n`),
+  });
   // #801: GitHub automations are opt-in. Off, the flag must remove the BEHAVIOR and not merely
   // the UI — no scheduler, no GitHub polling, no launched runs — so every entry point into the
   // workspace scheduler below is gated on it. Read per call rather than captured, for the same
@@ -6506,6 +6602,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     ...deps,
     onDispose: (cleanup) => { appCleanups.push(cleanup); deps.onDispose?.(cleanup); },
     contexts: sharedContexts,
+    fullRegressionScheduler,
     automationStore: bootAutomationStore,
     workspaceEvents,
     skillsUpdate,
@@ -6580,6 +6677,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // stated here rather than inherited from that detail: a definition saved while the flag is off
   // must not even ask the coordinator to refresh.
   rescheduleAutomations = () => {
+    void fullRegressionScheduler.tick();
     if (!automationsEnabled()) return;
     void automationScheduler.reschedule();
   };
@@ -6605,6 +6703,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       const all = projects.some((project) => project.root === deps.repoRoot)
         ? projects : [{ id: deps.bootProjectId ?? 'default', root: deps.repoRoot, status: 'ok' as const }, ...projects];
       coordinator.start(all);
+      void fullRegressionScheduler.start();
       // #801: with automations off there is nothing to warm — no remote to resolve, no receipts
       // to reconcile, and above all no scheduler to start. The skills-update coordinator above is
       // a separate feature and starts either way.
@@ -6620,7 +6719,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); });
+  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }

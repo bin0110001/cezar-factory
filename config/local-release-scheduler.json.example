@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "factory-local-promotion/v1",
+  "githubRepository": "bin0110001/cezar-factory",
+  "maxParallel": 1,
+  "gpuSlots": 0,
+  "checks": [
+    {
+      "id": "automation-catalog",
+      "when": ["automations/**", "routing/**"],
+      "command": ["pwsh", "-NoProfile", "-File", "scripts/validate-automation-catalog.ps1"],
+      "required": true,
+      "timeoutSeconds": 300
+    }
+  ]
+}

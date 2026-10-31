@@ -3,13 +3,10 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/test-full.ps1,factory/verify.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/verify.ps1
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
-  - id: full-verification
-    name: Run required project suite
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-full.ps1 -Task "{{task}}"
   - id: verify-project
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
@@ -44,4 +41,10 @@ steps:
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event review-result -Path .factory/review-result.json -GatePath .factory/merge-eligibility.json
     onFail:
       retry: validate
+      max: 1
+  - id: lifecycle-ready
+    name: Keep the issue workspace ready until GitHub confirms integration
+    command: 'if [ -n "$FACTORY_FENCING_TOKEN" ]; then cez workspace handoff --run "$CEZ_TASK_ID" --fence "$FACTORY_FENCING_TOKEN"; fi'
+    onFail:
+      retry: route
       max: 1

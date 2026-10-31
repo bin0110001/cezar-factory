@@ -121,12 +121,23 @@ if [[ -f "$registry_path" ]]; then
 fi
 host_content_digest="$(content_digest "$FACTORY_DIR")"
 
+# The read-only source mount has its own persistent writable .git volume for
+# Cezar task worktrees. Fast-forward only the root stable index/ref to the
+# mounted source after verifying that every committed file already matches;
+# linked task worktrees and non-conflicting user data remain untouched.
+podman exec "$CONTAINER" bash "$RUNTIME_ROOT/scripts/deploy/reconcile-container-git-metadata.sh" "$source_sha"
+
+# The Cezar server is a local image built from this checkout, not the remote
+# image used by the generic Compose template. The deployment script is
+# idempotent and rebuilds only when cezar/ changed since the image's revision.
+"$FACTORY_DIR/scripts/deploy/deploy-cezar-runtime.sh" "$source_sha"
+
 container_sha="$(podman exec "$CONTAINER" git -C "$RUNTIME_ROOT" rev-parse HEAD)"
 container_version="$(podman exec "$CONTAINER" sh -c "tr -d '\r\\n' < '$RUNTIME_ROOT/VERSION'")"
 container_content_digest="$(podman exec "$CONTAINER" sh -c '
   cd "$1"
   set -- VERSION workflows skills scripts routing automations
-  [[ -f config/factory-projects.json ]] && set -- "$@" config/factory-projects.json
+  [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
   digest="$(find "$@" -type f -print0 |
     LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
   printf '%s' "${digest%% *}"
@@ -144,13 +155,36 @@ if [[ ! -f "$registry_path" ]]; then
   exit 23
 fi
 
-if ! sync_output="$(podman exec "$CONTAINER" pwsh -NoProfile -File "$RUNTIME_ROOT/scripts/sync-all-automations.ps1" 2>&1)"; then
-  failure="automation reconciliation failed: $sync_output"
-  log "FAILED: $failure" >&2
-  exit 24
+STORE="${FACTORY_RELEASE_STORE_HOST_DIR:-$HOME/.local/share/cezar-factory/release-store}"
+REGISTRY="${FACTORY_PROJECTS_REGISTRY:-$registry_path}"
+container_release_store="$(podman exec "$CONTAINER" printenv CEZ_FACTORY_RELEASE_STORE 2>/dev/null || true)"
+if [[ -n "$container_release_store" ]]; then
+  if ! podman exec "$CONTAINER" test -f "$container_release_store/channels/$BRANCH.json"; then
+    failure="Cezar release store is configured but has no verified $BRANCH channel pointer"
+    log "BLOCKED: $failure" >&2
+    exit 24
+  fi
+  if ! sync_output="$(python3 "$FACTORY_DIR/scripts/release/factory_activation.py" activate \
+    --repo "$FACTORY_DIR" --store "$STORE" --registry "$REGISTRY" --channel "$BRANCH" 2>&1)"; then
+    failure="Factory activation failed: $sync_output"
+    log "FAILED: $failure" >&2
+    exit 24
+  fi
+  completion="activated Factory"
+else
+  # Existing Cezar installs may use the shared checkout without channel-pinned
+  # release storage. Keep those projects deployable through the legacy
+  # coordinator; it creates new definitions paused and preserves enabled state.
+  if ! sync_output="$(podman exec "$CONTAINER" pwsh -NoProfile -File \
+    "$RUNTIME_ROOT/scripts/sync-all-automations.ps1" -FactoryPath "$RUNTIME_ROOT" 2>&1)"; then
+    failure="Legacy Factory automation synchronization failed: $sync_output"
+    log "FAILED: $failure" >&2
+    exit 24
+  fi
+  completion="synchronized legacy Factory automations"
 fi
 
 write_receipt "$STATE_DIR/last-success.json" success ""
 write_receipt "$STATE_DIR/last-attempt.json" success ""
 trap - EXIT
-log "reconciled Factory $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}"
+log "$completion $host_version at ${source_sha:0:9}; content ${host_content_digest:0:12}; registry ${registry_digest:0:12}; $sync_output"

@@ -33,6 +33,8 @@ Consumed by the bundled React cockpit (`packages/cezar/web/dist`, shipped in loc
 
 What is protected now: **the shape of each route under `/api/v1`**, the three-way scope aliasing, and the SSE event vocabulary. Removing or renaming a route, or changing a response shape, is breaking exactly as before. Routes:
 
+- Factory and verification: `GET /api/v1/factory-release`, `POST /api/v1/projects/:projectId/verification/full-regression`
+- Workspace lifecycle dashboard: `GET /api/v1/workspace/dashboard/workspaces`, `POST /api/v1/workspace/dashboard/workspaces/action`
 - Static/GUI: `GET /` and every SPA shell route, `/new` (bookmarklet deep-link, query `?skill=&ref=&auto=&key=`), `/assets/:file`, `/icon.svg` (canonical brand mark / favicon; `/open-mercato.svg` remains as a compatibility alias serving the same bytes)
 - Meta: `GET /api/v1/health` (the **only** CORS-open route — bookmarklets probe it cross-origin; its shape `{version, latestVersion, repoRoot, repo, checks, defaultRunner}` is the most externally-depended-on JSON in the app), `GET /api/v1/launch-key`
   - `repoRoot` is the absolute checkout path in local mode (the shape the saved bookmarklets read) but only the checkout's **basename** in hosted mode (`CEZ_REMOTE`), where health is CORS-open off the loopback and the absolute path would leak the developer's username (#431). Always present, always a string — but a hosted consumer must not treat it as a filesystem path.

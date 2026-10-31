@@ -18,7 +18,7 @@ risk-levels:
     allows-auto-merge: true
     requires-human-plan-approval: false
     requires-human-merge: false
-    requires-full-validation: true
+    requires-full-validation: false
     flow: implement -> test -> independent review -> auto-merge to dev
   risk:high:
     description: High risk changes (authentication, security, data migration, billing, large architectural changes, deployment infrastructure)

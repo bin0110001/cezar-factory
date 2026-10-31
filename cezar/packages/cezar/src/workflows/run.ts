@@ -1,9 +1,9 @@
 import type { TrackerAssociation } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   parseAskMarker,
   parseAskMarkerResult,
@@ -51,7 +51,7 @@ import { materializeSkillDir } from '../skills-remote.ts';
 import { seedAgentConfigLocalLayer } from '../agent-config/seed.ts';
 import { readAgentModelProvider } from '../agent-config/models.ts';
 import { loadConfig, resolveWorktreeRetention } from '../config.ts';
-import { autosaveCommit, chooseForkBase, createWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
+import { autosaveCommit, chooseForkBase, createWorktree, removeWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
 import { loadWorkflows } from './load.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
@@ -97,6 +97,8 @@ import {
   sweepAgentTmpDirs,
 } from '../runs/agent-tmpdir.ts';
 import { extractTaskRefs, refineTaskRefs, titleRefNumber } from '../runs/task-refs.ts';
+import { drainLifecycleOutbox, factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
+import { reconcileReadyWorkspaceIntegrations } from '../workspace/lifecycle-cli.ts';
 import { parseTaskMarkers, stripTaskMarkers } from '../runs/task-markers.ts';
 import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidateTitle } from '../runs/auto-name.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
@@ -114,6 +116,7 @@ import {
   type WorkflowStepDef,
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
+import { resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 
@@ -285,7 +288,7 @@ type AskTurnOutcome = {
   ask: AskRequest | null;
   /** Emitted in order by the caller, which owns how a note is persisted. */
   notes: Array<{ message: string; tone?: 'danger' }>;
-};
+  };
 /** Resolve the ask marker for one finished turn. Both turn-end handlers
  * (`runAgentStep` and `runContinuation`) route through this single function:
  * they are hand-duplicated, and `AGENTS.md` warns that a lifecycle change
@@ -371,6 +374,8 @@ interface ActiveRun {
   monitoringWakeIntervalMinutes?: number;
   monitoringWakeups?: number;
   autosaveTimer?: NodeJS.Timeout;
+  /** Scheduler heartbeat keeps a Factory issue claim alive independently of agent turns. */
+  lifecycleHeartbeat?: NodeJS.Timeout;
   cancellationTimer?: NodeJS.Timeout;
   /* The screenshot counter lives on `RunManager.queuedImageSeq` (#472), keyed by
    * run id — a queued run persists attachments with no `ActiveRun` at all. */
@@ -606,6 +611,10 @@ export interface StartRunInput {
    *  working tree instead of an isolated worktree. Undefined/`true` keeps the
    *  default per-task worktree. Ignored for variants (they always isolate). */
   worktree?: boolean;
+  /** Internal immutable worktree base for scheduled verification. Not accepted from HTTP input. */
+  baseCommit?: string;
+  /** Internal command-only jobs skip the optional model-backed task-title suggestion. */
+  skipAutoName?: boolean;
   /** Autonomous mode (#autonomous): the run never parks at `waiting` for the
    *  user — turn-ends auto-continue until the agent signals done or the safety
    *  cap is hit. No "needs you" is ever raised. */
@@ -1016,6 +1025,11 @@ export class RunManager {
 
   /** The stalled-queue watchdog (see `rescueStalledQueue`). */
   private readonly queueWatchdog: ReturnType<typeof setInterval>;
+  private readonly telemetryOutboxTimer: ReturnType<typeof setInterval>;
+  private readonly lifecycleIntegrationTimer: ReturnType<typeof setInterval>;
+  private telemetryDrainStopped = false;
+  private lifecycleIntegrationStopped = false;
+  private lifecycleIntegrationInFlight = false;
 
   /** Set by the watchdog for exactly one sweep: ignore the usage-limit hold and make progress. */
   private forceNextPump = false;
@@ -1037,8 +1051,30 @@ export class RunManager {
    *  CLI needs to address the right project over the API (spec 2026-09-10-dispatch). */
   private readonly projectId: string | undefined;
 
+  /** Resolve the project channel once before catalog loading or automation task creation. */
+  async resolveFactoryRelease(): Promise<FactoryReleaseResolution | undefined> {
+    if (!this.projectId) return undefined;
+    return resolveConfiguredFactoryRelease(this.projectId);
+  }
+
   /** See the constructor option of the same name. */
   private readonly resolveTrackerEnv: ((root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>) | undefined;
+  /** Startup workspace reconciliation completes before this manager launches agent work. */
+  private readonly lifecycleStartup: Promise<void>;
+  private readonly factoryLeaseRefresh = new Map<string, number>();
+  private readonly onFactoryRunUpdate = (run: RunRecord): void => {
+    if (!run.factoryRelease) return;
+    if (['done', 'review', 'failed', 'cancelled'].includes(run.status)) {
+      this.factoryLeaseRefresh.delete(run.id);
+      void this.updateFactoryReleaseReference(run.id, 'unprotect').catch(() => undefined);
+      return;
+    }
+    const previous = this.factoryLeaseRefresh.get(run.id) ?? 0;
+    if (Date.now() - previous >= 24 * 60 * 60 * 1000) {
+      this.factoryLeaseRefresh.set(run.id, Date.now());
+      void this.updateFactoryReleaseReference(run.id, 'protect').catch(() => undefined);
+    }
+  };
 
   constructor(
     private readonly store: RunStore,
@@ -1057,6 +1093,15 @@ export class RunManager {
     this.dataDir = join(repoRoot, '.ai/cezar');
     this.projectId = options.projectId;
     this.resolveTrackerEnv = options.resolveTrackerEnv;
+    this.lifecycleStartup = getHeadCommit(repoRoot).then(async (head) => {
+      if (!head) return;
+      const report = await reconcileWorkspaceLifecycle({ cwd: repoRoot });
+      for (const issue of report.cleaned) console.info(`[workspace-lifecycle] finalized cleanup for issue ${issue}`);
+      for (const finding of report.findings) console.warn(`[workspace-lifecycle] ${finding}`);
+    }).catch((error: unknown) => {
+      console.warn(`[workspace-lifecycle] startup reconciliation deferred: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    this.store.on('run', this.onFactoryRunUpdate);
     this.semaphore = options.semaphore ?? new WorkspaceSemaphore();
     this.offSemaphore = this.semaphore.register({
       busySlots: () => this.busySlots(),
@@ -1069,6 +1114,33 @@ export class RunManager {
     this.offUsage = onUsage((snapshot) => void this.enforceMemoryLimit(snapshot));
     this.queueWatchdog = setInterval(() => void this.rescueStalledQueue(), QUEUE_WATCHDOG_MS);
     this.queueWatchdog.unref?.();
+    // Telemetry is drained independently of an agent step and never blocks task
+    // execution. The local outbox remains authoritative when a sink is offline.
+    const drainTelemetry = () => {
+      if (this.telemetryDrainStopped) return;
+      void drainLifecycleOutbox({ cwd: this.repoRoot, limit: 20 }).then((result) => {
+      if (result.deferred) console.warn(`[workspace-lifecycle] deferred ${result.deferred} telemetry delivery attempt(s)`);
+      }).catch((error: unknown) => console.warn(`[workspace-lifecycle] telemetry drain deferred: ${error instanceof Error ? error.message : String(error)}`));
+    };
+    this.telemetryOutboxTimer = setInterval(drainTelemetry, 60_000);
+    this.telemetryOutboxTimer.unref?.();
+    void this.lifecycleStartup.then(drainTelemetry);
+    const integrateReady = async () => {
+      if (this.lifecycleIntegrationStopped || this.lifecycleIntegrationInFlight) return;
+      this.lifecycleIntegrationInFlight = true;
+      try {
+        const results = await reconcileReadyWorkspaceIntegrations({ cwd: this.repoRoot });
+        for (const result of results) {
+          if (result.status === 'integrated') console.info(`[workspace-lifecycle] automatically integrated issue #${result.issue}`);
+          else if (result.status === 'failed') console.warn(`[workspace-lifecycle] integration for issue #${result.issue} will retry: ${result.detail}`);
+        }
+      } catch (error) {
+        console.warn(`[workspace-lifecycle] automatic integration sweep deferred: ${error instanceof Error ? error.message : String(error)}`);
+      } finally { this.lifecycleIntegrationInFlight = false; }
+    };
+    this.lifecycleIntegrationTimer = setInterval(() => void integrateReady(), 60_000);
+    this.lifecycleIntegrationTimer.unref?.();
+    void this.lifecycleStartup.then(integrateReady);
   }
 
   /**
@@ -1082,9 +1154,14 @@ export class RunManager {
    * dispose only guarantees the manager makes no further moves on its own.
    */
   dispose(): void {
+    this.store.off('run', this.onFactoryRunUpdate);
     this.offUsage();
     this.offSemaphore();
+    this.telemetryDrainStopped = true;
+    this.lifecycleIntegrationStopped = true;
     clearInterval(this.queueWatchdog);
+    clearInterval(this.telemetryOutboxTimer);
+    clearInterval(this.lifecycleIntegrationTimer);
     for (const [runId, state] of this.active) {
       this.clearIdleTimer(state);
       this.clearMonitoringWakeTimer(state, runId);
@@ -1169,12 +1246,27 @@ export class RunManager {
    *  turning into empty command output inside a running agent. */
   private agentEnv(runId: string, generateFollowups = true): Record<string, string> {
     const dispatch = this.dispatchOf(runId);
+    const run = this.store.getRun(runId);
+    const factoryWorkflow = Boolean(run?.workflow.startsWith('factory-') && run.issueNumber);
+    const factory = factoryWorkflow && run?.issueNumber
+      ? factoryContextForRun(this.repoRoot, run.issueNumber, runId)
+      : null;
     // The same ONE gate the dispatch prompt uses, so an agent is never told about a CLI whose
     // address it was not given (and never given an address it was not told about).
     const apiUrl = this.dispatchReachable() ? process.env.CEZ_API_URL : undefined;
     return {
       CEZ_HANDOFF_FILE: handoffPath(this.dataDir, runId),
       CEZ_TASK_ID: runId,
+      // Preserve the fail-closed marker for Factory workflows even if their
+      // registry row cannot be verified. Hooks then stop for recovery instead
+      // of treating a stale managed run as an external coding session.
+      FACTORY_MANAGED: factory || factoryWorkflow ? '1' : '0',
+      ...(factoryWorkflow ? { FACTORY_LIFECYCLE: factory ? '1' : factoryWorkflowParticipatesInWorkspaceLifecycle(run?.workflow ?? '') ? '1' : '0' } : {}),
+      FACTORY_RUN_ID: factory?.executionId ?? '',
+      FACTORY_ISSUE: factory?.issue ?? '',
+      FACTORY_OWNER_ID: factory?.ownerId ?? '',
+      FACTORY_FENCING_TOKEN: factory ? String(factory.fencingToken) : '',
+      FACTORY_WORKSPACE: factory?.workspacePath ?? '',
       CEZ_TODOS_FILE: generateFollowups ? todosPath(this.dataDir) : '',
       ...agentTmpEnv(this.dataDir, runId),
       // Task dispatch (spec 2026-09-10-dispatch): where the `cez task` CLI reaches this server and
@@ -1187,7 +1279,53 @@ export class RunManager {
       ...(apiUrl && process.env.CEZ_BIN ? { CEZ_BIN: process.env.CEZ_BIN } : {}),
       // The tree directory — brief, notes, inbox — for a run in a dispatch tree only.
       ...(dispatch ? { CEZ_TREE_DIR: treeDir(this.dataDir, dispatch.rootRunId) } : {}),
+      ...this.factoryReleaseEnv(runId),
     };
+  }
+
+  private factoryReleaseRoot(runId: string): string | undefined {
+    const pin = this.store.getRun(runId)?.factoryRelease ?? this.store.getRun(runId)?.workflowDef?.factoryRelease;
+    if (!pin) return undefined;
+    const store = process.env.CEZ_FACTORY_RELEASE_STORE;
+    if (!store) throw new Error('pinned Factory release store is not configured');
+    return join(resolve(store), 'releases', pin.sourceSha);
+  }
+
+  private factoryReleaseEnv(runId: string): Record<string, string> {
+    const pin = this.store.getRun(runId)?.factoryRelease ?? this.store.getRun(runId)?.workflowDef?.factoryRelease;
+    if (!pin) return {};
+    const runtimeRoot = this.factoryReleaseRoot(runId);
+    if (!runtimeRoot) throw new Error('pinned Factory release is unavailable');
+    return {
+      FACTORY_RUNTIME_ROOT: runtimeRoot,
+      CEZ_FACTORY_CHANNEL: pin.channel,
+      CEZ_FACTORY_SHA: pin.sourceSha,
+      CEZ_FACTORY_MANIFEST_DIGEST: pin.manifestDigest,
+    };
+  }
+
+  private async updateFactoryReleaseReference(runId: string, action: 'protect' | 'unprotect'): Promise<void> {
+    const run = this.store.getRun(runId);
+    const pin = run?.factoryRelease;
+    if (!pin || !this.projectId) return;
+    const store = process.env.CEZ_FACTORY_RELEASE_STORE;
+    const sourceRoot = process.env.FACTORY_RUNTIME_SOURCE_ROOT;
+    if (!store || !sourceRoot) throw new Error('Factory release reference storage is not configured');
+    const runtimeRoot = this.factoryReleaseRoot(runId);
+    if (!runtimeRoot) throw new Error('pinned Factory release is unavailable');
+    const script = join(runtimeRoot, 'scripts', 'release', 'factory_release_controller.py');
+    const referenceId = `${this.projectId}:${runId}`;
+    const args = [script, action, '--repo', sourceRoot, '--store', store, '--channel', pin.channel,
+      '--sha', pin.sourceSha, '--reference-kind', 'run', '--reference-id', referenceId];
+    if (action === 'protect') args.push('--expires-at', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString());
+    const python = process.env.CEZ_FACTORY_CONTROLLER_PYTHON || 'python3';
+    await new Promise<void>((resolvePromise, reject) => {
+      const child = spawn(python, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => { if (stderr.length < 2_000) stderr += chunk.toString('utf8'); });
+      child.once('error', reject);
+      child.once('close', (code) => code === 0 ? resolvePromise() : reject(new Error(`Factory release ${action} failed (${code}): ${stderr.trim()}`)));
+    });
   }
 
   /**
@@ -1267,13 +1405,23 @@ export class RunManager {
       // Persist the explicit opt-out so queued-run restart recovery and the
       // session Git routes can distinguish it from a removed isolated worktree.
       worktree: !group && !input.dispatchIntent && input.worktree === false ? false : undefined,
+      baseBranch: input.baseCommit,
       groupId: group?.groupId,
       variant: group?.variant,
       steps: workflow.steps.map((s) => ({ id: s.id, name: s.name ?? s.id, kind: stepKind(s) })),
     });
     // Persist the full definition so a queued run survives a restart (#367) —
     // ad-hoc "(planned)" chains exist nowhere else to re-resolve from.
-    this.store.updateRun(run.id, { workflowDef: workflow });
+    const inheritedRelease = input.dispatch?.parentRunId
+      ? this.store.getRun(input.dispatch.parentRunId)?.factoryRelease
+      : undefined;
+    const pinnedWorkflow = workflow.factoryRelease || !inheritedRelease
+      ? workflow
+      : { ...workflow, factoryRelease: inheritedRelease };
+    this.store.updateRun(run.id, {
+      workflowDef: pinnedWorkflow,
+      ...(pinnedWorkflow.factoryRelease ? { factoryRelease: pinnedWorkflow.factoryRelease } : {}),
+    });
     // The run's place in a dispatch tree (spec 2026-09-10-dispatch), written the way
     // automation provenance is (`automations/task-template.ts`): an update straight after create,
     // rather than a tenth key on `createRun`'s parameter object. Persisting it here — not merely
@@ -1306,11 +1454,20 @@ export class RunManager {
     // Fire-and-forget LLM naming (task auto-naming spec): the heuristic title
     // above shows instantly; the namer's short title replaces it when (and if)
     // the model answers. Never awaited, never fails the run.
-    void this.autoNameRun(run.id, skillHint, input.task);
+    if (!input.skipAutoName) void this.autoNameRun(run.id, skillHint, input.task);
     this.pendingJobs.set(run.id, { workflow, input: effectiveInput });
     this.queue.push(run.id);
     void this.pump();
     return run;
+  }
+
+  /** Whether an automatic maintenance run would start immediately rather than waiting in this
+   *  project's task queue or exceeding the shared workspace cap. Used only when a policy sets
+   *  `maxQueuedRuns` to zero; ordinary user and automation runs continue through the normal FIFO. */
+  canStartImmediately(): boolean {
+    return this.queue.length === 0
+      && this.busySlots() < this.semaphore.projectMaxParallel(this.repoRoot)
+      && this.semaphore.busy() < this.semaphore.maxParallel();
   }
 
   /**
@@ -1794,6 +1951,8 @@ export class RunManager {
     if (state) state.releaseRepoRoot = undefined;
     if (state?.cancellationTimer) clearTimeout(state.cancellationTimer);
     if (state) state.cancellationTimer = undefined;
+    if (state?.lifecycleHeartbeat) clearInterval(state.lifecycleHeartbeat);
+    if (state) state.lifecycleHeartbeat = undefined;
     this.waiting.delete(runId);
     this.leaveMonitoring(runId);
     if (state) this.clearMonitoringWakeTimer(state, runId);
@@ -3502,6 +3661,11 @@ export class RunManager {
     // invisible to the enforcer forever. Best-effort; falls back to repoRoot.
     await rematerializeReclaimedWorktree(this.repoRoot, this.store, runId);
     const record = this.store.getRun(runId);
+    if (record?.factoryRelease) {
+      if (!this.projectId) throw new Error('pinned Factory run has no registered project identity');
+      await resolvePinnedFactoryRelease(this.projectId, record.factoryRelease);
+      await this.updateFactoryReleaseReference(runId, 'protect');
+    }
     // A provider/account switch cannot resume the old provider-owned session. Reconstruct the
     // portable context from Cezar's durable record + redacted event stream before this new turn's
     // user-message is appended. This works even when the interrupted agent never wrote HANDOFF.md.
@@ -3538,6 +3702,12 @@ export class RunManager {
     };
     this.active.set(runId, state);
     this.starting.delete(runId);
+    const factoryPin = this.store.getRun(runId)?.factoryRelease;
+    if (factoryPin) {
+      if (!this.projectId) throw new Error('pinned Factory run has no registered project identity');
+      await resolvePinnedFactoryRelease(this.projectId, factoryPin);
+      await this.updateFactoryReleaseReference(runId, 'protect');
+    }
     if (state.cwd === this.repoRoot) {
       if (repositoryRootLockDisabled()) {
         this.store.appendEvent(runId, {
@@ -3567,7 +3737,7 @@ export class RunManager {
     // sessions; a continuation builds its OWN ActiveRun, and without this the resumed session
     // expanded against an empty registry and leaked `/om-...` verbatim to the backend, which
     // answered "Unknown skill" (#811). Best-effort — discovery must never break Continue.
-    state.skills = await discoverSkills(this.repoRoot).catch(() => [] as Skill[]);
+    state.skills = await discoverSkills(this.repoRoot, { factoryReleaseRoot: this.factoryReleaseRoot(runId) }).catch(() => [] as Skill[]);
     // The dispatch session snapshot — the SECOND of the two `ActiveRun` construction
     // sites (spec 2026-09-10-dispatch; AGENTS.md § "every construction site"). A Continue
     // that skipped this would resume a task with no dispatch prompt and no way to dispatch:
@@ -4015,6 +4185,7 @@ export class RunManager {
   // ---- execution -----------------------------------------------------------
 
   private async execute(runId: string, workflow: WorkflowDef, input: StartRunInput, ownerToken?: symbol): Promise<void> {
+    await this.lifecycleStartup;
     const state: ActiveRun = {
       ownerToken: ownerToken ?? Symbol('run-owner'),
       cancelled: false,
@@ -4116,6 +4287,61 @@ export class RunManager {
           branch: wt.branch,
           baseBranch: wt.baseBranch,
         });
+        const lifecycleRun = this.store.getRun(runId);
+        const lifecycleWorkflow = factoryWorkflowParticipatesInWorkspaceLifecycle(workflow.name);
+        if (lifecycleWorkflow && lifecycleRun?.issueNumber) {
+          const previous = (await lifecycleStatus({ cwd: this.repoRoot }))
+            .find((item) => item.issue === String(lifecycleRun.issueNumber));
+          const previousRun = previous ? this.store.getRun(previous.executionId) : undefined;
+          const previousRunTerminal = Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
+          const allowReadyTransfer = previous?.state === 'ready' && previousRunTerminal;
+          const allowTerminalTransfer = ['working', 'validating', 'blocked', 'recoverable'].includes(previous?.state ?? '') && previousRunTerminal;
+          let execution: Awaited<ReturnType<typeof registerFactoryWorkspace>>;
+          try {
+            execution = await registerFactoryWorkspace({
+              issue: lifecycleRun.issueNumber,
+              runId,
+              repoRoot: this.repoRoot,
+              workspacePath: wt.path,
+              baseCommit: wt.baseBranch,
+              allowReadyTransfer,
+              allowTerminalTransfer,
+            });
+          } catch (error) {
+            // A newly created Factory worktree is safe to remove only if claim
+            // registration failed, no row owns this run, and the tree is clean.
+            // Otherwise retain it for recovery rather than discard agent state.
+            try {
+              const registered = (await lifecycleStatus({ cwd: this.repoRoot })).some((item) => item.executionId === runId);
+              let dirty = 'unknown';
+              try { dirty = execFileSync('git', ['status', '--porcelain'], { cwd: wt.path, encoding: 'utf8', windowsHide: true }).trim(); }
+              catch { /* preserve the worktree when its cleanliness cannot be verified */ }
+              if (!registered && !dirty) {
+                await removeWorktree(this.repoRoot, wt.path, wt.branch);
+                state.cwd = this.repoRoot;
+                this.store.updateRun(runId, { worktreePath: undefined, branch: undefined });
+              } else {
+                emit({ type: 'note', message: `unregistered worktree retained for recovery: ${wt.path}` });
+              }
+            } catch (cleanupError) {
+              emit({ type: 'note', message: `unregistered worktree cleanup deferred: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}` });
+            }
+            throw error;
+          }
+          state.lifecycleHeartbeat = setInterval(() => {
+            if (this.active.get(runId) !== state || state.cancelled) return;
+            void heartbeatWorkspace({
+              issue: execution.issue,
+              executionId: execution.executionId,
+              fencingToken: execution.fencingToken,
+              cwd: this.repoRoot,
+            }).catch((error: unknown) => emit({
+              type: 'note',
+              message: `workspace lease heartbeat failed: ${error instanceof Error ? error.message : String(error)}`,
+            }));
+          }, 5 * 60_000);
+          state.lifecycleHeartbeat.unref?.();
+        }
         emit({ type: 'note', message: `worktree ready — branch ${wt.branch} (base ${wt.baseBranch})` });
         // Seed from this manager's project root: each multi-project context has
         // its own manager/repoRoot and must never copy another project's layer.
@@ -4177,7 +4403,7 @@ export class RunManager {
     const seeded = this.store.getRun(runId);
     if (seeded) seedHandoffFile(this.dataDir, seeded);
 
-    const skills = await discoverSkills(this.repoRoot);
+    const skills = await discoverSkills(this.repoRoot, { factoryReleaseRoot: this.factoryReleaseRoot(runId) });
     // Every ActiveRun construction site must carry the registry — `runContinuation` builds
     // its own, and the one that skipped this leaked raw `/skill` text to the backend (#811).
     state.skills = skills;
@@ -4296,7 +4522,7 @@ export class RunManager {
         continue;
       }
 
-      const { ok, output, exitCode } = await this.runCheckStep(state, step, input.task, emit);
+      const { ok, output, exitCode } = await this.runCheckStep(runId, state, step, input.task, emit);
       if (state.cancelled) break;
       if (ok) {
         this.finishStep(runId, step.id, 'done', undefined, emit);
@@ -5059,7 +5285,7 @@ export class RunManager {
     try {
       let skillDescription: string | undefined;
       if (skillName) {
-        const skills = await discoverSkills(this.repoRoot).catch(() => [] as Skill[]);
+        const skills = await discoverSkills(this.repoRoot, { factoryReleaseRoot: this.factoryReleaseRoot(runId) }).catch(() => [] as Skill[]);
         skillDescription = skills.find((s) => s.name === skillName)?.description;
       }
       const result = await generateRunName(this.repoRoot, { task, skillName, skillDescription, ...live });
@@ -5639,6 +5865,7 @@ export class RunManager {
   }
 
   private runCheckStep(
+    runId: string,
     state: ActiveRun,
     step: WorkflowStepDef,
     task: string,
@@ -5650,7 +5877,10 @@ export class RunManager {
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env: { ...process.env, CEZAR_TASK: task } });
+      const child = spawn('bash', ['-lc', command], {
+        cwd: state.cwd,
+        env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task },
+      });
       state.interrupt = () => child.kill('SIGTERM');
 
       let output = '';

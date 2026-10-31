@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryLocalPromotionRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "factory-local-promotion-record/v1" },
+    "promotionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "branch": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "status": { "enum": ["healthy", "failed"] },
+    "candidateState": { "enum": ["unvalidated", "validated", "staged", "active"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "changedPaths": { "type": "array", "maxItems": 10000, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
+    "checks": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object",
+        "required": ["id", "required", "status", "startedAt", "finishedAt", "durationMs", "outputPreview", "outputTruncated", "outputDigest"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "required": { "type": "boolean" },
+          "status": { "enum": ["passed", "failed", "preexisting-debt"] },
+          "exitCode": { "type": ["integer", "null"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "finishedAt": { "type": "string", "format": "date-time" },
+          "durationMs": { "type": "integer", "minimum": 0 },
+          "outputPreview": { "type": "string", "maxLength": 131072 },
+          "outputTruncated": { "type": "boolean" },
+          "outputDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "nonblockingExistingFailures": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "activation": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "object", "required": ["status"], "properties": { "status": { "type": "string" }, "activationId": { "type": ["string", "null"] }, "targetCount": { "type": "integer", "minimum": 0 } }, "additionalProperties": false }
+      ]
+    },
+    "artifactDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "manifestDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "reason": { "type": ["string", "null"], "maxLength": 2000 },
+    "recordDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "required": ["schemaVersion", "promotionId", "sourceSha", "branch", "status", "candidateState", "startedAt", "finishedAt", "changedPaths", "checks", "activation", "recordDigest"]
+}

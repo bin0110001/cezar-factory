@@ -14,6 +14,12 @@ run an automation queues it (`cez automation run <id>`) and reports the task ID;
 it does not inspect that automation's worktree or create replacement tasks.
 `tests/run-tests.ps1` enforces the script rule.
 
+For coding sessions outside a verified Factory workflow, use the
+`factory-workspace` skill and `cez workspace` CLI to claim or adopt local work.
+The Cezar scheduler verifies Factory run identity and fencing data before
+setting `FACTORY_MANAGED=1`; a marker by itself is never trusted. Do not add
+Factory scripts to agent-facing skill instructions.
+
 When asked to complete outstanding issues, work the repository backlog
 autonomously. Select the next eligible issue from the existing queue using its
 readiness, dependencies, priority, and age; do not wait for the user to schedule
@@ -66,12 +72,18 @@ explicitly supplied by the user. Do not scan drives for targets or deploy to an
 unlisted project. If no target registry exists, create no external changes;
 report that the release is ready but needs target configuration.
 
-After an update passes validation and independent review, the implementation PR
-must target `dev` and request GitHub auto-merge. This applies to every approved
-risk level. High risk alone is not a reason to stop for user approval; request
-input only when the plan exposes a major architectural decision. Do not merge a
-failed, unreviewed, or unresolved PR. Independent technical review remains a
-required workflow gate; user review is not.
+After an update passes validation, the implementation PR must target `dev` and
+request GitHub auto-merge. This applies to every approved risk level. High risk
+alone is not a reason to stop for user approval; request input only when the
+plan exposes a major architectural decision.
+
+Use an independent technical reviewer when another eligible maintainer is
+available. In a solo-maintainer repository, the author must instead record a
+structured self-review on the PR covering scope, risk, important invariants,
+validation evidence, and any unresolved findings. The self-review satisfies
+the review gate only when validation has passed and no findings remain
+unresolved. Do not merge or request auto-merge for a failed, unreviewed, or
+unresolved PR. User review is not a required gate.
 
 When you finish making changes, commit them and push the branch to its remote
 before reporting the work as done. Never leave finished work only in the local
