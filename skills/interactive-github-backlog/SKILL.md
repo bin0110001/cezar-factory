@@ -24,6 +24,14 @@ scheduling or user-review approval.
 - Preserve existing issue bodies and labels unless the user asked for a
   change. Add a focused comment for decisions or context instead of rewriting
   history.
+- A delivery sequence is planning information, not a GitHub blocker. Never
+  create native issue dependency relationships (`blocked_by` / `blocking`), or
+  apply `factory:blocked`, merely because one issue is scheduled after another,
+  a parent lists prerequisites, or a decomposition contains `dependsOn`. Keep
+  sequencing in the parent table and child `Depends on` text. Create a native
+  blocker relationship only when the user explicitly requests that GitHub
+  relationship. Apply `factory:blocked` only for a verified external blocker,
+  and state the external cause in the issue.
 - Search for an existing issue before creating one. A matching title, source
   marker, or linked issue is evidence to update or report the existing issue,
   not to create a duplicate.
@@ -113,8 +121,9 @@ When the user asks to decompose a Markdown script/spec/plan:
 3. Build an ordered dependency graph. Each child must be implementable from
    its own body, with an objective, concrete tasks, acceptance criteria,
    non-goals, source section/path, risk, type, and complexity. Dependencies
-   refer to earlier child indexes or issue numbers; never invent a dependency
-   merely because two items are related.
+   refer to earlier child indexes or issue numbers as sequencing metadata;
+   never invent a dependency merely because two items are related. This graph
+   does not authorize GitHub's native blocking relationship.
 4. Search for an existing decomposition using the source path and the marker
    below. If one exists, reconcile it and report missing or stale children
    instead of creating a second parent.
@@ -128,17 +137,24 @@ When the user asks to decompose a Markdown script/spec/plan:
 6. Create each child once, in dependency order, with `factory:needs-plan`,
    exactly one `type:*`, one `risk:*`, and one `complexity:*` label. Link the
    parent and source section in every child. Add `Depends on` links to earlier
-   child issues and record the parent in the child body. Never create a child
-   with `factory:working` or `factory:ready`.
+   child issues in the body and parent table, and record the parent in the
+   child body. Do not add native GitHub issue dependency relationships or mark
+   children `factory:blocked` from this sequence. Never create a child with
+   `factory:working` or `factory:ready`.
 7. Re-read every created issue and the parent. Add one parent comment listing
    child numbers, dependencies, skipped sections, and any unresolved
-   questions. If a child is ambiguous, use `factory:needs-help` only when the
+   questions. Verify that the epic has no native blocker edges unless the user
+   explicitly requested them, and that `factory:blocked` appears only for a
+   verified external blocker. If a child is ambiguous, use
+   `factory:needs-help` only when the
    user must decide something; otherwise keep it at `factory:needs-plan` and
    state the assumption in its body.
 
 The parent is a tracking record. Creating it queues its children for autonomous
-planning and implementation in dependency order. Do not wait for the user to
-schedule child work.
+planning and implementation in dependency order. `factory:needs-plan` is a
+planning queue state, not a blocked state. `Depends on` in a plan or issue body
+is sequencing metadata and creates no GitHub blocker edge. Do not wait for the
+user to schedule child work.
 
 ## Suggested issue shapes
 
@@ -180,7 +196,7 @@ Use this additional structure for decomposition children:
 - ...
 
 ## Depends on
-- #<earlier-issue>, or `None`
+- #<earlier-issue> (sequencing metadata), or `None`
 
 ## Source
 - `path/to/script.md`, section "..."
