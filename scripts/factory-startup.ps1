@@ -40,7 +40,10 @@ function Fail([string]$Code, [string]$Message) {
         workflow = $Workflow
         step = $Step
     }
-    $result | ConvertTo-Json -Depth 8 -Compress
+    $json = $result | ConvertTo-Json -Depth 8 -Compress
+    $json
+    # Cezar may surface only stderr for a failed command step; keep the reason visible there too.
+    [Console]::Error.WriteLine("factory-startup: $Code - $Message")
     exit 1
 }
 
@@ -80,6 +83,13 @@ try {
     if ($tools.git) {
         $candidate = (& git rev-parse --show-toplevel 2>$null) -join ''
         if ($LASTEXITCODE -eq 0 -and $candidate) {
+            # A stray core.worktree in the shared repository config makes git report a work tree
+            # that does not exist for every linked task worktree, and every git command in the
+            # run then misbehaves. Name the cause instead of failing with a bare path error.
+            if (-not (Test-Path -LiteralPath $candidate.Trim() -PathType Container)) {
+                $configured = (& git config --show-origin --get core.worktree 2>$null) -join ' '
+                Fail 'GIT_WORKTREE_CONFIG_INVALID' "git reports a work tree that does not exist: $($candidate.Trim()). core.worktree is set in the shared repository config ($configured). Remove it with: git config --local --unset core.worktree"
+            }
             $repoRoot = (Resolve-Path $candidate.Trim()).Path
             $branch = (& git -C $repoRoot branch --show-current 2>$null) -join ''
         }
