@@ -91,6 +91,15 @@ the review gate only when validation has passed and no findings remain
 unresolved. Do not merge or request auto-merge for a failed, unreviewed, or
 unresolved PR. User review is not a required gate.
 
+Keep the issue's stage visible (see `docs/lifecycle.md`, "Where is my issue?"). When you
+start work on an issue in a dev window, replace its `factory:*` state label with
+`factory:working` and add `factory:interactive` so stale-work sweeps leave it alone. When
+the work is finished and pushed but has no PR yet, replace the state with
+`factory:implemented`. Open the PR into `dev` with a closing keyword (`Closes #N`) in its
+body for every issue it fully delivers; the `factory-maintenance` workflow then marks the issue
+`factory:pr-open` and, after the merge, closes it with `factory:done`. GitHub itself does not
+close issues on merges to `dev`, so a missing closing keyword leaves the issue open. Leave
+`factory:tracking` epics to be closed by hand.
 When you finish making changes, commit them and push the branch to its remote
 before reporting the work as done. Never leave finished work only in the local
 checkout. Stage only the files that belong to the change (leave unrelated

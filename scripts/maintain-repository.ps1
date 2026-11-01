@@ -82,6 +82,8 @@ $moved = @()
 foreach ($issue in $issues) {
     $labels = @(Get-Labels $issue)
     if ($labels -notcontains 'factory:working') { continue }
+    # Worked in a local dev window: a person owns it, so inactivity is not a Factory failure.
+    if ($labels -contains 'factory:interactive') { continue }
     $updated = [DateTimeOffset]::Parse([string]$issue.updatedAt)
     $runFailed = $latestRunStatus[[int]$issue.number] -eq 'failed'
     if ($runFailed -or $updated -le $workingCutoff) {

@@ -71,7 +71,7 @@ foreach ($issue in $allIssues) { $byNumber[[string]$issue.number] = $issue }
 
 $open = @($allIssues | Where-Object { $_.state -eq 'OPEN' } | ForEach-Object {
     $labels = @(Get-LabelNames $_)
-    $states = @($labels | Where-Object { $_ -in @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate') })
+    $states = @($labels | Where-Object { $_ -in @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open') })
     $priorityLabels = @($labels | ForEach-Object {
         if ($_ -match '^priority:(?<value>-?\d+)$') { [int]$Matches.value }
     })
