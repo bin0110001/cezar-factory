@@ -213,7 +213,7 @@ import { parseRemote, resolveForge, type ForgeAvailability } from './forge/index
 import { DependencyGraphService } from './dependency-graph/service.ts';
 import { discoverDecisionCandidates } from './dependency-graph/discovery.ts';
 import { planCycleRepairs } from './dependency-graph/repair-planner.ts';
-import { evaluateDependencyAdmission } from './dependency-graph/admission.ts';
+import { admitWithRefresh } from './dependency-graph/admission.ts';
 import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts';
 import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
@@ -1198,9 +1198,9 @@ export function createApp(deps: ServerDeps) {
     }
     return service;
   };
-  const checkDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate) => {
+  const checkDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate, options?: { refresh?: boolean }) => {
     const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
-    return evaluateDependencyAdmission(dependencyGraphService(root).read(repository), repository, candidate.number);
+    return admitWithRefresh(dependencyGraphService(root), repository, candidate.number, options);
   };
   const bootDataDir = join(bootRoot, '.ai/cezar');
   const modelCatalog = deps.modelCatalog ?? new RunnerModelCatalog({
@@ -3955,9 +3955,9 @@ export function createApp(deps: ServerDeps) {
             timeZone: localTimeZone(),
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
-            admit: candidate => Promise.resolve(checkDependencyAdmission(project.root, candidate)),
+            admit: candidate => checkDependencyAdmission(project.root, candidate),
             launch: parsed.data.mode === 'execute'
-              ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => Promise.resolve(checkDependencyAdmission(project.root, candidate)), dispatchEnabled: capabilities().dispatch })
+              ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkDependencyAdmission(project.root, candidate, { refresh: false }), dispatchEnabled: capabilities().dispatch })
               : undefined,
             onChange: (automationId, revision) => emitAutomationChange(project, automationId, revision),
           });
@@ -7020,10 +7020,9 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     }
     return service;
   };
-  const checkScheduledDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate) => {
-    const service = graphServiceForScheduler(root);
+  const checkScheduledDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate, options?: { refresh?: boolean }) => {
     const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
-    return evaluateDependencyAdmission(service.read(repository), repository, candidate.number);
+    return admitWithRefresh(graphServiceForScheduler(root), repository, candidate.number, options);
   };
   // A second instance from the one the HTTP routes use (out of scope here, built inside the app
   // function) — cheap: `createTrackerService` performs no I/O at construction, only a small
@@ -7069,6 +7068,19 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       // the next bounded interval retries from the last successful watermark.
     } finally { dependencyDiscoveryBusy = false; }
   };
+  // Keep the projection fresh independently of discovery (which needs localHandoff and runs every
+  // six hours): scheduler admission fails closed on a stale graph, so a missing sync would
+  // otherwise defer every issue event. Read-only against GitHub and single-flight per project.
+  const runDependencySync = async (): Promise<void> => {
+    for (const project of automationProjects.values()) {
+      if (!project.github) continue;
+      try { await graphServiceForScheduler(project.root).refreshIfNeeded({ maxAgeMs: 5 * 60_000 }); } catch { /* admission retries on demand and reports the reason */ }
+    }
+  };
+  const dependencySyncStartup = setTimeout(() => { void runDependencySync(); }, 10_000);
+  const dependencySyncInterval = setInterval(() => { void runDependencySync(); }, 10 * 60_000);
+  dependencySyncStartup.unref?.();
+  dependencySyncInterval.unref?.();
   const dependencyDiscoveryStartup = setTimeout(() => { void runDependencyDiscovery(); }, 15 * 60_000);
   const dependencyDiscoveryInterval = setInterval(() => { void runDependencyDiscovery(); }, 6 * 60 * 60_000);
   dependencyDiscoveryStartup.unref?.();
@@ -7090,7 +7102,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         store,
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
-        admit: candidate => Promise.resolve(checkScheduledDependencyAdmission(project.root, candidate)),
+        admit: candidate => checkScheduledDependencyAdmission(project.root, candidate),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,
         // by `getDriver()` — a project with none simply fails that call and the scheduler backs off.
@@ -7102,7 +7114,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
           workspaceEvents.emit('automation-change', { project: projectId, automationId, revision }),
         launch: async (definition, candidate, receiptId, admission) => {
           const context = await contextOf();
-          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, admission, recheckAdmission: () => Promise.resolve(checkScheduledDependencyAdmission(context.root, candidate)), dispatchEnabled });
+          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkScheduledDependencyAdmission(context.root, candidate, { refresh: false }), dispatchEnabled });
         },
         launchSchedule: async (definition, occurrence, receiptId) => {
           const context = await contextOf();
@@ -7161,7 +7173,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
+  server.once('close', () => { clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }
