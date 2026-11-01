@@ -25,7 +25,7 @@ interface SqlStatement {
 interface SqlDatabase {
   exec(sql: string): void;
   prepare(sql: string): SqlStatement;
-  pragma(source: string): unknown;
+  pragma(source: string, options?: { simple?: boolean }): unknown;
   transaction<T extends (...args: never[]) => unknown>(fn: T): T;
   close(): void;
 }
@@ -100,7 +100,7 @@ export class DependencyGraphStore {
   }
 
   private migrate(): void {
-    const current = Number(this.db.pragma('user_version') as number);
+    const current = Number(this.db.pragma('user_version', { simple: true }));
     if (current > STORE_SCHEMA_VERSION) throw new Error(`dependency graph database schema ${current} is newer than supported ${STORE_SCHEMA_VERSION}`);
     if (current === STORE_SCHEMA_VERSION) return;
     if (current !== 0) throw new Error(`no dependency graph migration from schema ${current}`);
