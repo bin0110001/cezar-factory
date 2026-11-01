@@ -6099,3 +6099,5 @@ export function expandRegistrySlashSkill(
   expanded[textIndex] = { type: 'text', text };
   return expanded;
 }
+
+// ci baseline probe: no behaviour change
