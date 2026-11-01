@@ -133,7 +133,7 @@ Assert 'implement workflow prepares context before implementation' ($implementWo
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
-Assert 'maintenance workflow reflects delivered work by closing issues merged into dev' ($maintenanceWorkflow -match 'id: sync-issue-delivery' -and $maintenanceWorkflow -match 'sync-issue-delivery\.ps1 -OutputPath' -and $maintenanceWorkflow -match '-RequiredScripts sync-issue-delivery\.ps1')
+Assert 'maintenance workflow reflects delivered work by closing issues merged into dev' ($maintenanceWorkflow -match 'id: sync-issue-delivery' -and $maintenanceWorkflow -match 'sync-issue-delivery\.ps1 -OutputPath' -and $maintenanceWorkflow -match '-RequiredScripts [^\r\n]*sync-issue-delivery\.ps1')
 Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('backlog-reconciliation','failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
@@ -143,6 +143,24 @@ Assert 'failure-audit startup preflights the workflow-owned publisher and GitHub
 # stdin, which a task runner leaves open, so the step hangs forever (backlog audit validation, 2026-11-01).
 $inputVariableUses = @(Get-ChildItem (Join-Path $factory 'scripts') -Recurse -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match '(?i)\$input\b' } | ForEach-Object Name)
 Assert "no Factory script uses the automatic stdin variable (input) (hangs on an open stdin): $($inputVariableUses -join ', ')" ($inputVariableUses.Count -eq 0)
+# Hang-risk lint (see tests/hang-lint.ps1). The self-tests prove each rule fires, so a rule cannot rot silently.
+. (Join-Path $PSScriptRoot 'hang-lint.ps1')
+function Lint-Rules([string]$Source) { @(Get-HangLintFindings -Text $Source | ForEach-Object Rule) }
+Assert 'hang-lint flags the automatic $input variable' ((Lint-Rules '$input = Get-Content x') -contains 'automatic-input')
+Assert 'hang-lint flags interactive prompts' ((Lint-Rules '$x = Read-Host "name"') -contains 'interactive-prompt' -and (Lint-Rules '$c = Get-Credential') -contains 'interactive-prompt')
+Assert 'hang-lint flags HTTP calls without -TimeoutSec but accepts bounded ones' ((Lint-Rules 'Invoke-RestMethod -Uri $u') -contains 'http-without-timeout' -and (Lint-Rules 'Invoke-RestMethod -Uri $u -TimeoutSec 30') -notcontains 'http-without-timeout')
+Assert 'hang-lint flags unbounded waits' ((Lint-Rules '$p.WaitForExit()') -contains 'unbounded-wait' -and (Lint-Rules 'Start-Process x -Wait') -contains 'unbounded-wait' -and (Lint-Rules '$p.WaitForExit(5000)') -notcontains 'unbounded-wait')
+Assert 'hang-lint flags an editor-opening git commit but accepts -m' ((Lint-Rules '& git commit') -contains 'editor-opening-git' -and (Lint-Rules '& git commit -m "x"') -notcontains 'editor-opening-git')
+Assert 'hang-lint flags ssh without BatchMode' ((Lint-Rules '& ssh -o ConnectTimeout=5 host cmd') -contains 'ssh-without-batchmode' -and (Lint-Rules '& ssh -o BatchMode=yes host cmd') -notcontains 'ssh-without-batchmode')
+Assert 'hang-lint honours a reasoned suppression and ignores comments' ((Lint-Rules '$x = Read-Host "n" # hang-lint: allow interactive-prompt - operator tool') -notcontains 'interactive-prompt' -and (Lint-Rules '# Read-Host is banned') -notcontains 'interactive-prompt' -and (Lint-Rules "<#`nRead-Host`n#>") -notcontains 'interactive-prompt')
+Assert 'hang-lint requires an explicit deadline on every workflow command step' (@(Get-WorkflowDeadlineFindings -Text "steps:`n  - id: a`n    command: x").Count -eq 1 -and @(Get-WorkflowDeadlineFindings -Text "steps:`n  - id: a`n    command: x`n    timeoutSeconds: 60").Count -eq 0 -and @(Get-WorkflowDeadlineFindings -Text "steps:`n  - id: a`n    command: x`n    timeoutSeconds: 99999").Count -eq 1)
+$hangFindings = @(Get-ChildItem (Join-Path $factory 'scripts') -Recurse -Filter *.ps1 | ForEach-Object { Get-HangLintFindings -Text (Get-Content -Raw $_.FullName) -Name $_.FullName.Substring($factory.Length + 1) })
+foreach ($finding in $hangFindings) { Write-Host "       $($finding.File):$($finding.Line) [$($finding.Rule)] $($finding.Message)" -ForegroundColor Yellow }
+Assert 'no Factory script contains a construct that can wait forever (tests/hang-lint.ps1)' ($hangFindings.Count -eq 0)
+$deadlineFindings = @(Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml | ForEach-Object { Get-WorkflowDeadlineFindings -Text (Get-Content -Raw $_.FullName) -Name $_.Name })
+foreach ($finding in $deadlineFindings) { Write-Host "       $($finding.File):$($finding.Line) [$($finding.Rule)] $($finding.Message)" -ForegroundColor Yellow }
+Assert 'every workflow command step declares a timeoutSeconds deadline' ($deadlineFindings.Count -eq 0)
+
 Assert 'startup keeps its failure reason visible on stderr' ($startupScript -match 'Console]::Error.WriteLine' -and $startupScript -match 'GIT_WORKTREE_CONFIG_INVALID')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
@@ -371,6 +389,55 @@ if ($StaticOnly) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    # factory-startup names a stale shared core.worktree instead of failing with a bare path error.
+    $staleRepo = Join-Path $tmp 'stale-core-worktree'
+    New-Item -ItemType Directory $staleRepo | Out-Null
+    Push-Location $staleRepo
+    try {
+        & git init -q -b main; & git config user.email t@example.com; & git config user.name t
+        'x' | Set-Content seed.txt; & git add -A; & git commit -q -m seed
+        $taskWorktree = Join-Path $tmp 'stale-core-worktree-task'
+        & git worktree add -q -b task $taskWorktree
+        # Production shape: per-worktree config is enabled, the main worktree pins its own
+        # core.worktree, and a stray shared core.worktree names a directory that does not exist.
+        & git config extensions.worktreeConfig true; & git config --worktree core.worktree $staleRepo
+        & git config core.worktree (Join-Path $tmp 'does-not-exist')
+        Push-Location $taskWorktree
+        try { $staleStartup = Run 'factory-startup.ps1' @{ Workflow = 'factory-test'; Step = 'check'; OutputPath = (Join-Path $tmp 'stale-startup.json') } } finally { Pop-Location }
+    } finally { Pop-Location }
+    Assert 'startup reports a stale core.worktree with an actionable code and message' ($staleStartup.Code -eq 1 -and $staleStartup.Out -match 'GIT_WORKTREE_CONFIG_INVALID' -and $staleStartup.Out -match 'git config --local --unset core.worktree')
+    # watchdog-automations cancels only stale runs of the named workflows and never the calling run.
+    $wdPort = Get-Random -Minimum 20000 -Maximum 40000
+    $wdLog = Join-Path $tmp 'watchdog-cancelled.txt'
+    $wdOld = [DateTime]::UtcNow.AddMinutes(-90).ToString('o'); $wdYoung = [DateTime]::UtcNow.AddMinutes(-2).ToString('o')
+    $wdRuns = @{ runs = @(
+        @{ id = 'r-old-maint'; status = 'running'; startedAt = $wdOld; workflow = 'factory-maintenance' }
+        @{ id = 'r-old-impl'; status = 'running'; startedAt = $wdOld; workflow = 'factory-implement' }
+        @{ id = 'r-self'; status = 'running'; startedAt = $wdOld; workflow = 'factory-maintenance' }
+        @{ id = 'r-young'; status = 'running'; startedAt = $wdYoung; workflow = 'factory-maintenance' }
+        @{ id = 'r-done'; status = 'done'; startedAt = $wdOld; workflow = 'factory-maintenance' }) } | ConvertTo-Json -Depth 5
+    $wdJob = Start-Job -ArgumentList $wdPort, $wdRuns, $wdLog -ScriptBlock {
+        param($port, $json, $log)
+        $listener = [System.Net.HttpListener]::new(); $listener.Prefixes.Add("http://127.0.0.1:$port/"); $listener.Start()
+        $until = [DateTime]::UtcNow.AddSeconds(60)
+        $pending = $null
+        while ([DateTime]::UtcNow -lt $until) {
+            # Keep one accept outstanding until it completes; abandoning it would swallow a request.
+            if (-not $pending) { $pending = $listener.GetContextAsync() }
+            if (-not $pending.Wait(1000)) { continue }
+            $ctx = $pending.Result; $pending = $null
+            if ($ctx.Request.HttpMethod -eq 'POST') { Add-Content $log $ctx.Request.Url.AbsolutePath; $body = '{}' } else { $body = $json }
+            $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+            $ctx.Response.ContentType = 'application/json'; $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length); $ctx.Response.Close()
+        }
+        $listener.Stop()
+    }
+    Start-Sleep -Seconds 2
+    $wd = Run 'watchdog-automations.ps1' @{ ApiUrl = "http://127.0.0.1:$wdPort"; ProjectId = 'p'; MaxRunMinutes = 30; Workflow = 'factory-maintenance,factory-intake'; ExcludeRunId = 'r-self' }
+    Stop-Job $wdJob -ErrorAction SilentlyContinue; Remove-Job $wdJob -Force -ErrorAction SilentlyContinue
+    $wdCancelled = @(if (Test-Path $wdLog) { Get-Content $wdLog })
+    Assert 'watchdog cancels only stale runs of the named workflows and spares the calling run' ($wd.Code -eq 0 -and $wdCancelled.Count -eq 1 -and $wdCancelled[0] -like '*r-old-maint*')
+
     # sync-issue-delivery: delivered issues close even though the PR merged into dev, not the default branch.
     $closeState = Join-Path $tmp 'close-state.json'
     $recent = [DateTime]::UtcNow.AddDays(-1).ToString('o'); $old = [DateTime]::UtcNow.AddDays(-60).ToString('o')

@@ -5,7 +5,16 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts sync-issue-delivery.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    timeoutSeconds: 60
+  # Liveness backstop first, so it runs even if a later step hangs: this hourly run cancels any earlier
+  # run of a bounded workflow (including a previous stuck maintenance run) that outlived 30 minutes,
+  # and returns its issue to factory:investigate. Command steps have their own deadlines; this covers
+  # a stuck agent step. It never cancels the run it belongs to.
+  - id: watchdog
+    name: Cancel bounded Factory runs that outlived their liveness budget
+    command: 'if [ -n "$CEZ_API_URL" ] && [ -n "$CEZ_PROJECT_ID" ]; then pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/watchdog-automations.ps1 -ApiUrl "$CEZ_API_URL" -ProjectId "$CEZ_PROJECT_ID" -MaxRunMinutes 30 -Workflow factory-maintenance,factory-intake,factory-backlog-reconciliation,factory-failure-audit,factory-environment-analysis -ExcludeRunId "$CEZ_TASK_ID" -RouteCancelledRuns; else echo "watchdog skipped: Cezar API is not reachable from this run"; fi'
+    timeoutSeconds: 120
   # Independent deterministic housekeeping runs before the bounded classification
   # agent so an agent failure cannot suppress either maintenance task.
   # GitHub only honours "Closes #N" on the default branch, and Factory PRs merge into dev, so this
@@ -13,24 +22,31 @@ steps:
   - id: sync-issue-delivery
     name: Show PR progress on issues and close those delivered by PRs merged into dev
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/sync-issue-delivery.ps1 -OutputPath .factory/sync-issue-delivery.json
+    timeoutSeconds: 300
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
+    timeoutSeconds: 300
   - id: repository-maintenance
     name: Run deterministic repository maintenance
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json
+    timeoutSeconds: 300
   - id: recover-audit-reservations
     name: Release expired backlog-label audit reservations
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -OutputPath .factory/audit-reservation-recovery.json
+    timeoutSeconds: 300
   - id: backlog-label-audit-collect
     name: Collect bounded backlog-label audit input
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json
+    timeoutSeconds: 300
   - id: backlog-label-audit-validate
     name: Validate bounded backlog-label audit handoff
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-backlog-label-audit-input.ps1 -Path .factory/backlog-label-audit-input.json -MaxCandidates 3
+    timeoutSeconds: 60
   - id: backlog-label-audit-prepare
     name: Apply deterministic classifications and reserve candidates
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -Prepare -WorkflowContract -OutputPath .factory/backlog-label-audit-preparation.json
+    timeoutSeconds: 300
     outputSchema:
       type: object
       required: [status, candidateCount, resolvedCount]
@@ -72,3 +88,4 @@ steps:
   - id: backlog-label-audit-apply
     name: Validate and apply backlog-label proposals
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json
+    timeoutSeconds: 300

@@ -4,12 +4,15 @@ steps:
   - id: startup
     name: Prepare workflow environment
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-plan -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,validate-result.ps1,route-plan-or-default.ps1,route-state.ps1
+    timeoutSeconds: 60
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    timeoutSeconds: 60
   - id: recall
     name: Create bounded memory-recall artifact
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/hindsight/recall.ps1 -Objective "{{task}}" -TaskClass planning
+    timeoutSeconds: 300
   - id: plan
     name: Run factory-plan skill
     skill: factory-plan
@@ -26,12 +29,14 @@ steps:
   - id: validate
     name: Validate plan result and Definition of Ready
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind plan -Path .factory/plan-result.json
+    timeoutSeconds: 60
     onFail:
       retry: plan
       max: 1
   - id: route
     name: Post plan to the issue and set factory state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-plan-or-default.ps1 -Path .factory/plan-result.json
+    timeoutSeconds: 300
     onFail:
       retry: validate
       max: 1

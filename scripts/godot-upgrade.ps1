@@ -71,7 +71,7 @@ function Get-LatestStableTag {
     $token = if ($env:GH_TOKEN) { $env:GH_TOKEN } else { $env:GITHUB_TOKEN }
     if ($token) { $headers.Authorization = "Bearer $token" }
     # /releases/latest never returns a prerelease or draft.
-    [string](Invoke-RestMethod -Uri $ReleaseApiUrl -Headers $headers).tag_name
+    [string](Invoke-RestMethod -Uri $ReleaseApiUrl -Headers $headers -TimeoutSec 60).tag_name
 }
 function Get-BaseBranch {
     if ($BaseBranch) { return $BaseBranch }
