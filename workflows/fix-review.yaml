@@ -4,12 +4,15 @@ steps:
   - id: startup
     name: Prepare workflow environment
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1
+    timeoutSeconds: 60
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    timeoutSeconds: 60
   - id: start
     name: Move issue to factory:working
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event start -Task "{{task}}"
+    timeoutSeconds: 300
   - id: fix
     name: Run factory-fix skill
     skill: factory-fix
@@ -26,30 +29,35 @@ steps:
   - id: targeted-tests
     name: Run targeted validation
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    timeoutSeconds: 1800
     onFail:
       retry: fix
       max: 1
   - id: validate
     name: Validate fix result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
+    timeoutSeconds: 60
     onFail:
       retry: fix
       max: 1
   - id: route
     name: Return issue to factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
+    timeoutSeconds: 300
     onFail:
       retry: validate
       max: 1
   - id: workspace-preflight
     name: Preflight the repaired issue branch against the integration target
     command: 'if [ -n "$FACTORY_FENCING_TOKEN" ]; then cez workspace preflight --issue "$FACTORY_ISSUE" --json; fi'
+    timeoutSeconds: 300
     onFail:
       retry: fix
       max: 1
   - id: lifecycle-ready
     name: Mark the repaired coding phase ready for review and integration
     command: 'if [ -n "$FACTORY_FENCING_TOKEN" ]; then cez workspace handoff --run "$CEZ_TASK_ID" --fence "$FACTORY_FENCING_TOKEN"; fi'
+    timeoutSeconds: 300
     onFail:
       retry: route
       max: 1

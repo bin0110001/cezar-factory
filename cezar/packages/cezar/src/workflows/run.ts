@@ -1,7 +1,7 @@
 import type { TrackerAssociation } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative as relativePath, resolve } from 'node:path';
 import {
@@ -121,6 +121,22 @@ import { executeVerification } from '../verification/executor.ts';
 import { listProjects } from '../workspace/projects.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
+/** Backstop for a command step with no explicit `timeoutSeconds`: long enough for a real test suite,
+ *  short enough that a hung command cannot block a run (or a worker slot) indefinitely. */
+export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
+/** Time a command gets to exit after SIGTERM before its whole process group is killed. */
+const COMMAND_KILL_GRACE_MS = 5_000;
+
+/** Signal the command's whole process group: `bash -lc` forks the real work (pwsh, git, ...) and
+ *  a signal to bash alone would leave it running and holding the output pipes open. */
+function signalCommandTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal);
+    else child.kill(signal);
+  } catch {
+    try { child.kill(signal); } catch { /* already gone */ }
+  }
+}
 
 async function configuredModelProvider(
   backend: RunnerId,
@@ -5932,11 +5948,47 @@ export class RunManager {
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
+      // stdin is closed, not left as an open pipe: a command that reads it (PowerShell's `$input`,
+      // `cat`, a prompt) gets end-of-file instead of waiting for input that never comes. A new
+      // process group lets the deadline and cancellation reach grandchildren.
       const child = spawn('bash', ['-lc', command], {
         cwd: state.cwd,
         env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
       });
-      state.interrupt = () => child.kill('SIGTERM');
+      state.interrupt = () => signalCommandTree(child, 'SIGTERM');
+      const timeoutSeconds = step.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS;
+      let settled = false;
+      let timedOut = false;
+      let killTimer: NodeJS.Timeout | undefined;
+      const deadline = setTimeout(() => {
+        timedOut = true;
+        signalCommandTree(child, 'SIGTERM');
+        // Do not wait for 'close': a grandchild that ignores SIGTERM keeps the pipes open.
+        killTimer = setTimeout(() => {
+          signalCommandTree(child, 'SIGKILL');
+          finish(-1);
+        }, COMMAND_KILL_GRACE_MS);
+      }, timeoutSeconds * 1000);
+      const finish = (code: number | null): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        if (killTimer) clearTimeout(killTimer);
+        state.interrupt = () => undefined;
+        const body = output.trim() || '(no output)';
+        const trimmed = timedOut
+          ? `${body}
+[cezar] step "${step.id}" exceeded its ${timeoutSeconds}s deadline and was killed. A command that waits on stdin, a prompt, or a lock never finishes; fix the command or raise timeoutSeconds if it is genuinely slow.`
+          : body;
+        // `code` is null when a signal killed the child; -1 then, the same value an
+        // unspawnable command reports, and one no `retryOn` list can name — neither
+        // is a verdict on the diff, so neither buys the agent another attempt.
+        const exitCode = timedOut ? -1 : code ?? -1;
+        emit({ type: 'check-output', stepId: step.id, command, text: trimmed, exitCode });
+        resolve({ ok: !timedOut && code === 0, output: trimmed, exitCode });
+      };
 
       let output = '';
       const collect = (chunk: Buffer) => {
@@ -5948,21 +6000,16 @@ export class RunManager {
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
       child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        if (killTimer) clearTimeout(killTimer);
         state.interrupt = () => undefined;
         const message = `failed to spawn: ${err.message}`;
         emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: -1 });
         resolve({ ok: false, output: message, exitCode: -1 });
       });
-      child.on('close', (code) => {
-        state.interrupt = () => undefined;
-        const trimmed = output.trim() || '(no output)';
-        // `code` is null when a signal killed the child; -1 then, the same value an
-        // unspawnable command reports, and one no `retryOn` list can name — neither
-        // is a verdict on the diff, so neither buys the agent another attempt.
-        const exitCode = code ?? -1;
-        emit({ type: 'check-output', stepId: step.id, command, text: trimmed, exitCode });
-        resolve({ ok: code === 0, output: trimmed, exitCode });
-      });
+      child.on('close', (code) => finish(code));
     });
   }
 

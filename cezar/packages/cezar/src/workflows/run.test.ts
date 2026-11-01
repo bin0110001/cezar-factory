@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '../core/agent-runner.ts';
@@ -1356,6 +1357,35 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
     expect(existsSync(join(repoRoot, 'injected'))).toBe(false);
   }, 30_000);
 
+  it('runs command steps with stdin closed, so a command that reads it sees end-of-file instead of hanging', async () => {
+    const wf: WorkflowDef = {
+      name: 'command-stdin', source: 'built-in',
+      // `cat` blocks forever on an open pipe; with stdin closed it exits at once. timeoutSeconds is a
+      // safety net so a regression fails this test in seconds rather than at the 900s default.
+      steps: [{ id: 'read-stdin', name: 'Read stdin', command: 'cat > stdin-seen.txt; test ! -s stdin-seen.txt', timeoutSeconds: 20 }],
+    };
+    const record = manager.startRun(wf, { task: 'stdin', worktree: false });
+    currentId = record.id;
+    await waitFor(record.id, (r) => r?.steps.find((s) => s.id === 'read-stdin')?.status === 'done');
+    expect(steps(record.id)).toEqual([{ id: 'read-stdin', status: 'done' }]);
+  }, 30_000);
+
+  it('fails a command step that outlives its deadline and kills the whole process tree', async () => {
+    const wf: WorkflowDef = {
+      name: 'command-deadline', source: 'built-in',
+      // The inner shell ignores SIGTERM and keeps running a grandchild, like a stuck pwsh would.
+      steps: [{ id: 'hang', name: 'Hang', command: "sh -c 'trap \"\" TERM; sleep 60' & wait", timeoutSeconds: 1 }],
+    };
+    const started = Date.now();
+    const record = manager.startRun(wf, { task: 'deadline', worktree: false });
+    currentId = record.id;
+    await waitFor(record.id, (r) => r?.steps.find((s) => s.id === 'hang')?.status === 'failed');
+    expect(Date.now() - started).toBeLessThan(20_000);
+    const output = readEvents(record.id).filter((e) => e.type === 'check-output' && e.stepId === 'hang').map((e) => String(e.text)).join(' ');
+    expect(output).toContain('exceeded its 1s deadline');
+    expect(readEvents(record.id).some((e) => e.type === 'check-output' && e.stepId === 'hang' && e.exitCode === -1)).toBe(true);
+  }, 30_000);
+
   it('a CEZ:ASK turn-end parks the run as waiting (attention) and emits ask.requested', async () => {
     const record = manager.startRun(SINGLE_STEP, { task: 'mock:ask which library?', worktree: false });
     currentId = record.id;
@@ -1847,7 +1877,8 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
       task: 'hanging session',
       steps: [{ id: 'task', name: 'Task', kind: 'agent' }],
     });
-    const fixture = join(process.cwd(), 'packages/cezar/src/core/__fixtures__/claude/stub-ignores-eof-and-sigterm.mjs');
+    // Resolved from this file, not process.cwd(): CI starts vitest in packages/cezar, not cezar/.
+    const fixture = fileURLToPath(new URL('../core/__fixtures__/claude/stub-ignores-eof-and-sigterm.mjs', import.meta.url));
     let sawText: () => void = () => undefined;
     const textSeen = new Promise<void>((resolve) => { sawText = resolve; });
     const session = new ClaudeCliRunner({ bin: fixture, timeoutMs: 0 }).startSession(

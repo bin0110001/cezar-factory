@@ -65,7 +65,7 @@ function Get-ActiveIssueNumbers {
         throw 'Cannot verify active Cezar runs: ApiUrl and ProjectId are required unless -SkipRunCheck is used.'
     }
     $base = "$($ApiUrl.TrimEnd('/'))/api/v1/p/$([uri]::EscapeDataString($ProjectId))"
-    $payload = Invoke-RestMethod -UseBasicParsing "$base/runs"
+    $payload = Invoke-RestMethod -UseBasicParsing "$base/runs" -TimeoutSec 30
     $runs = if ($payload.PSObject.Properties.Name -contains 'runs') { @($payload.runs) } else { @($payload) }
     $active = @('queued','starting','running','pending')
     $numbers = [System.Collections.Generic.HashSet[int]]::new()

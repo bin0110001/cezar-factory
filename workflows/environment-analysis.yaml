@@ -4,9 +4,11 @@ steps:
   - id: startup
     name: Prepare workflow environment
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequiredScripts collect-environment-state.ps1
+    timeoutSeconds: 60
   - id: collect
     name: Export current environment state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-environment-state.ps1 -OutputDirectory .factory/environment-analysis
+    timeoutSeconds: 300
   - id: analyze
     name: Analyze exported environment evidence
     skill: factory-environment-analysis

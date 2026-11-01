@@ -45,6 +45,9 @@ export const workflowStepSchema = z
     // check step
     command: z.string().optional(),
     verificationSuite: z.string().trim().min(1).max(128).optional(),
+    /** Command steps only: kill the command and fail the step after this many seconds (default 900).
+     *  A hung command otherwise blocks the run forever. Set it to the step's real worst case. */
+    timeoutSeconds: z.number().int().min(1).max(3600).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),

@@ -51,7 +51,7 @@ function Log([string]$Msg) {
     }
 }
 function Api([string]$Method, [string]$Url, $Body) {
-    $p = @{ Method = $Method; Uri = $Url; ContentType = 'application/json' }
+    $p = @{ Method = $Method; Uri = $Url; ContentType = 'application/json'; TimeoutSec = 30 }
     if ($null -ne $Body) { $p.Body = ($Body | ConvertTo-Json -Depth 20) }
     Invoke-RestMethod @p
 }
