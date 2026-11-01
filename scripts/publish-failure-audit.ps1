@@ -125,19 +125,19 @@ function Write-Comment([int]$Number, [string]$Body) {
 
 try {
     if (-not (Test-Path -LiteralPath $inputFile -PathType Leaf)) { throw "Failure audit artifact not found: $inputFile" }
-    $input = Get-Content -LiteralPath $inputFile -Raw | ConvertFrom-Json -Depth 30
-    if ($input.schemaVersion -ne 1 -or [string]$input.projectId -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Failure audit artifact has an unsupported schema or invalid registered project identity.' }
-    if ($input.status -eq 'limited') {
+    $auditInput = Get-Content -LiteralPath $inputFile -Raw | ConvertFrom-Json -Depth 30
+    if ($auditInput.schemaVersion -ne 1 -or [string]$auditInput.projectId -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Failure audit artifact has an unsupported schema or invalid registered project identity.' }
+    if ($auditInput.status -eq 'limited') {
         $receipt.status = 'skipped'
         $receipt.action = 'skipped'
-        $receipt.projectId = [string]$input.projectId
+        $receipt.projectId = [string]$auditInput.projectId
         $receipt.message = 'Collection coverage is limited; publication was not attempted.'
         Save-Receipt
         exit 0
     }
-    if ($input.status -ne 'ready') { throw "Unsupported failure audit status: $($input.status)" }
-    $receipt.projectId = [string]$input.projectId
-    $failures = @($input.failures)
+    if ($auditInput.status -ne 'ready') { throw "Unsupported failure audit status: $($auditInput.status)" }
+    $receipt.projectId = [string]$auditInput.projectId
+    $failures = @($auditInput.failures)
     if ($failures.Count -eq 0) {
         $receipt.status = 'skipped'
         $receipt.action = 'skipped'
@@ -151,7 +151,7 @@ try {
         }
     }
 
-    $projectHash = (Hash-Text ([string]$input.projectId).ToLowerInvariant()).Substring(0, 12)
+    $projectHash = (Hash-Text ([string]$auditInput.projectId).ToLowerInvariant()).Substring(0, 12)
     $fingerprints = @($failures | ForEach-Object { [string]$_.fingerprint } | Sort-Object -Unique)
     $fingerprint = if ($fingerprints.Count -eq 1) { $fingerprints[0] } else { Hash-Text ($fingerprints -join '|') }
     $token = "FFP-$projectHash-$($fingerprint.Substring(0, 16))"
@@ -174,10 +174,10 @@ try {
     $evidenceHash = (Hash-Text $evidence).Substring(0, 16)
     $evidenceMarker = "<!-- factory-failure-evidence-v1 key:$token runs:$runHash evidence:$evidenceHash -->"
     $comment = @(
-        "New bounded failure evidence for project ``$($input.projectId)``.",
+        "New bounded failure evidence for project ``$($auditInput.projectId)``.",
         '',
-        "Window start (UTC): $($input.windowStartUtc)",
-        "Runs inspected: $($input.runsInspected)",
+        "Window start (UTC): $($auditInput.windowStartUtc)",
+        "Runs inspected: $($auditInput.runsInspected)",
         '',
         $evidence,
         '',
@@ -217,12 +217,12 @@ try {
 
     $legacyByNumber = @{}
     foreach ($qualifier in @('in:body', 'in:comments')) {
-        foreach ($item in (Search-Issues "repo:$FactoryRepo is:issue $qualifier `"$($input.projectId)`" `"Factory audit`"")) {
+        foreach ($item in (Search-Issues "repo:$FactoryRepo is:issue $qualifier `"$($auditInput.projectId)`" `"Factory audit`"")) {
             $legacyByNumber[[int]$item.number] = $item
         }
     }
     $legacy = @($legacyByNumber.Values | Where-Object {
-        ([string]$_.title -match '(?i)factory audit') -and ([string]$_.body -match [regex]::Escape([string]$input.projectId))
+        ([string]$_.title -match '(?i)factory audit') -and ([string]$_.body -match [regex]::Escape([string]$auditInput.projectId))
     })
     $needsLegacyReview = $false
     if ($legacy.Count -gt 0) {
@@ -230,7 +230,7 @@ try {
         foreach ($candidate in $legacy) {
             $candidateIssue = Read-Issue ([int]$candidate.number)
             $allText = ([string]$candidateIssue.body + "`n" + (@($candidateIssue.comments | ForEach-Object { [string]$_.body }) -join "`n"))
-            if ($allText.Contains([string]$input.projectId) -and @($fingerprints | Where-Object { $allText.Contains($_) }).Count -gt 0) {
+            if ($allText.Contains([string]$auditInput.projectId) -and @($fingerprints | Where-Object { $allText.Contains($_) }).Count -gt 0) {
                 $unambiguous.Add($candidateIssue)
             }
         }
@@ -265,8 +265,8 @@ try {
         $receipt.legacyCandidates = @($legacy | ForEach-Object { [string]$_.html_url })
     }
 
-    $title = "[Factory audit] failure in $($input.projectId) $token"
-    $related = if ([string]$input.projectId -ieq 'blackjackandhookersgadot') {
+    $title = "[Factory audit] failure in $($auditInput.projectId) $token"
+    $related = if ([string]$auditInput.projectId -ieq 'blackjackandhookersgadot') {
         "`nRelated historical intake audit: https://github.com/$FactoryRepo/issues/1 (historical evidence only; not proof that the intake defect is resolved).`n"
     } else { '' }
     if ($needsLegacyReview) {
@@ -274,12 +274,12 @@ try {
     }
     $body = @(
         $marker,
-        "# Bounded Factory failure evidence: $($input.projectId)",
+        "# Bounded Factory failure evidence: $($auditInput.projectId)",
         '',
-        "Registered project ID: ``$($input.projectId)``",
+        "Registered project ID: ``$($auditInput.projectId)``",
         "Failure signature: ``$fingerprint``",
-        "Window start (UTC): $($input.windowStartUtc)",
-        "Runs inspected: $($input.runsInspected)",
+        "Window start (UTC): $($auditInput.windowStartUtc)",
+        "Runs inspected: $($auditInput.runsInspected)",
         $related,
         '## Evidence',
         '',

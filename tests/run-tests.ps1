@@ -139,6 +139,10 @@ Assert 'every workflow starts with shared startup preflight' (($startupScript -m
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
 Assert 'backlog workflow owns snapshot and dry-run script calls' ($backlogWorkflow -match 'collect-backlog-snapshot\.ps1' -and $backlogWorkflow -match 'reconcile-backlog\.ps1 .* -DryRun' -and $backlogWorkflow -match 'BatchCap 1 -ProjectConcurrencyCap 1')
 Assert 'failure-audit startup preflights the workflow-owned publisher and GitHub CLI' ((Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'id: publish' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'publish-failure-audit\.ps1' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match '-RequireGh' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'publish-failure-audit\.ps1')
+# $input is PowerShell's automatic stdin enumerator. Using it as a variable makes a script wait for
+# stdin, which a task runner leaves open, so the step hangs forever (backlog audit validation, 2026-11-01).
+$inputVariableUses = @(Get-ChildItem (Join-Path $factory 'scripts') -Recurse -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match '(?i)\$input\b' } | ForEach-Object Name)
+Assert "no Factory script uses the automatic stdin variable (input) (hangs on an open stdin): $($inputVariableUses -join ', ')" ($inputVariableUses.Count -eq 0)
 Assert 'startup keeps its failure reason visible on stderr' ($startupScript -match 'Console]::Error.WriteLine' -and $startupScript -match 'GIT_WORKTREE_CONFIG_INVALID')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
