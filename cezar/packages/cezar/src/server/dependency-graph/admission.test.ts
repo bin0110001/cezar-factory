@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dependencyNodeId, type DependencyGraphSnapshot } from '@open-mercato/cezar-contract';
-import { evaluateDependencyAdmission } from './admission.ts';
+import { admitWithRefresh, evaluateDependencyAdmission } from './admission.ts';
 
 const repository = 'acme/work';
 const at = '2026-10-30T12:00:00.000Z';
@@ -31,5 +31,48 @@ describe('dependency admission', () => {
     const closed = snapshot();
     closed.nodes = closed.nodes.map((node) => node.kind === 'issue' && node.number === 1 ? { ...node, state: 'closed' } : node);
     expect(evaluateDependencyAdmission(closed, repository, 1).status).toBe('closed');
+  });
+});
+
+describe('admission with on-demand refresh', () => {
+  function fakeService(initial: DependencyGraphSnapshot, afterRefresh?: DependencyGraphSnapshot, refreshStatus: 'fresh' | 'stale' = 'fresh') {
+    let current = initial;
+    const calls: number[] = [];
+    return {
+      calls,
+      read: () => current,
+      refreshIfNeeded: async ({ maxAgeMs }: { maxAgeMs: number }) => {
+        calls.push(maxAgeMs);
+        if (afterRefresh && refreshStatus === 'fresh' && (current.source.status !== 'fresh' || maxAgeMs <= 30_000)) current = afterRefresh;
+        return { repository, revision: 5, status: refreshStatus, full: false, complete: refreshStatus === 'fresh', nodesReceived: 0, edgesReceived: 0, ...(refreshStatus === 'stale' ? { warning: 'gh is not authenticated' } : {}) };
+      },
+    };
+  }
+
+  it('syncs a stale graph before deciding instead of deferring the work', async () => {
+    const service = fakeService(snapshot('stale'), snapshot('fresh'));
+    expect(await admitWithRefresh(service, repository, 1)).toMatchObject({ status: 'ready' });
+    expect(service.calls).toHaveLength(1);
+  });
+
+  it('resyncs once when a fresh graph predates the issue', async () => {
+    const withNew = snapshot();
+    withNew.nodes = [...withNew.nodes, { ...withNew.nodes[0]!, id: dependencyNodeId('issue', repository, 3), number: 3, title: 'New' } as typeof withNew.nodes[number]];
+    const service = fakeService(snapshot(), withNew);
+    expect(await admitWithRefresh(service, repository, 3)).toMatchObject({ status: 'ready' });
+    expect(service.calls).toHaveLength(2);
+  });
+
+  it('stays fail-closed and explains why when the refresh cannot reach GitHub', async () => {
+    const service = fakeService(snapshot('stale'), undefined, 'stale');
+    const verdict = await admitWithRefresh(service, repository, 1);
+    expect(verdict.status).toBe('unknown');
+    expect(verdict.reason).toContain('gh is not authenticated');
+  });
+
+  it('never moves the graph for the pre-dispatch recheck and still reports verified blockers', async () => {
+    const service = fakeService(snapshot());
+    expect(await admitWithRefresh(service, repository, 2, { refresh: false })).toMatchObject({ status: 'blocked' });
+    expect(service.calls).toHaveLength(0);
   });
 });
