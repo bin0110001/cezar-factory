@@ -22,20 +22,20 @@ if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
 }
 
 try {
-    $input = Get-Content -Raw -LiteralPath $fullPath | ConvertFrom-Json
+    $handoff = Get-Content -Raw -LiteralPath $fullPath | ConvertFrom-Json
 } catch {
     throw "Backlog audit handoff is not valid JSON: $fullPath. Stop before the audit skill. $($_.Exception.Message)"
 }
 
-if (-not $input.PSObject.Properties.Name -contains 'outputPath') {
+if (-not $handoff.PSObject.Properties.Name -contains 'outputPath') {
     throw "Backlog audit handoff is missing outputPath: $fullPath. Stop before the audit skill."
 }
-$reportedPath = [IO.Path]::GetFullPath([string]$input.outputPath)
+$reportedPath = [IO.Path]::GetFullPath([string]$handoff.outputPath)
 if ($reportedPath -ne $fullPath) {
     throw "Backlog audit handoff points outside this run: reported '$reportedPath', expected '$fullPath'. Stop before the audit skill."
 }
 
-$candidates = @($input.candidates)
+$candidates = @($handoff.candidates)
 if ($candidates.Count -gt $MaxCandidates) {
     throw "Backlog audit handoff contains $($candidates.Count) candidates; maximum is $MaxCandidates. Stop before the audit skill."
 }
@@ -51,5 +51,5 @@ Write-Output (@{
     status = 'valid'
     path = $fullPath
     candidates = $candidates.Count
-    terminalReason = [string]$input.terminalReason
+    terminalReason = [string]$handoff.terminalReason
 } | ConvertTo-Json -Compress)
