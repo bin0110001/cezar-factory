@@ -34,7 +34,9 @@ $manualOrTerminalStates = @(
     'factory:working',
     'factory:human-review',
     'factory:blocked',
-    'factory:done'
+    'factory:done',
+    'factory:implemented',
+    'factory:pr-open'
 )
 $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large')
 

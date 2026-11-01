@@ -72,7 +72,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/label
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/backlog-reconciliation.yaml', 'automations/backlog-reconciliation.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
@@ -133,6 +133,7 @@ Assert 'implement workflow prepares context before implementation' ($implementWo
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
 Assert 'PR close guard edits the PR with a GitHub closing reference' ($closePrScript -match "pr', 'view" -and $closePrScript -match "pr', 'edit" -and $closePrScript -match 'Closes #\$issue')
+Assert 'maintenance workflow reflects delivered work by closing issues merged into dev' ($maintenanceWorkflow -match 'id: sync-issue-delivery' -and $maintenanceWorkflow -match 'sync-issue-delivery\.ps1 -OutputPath' -and $maintenanceWorkflow -match '-RequiredScripts sync-issue-delivery\.ps1')
 Assert 'implementation preparation fetches issue and captures environment' ($implementWorkflow -match 'prepare-implementation\.ps1' -and $prepareScript -match 'gh.*issue.*view' -and $prepareScript -match 'comments' -and $prepareScript -match 'toolingFiles' -and $prepareScript -match 'AGENTS\.md')
 Assert 'every workflow starts with shared startup preflight' (($startupScript -match 'RUNTIME_ROOT_INVALID' -and $startupScript -match 'REQUIRED_SCRIPT_MISSING' -and $startupScript -match 'GH_MISSING') -and @('backlog-reconciliation','failure-audit','fix-review','implement','intake','investigate','maintenance','plan','review' | ForEach-Object { (Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")) -match 'id: startup' } | Where-Object { -not $_ }).Count -eq 0)
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
@@ -365,6 +366,52 @@ if ($StaticOnly) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    # sync-issue-delivery: delivered issues close even though the PR merged into dev, not the default branch.
+    $closeState = Join-Path $tmp 'close-state.json'
+    $recent = [DateTime]::UtcNow.AddDays(-1).ToString('o'); $old = [DateTime]::UtcNow.AddDays(-60).ToString('o')
+    @{
+        prs = @(
+            @{ number = 10; url = 'https://example/pull/10'; title = 'Feature'; mergedAt = $recent; body = "Closes #1, fixes #2`nIntentionally not closed: #3`nResolves #4 and Closes #5`n``````text`nCloses #6`n```````n<!-- Closes #7 -->`nCloses #8" }
+            @{ number = 9; url = 'https://example/pull/9'; title = 'Old'; mergedAt = $old; body = 'Closes #9' }
+        )
+        issues = @{
+            '1' = @{ state = 'OPEN'; labels = @('factory:review', 'type:feature'); comments = @() }
+            '2' = @{ state = 'CLOSED'; labels = @(); comments = @() }
+            '4' = @{ state = 'OPEN'; labels = @('factory:tracking', 'factory:working'); comments = @() }
+            '5' = @{ state = 'OPEN'; labels = @('factory:ready'); comments = @('<!-- factory-closed-by-merge:5 -->') }
+            '8' = @{ state = 'OPEN'; labels = @('factory:done'); comments = @() }
+            '21' = @{ state = 'OPEN'; labels = @('factory:working', 'factory:interactive'); comments = @() }
+            '22' = @{ state = 'OPEN'; labels = @('factory:review'); comments = @() }
+            '23' = @{ state = 'OPEN'; labels = @('type:feature'); comments = @() }
+            '24' = @{ state = 'OPEN'; labels = @('factory:tracking', 'factory:working'); comments = @() }
+            '25' = @{ state = 'OPEN'; labels = @('factory:pr-open'); comments = @() }
+            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }        }
+        openPrs = @(
+            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25' }
+            @{ number = 21; url = 'https://example/pull/21'; title = 'Draft'; isDraft = $true; body = 'Closes #26' }
+        )
+        failClose = @()
+        calls = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content $closeState
+    $env:FAKE_CLOSE_STATE = $closeState
+    $closeOut = Join-Path $tmp 'close-output.json'
+    $closeRun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
+    $closeAfter = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
+    $closeResult = Get-Content -Raw $closeOut | ConvertFrom-Json
+    Assert 'merged-to-dev PR closes its referenced open issues and sets factory:done' ($closeRun.Code -eq 0 -and $closeAfter.issues['1'].state -eq 'CLOSED' -and $closeAfter.issues['1'].labels -contains 'factory:done' -and $closeAfter.issues['1'].labels -notcontains 'factory:review' -and $closeAfter.issues['8'].state -eq 'CLOSED')
+    Assert 'close step skips tracking epics, human-reopened issues, code/comment/non-closing references, and PRs past the lookback' ($closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['5'].state -eq 'OPEN' -and -not (@($closeAfter.calls) -match 'issue view (3|6|7|9) ') -and @($closeResult.closed.issue) -join ',' -eq '1,8')
+    Assert 'open non-draft PR moves pre-PR issues to factory:pr-open and never overwrites review, tracking, or draft-PR issues' ($closeAfter.issues['21'].labels -contains 'factory:pr-open' -and $closeAfter.issues['21'].labels -notcontains 'factory:working' -and $closeAfter.issues['21'].labels -contains 'factory:interactive' -and $closeAfter.issues['23'].labels -contains 'factory:pr-open' -and $closeAfter.issues['22'].labels -contains 'factory:review' -and $closeAfter.issues['22'].labels -notcontains 'factory:pr-open' -and $closeAfter.issues['24'].labels -contains 'factory:working' -and $closeAfter.issues['26'].labels -contains 'factory:working' -and @($closeResult.promoted.issue) -join ',' -eq '21,23' -and $closeAfter.labelsEnsured -contains 'factory:pr-open')
+    $closeRerun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
+    Assert 'close step is idempotent' ($closeRerun.Code -eq 0 -and @((Get-Content -Raw $closeOut | ConvertFrom-Json).closed).Count -eq 0)
+    $closeAfter.prs = @(@{ number = 11; url = 'https://example/pull/11'; title = 'Two'; mergedAt = $recent; body = 'Closes #11 and closes #12' })
+    $closeAfter.issues = @{ '11' = @{ state = 'OPEN'; labels = @('factory:review'); comments = @() }; '12' = @{ state = 'OPEN'; labels = @('factory:review'); comments = @() } }
+    $closeAfter.openPrs = @(); $closeAfter.failClose = @(11); $closeAfter.calls = @()
+    $closeAfter | ConvertTo-Json -Depth 8 | Set-Content $closeState
+    $closeFail = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
+    $closeFailResult = Get-Content -Raw $closeOut | ConvertFrom-Json
+    Assert 'one failed close is reported without stopping the remaining issues' ($closeFail.Code -eq 0 -and $closeFailResult.status -eq 'partial' -and @($closeFailResult.errors).Count -eq 1 -and @($closeFailResult.closed.issue) -contains 12)
+    Remove-Item Env:FAKE_CLOSE_STATE
+
     $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'
     Copy-Item (Join-Path $PSScriptRoot 'fixtures/generic-project') $backlogFeatureProject -Recurse
     $backlogFeatureConfig = Join-Path $backlogFeatureProject '.ai/factory/factory.config.yaml'

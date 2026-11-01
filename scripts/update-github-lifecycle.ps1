@@ -18,7 +18,7 @@ param(
     [Parameter(Mandatory)][ValidateSet(
         'factory:new','factory:needs-plan','factory:needs-help','factory:ready',
         'factory:working','factory:review','factory:changes-requested','factory:human-review',
-        'factory:blocked','factory:done','factory:investigate')][string]$State,
+        'factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open')][string]$State,
     [ValidateSet('type:bug','type:feature','type:refactor','type:test','type:docs','type:maintenance')][string]$Type,
     [ValidateSet('risk:low','risk:medium','risk:high')][string]$Risk,
     [ValidateSet('complexity:small','complexity:medium','complexity:large')][string]$Complexity,

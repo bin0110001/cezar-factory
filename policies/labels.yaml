@@ -11,11 +11,14 @@ factory-state:
   - factory:blocked
   - factory:done
   - factory:investigate
+  - factory:implemented
+  - factory:pr-open
 
 # Factory classification labels that do not participate in lifecycle routing
 factory-classification:
   - factory:auditing
   - factory:tracking
+  - factory:interactive
 
 # Work-type labels
 type:

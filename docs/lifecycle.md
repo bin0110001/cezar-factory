@@ -17,6 +17,9 @@ This document defines the state transitions for issues in the Cezar factory.
 - `factory:blocked` - Blocked by external dependencies.
 - `factory:done` - Work is complete.
 - `factory:investigate` - Repeated failure awaiting classification.
+- `factory:implemented` - Work is complete on a pushed branch and has no PR yet. Inert: no automation consumes it.
+- `factory:pr-open` - A non-draft PR into `dev` references the issue. Inert; the Factory review loop uses `factory:review` for the same stage.
+- `factory:interactive` - A non-lifecycle marker for work done in a local dev window. Stale-work sweeps skip it; it is not a state.
 
 ## Transitions
 
@@ -31,6 +34,9 @@ stateDiagram-v2
     factory:review --> factory:changes-requested
     factory:changes-requested --> factory:working
     factory:review --> factory:done
+    factory:working --> factory:implemented
+    factory:implemented --> factory:pr-open
+    factory:pr-open --> factory:done
     factory:human-review --> factory:needs-plan
     factory:blocked --> factory:working
     factory:working --> factory:investigate
@@ -59,6 +65,25 @@ stateDiagram-v2
 4. **Blocked work resumption**: When a blocker is removed, the issue returns to `factory:working`.
 5. **Conflicting state prevention**: An issue can only have one factory-state label at a time.
 
+## Where is my issue? (delivery stages)
+
+Every issue shows its stage by label, and the stage changes as the work moves. GitHub only closes
+a `Closes #N` issue when the PR merges into the *default* branch, and Factory PRs merge into
+`dev`, so the maintenance workflow does the closing.
+
+| Stage | Label | Who sets it |
+|---|---|---|
+| In progress | `factory:working` (+ `factory:interactive` in a dev window) | Implementation automation, or the person/agent starting the work |
+| Finished, pushed, no PR | `factory:implemented` | The person/agent finishing the work |
+| PR open | `factory:pr-open` (`factory:review` in the Factory review loop) | `sync-issue-delivery` step of `factory-maintenance` |
+| Merged to `dev` | closed, `factory:done`, comment naming the PR | `sync-issue-delivery` step of `factory-maintenance` |
+
+The sync step only promotes forward from pre-PR states. It never overwrites `factory:review`,
+`factory:changes-requested`, `factory:blocked`, `factory:human-review`,
+`factory:needs-help`, `factory:investigate`, or `factory:done`, never touches
+`factory:tracking` epics, ignores draft PRs, and leaves an issue open if a person reopened it
+after it was auto-closed. It runs hourly; a PR must reference its issue with a closing keyword
+(`Closes #N`) in its title or body.
 ## Complexity routing
 
 Planning assigns exactly one `complexity:*` label without changing lifecycle

@@ -5,9 +5,14 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts sync-issue-delivery.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
   # Independent deterministic housekeeping runs before the bounded classification
   # agent so an agent failure cannot suppress either maintenance task.
+  # GitHub only honours "Closes #N" on the default branch, and Factory PRs merge into dev, so this
+  # step is what reflects delivered work on the issue tracker.
+  - id: sync-issue-delivery
+    name: Show PR progress on issues and close those delivered by PRs merged into dev
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/sync-issue-delivery.ps1 -OutputPath .factory/sync-issue-delivery.json
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json

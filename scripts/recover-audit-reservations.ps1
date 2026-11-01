@@ -30,7 +30,7 @@ if (-not $ProjectId -and (Get-Location).Path -match '^(?<root>.+)[\\/]\.ai[\\/]c
 }
 $now = [DateTimeOffset]::UtcNow
 $cutoff = $now.AddMinutes(-$OlderThanMinutes)
-$lifecycle = @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate')
+$lifecycle = @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open')
 $reservationPrefix = '<!-- factory-audit-reservation:'
 
 function Invoke-Gh([string[]]$Arguments) {

@@ -6,7 +6,9 @@ Ensures a successful implementation PR contains a GitHub closing reference.
 .DESCRIPTION
 The implementation agent owns creating or updating the PR, but this workflow
 step owns the deterministic issue-linking invariant. GitHub closes the issue
-when the PR is merged into the repository's default branch.
+when the PR is merged into the repository's default branch. Factory PRs merge into
+`dev`, which is not the default branch, so the keyword alone does not close the issue:
+the factory-maintenance sync-issue-delivery step closes it after the merge.
 ##>
 [CmdletBinding()]
 param(
