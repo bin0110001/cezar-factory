@@ -138,6 +138,7 @@ Assert 'every workflow starts with shared startup preflight' (($startupScript -m
 $backlogWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/backlog-reconciliation.yaml')
 Assert 'backlog workflow owns snapshot and dry-run script calls' ($backlogWorkflow -match 'collect-backlog-snapshot\.ps1' -and $backlogWorkflow -match 'reconcile-backlog\.ps1 .* -DryRun' -and $backlogWorkflow -match 'BatchCap 1 -ProjectConcurrencyCap 1')
 Assert 'failure-audit startup preflights the workflow-owned publisher and GitHub CLI' ((Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'id: publish' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'publish-failure-audit\.ps1' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match '-RequireGh' -and (Get-Content -Raw (Join-Path $factory 'workflows/failure-audit.yaml')) -match 'publish-failure-audit\.ps1')
+Assert 'startup keeps its failure reason visible on stderr' ($startupScript -match 'Console]::Error.WriteLine' -and $startupScript -match 'GIT_WORKTREE_CONFIG_INVALID')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
 Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
@@ -365,6 +366,24 @@ if ($StaticOnly) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    # factory-startup names a stale shared core.worktree instead of failing with a bare path error.
+    $staleRepo = Join-Path $tmp 'stale-core-worktree'
+    New-Item -ItemType Directory $staleRepo | Out-Null
+    Push-Location $staleRepo
+    try {
+        & git init -q -b main; & git config user.email t@example.com; & git config user.name t
+        'x' | Set-Content seed.txt; & git add -A; & git commit -q -m seed
+        $taskWorktree = Join-Path $tmp 'stale-core-worktree-task'
+        & git worktree add -q -b task $taskWorktree
+        # Production shape: per-worktree config is enabled, the main worktree pins its own
+        # core.worktree, and a stray shared core.worktree names a directory that does not exist.
+        & git config extensions.worktreeConfig true; & git config --worktree core.worktree $staleRepo
+        & git config core.worktree (Join-Path $tmp 'does-not-exist')
+        Push-Location $taskWorktree
+        try { $staleStartup = Run 'factory-startup.ps1' @{ Workflow = 'factory-test'; Step = 'check'; OutputPath = (Join-Path $tmp 'stale-startup.json') } } finally { Pop-Location }
+    } finally { Pop-Location }
+    Assert 'startup reports a stale core.worktree with an actionable code and message' ($staleStartup.Code -eq 1 -and $staleStartup.Out -match 'GIT_WORKTREE_CONFIG_INVALID' -and $staleStartup.Out -match 'git config --local --unset core.worktree')
+
     $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'
     Copy-Item (Join-Path $PSScriptRoot 'fixtures/generic-project') $backlogFeatureProject -Recurse
     $backlogFeatureConfig = Join-Path $backlogFeatureProject '.ai/factory/factory.config.yaml'
