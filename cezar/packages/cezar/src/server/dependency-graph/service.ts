@@ -42,6 +42,7 @@ export class DependencyGraphService {
   private readonly env: NodeJS.ProcessEnv;
   private lastRepository?: GithubRepositoryKey;
   private inFlight?: Promise<DependencyGraphSyncResult>;
+  private lastFailureAt?: number;
   private decisionRankCache?: { key: string; value: ReturnType<typeof computeDecisionRanking> };
   private analysisCache?: { key: string; value: { snapshot: DependencyGraphSnapshot; readiness: ReturnType<typeof computeReadiness>; cycles: ReturnType<typeof diagnoseBlockingCycles>; health: ReturnType<typeof dependencyGraphHealth> } };
 
@@ -170,6 +171,23 @@ export class DependencyGraphService {
       })),
       truncated: index.length < current.revision,
     };
+  }
+
+  /**
+   * Bring the projection up to date when it is older than `maxAgeMs` or not fresh. Shares the
+   * single in-flight sync, and after a failed attempt waits `failureCooldownMs` before touching
+   * GitHub again so an outage cannot turn every scheduler check into a request.
+   */
+  async refreshIfNeeded(options: { maxAgeMs: number; failureCooldownMs?: number }): Promise<DependencyGraphSyncResult | undefined> {
+    if (this.inFlight) return this.inFlight;
+    const repository = await this.repositoryKey();
+    const snapshot = this.read(repository);
+    const lastSuccess = snapshot.source.lastSuccessfulSyncAt ? Date.parse(snapshot.source.lastSuccessfulSyncAt) : 0;
+    if (snapshot.source.status === 'fresh' && lastSuccess > 0 && Date.now() - lastSuccess < options.maxAgeMs) return undefined;
+    if (this.lastFailureAt !== undefined && Date.now() - this.lastFailureAt < (options.failureCooldownMs ?? 60_000)) return undefined;
+    const result = await this.sync();
+    this.lastFailureAt = result.status === 'fresh' ? undefined : Date.now();
+    return result;
   }
 
   sync(): Promise<DependencyGraphSyncResult> {

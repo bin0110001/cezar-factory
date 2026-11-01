@@ -135,3 +135,28 @@ describe('dependency graph sync coordinator', () => {
     service.close();
   });
 });
+
+describe('refreshIfNeeded', () => {
+  it('syncs an unsynced graph once, skips a young fresh one, and backs off after a failure', async () => {
+    const store = new MemoryStore();
+    let calls = 0;
+    let failing = false;
+    const service = new DependencyGraphService('C:/repo', {
+      store,
+      gitRunner: async () => 'https://github.com/acme/work.git',
+      ghRunner: async () => { calls += 1; if (failing) throw new Error('offline'); return pageJson(); },
+      env: {},
+    });
+    expect(await service.refreshIfNeeded({ maxAgeMs: 60_000 })).toMatchObject({ status: 'fresh' });
+    expect(calls).toBe(1);
+    store.snapshot = { ...store.snapshot, source: { ...store.snapshot.source, lastSuccessfulSyncAt: new Date().toISOString() } };
+    expect(await service.refreshIfNeeded({ maxAgeMs: 60_000 })).toBeUndefined();
+    expect(calls).toBe(1);
+    failing = true;
+    store.snapshot = { ...store.snapshot, source: { ...store.snapshot.source, lastSuccessfulSyncAt: '2020-01-01T00:00:00.000Z' } };
+    expect(await service.refreshIfNeeded({ maxAgeMs: 60_000 })).toMatchObject({ status: 'stale' });
+    expect(await service.refreshIfNeeded({ maxAgeMs: 60_000 })).toBeUndefined();
+    expect(calls).toBe(2);
+    service.close();
+  });
+});
