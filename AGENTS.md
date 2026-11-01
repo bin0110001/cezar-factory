@@ -52,6 +52,17 @@ fast-forwards `origin/stable`); the Bazzite host's `factory-autodeploy` timer fa
 mounted checkout to `stable` and reconciles automations. Never promote or deploy an untested
 commit, and never edit the Bazzite checkout by hand.
 
+Exception for a broken server: when the Factory server is broken (failed autodeploy, failing
+workflow startup, unreachable service) and the fix must be applied on the host, an agent running
+from a developer console may change host files and the Cezar container's runtime state directly,
+instead of waiting for a promotion. Keep the repair minimal and reversible: inspect first, record
+the previous value of anything changed, prefer the least destructive option (for example an
+.git/info/exclude entry over deleting a file), never print or commit credentials, verify the
+repair by re-running the failing step, and report exactly what was changed. Then land the durable
+fix in the repository through the normal PR flow so the host does not stay a special case. This
+exception applies only to repairing the broken server from a developer console, never to routine
+deployment, and not to Factory-managed runs.
+
 The legacy per-project release pipeline is remote-only Cezar synchronization: read
 `apiUrl` and `projectId` from `config/factory-projects.json` and synchronize
 the Factory checkout's automation definitions directly to each Cezar project.

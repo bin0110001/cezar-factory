@@ -29,3 +29,6 @@ integrations/bazzite/prometheus-model-targets.generated.json
 
 
 connections/**/*
+
+# Host-local project registry (copy config/factory-projects.json.example); never committed.
+/config/factory-projects.json
