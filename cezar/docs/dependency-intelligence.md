@@ -40,6 +40,30 @@ Fresh scheduled scans can persist deterministic decision candidates as `agent-pr
 
 Low-risk metadata correction is limited to the owner and evidence fields of an open `policy-approved-low-risk` decision proposal. The request must carry the current graph revision, decision revision, SHA-256 of the current decision, and an audit rationale. A rollback names a prior immutable graph revision and only restores those same metadata fields. Structural edits, authorization changes, and lifecycle changes stay on the human approval path. Scheduler issue events require a fresh graph and verified readiness both before admission and immediately before run creation; deferred receipts replay after later polls, and a local operator can override a deferred event with a reason and graph revision recorded in the automation log.
 
+## Delivery status
+
+Epic #145 is tracked here, not closed: four child issues have acceptance criteria that are not yet met. Delivered children close when the PR that references them merges into `dev` (the `factory-maintenance` delivery sync does this, because GitHub only closes issues on merges to the default branch).
+
+| Issue | Delivered by | Evidence |
+|---|---|---|
+| #146 contracts, #147 sync/projection, #148 query API | #173, #183 | `packages/contract/src/dependency-graph.ts`, `github-source.ts`, `store.ts`; closed by the delivery sync |
+| #149 readiness, SCC, loop diagnosis | #173 | `algorithms.ts` and `algorithms.test.ts` (multi-node loops, long acyclic chain, uncertain edges, no model in detection) |
+| #150 impact scoring and bundles | #173 | `rankDecisions`, tests for immediate-unlock-over-reach and bounded bundle search |
+| #151 graph explorer | #173 | `dependency-graph-canvas.tsx` (keyboard-operable, ARIA labels, at most 200 nodes / 800 edges per page), 5,000-node fixture test |
+| #152 decision lifecycle and queue | #173 | transition graph in the contract, revision compare-and-swap, operator-only approvals, UI queue |
+| #153 health overview | #173 | `dependencyGraphHealth`, stale/offline reported as unknown, never as ready |
+| #154 decision discovery | #173 | `discovery.ts`, dedupe tests, no invented blocking edge |
+| #156 cycle repair planner | #173 | `repair-planner.ts`, contract-first decomposition, verified edges never dropped |
+| #157 bounded replanning dispatch | #173 | `cycle-agent.ts`, attempt budgets and cooldown persisted in SQLite, non-recursive dispatch |
+| #159 scheduler admission | #173, #185 | fail-closed admission, deferral replay, on-demand graph refresh. One clause, "end-to-end events visible in #135", depends on #135, which is not built; deferrals are visible in the automation log meanwhile |
+
+Still open, with the reason:
+
+- **#155** discovery research dispatch: the "degraded mode when the model is unavailable" criterion has no test or code that demonstrates it.
+- **#158** repair approval, application and rollback: only low-risk metadata correction and its rollback exist. Structural repairs are review-only, the planner marks rollback as not required, and nothing applies a patch, so "an approved repair removes the target SCC and can be reversed" is unmet.
+- **#160** simulator: simulation exists, but critical-path analysis is reported unavailable until duration estimates exist.
+- **#161** history and pilot: weekly trends and snapshot diffs exist, but the full integration pilot has not been run.
+
 ## Delivery sequence
 
 The implementation follows epic #145: contracts, local projection and reconciliation, bounded query API, deterministic readiness/SCC and impact ranking, graph and decision views, bounded discovery and replanning, guarded scheduler admission, then simulation and audit history. No GitHub Actions compute, generic agent framework, or required Hindsight/Langfuse service is introduced.
