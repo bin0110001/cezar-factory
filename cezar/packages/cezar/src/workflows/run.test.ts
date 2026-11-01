@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '../core/agent-runner.ts';
@@ -1876,7 +1877,8 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
       task: 'hanging session',
       steps: [{ id: 'task', name: 'Task', kind: 'agent' }],
     });
-    const fixture = join(process.cwd(), 'packages/cezar/src/core/__fixtures__/claude/stub-ignores-eof-and-sigterm.mjs');
+    // Resolved from this file, not process.cwd(): CI starts vitest in packages/cezar, not cezar/.
+    const fixture = fileURLToPath(new URL('../core/__fixtures__/claude/stub-ignores-eof-and-sigterm.mjs', import.meta.url));
     let sawText: () => void = () => undefined;
     const textSeen = new Promise<void>((resolve) => { sawText = resolve; });
     const session = new ClaudeCliRunner({ bin: fixture, timeoutMs: 0 }).startSession(
