@@ -15,7 +15,13 @@ it does not inspect that automation's worktree or create replacement tasks.
 `tests/run-tests.ps1` enforces the script rule.
 
 For coding sessions outside a verified Factory workflow, use the
-`factory-workspace` skill and `cez workspace` CLI to claim or adopt local work.
+`factory-workspace` skill. In a local interactive dev window, when the user
+directs work in the current checkout, a `cez workspace` claim/adoption and
+host-local registry access are not required. First verify that this is not a
+Factory-managed run, inspect the current branch and worktree, and preserve all
+unrelated changes; stage only files for the requested issue. If the session is
+running on the Cezar runner, or its execution context is unclear, use the
+`cez workspace` CLI to claim or adopt local work as described by the skill.
 The Cezar scheduler verifies Factory run identity and fencing data before
 setting `FACTORY_MANAGED=1`; a marker by itself is never trusted. Do not add
 Factory scripts to agent-facing skill instructions.
