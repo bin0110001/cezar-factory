@@ -1,5 +1,21 @@
 {
-  "considered": [],
-  "changed": [],
+  "considered": [178, 179, 180],
+  "changed": [
+    {
+      "issue": 178,
+      "added": ["factory:new", "type:maintenance", "risk:medium"],
+      "reason": "spec-first doc workflow defines process for high-risk changes"
+    },
+    {
+      "issue": 179,
+      "added": ["factory:new", "type:maintenance", "risk:medium"],
+      "reason": "drift detection automation keeps docs current via incremental updates"
+    },
+    {
+      "issue": 180,
+      "added": ["factory:new", "type:feature", "risk:medium"],
+      "reason": "Knowledge status UI exposes doc health, approval, and drift evidence"
+    }
+  ],
   "skipped": []
 }
