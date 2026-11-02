@@ -912,7 +912,30 @@ export async function getDependencyDecisionRanking(limit = 20, opts?: ReadOption
     param: { projectId: queryScope() }, query: { limit: String(limit) },
   }, init(opts)), '/dependency-graph/decision-ranking');
 }
-export type DependencySimulationResult = { revision: number; persisted: false; freshness: string; before: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>; after: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>; hypotheticalCompletions: string[]; hypotheticalDecisionOutcomes: string[]; criticalPath: { status: 'unavailable'; reason: string }; cyclesBefore: string[][]; cyclesAfter: string[][]; truncatedCycles: boolean }
+export type DependencySimulationResult = {
+  repository: string;
+  revision: number;
+  persisted: false;
+  freshness: string;
+  scenario: { addEdges: DependencyGraphEdge[]; removeEdgeIds: string[]; completeNodeIds: string[]; resolveDecisionIds: string[] };
+  before: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>;
+  after: Array<{ nodeId: string; readiness: string; blockers: string[]; unknownBlockers: string[] }>;
+  summary: {
+    before: { totalOpenIssues: number; ready: number; blocked: number; unknown: number; cycleCount: number };
+    after: { totalOpenIssues: number; ready: number; blocked: number; unknown: number; cycleCount: number };
+    changes: { ready: number; blocked: number; unknown: number; cycles: number };
+    changedReadiness: Array<{ nodeId: string; before: string; after: string }>;
+    addedCycles: string[][];
+    removedCycles: string[][];
+    truncatedDetails: boolean;
+  };
+  hypotheticalCompletions: string[];
+  hypotheticalDecisionOutcomes: string[];
+  criticalPath: { status: 'unavailable'; reason: string };
+  cyclesBefore: string[][];
+  cyclesAfter: string[][];
+  truncatedCycles: boolean;
+}
 export async function simulateDependencyGraph(input: { expectedRevision: number; addEdges?: DependencyGraphEdge[]; removeEdgeIds?: string[]; completeNodeIds?: string[]; resolveDecisionIds?: string[] }): Promise<DependencySimulationResult> {
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].simulate.$post({
     param: { projectId: queryScope() }, json: { ...input, addEdges: input.addEdges ?? [], removeEdgeIds: input.removeEdgeIds ?? [], completeNodeIds: input.completeNodeIds ?? [], resolveDecisionIds: input.resolveDecisionIds ?? [] },
