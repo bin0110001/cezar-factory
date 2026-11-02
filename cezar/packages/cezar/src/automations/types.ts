@@ -35,6 +35,8 @@ export const automationFiltersSchema = z
     lookbackDays: z.number().int().min(1).max(90).default(7),
     maxRecords: z.number().int().min(1).max(100).default(25),
     /** Issue events only: new launches admitted per scheduler turn. Admissible candidates beyond it stay durably deferred (never dropped) and are admitted, highest `priority:<n>` first, on later turns. Omitted = unbounded. */
+    /** issue.labeled only: every this-many hours the poll also lists OPEN issues that still carry a changed label and recovers any whose labeling event the cursor never delivered (missed or skipped page). Already-received events are deduplicated by receipt. Omitted = never. */
+    fullReconcileHours: z.number().int().min(1).max(720).optional(),
     maxAdmissionsPerCycle: z.number().int().min(1).max(100).optional(),
     /** Tracker kind only: the vendor workflow status a matching item must currently be in
      *  (e.g. "To Do"). Case-insensitive match against the item's own `status` field. */
@@ -187,6 +189,9 @@ export const automationRuntimeStateSchema = z
     etags: z.record(z.string(), z.string()).optional(),
     backoffUntil: z.string().datetime().optional(),
     consecutiveFailures: z.number().int().nonnegative().optional(),
+    /** Last completed full reconciliation and how many never-received events it recovered. */
+    lastReconcileAt: z.string().datetime().optional(),
+    lastReconcileRecovered: z.number().int().nonnegative().optional(),
   })
   .passthrough();
 

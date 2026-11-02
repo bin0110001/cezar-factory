@@ -88,6 +88,33 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.latestReceipt(definition.id, 'low')?.status).toBe('launched');
   });
 
+  it('recovers a labeling the cursor missed through full reconciliation, once per interval', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24 } } satisfies GithubAutomationDefinition;
+    const missed = { ...candidate, eventId: 'missed', event: 'issue.labeled' as const, nodeId: 'I9', number: 9, labels: ['factory:new'], changedLabel: 'factory:new' };
+    const reconcileLabeled = vi.fn(async () => ({ candidates: [missed], truncated: false }));
+    const launch = vi.fn(async () => ({ runId: 'run-missed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:9', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, 'missed')?.status).toBe('launched');
+    expect(store.state(definition.id)).toMatchObject({ lastReconcileRecovered: 1 });
+    await scheduler.check(labeled);
+    expect(reconcileLabeled).toHaveBeenCalledTimes(1);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not relaunch an already-received event during full reconciliation', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 1 } } satisfies GithubAutomationDefinition;
+    const seen = { ...candidate, eventId: 'seen', event: 'issue.labeled' as const, labels: ['factory:new'], changedLabel: 'factory:new' };
+    const launch = vi.fn(async () => ({ runId: 'run-seen' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [seen], truncated: false, pages: 1 }), reconcileLabeled: async () => ({ candidates: [seen], truncated: false }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.state(definition.id)).toMatchObject({ lastReconcileRecovered: 0 });
+  });
+
   it('deduplicates review-request bursts that straddle two polls', async () => {
     const { store, definition } = await setup();
     const reviewDefinition = {

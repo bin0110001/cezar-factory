@@ -281,6 +281,39 @@ export class GithubPoller {
   }
 
   /**
+   * Full reconciliation for `issue.labeled` automations: the OPEN issues that currently carry a
+   * watched label, each as the candidate for the labeling that applied it. Ignores the cursor, so
+   * it repairs events a cursor or search page never delivered. The event ids are the ones the
+   * normal poll mints, so the receipt store deduplicates anything already received.
+   */
+  async reconcileLabeled(
+    owner: string,
+    repo: string,
+    definition: GithubAutomationDefinition,
+  ): Promise<{ candidates: GithubCandidate[]; truncated: boolean }> {
+    if (!definition.events.includes('issue.labeled')) return { candidates: [], truncated: false };
+    const maxRecords = Math.min(definition.filters.maxRecords, HARD_CANDIDATE_CAP);
+    const expectedRepoUrl = `https://api.github.com/repos/${owner}/${repo}`.toLowerCase();
+    const candidates: GithubCandidate[] = [];
+    let truncated = false;
+    for (const label of definition.filters.changedLabels ?? []) {
+      const query = [`repo:${owner}/${repo}`, 'is:issue', 'is:open', `label:${JSON.stringify(label)}`].join(' ');
+      const raw = await this.run('gh', ['api', '--method', 'GET', '/search/issues',
+        '-f', `q=${query}`, '-f', `per_page=${maxRecords}`, '-f', 'sort=updated', '-f', 'order=asc']);
+      const response = searchResponseSchema.parse(JSON.parse(raw));
+      truncated ||= response.items.length >= maxRecords;
+      for (const item of response.items) {
+        if (item.pull_request || item.repository_url.toLowerCase() !== expectedRepoUrl) continue;
+        const events = reconstructLabelEvents(owner, repo, item, await this.timeline(owner, repo, item.number));
+        const latest = events.filter(event => event.event === 'issue.labeled'
+          && event.changedLabel?.toLowerCase() === label.toLowerCase()).at(-1);
+        if (latest && matchesFilters(latest, definition)) candidates.push(latest);
+      }
+    }
+    return { candidates, truncated };
+  }
+
+  /**
    * The timeline of one issue or PR, NEWEST rows guaranteed present.
    *
    * GitHub returns this endpoint ASCENDING, so page 1 is the oldest hundred rows — and a poll
