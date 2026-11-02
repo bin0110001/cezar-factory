@@ -1,11 +1,22 @@
 {
-  "generatedAt": "2026-10-30T18:20:16.1244019+00:00",
-  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/74781d6b-e308-4640-a2e6-fb8c1c436975",
-  "outputPath": "/projects/cezar-factory/.ai/cezar/worktrees/74781d6b-e308-4640-a2e6-fb8c1c436975/.factory/backlog-label-audit-input.json",
+  "generatedAt": "2026-11-02T14:00:58.4371434+00:00",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/97d72197-2ec1-4af7-96de-96f91ac8952a",
+  "outputPath": "/projects/cezar-factory/.ai/cezar/worktrees/97d72197-2ec1-4af7-96de-96f91ac8952a/.factory/backlog-label-audit-input.json",
   "limit": 3,
   "candidates": [],
   "resolved": [],
   "staged": [],
+  "classificationMetrics": {
+    "eligibleIssues": 0,
+    "deterministicRuleHits": 0,
+    "ambiguousIssues": 0,
+    "ambiguousIssuesSelectedForReview": 0,
+    "ruleHits": {
+      "legacy_blocked_marker": 0,
+      "legacy_decomposition_marker": 0,
+      "legacy_type_marker": 0
+    }
+  },
   "unreviewedAmbiguousCount": 0,
   "terminalReason": "no-unmarked-open-issues"
 }

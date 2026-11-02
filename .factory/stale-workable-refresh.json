@@ -1,0 +1,324 @@
+{
+  "generatedAt": "2026-11-02T14:00:53.8272897+00:00",
+  "cutoff": "2026-11-01T14:00:45.2623619+00:00",
+  "olderThanHours": 24,
+  "limit": 2,
+  "dryRun": false,
+  "considered": 92,
+  "eligible": 25,
+  "refreshed": [
+    {
+      "issue": 52,
+      "title": "Build stable verification finding ledger and recurrence episodes",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/52",
+      "state": "factory:investigate",
+      "createdAt": "10/23/2026 14:03:22",
+      "ageHours": 240.0,
+      "labels": [
+        "risk:medium",
+        "factory:investigate",
+        "type:refactor",
+        "complexity:large"
+      ],
+      "action": "refreshed"
+    },
+    {
+      "issue": 66,
+      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
+      "state": "factory:needs-plan",
+      "createdAt": "10/23/2026 20:58:12",
+      "ageHours": 233.0,
+      "labels": [
+        "type:maintenance",
+        "risk:medium",
+        "factory:needs-plan"
+      ],
+      "action": "refreshed"
+    }
+  ],
+  "excluded": [
+    {
+      "issue": 182,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 181,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 180,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 179,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 178,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 177,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 174,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 172,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 171,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 170,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 169,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 168,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 167,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 166,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 165,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 164,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 145,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 137,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 136,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 135,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 134,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 133,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 132,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 131,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 130,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 127,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 126,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 125,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 116,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 107,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 105,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 93,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 92,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 91,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 89,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 73,
+      "state": "factory:investigate",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 72,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 71,
+      "state": "factory:needs-plan",
+      "reason": "audit-or-tracking-marker"
+    },
+    {
+      "issue": 65,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 64,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 61,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 60,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 55,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 51,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 47,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 39,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 37,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 29,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 28,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 26,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 25,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 21,
+      "state": "factory:human-review",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 20,
+      "state": "factory:human-review",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 19,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 17,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 1,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    }
+  ],
+  "failures": [],
+  "terminalReason": "refreshed-bounded-batch"
+}

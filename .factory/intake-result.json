@@ -1,0 +1,8 @@
+{
+  "noWork": false,
+  "issue": 129,
+  "type": "type:maintenance",
+  "risk": "risk:medium",
+  "summary": "Deploy self-hosted Langfuse for coding-agent tracing and evaluation",
+  "unresolvedQuestions": ""
+}
