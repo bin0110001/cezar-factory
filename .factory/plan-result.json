@@ -1,0 +1,30 @@
+{
+  "issue": 165,
+  "objective": "Evaluate a secure, reversible Obot MCP gateway deployment on the Factory Podman control plane and make an evidence-backed go/no-go decision before production integration.",
+  "acceptanceCriteria": [
+    "Given the pinned supported Obot image and configured control-plane topology, when an operator runs the documented local deploy and validation flow, then an isolated container exposes a healthy MCP endpoint without changing model-gateway configuration.",
+    "Given a clean isolated sandbox with the intended agent transport, when it authenticates, then it can discover and invoke one authorized read-only GitHub MCP tool; failed authentication and broker outage provide actionable diagnostics.",
+    "Given the POC deployment, when backup, restore, upgrade, rollback, and teardown are followed, then persistent data is recoverable and all resources can be removed without touching unrelated services.",
+    "Given the OAuth/MCP scopes and tool exposure, when the security review is completed, then allowed and denied capabilities and redacted logging behavior are documented with evidence.",
+    "Given measured resource use and demonstrated behavior against the listed alternatives, when the evaluation report is reviewed, then it records the go/no-go decision and explicitly prevents production rollout before that decision."
+  ],
+  "nonGoals": [
+    "Migrate the model gateway or change LiteLLM/vLLM deployment.",
+    "Enable write-capable GitHub tools or broad project access.",
+    "Roll out Obot to production agent workflows before a documented go decision.",
+    "Add compute-running GitHub Actions; deployment, validation, and teardown remain operator-run local flows."
+  ],
+  "risks": "The gateway handles agent credentials and exposes remote tools, so scope leakage or unintended executable tools have meaningful security impact. Keep GitHub read-only, isolate the sandbox, store credentials only in host-local secret facilities, redact logs, test failure cases, and require a documented go/no-go before integration. Pin the image version and provide rollback/teardown.",
+  "dependencies": "No blocking issue dependency is specified. Use the existing control-plane inventory in config/server-topology.env and follow integrations/deployment/README.md and integrations/bazzite/README.md. Related context: #60 and #128.",
+  "suggestedWorkBreakdown": "Inspect and pin an Obot release and license; define the isolated compose/service and host-local secret inputs; implement local deploy, validation, backup/restore, rollback, and teardown instructions; test read-only GitHub access and failure diagnostics in a clean sandbox; review OAuth scopes, logging, and exposed tools; measure resource footprint and compare alternatives; publish evidence and go/no-go recommendation.",
+  "requiredProjectSkills": [
+    "factory-implement"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "banksQueried": [],
+    "memoryCount": 0
+  }
+}

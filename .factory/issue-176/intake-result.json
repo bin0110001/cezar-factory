@@ -1,0 +1,7 @@
+{
+  "issue": 176,
+  "type": "type:refactor",
+  "risk": "risk:medium",
+  "summary": "Define a versioned, tool-neutral documentation state contract and deterministic spec-first/code-first routing. Assume Git is the initial source for authored contracts and examples; external indexes may be adapters later. Keep proposed statements explicitly speculative and require evidence and review before promotion.",
+  "unresolvedQuestions": ""
+}

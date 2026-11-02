@@ -1,0 +1,30 @@
+{
+  "issue": 176,
+  "objective": "Publish a versioned contract that separates proposed requirements from verified implementation facts and deterministically routes changes through spec-first or code-first handling.",
+  "acceptanceCriteria": [
+    "Given a valid document state, when it is validated, then kind, state transitions, ownership, repository/revision provenance, source anchors, verifier, timestamp, tool version, sensitivity, and freshness conform to the published JSON schema.",
+    "Given invalid transitions, stale observed SHAs, or speculative text without an explicit marker, when fixtures are validated, then they are rejected and proposed content is never promoted automatically.",
+    "Given at least 12 representative change scenarios, when routing is evaluated, then each has an expected spec-first or code-first classification and a documented human override path.",
+    "Given concurrent branches, missing or stale evidence, generated/vendor/secret/licensed content, and opt-in/out configuration, when the policy is applied, then conflict, exclusion, and fail-open behavior are explicit; approved contract and security gates remain enforceable.",
+    "Given the published source-of-truth table, when GitHub issue, actual code, approved spec, Hindsight, and generated wiki disagree, then ownership and precedence are unambiguous.",
+    "Given schema fixtures and migration examples, when maintainers validate the contract, then current-version and migration behavior are reproducible without a redundant event ledger or global run lock."
+  ],
+  "nonGoals": [
+    "Implement the spec workflow, reconciliation engine, or UI; those are downstream issues.",
+    "Build or select an external index service; treat Git-versioned contract documents and schema as the initial source, with an adapter path documented.",
+    "Reimplement dependency, reproducibility, acceptance, or memory systems covered by #126, #130, #132, #134, and #146."
+  ],
+  "risks": "The contract affects cross-project routing and provenance semantics. Mitigate with a versioned schema, explicit migration examples, fixture coverage for stale SHAs and invalid transitions, opt-in defaults, and no automatic promotion of proposals. The initial Git storage assumption is reversible.",
+  "dependencies": "Epic #174; parallel foundation #175 is closed. Align contract interfaces with #126, #130, #132, #134, and #146; no blocking dependency remains for defining the document and schema.",
+  "suggestedWorkBreakdown": "Inspect adjacent issue contracts; write the concise normative contract and source-of-truth table; publish schema plus valid/invalid transition and stale-SHA fixtures; add at least 12 classification scenarios and override rules; document privacy exclusions, per-project modes, conflict/freshness policy, and migration/retention; review against downstream issue interfaces.",
+  "requiredProjectSkills": [
+    "factory-implement"
+  ],
+  "unresolvedQuestions": "",
+  "complexity": "complexity:medium",
+  "readyNotReadyStatus": "ready",
+  "memoryRecall": {
+    "banksQueried": [],
+    "memoryCount": 0
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "issue": 165,
+  "type": "type:feature",
+  "risk": "risk:medium",
+  "summary": "Run a bounded, reversible Obot MCP gateway proof of concept on the configured Factory control plane. Use the existing topology inventory, host-local secrets, and read-only GitHub scope; record evidence and an explicit go/no-go before any production integration.",
+  "unresolvedQuestions": ""
+}
