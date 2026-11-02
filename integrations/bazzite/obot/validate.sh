@@ -19,6 +19,15 @@ ip -o -4 addr show | awk '{split($4, item, "/"); print item[1]}' | grep -Fxq "${
 podman_bin=(podman)
 container="cezar-factory-obot-poc"
 proxy_container="cezar-factory-obot-poc-https"
+runtime_socket="/run/obot-runtime-api/podman.sock"
+runtime_url="unix://$runtime_socket"
+
+systemctl is-active --quiet cezar-factory-obot-runtime.socket || { echo "Obot validation failed: dedicated rootless runtime socket unit is inactive; run setup-runtime.sh" >&2; exit 1; }
+[[ -S "$runtime_socket" ]] || { echo "Obot validation failed: dedicated rootless runtime socket is missing" >&2; exit 1; }
+[[ "$(stat -c '%U:%G %a' "$runtime_socket")" == "$(id -un):$(id -gn) 660" ]] || { echo "Obot validation failed: runtime API socket permissions are broader or owned by another operator" >&2; exit 1; }
+runtime_rootless="$("${podman_bin[@]}" --remote --url "$runtime_url" info --format '{{.Host.Security.Rootless}}' 2>/dev/null || true)"
+runtime_graphroot="$("${podman_bin[@]}" --remote --url "$runtime_url" info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
+[[ "$runtime_rootless" == true && -n "$runtime_graphroot" ]] || { echo "Obot validation failed: isolated rootless Podman API is unavailable" >&2; exit 1; }
 
 state="$("${podman_bin[@]}" inspect --format '{{.State.Status}}' "$container" 2>/dev/null || true)"
 [[ "$state" == running ]] || { echo "Obot validation failed: container state is ${state:-missing}; inspect local logs after removing sensitive payloads." >&2; exit 1; }
@@ -48,6 +57,12 @@ graphroot_real="$(realpath "$graphroot")"
   echo "Obot validation failed: Podman graphroot is not on required secondary storage ($graphroot)" >&2
   exit 1
 }
+runtime_graphroot_real="$(realpath "$runtime_graphroot")"
+runtime_root="$(realpath /var/mnt/podman/obot-runtime)"
+[[ "$runtime_graphroot_real" == "$runtime_root"/* && "$(findmnt -n -o TARGET -T "$runtime_graphroot")" == "$expected_mount" && "$runtime_graphroot_real" != "$graphroot_real" ]] || {
+  echo "Obot validation failed: isolated MCP runtime graphroot is not separate on secondary storage ($runtime_graphroot)" >&2
+  exit 1
+}
 [[ "$(realpath "$volume_path")" == "$(realpath "${OBOT_REQUIRED_PODMAN_STORAGE_MOUNT:-/var/mnt/podman}")"/* && "$volume_mount" == "$expected_mount" ]] || {
   echo "Obot validation failed: data volume is not on required secondary storage ($volume_path on $volume_mount)" >&2
   exit 1
@@ -63,14 +78,14 @@ proxy_config_mount="$(findmnt -n -o TARGET -T "$proxy_config_path")"
   exit 1
 }
 
-mounts="$("${podman_bin[@]}" inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$container")"
-[[ "$mounts" != *"/run/podman/podman.sock"* && "$mounts" != *"/var/run/docker.sock"* ]] || { echo "Obot validation failed: container-runtime socket is mounted" >&2; exit 1; }
+runtime_mount="$("${podman_bin[@]}" inspect --format '{{range .Mounts}}{{if eq .Destination "/var/run/docker.sock"}}{{.Source}}:rw={{.RW}}{{end}}{{end}}' "$container")"
+[[ "$runtime_mount" == "$runtime_socket:rw=false" ]] || { echo "Obot validation failed: Obot is not using the read-only dedicated runtime socket ($runtime_mount)" >&2; exit 1; }
 proxy_mounts="$("${podman_bin[@]}" inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$proxy_container")"
-[[ "$proxy_mounts" != *"/run/podman/podman.sock"* && "$proxy_mounts" != *"/var/run/docker.sock"* ]] || { echo "Obot validation failed: HTTPS proxy has a container-runtime socket mounted" >&2; exit 1; }
+[[ "$proxy_mounts" != *"$runtime_socket"* && "$proxy_mounts" != *"/run/podman/podman.sock"* && "$proxy_mounts" != *"/var/run/docker.sock"* ]] || { echo "Obot validation failed: HTTPS proxy has a container-runtime socket mounted" >&2; exit 1; }
 bound_ports="$("${podman_bin[@]}" inspect --format '{{json .HostConfig.PortBindings}}' "$container")"
 [[ "$bound_ports" == *'127.0.0.1'* ]] || { echo "Obot validation failed: listener is not loopback-only ($bound_ports)" >&2; exit 1; }
 proxy_listener="$(ss -H -ltn "sport = :${OBOT_HTTPS_PORT:-8443}")"
 proxy_listener_address="$(printf '%s\n' "$proxy_listener" | awk 'NF {print $4}' | sort -u)"
 [[ "$proxy_listener_address" == "${OBOT_BIND_ADDRESS:-}:${OBOT_HTTPS_PORT:-8443}" ]] || { echo "Obot validation failed: HTTPS listener address is ${proxy_listener_address:-missing}; expected ${OBOT_BIND_ADDRESS:-}:${OBOT_HTTPS_PORT:-8443}" >&2; exit 1; }
 
-echo "Obot POC healthy (local HTTP $code; CA-verified HTTPS $public_code), app and proxy data on secondary storage, HTTPS bound to ${OBOT_BIND_ADDRESS}:${OBOT_HTTPS_PORT}, app listener loopback-only, no container-runtime socket."
+echo "Obot POC healthy (local HTTP $code; CA-verified HTTPS $public_code), app/proxy/runtime storage on secondary disk, HTTPS bound to ${OBOT_BIND_ADDRESS}:${OBOT_HTTPS_PORT}, app listener loopback-only, dedicated rootless runtime isolated from Factory Podman."

@@ -3,8 +3,11 @@
 This is a standalone, reversible Obot evaluation service. It does not change
 the Cezar, LiteLLM, vLLM, or main Bazzite Compose stacks. It runs Obot and a
 pinned Caddy TLS reverse proxy. Obot uses its built-in PostgreSQL and file
-storage. No Podman or Docker socket is mounted, so Obot cannot launch sibling
-containers. The GitHub MCP server is configured as a remote service.
+storage. Its Docker-compatible runtime API belongs to a separate unprivileged
+`obot-runtime` account with a dedicated graphroot on `/var/mnt/podman`. The
+default Factory Podman engine and its container graphroot are inaccessible to
+that account. Only the Obot container receives the runtime socket; Caddy does
+not. The GitHub MCP server is configured as a remote service.
 
 The Obot image is pinned to v0.27.0 by immutable registry digest. The Caddy
 image is also pinned by version and digest. Review the official [Obot release
@@ -17,9 +20,26 @@ Run these operator steps from the Factory checkout on the Bazzite control-plane
 host. The deployment script reads `config/server-topology.env` and refuses to
 run unless `obot` and `obot-https` are explicitly listed under
 `FACTORY_CONTROL_PLANE_SERVICES`. It checks that Podman's active graphroot and
-all Obot/Caddy data volumes are on the required secondary mount
-`/var/mnt/podman`, so a future storage change cannot silently put them on the
-primary drive.
+all Obot/Caddy data volumes and the separate runtime graphroot are on the
+required secondary mount `/var/mnt/podman`, so a future storage change cannot
+silently put them on the primary drive. The runtime service uses rootless
+Podman's Docker-compatible API, but it does not use the host's default Podman
+socket. Its systemd sandbox makes the existing Factory graphroot inaccessible.
+
+Provision the dedicated runtime account once, from this checkout on Bazzite:
+
+```bash
+sudo integrations/bazzite/obot/setup-runtime.sh
+```
+
+The setup checks the mounted secondary disk and the existing Factory graphroot,
+allocates a separate subordinate-ID range, creates `/var/mnt/podman/obot-runtime`
+for the new account, and installs a socket-activated system service. It grants
+the account execute-only traversal at `/var/mnt/podman` and denies access to the
+Factory graphroot. The Unix socket is operator-owned and mode `0660`; Compose
+mounts it read-only into Obot. The API can manage containers only inside the
+dedicated rootless account, so do not reuse this account or socket for other
+services.
 
 Copy `env.example` to `.env`, set a random bootstrap token, and restrict the
 file to the owning account:
@@ -56,7 +76,8 @@ store. `validate.sh` verifies the endpoint with Caddy's root certificate and
 checks that the proxy listener is bound to the Bazzite LAN address, not a
 wildcard address.
 
-After setting `.env`, deploy and validate with:
+After setting `.env` and provisioning the runtime account, deploy and validate
+with:
 
 ```bash
 integrations/bazzite/obot/deploy.sh
@@ -65,11 +86,11 @@ integrations/bazzite/obot/validate.sh
 
 The deployment checks both version-plus-digest pins, host inventory, the local
 control-plane address, DNS resolution, the LAN-only TLS bind, the loopback app
-listener, and secondary storage mount before creating anything. Health is
-checked at `/api/healthz`. The validate command reports actionable failures
-without printing container logs, because logs may contain sensitive payloads.
-If validation fails, inspect logs locally and remove tokens and request bodies
-before sharing excerpts.
+listener, the isolated runtime API, and both secondary-drive graphroots before
+creating anything. Health is checked at `/api/healthz`. The validate command
+reports actionable failures without printing container logs, because logs may
+contain sensitive payloads. If validation fails, inspect logs locally and
+remove tokens and request bodies before sharing excerpts.
 
 ## GitHub MCP configuration
 
@@ -170,15 +191,19 @@ To upgrade, update `OBOT_IMAGE` to an audited version and immutable digest,
 validate the Compose configuration, run `deploy.sh`, then run `validate.sh`.
 Do not use floating tags such as `latest`.
 
-`teardown.sh` removes only the POC containers and network and preserves all
-data volumes. To remove data as well, use `teardown.sh --purge-data` and
-confirm the exact POC volume names at the prompt. Back up first.
+`teardown.sh` removes only the POC containers, Obot-labeled MCP runtime
+containers and volumes, and the POC network. It preserves the dedicated runtime
+account and all Obot/Caddy data volumes. To remove those data volumes as well,
+use `teardown.sh --purge-data` and confirm the exact POC volume names at the
+prompt. Back up first.
 
 ## Measurement and decision record
 
 Capture before/after host free space on `/var/mnt/podman`, Obot and Caddy CPU
 and memory (`podman stats --no-stream cezar-factory-obot-poc
-cezar-factory-obot-poc-https`), and container restart counts. Compare the
+cezar-factory-obot-poc-https`), runtime workload stats (`podman --remote --url
+unix:///run/obot-runtime-api/podman.sock stats --no-stream`), and container
+restart counts. Compare the
 observed footprint and the isolation
 trade-off with Obot's Kubernetes deployment and a direct GitHub MCP client.
 Obot's Docker evaluation guidance sizes a host at 2+ CPU cores, 4 GB RAM, and
@@ -190,7 +215,13 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
 - Allowed for the POC: the authenticated Obot UI and one user-scoped vMCP with
   one selected read-only GitHub MCP tool against a public repository.
 - Denied: all GitHub write tools, private repositories, other vMCP components,
-  direct agent-to-GitHub fallback, and the Docker/Podman runtime socket.
+  direct agent-to-GitHub fallback, and the default host Docker/Podman socket.
+- Runtime boundary: Obot can create workloads only in the dedicated rootless
+  `obot-runtime` engine. That account has a separate subordinate-ID range and
+  graphroot on the secondary disk; systemd denies access to the Factory
+  graphroot, host home directories, and default container sockets. Hosted MCP
+  workloads are not needed for the remote GitHub test and must not be added to
+  its vMCP.
 - Credential boundary: GitHub OAuth client credentials are stored through the
   Obot UI in its persistent data store. No PAT, OAuth secret, or client token
   is written to Git, `.env`, shell arguments, or deployment logs.
@@ -213,9 +244,10 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
 - Direct GitHub MCP client: fewer services and less operational overhead, but
   does not provide Obot's central vMCP selection, profile grants, or gateway
   audit boundary.
-- Obot's Docker evaluation deployment: supports local hosted MCP servers, but
-  its documented host socket exposes host-level container management. This
-  POC uses only a remote GitHub MCP entry and mounts no runtime socket.
+- Obot's Docker evaluation deployment: supports local hosted MCP servers but
+  commonly mounts the default Docker socket. This POC keeps the pinned Obot
+  image and grants only the dedicated rootless runtime API; it does not expose
+  the existing Factory engine or the rootful host socket.
 - Obot Kubernetes deployment: offers stronger workload isolation through
   pod security and network policy, with a larger operations footprint. No
   Kubernetes cluster is included in the configured Factory topology.

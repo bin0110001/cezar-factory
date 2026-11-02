@@ -54,9 +54,23 @@ mount_real="$(realpath "$storage_mount")"
 actual_mount="$(findmnt -n -o TARGET -T "$graphroot")"
 [[ "$actual_mount" == "$mount_real" ]] || fail "Podman graphroot resolves to mount $actual_mount, expected $mount_real"
 
+runtime_socket="/run/obot-runtime-api/podman.sock"
+runtime_url="unix://$runtime_socket"
+[[ -S "$runtime_socket" ]] || fail "the dedicated obot-runtime socket is missing; run sudo integrations/bazzite/obot/setup-runtime.sh first"
+systemctl is-active --quiet cezar-factory-obot-runtime.socket || fail "the dedicated obot-runtime socket unit is not active; rerun setup-runtime.sh"
+[[ "$(stat -c '%U:%G %a' "$runtime_socket")" == "$(id -un):$(id -gn) 660" ]] || fail "the runtime API socket is not restricted to this Bazzite operator account"
+runtime_graphroot="$("${podman_bin[@]}" --remote --url "$runtime_url" info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
+runtime_rootless="$("${podman_bin[@]}" --remote --url "$runtime_url" info --format '{{.Host.Security.Rootless}}' 2>/dev/null || true)"
+[[ -n "$runtime_graphroot" && "$runtime_rootless" == true ]] || fail "the dedicated Obot rootless Podman API is not responding"
+runtime_graphroot_real="$(realpath "$runtime_graphroot")"
+runtime_root="$(realpath /var/mnt/podman/obot-runtime)"
+[[ "$runtime_graphroot_real" == "$runtime_root"/* ]] || fail "Obot runtime graphroot $runtime_graphroot is not under $runtime_root"
+[[ "$(findmnt -n -o TARGET -T "$runtime_graphroot")" == "$mount_real" ]] || fail "Obot runtime graphroot is not on required secondary storage $mount_real"
+[[ "$runtime_graphroot_real" != "$graphroot_real" ]] || fail "Obot runtime must not share the Factory Podman graphroot"
+
 export OBOT_IMAGE CADDY_IMAGE OBOT_BIND_ADDRESS OBOT_TLS_HOSTNAME OBOT_HTTPS_PORT OBOT_SERVER_HOSTNAME OBOT_HOST_PORT OBOT_BOOTSTRAP_TOKEN OBOT_DATA_VOLUME OBOT_PROXY_DATA_VOLUME OBOT_PROXY_CONFIG_VOLUME
 "${podman_bin[@]}" compose --project-name "$PROJECT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet
 "${podman_bin[@]}" compose --project-name "$PROJECT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 
 "$SCRIPT_DIR/validate.sh"
-echo "Obot POC deployed on $graphroot (secondary mount $actual_mount); no Podman socket is mounted."
+echo "Obot POC deployed with app storage on $graphroot and isolated MCP runtime on $runtime_graphroot; both use $actual_mount."
