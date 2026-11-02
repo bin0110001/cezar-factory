@@ -174,8 +174,7 @@ describe('ProjectAutomationScheduler', () => {
     await first.check(capped);
     expect(launch).toHaveBeenCalledTimes(1);
     // "Restart": a brand-new store over the same directory and a brand-new scheduler.
-    store.flush?.({ throwOnError: true });
-    const reopened = AutomationStore.open((store as unknown as { dir?: string }).dir ?? dirs[dirs.length - 1]!);
+    const reopened = AutomationStore.open(dirs[dirs.length - 1]!);
     expect(reopened.latestReceipt(definition.id, 'b')?.status).toBe('deferred');
     const second = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store: reopened, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }) } as never }, admit, launch });
     await second.check(capped);
