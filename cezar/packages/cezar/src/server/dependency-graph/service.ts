@@ -13,6 +13,7 @@ import {
   type DependencyGraphGitRunner,
 } from './github-source.ts';
 import { DependencyGraphStore } from './store.ts';
+import type { GithubBlockerAction } from './github-source.ts';
 import { dependencyGraphHealth, diagnoseBlockingCycles, rankDecisions as computeDecisionRanking, readiness as computeReadiness } from './algorithms.ts';
 
 export interface DependencyGraphSyncResult {
@@ -26,7 +27,7 @@ export interface DependencyGraphSyncResult {
   warning?: string;
 }
 
-export type DependencyGraphStorePort = Pick<DependencyGraphStore, 'readSnapshot' | 'readSnapshotIndex' | 'readEvents' | 'applySync' | 'setUnavailable' | 'writeDecision' | 'reserveCycleAgentAttempt' | 'recordCycleAgentResult' | 'reserveDecisionResearchAttempt' | 'recordDecisionResearchResult' | 'close'>;
+export type DependencyGraphStorePort = Pick<DependencyGraphStore, 'readSnapshot' | 'readSnapshotIndex' | 'readEvents' | 'applySync' | 'setUnavailable' | 'writeDecision' | 'recordAuditEvent' | 'reserveCycleAgentAttempt' | 'recordCycleAgentResult' | 'reserveDecisionResearchAttempt' | 'recordDecisionResearchResult' | 'close'>;
 
 function safeReason(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -77,6 +78,14 @@ export class DependencyGraphService {
 
   async writeDecision(decision: DecisionRecord, expectedGraphRevision: number, actor = decision.createdBy, audit?: { rationale: string }): Promise<number> {
     return this.store.writeDecision(await this.repositoryKey(), decision, expectedGraphRevision, new Date().toISOString(), actor, audit);
+  }
+
+  async setBlocker(blockedNumber: number, blockingNumber: number, action: GithubBlockerAction) {
+    return this.source.setBlocker(blockedNumber, blockingNumber, action);
+  }
+
+  async recordAuditEvent(repository: GithubRepositoryKey, expectedGraphRevision: number, kind: string, entityId: string, payload: unknown, actor = 'local-operator') {
+    return this.store.recordAuditEvent(repository, expectedGraphRevision, kind, entityId, actor, payload);
   }
 
   async reserveCycleAgentAttempt(repository: GithubRepositoryKey, expectedGraphRevision: number, fingerprint: string) {

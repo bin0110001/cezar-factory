@@ -173,6 +173,47 @@ export const dependencyCyclePlanDispatchResponseSchema = z.object({
 }).strict();
 export type DependencyCyclePlanDispatchResponse = z.infer<typeof dependencyCyclePlanDispatchResponseSchema>;
 
+/** Explicit operator approval for a verified, same-repository cycle repair. */
+export const dependencyCycleRepairApplySchema = z.object({
+  expectedGraphRevision: z.number().int().nonnegative(),
+  candidateId: z.string().min(1).max(128),
+  removeEdgeIds: z.array(z.string().min(1).max(768)).min(1).max(20),
+  rationale: z.string().trim().min(8).max(1_000),
+}).strict().refine((value) => new Set(value.removeEdgeIds).size === value.removeEdgeIds.length, 'duplicate edge removals are not allowed');
+export type DependencyCycleRepairApply = z.infer<typeof dependencyCycleRepairApplySchema>;
+
+export const dependencyCycleRepairRejectSchema = z.object({
+  expectedGraphRevision: z.number().int().nonnegative(),
+  candidateId: z.string().min(1).max(128),
+  rationale: z.string().trim().min(8).max(1_000),
+}).strict();
+export type DependencyCycleRepairReject = z.infer<typeof dependencyCycleRepairRejectSchema>;
+
+export const dependencyCycleRepairRollbackSchema = z.object({
+  expectedGraphRevision: z.number().int().nonnegative(),
+  repairId: z.uuid(),
+  rationale: z.string().trim().min(8).max(1_000),
+}).strict();
+export type DependencyCycleRepairRollback = z.infer<typeof dependencyCycleRepairRollbackSchema>;
+
+export const dependencyCycleRepairResultSchema = z.object({
+  status: z.enum(['applied', 'rolled-back']),
+  repairId: z.uuid(),
+  repository: githubRepositoryKeySchema,
+  candidateId: z.string().min(1).max(128),
+  removedEdgeIds: z.array(z.string().min(1).max(768)).max(20),
+  restoredEdgeIds: z.array(z.string().min(1).max(768)).max(20),
+  graphRevision: z.number().int().nonnegative(),
+}).strict();
+export type DependencyCycleRepairResult = z.infer<typeof dependencyCycleRepairResultSchema>;
+
+export const dependencyCycleRepairRejectResponseSchema = z.object({
+  rejected: z.literal(true),
+  candidateId: z.string().min(1).max(128),
+  graphRevision: z.number().int().nonnegative(),
+}).strict();
+export type DependencyCycleRepairRejectResponse = z.infer<typeof dependencyCycleRepairRejectResponseSchema>;
+
 export const dependencyDecisionResearchDispatchSchema = z.object({
   expectedGraphRevision: z.number().int().nonnegative(),
   decisionId: dependencyNodeIdSchema,

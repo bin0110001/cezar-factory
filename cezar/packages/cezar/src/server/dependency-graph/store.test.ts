@@ -78,6 +78,19 @@ describe('DependencyGraphStore', () => {
     store.close();
   });
 
+  it('records operator repair decisions atomically against the approved graph revision', () => {
+    const { store } = setup();
+    const nodes = fixtureNodes();
+    store.applySync({ repository, nodes, edges: fixtureEdges(nodes), full: true, complete: true, watermark: at, status: 'fresh', now: at });
+    expect(store.recordAuditEvent(repository, 1, 'cycle-repair-approved', 'candidate-1', 'local-operator', {
+      repairId: '00000000-0000-4000-8000-000000000001', rationale: 'Verified dependency was confirmed as obsolete.',
+    }, at)).toBe(1);
+    expect(() => store.recordAuditEvent(repository, 0, 'cycle-repair-rejected', 'candidate-1', 'local-operator', {}, at)).toThrow(/revision conflict/);
+    expect(store.readSnapshot(repository).revision).toBe(1);
+    expect(store.readEvents(repository, 10).find((event) => event.kind === 'cycle-repair-approved')).toMatchObject({ revision: 1, actor: 'local-operator', payload: { repairId: '00000000-0000-4000-8000-000000000001' } });
+    store.close();
+  });
+
   it('removes stale native rows only after a complete full consistency pass', () => {
     const { store } = setup();
     const nodes = fixtureNodes();

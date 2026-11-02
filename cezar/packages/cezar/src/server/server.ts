@@ -214,6 +214,8 @@ import { parseRemote, resolveForge, type ForgeAvailability } from './forge/index
 import { DependencyGraphService } from './dependency-graph/service.ts';
 import { discoverDecisionCandidates } from './dependency-graph/discovery.ts';
 import { planCycleRepairs } from './dependency-graph/repair-planner.ts';
+import { removedCycleEdges, validateCycleRepair } from './dependency-graph/cycle-repair-policy.ts';
+import { GithubDependencyWriteError } from './dependency-graph/github-source.ts';
 import { admitWithRefresh } from './dependency-graph/admission.ts';
 import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts';
 import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
@@ -221,7 +223,7 @@ import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
 import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
-import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyDecisionResearchDispatchSchema } from '@open-mercato/cezar-contract';
+import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
 import { ensureLaunchKey } from './launch-key.ts';
 import { openInTerminal } from './open-in-terminal.ts';
@@ -5960,6 +5962,176 @@ export function createApp(deps: ServerDeps) {
       } catch (error) {
         const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle planning dispatch failed';
         return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/reject', jsonZodValidator(dependencyCycleRepairRejectSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair review is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const candidate = planCycleRepairs(snapshot, 50).candidates.find((item) => item.id === input.candidateId);
+        if (!candidate) return c.json({ error: 'cycle repair candidate is stale or no longer exists' }, 409);
+        await service.recordAuditEvent(repository, input.expectedGraphRevision, 'cycle-repair-rejected', candidate.id, { rationale: input.rationale, fingerprint: candidate.fingerprint });
+        return c.json(dependencyCycleRepairRejectResponseSchema.parse({ rejected: true, candidateId: candidate.id, graphRevision: snapshot.revision }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rejection failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/apply', jsonZodValidator(dependencyCycleRepairApplySchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair application is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      const repairId = randomUUID();
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const { candidate } = validateCycleRepair(snapshot, input);
+        const edges = removedCycleEdges(snapshot, input);
+        const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
+        const issuePair = (edge: DependencyGraphEdge) => {
+          const blocker = nodes.get(edge.from);
+          const blocked = nodes.get(edge.to);
+          if (!blocker || !blocked || (blocker.kind !== 'issue' && blocker.kind !== 'epic') || (blocked.kind !== 'issue' && blocked.kind !== 'epic')
+            || blocker.repository !== repository || blocked.repository !== repository) {
+            throw new Error('cycle repairs can change only same-repository GitHub issue dependencies');
+          }
+          return { blockingNumber: blocker.number, blockedNumber: blocked.number };
+        };
+        const pairs = edges.map((edge) => ({ edge, ...issuePair(edge) }));
+        await service.recordAuditEvent(repository, snapshot.revision, 'cycle-repair-approved', candidate.id, {
+          repairId, graphRevision: snapshot.revision, fingerprint: candidate.fingerprint, rationale: input.rationale, edges,
+        });
+        const applied: typeof pairs = [];
+        try {
+          for (const pair of pairs) {
+            try {
+              const result = await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'remove');
+              if (!result.changed) throw new Error(`cycle repair precondition changed for edge ${pair.edge.id}`);
+              applied.push(pair);
+            } catch (error) {
+              if (error instanceof GithubDependencyWriteError && error.mutationMayHaveApplied) applied.push(pair);
+              throw error;
+            }
+          }
+          const sync = await service.sync();
+          const current = service.read(repository);
+          if (sync.status !== 'fresh' || planCycleRepairs(current, 50).candidates.some((item) => item.fingerprint === candidate.fingerprint)) {
+            throw new Error('GitHub sync did not verify removal of the target blocking cycle');
+          }
+          await service.recordAuditEvent(repository, current.revision, 'cycle-repair-applied', candidate.id, {
+            repairId, fingerprint: candidate.fingerprint, removedEdgeIds: edges.map((edge) => edge.id), rationale: input.rationale,
+          });
+          return c.json(dependencyCycleRepairResultSchema.parse({ status: 'applied', repairId, repository, candidateId: candidate.id, removedEdgeIds: edges.map((edge) => edge.id), restoredEdgeIds: [], graphRevision: current.revision }), 200);
+        } catch (error) {
+          const compensationErrors: string[] = [];
+          for (const pair of applied.reverse()) {
+            try {
+              await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'add');
+            } catch (restoreError) {
+              compensationErrors.push(restoreError instanceof Error ? restoreError.message.slice(0, 500) : 'unknown restore failure');
+            }
+          }
+          if (applied.length) {
+            try {
+              await service.sync();
+            } catch (syncError) {
+              compensationErrors.push(`sync after compensation failed: ${syncError instanceof Error ? syncError.message.slice(0, 400) : 'unknown sync failure'}`);
+            }
+          }
+          const current = service.read(repository);
+          await service.recordAuditEvent(repository, current.revision, compensationErrors.length ? 'cycle-repair-partial-rollback' : 'cycle-repair-compensated', candidate.id, {
+            repairId, fingerprint: candidate.fingerprint, removedEdgeIds: applied.map((pair) => pair.edge.id), compensationErrors,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'cycle repair failed',
+          });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair failed', repairId, rolledBack: compensationErrors.length === 0, compensationErrors }, compensationErrors.length ? 503 : 409);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair validation failed';
+        return c.json({ error: message }, /revision conflict|stale|no longer exists/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/rollback', jsonZodValidator(dependencyCycleRepairRollbackSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair rollback is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        if (snapshot.source.status !== 'fresh') return c.json({ error: 'cycle repair rollback requires a fresh GitHub graph' }, 409);
+        if (snapshot.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${snapshot.revision}`);
+        const events = await service.readEvents(200);
+        const approval = events.find((event) => event.kind === 'cycle-repair-approved' && (event.payload as { repairId?: unknown }).repairId === input.repairId);
+        if (!approval) return c.json({ error: 'cycle repair approval record not found' }, 404);
+        if (events.some((event) => ['cycle-repair-rolled-back', 'cycle-repair-partial-rollback'].includes(event.kind) && (event.payload as { repairId?: unknown }).repairId === input.repairId)) {
+          return c.json({ error: 'cycle repair has already been rolled back or requires recovery' }, 409);
+        }
+        const rawEdges = (approval.payload as { edges?: unknown }).edges;
+        if (!Array.isArray(rawEdges) || rawEdges.length < 1 || rawEdges.length > 20) return c.json({ error: 'cycle repair audit record is invalid' }, 409);
+        const edges = rawEdges.map((value) => dependencyGraphEdgeSchema.parse(value));
+        const currentIds = new Set(snapshot.edges.map((edge) => edge.id));
+        const missingEdges = edges.filter((edge) => !currentIds.has(edge.id));
+        if (!missingEdges.length) return c.json({ error: 'the repair dependencies are already present; rollback has no changes to restore' }, 409);
+        const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
+        const pairs = missingEdges.map((edge) => {
+          const blocker = nodes.get(edge.from);
+          const blocked = nodes.get(edge.to);
+          if (!blocker || !blocked || (blocker.kind !== 'issue' && blocker.kind !== 'epic') || (blocked.kind !== 'issue' && blocked.kind !== 'epic')
+            || blocker.repository !== repository || blocked.repository !== repository) throw new Error('rollback supports only same-repository GitHub issue dependencies');
+          return { edge, blockingNumber: blocker.number, blockedNumber: blocked.number };
+        });
+        await service.recordAuditEvent(repository, snapshot.revision, 'cycle-repair-rollback-approved', approval.entityId, {
+          repairId: input.repairId, expectedGraphRevision: snapshot.revision, rationale: input.rationale, restoredEdgeIds: missingEdges.map((edge) => edge.id),
+        });
+        const restored: typeof pairs = [];
+        try {
+          for (const pair of pairs) {
+            try {
+              const result = await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'add');
+              if (!result.changed) throw new Error(`rollback precondition changed for edge ${pair.edge.id}`);
+              restored.push(pair);
+            } catch (error) {
+              if (error instanceof GithubDependencyWriteError && error.mutationMayHaveApplied) restored.push(pair);
+              throw error;
+            }
+          }
+          const sync = await service.sync();
+          const current = service.read(repository);
+          if (sync.status !== 'fresh' || edges.some((edge) => !current.edges.some((item) => item.id === edge.id))) {
+            throw new Error('GitHub sync did not verify the restored dependencies');
+          }
+          await service.recordAuditEvent(repository, current.revision, 'cycle-repair-rolled-back', approval.entityId, {
+            repairId: input.repairId, restoredEdgeIds: missingEdges.map((edge) => edge.id), rationale: input.rationale,
+          });
+          return c.json(dependencyCycleRepairResultSchema.parse({ status: 'rolled-back', repairId: input.repairId, repository, candidateId: approval.entityId, removedEdgeIds: [], restoredEdgeIds: edges.map((edge) => edge.id), graphRevision: current.revision }));
+        } catch (error) {
+          const compensationErrors: string[] = [];
+          for (const pair of restored.reverse()) {
+            try {
+              await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'remove');
+            } catch (compensationError) {
+              compensationErrors.push(compensationError instanceof Error ? compensationError.message.slice(0, 500) : 'unknown compensation failure');
+            }
+          }
+          if (restored.length) {
+            try {
+              await service.sync();
+            } catch (syncError) {
+              compensationErrors.push(`sync after compensation failed: ${syncError instanceof Error ? syncError.message.slice(0, 400) : 'unknown sync failure'}`);
+            }
+          }
+          const current = service.read(repository);
+          await service.recordAuditEvent(repository, current.revision, compensationErrors.length ? 'cycle-repair-partial-rollback' : 'cycle-repair-rollback-failed', approval.entityId, {
+            repairId: input.repairId, restoredEdgeIds: restored.map((edge) => edge.edge.id), compensationErrors,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'cycle repair rollback failed',
+          });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rollback failed', compensationErrors }, compensationErrors.length ? 503 : 409);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rollback failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 400);
       }
     })
     .post('/dependency-graph/decision-research/dispatch', jsonZodValidator(dependencyDecisionResearchDispatchSchema), async (c) => {
