@@ -19,7 +19,7 @@ fail() { echo "Obot runtime setup blocked: $*" >&2; exit 1; }
 id "$SUDO_USER" >/dev/null 2>&1 || fail "operator account $SUDO_USER does not exist"
 operator_group="$(id -gn "$SUDO_USER")"
 [[ "$operator_group" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || fail "unexpected operator group name"
-for command_name in podman useradd usermod runuser setfacl systemctl systemd-tmpfiles; do
+for command_name in podman useradd usermod runuser setfacl systemctl systemd-tmpfiles timeout; do
   command -v "$command_name" >/dev/null || fail "$command_name is required on Bazzite"
 done
 for target in "$SERVICE_PATH" "$SOCKET_PATH" "$TMPFILES_PATH"; do
@@ -110,6 +110,8 @@ Description=Dedicated rootless Podman API for Obot MCP workloads
 Requires=$SERVICE_NAME.socket
 After=$SERVICE_NAME.socket network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=exec
@@ -130,7 +132,7 @@ Delegate=yes
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=$RUNTIME_ROOT /run/obot-runtime
-InaccessiblePaths=$factory_storage_parent /run/podman/podman.sock /var/run/docker.sock
+InaccessiblePaths=$factory_storage_parent -/run/podman/podman.sock -/var/run/docker.sock
 
 EOF
 cat > "$socket_tmp" <<EOF
@@ -159,15 +161,17 @@ install -o root -g root -m 0644 "$socket_tmp" "$SOCKET_PATH"
 install -o root -g root -m 0644 "$tmpfiles_tmp" "$TMPFILES_PATH"
 systemd-tmpfiles --create "$TMPFILES_PATH"
 systemctl daemon-reload
+systemctl stop "$SERVICE_NAME.socket" >/dev/null 2>&1 || true
+systemctl stop "$SERVICE_NAME.service" >/dev/null 2>&1 || true
+systemctl reset-failed "$SERVICE_NAME.service"
 systemctl enable --now "$SERVICE_NAME.socket"
-systemctl try-restart "$SERVICE_NAME.service"
 
 api_url="unix://$RUNTIME_API_SOCKET"
 graphroot=""
 rootless=""
-for _ in $(seq 1 30); do
-  graphroot="$(podman --remote --url "$api_url" info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
-  rootless="$(podman --remote --url "$api_url" info --format '{{.Host.Security.Rootless}}' 2>/dev/null || true)"
+for _ in $(seq 1 10); do
+  runtime_info="$(timeout --kill-after=1 3 podman --remote --url "$api_url" info --format '{{.Store.GraphRoot}}|{{.Host.Security.Rootless}}' 2>/dev/null || true)"
+  IFS='|' read -r graphroot rootless <<< "$runtime_info"
   [[ -n "$graphroot" && "$rootless" == true ]] && break
   sleep 1
 done
