@@ -1,5 +1,21 @@
 {
-  "considered": [],
-  "changed": [],
+  "considered": [196, 197, 198],
+  "changed": [
+    {
+      "issue": 196,
+      "added": ["factory:new", "type:feature", "risk:medium"],
+      "reason": "Deterministic file/contract overlap analysis engine is new feature work with medium risk"
+    },
+    {
+      "issue": 197,
+      "added": ["factory:new", "type:feature", "risk:medium"],
+      "reason": "Workspace lease extension with impact tracking is new feature work with medium risk"
+    },
+    {
+      "issue": 198,
+      "added": ["factory:new", "type:feature", "risk:medium"],
+      "reason": "Unified scheduler with priority and capacity management is new feature work with medium risk"
+    }
+  ],
   "skipped": []
 }
