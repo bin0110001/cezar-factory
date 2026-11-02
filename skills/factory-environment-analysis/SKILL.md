@@ -1,9 +1,11 @@
 ---
 name: factory-environment-analysis
-description: Analyze bounded exports of Cezar and Factory runtime health, job failures, schedules, and execution history, then produce evidence-backed improvement paths.
+description: On-demand, host-side only (never scheduled). Analyze bounded exports of Cezar and Factory runtime health, job failures, schedules, and execution history, then produce evidence-backed improvement paths.
 ---
 
 # Factory environment analysis
+
+This analysis is on-demand and host-side: no automation schedules it, it is not installed into projects, and its collector reads the host-local target registry. Routine per-project failure and backlog health is the daily `factory-health` workflow; read a project's latest `.factory/health-report.json` for that instead of re-deriving it, and use this skill only for a cross-target operational assessment.
 
 Use this skill when the user wants a current operational assessment of Factory/Cezar throughput, failing builds, pickup latency, schedules, or auto-fix effectiveness.
 

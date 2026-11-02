@@ -31,7 +31,7 @@ Projects use the Factory checkout mounted into Cezar, so releasing means promoti
 commit, not copying files into projects:
 
 1. Make sure the change is committed and pushed, and the working tree is clean.
-2. `pwsh -NoProfile -File .\scriptselease\promote-stable.ps1` runs the automation catalog check
+2. `pwsh -NoProfile -File .\scripts\release\promote-stable.ps1` runs the automation catalog check
    and the full test suite, then fast-forwards `origin/stable`. If it fails, stop and report the
    failure; never bypass it.
 3. The Bazzite `factory-autodeploy` timer fast-forwards the mounted checkout and reconciles

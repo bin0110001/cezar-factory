@@ -394,12 +394,17 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+
+# Retired names stay valid in project configs so an installed project keeps updating; they install nothing (skills)
+# or their replacement (workflows).
+$script:RetiredSkills = @('factory-intake', 'factory-implement-prepare', 'factory-failure-audit')
+$script:WorkflowAliases = @{ 'failure-audit' = 'health'; 'backlog-reconciliation' = 'health' }
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.
 function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [string]$ProjectPath) {
-    $skills = @($Config['skills']); $workflows = @($Config['workflows'])
+    $skills = @(@($Config['skills']) | Where-Object { $script:RetiredSkills -notcontains $_ }); $workflows = @(@($Config['workflows']) | ForEach-Object { if ($script:WorkflowAliases.ContainsKey([string]$_)) { $script:WorkflowAliases[[string]$_] } else { $_ } } | Select-Object -Unique)
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $skills) {
         $p = "skills/$s/SKILL.md"
@@ -427,10 +432,10 @@ function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [stri
     if ($godotUpgrade -and $skills -notcontains 'factory-godot-upgrade') { $selected.Add('skills/factory-godot-upgrade/SKILL.md') }
     if ((Get-FeatureOn $Config 'knowledge_extraction') -and $skills -notcontains 'factory-learn') { $selected.Add('skills/factory-learn/SKILL.md') }
     $backlogReconciliation = Get-FeatureOn $Config 'backlog_reconciliation'
-    if ($backlogReconciliation -and $workflows -notcontains 'backlog-reconciliation') { $selected.Add('workflows/backlog-reconciliation.yaml') }
+    if ($backlogReconciliation -and $workflows -notcontains 'health') { $selected.Add('workflows/health.yaml') }
     if ($backlogReconciliation -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
     # Automations: only those whose workflow is installed (maintenance only with the feature on).
-    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' }) + $(if ($godotUpgrade) { 'godot-upgrade' }) + $(if ($backlogReconciliation) { 'backlog-reconciliation' })
+    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' }) + $(if ($godotUpgrade) { 'godot-upgrade' }) + $(if ($backlogReconciliation) { 'health' })
     foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.json) {
         $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
         if ($f.BaseName -eq 'maintenance' -and -not $combinedMaintenance) { continue }

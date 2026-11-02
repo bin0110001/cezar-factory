@@ -145,6 +145,17 @@ try {
         Save-Receipt
         exit 0
     }
+    # Only Factory defects become Factory issues. Artifacts from a collector without
+    # classification (older runs) keep publishing, so a version skew never drops evidence.
+    $collected = $failures.Count
+    $failures = @($failures | Where-Object { -not ($_.PSObject.Properties.Name -contains 'classification') -or [string]$_.classification -eq 'factory-defect' })
+    if ($failures.Count -eq 0) {
+        $receipt.status = 'skipped'
+        $receipt.action = 'skipped'
+        $receipt.message = "No factory-defect failures; $collected non-Factory failure(s) were reported but not published."
+        Save-Receipt
+        exit 0
+    }
     foreach ($failure in $failures) {
         if ([string]$failure.fingerprint -notmatch '^[a-f0-9]{64}$' -or [string]::IsNullOrWhiteSpace([string]$failure.runId)) {
             throw 'Failure evidence is missing a valid normalized fingerprint or run ID.'

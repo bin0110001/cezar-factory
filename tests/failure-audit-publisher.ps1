@@ -115,6 +115,20 @@ try {
     $run = Publish
     $state = Get-State
     Check 'failed create is recorded and not retried blindly' ($run.code -ne 0 -and $run.receipt.status -eq 'failed' -and $state.createCalls -eq 1 -and $state.issues.Count -eq 0)
+
+    # Non-Factory classifications are reported, never published.
+    Set-State @{ issues = @(); searchCalls = 0; createCalls = 0; commentCalls = 0 }
+    Set-Input
+    $classified = Get-Content -LiteralPath $inputPath -Raw | ConvertFrom-Json -Depth 20
+    foreach ($row in @($classified.failures)) { $row | Add-Member -NotePropertyName classification -NotePropertyValue 'environment' }
+    $classified | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $inputPath
+    $run = Publish
+    $state = Get-State
+    Check 'environment-only failures are skipped without any GitHub write' ($run.code -eq 0 -and $run.receipt.status -eq 'skipped' -and $run.receipt.message -match 'non-Factory' -and $state.createCalls -eq 0 -and $state.issues.Count -eq 0)
+    foreach ($row in @($classified.failures)) { $row.classification = 'factory-defect' }
+    $classified | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $inputPath
+    $run = Publish
+    Check 'factory-defect failures are still published' ($run.code -eq 0 -and $run.receipt.action -eq 'created')
 } finally {
     Remove-Item Env:FAKE_GH_PUBLISHER_STATE -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_GH_PUBLISHER_RECEIPT -ErrorAction SilentlyContinue

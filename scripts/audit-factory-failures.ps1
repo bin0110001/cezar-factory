@@ -80,6 +80,15 @@ function Fingerprint([string[]]$lines) {
     try { return ([Convert]::ToHexString($sha.ComputeHash($bytes))).ToLowerInvariant() }
     finally { $sha.Dispose() }
 }
+# Deterministic cause classification so the publisher files Factory issues only for Factory defects.
+# Order matters: Factory-specific tokens win, then host/provider conditions, then project test/build output.
+function Classify([string[]]$lines, [string]$command) {
+    $text = ((@($lines) + $command) -join ' ').ToLowerInvariant()
+    if ($text -match 'unknown workflow|required_script_missing|runtime_root_invalid|invalid schema|schema validation|validate-result|route-state|requested skill|managed skill|automation drift|version mismatch') { return 'factory-defect' }
+    if ($text -match 'timed out|timeout|econnrefused|econnreset|enotfound|rate.?limit|\b429\b|\b50[234]\b|provider|cancell?ed|no space left|out of memory|gh_missing|unreachable|quota') { return 'environment' }
+    if ($text -match 'tests? failed|build failed|compil|lint|assertion|npm err|msbuild') { return 'project-defect' }
+    return 'unknown'
+}
 try {
     if (-not (Test-Path -LiteralPath $runDir -PathType Container)) {
         Limit 'runtime run directory is unavailable'
@@ -126,6 +135,7 @@ try {
                     runId = $runId; step = $step; command = $command
                     lastWriteUtc = $handoff.LastWriteTimeUtc.ToString('o')
                     fingerprint = (Fingerprint @($evidence))
+                    classification = (Classify @($evidence) $command)
                     evidence = @($evidence)
                     sources = @{ handoff = $handoff.Name; events = if ($eventData.missing) { $null } else { "$runId.ndjson" } }
                 })
