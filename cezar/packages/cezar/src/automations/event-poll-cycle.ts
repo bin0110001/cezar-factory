@@ -21,6 +21,8 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
   /** Runs while the polling lease is held and after the current definition/state are captured. */
   beforePoll?: () => Promise<void>;
   eligible?: (candidate: C, state: AutomationRuntimeState) => boolean;
+  /** Launch order for the eligible candidates; the poll order is kept when omitted. */
+  order?: (a: C, b: C) => number;
   isCurrent?: () => Promise<boolean>;
   launch?: (candidate: C) => Promise<void>;
   persist: (result: R, current: AutomationRuntimeState) => AutomationRuntimeState;
@@ -76,6 +78,7 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
       (!state.baselineAt || candidate.timestamp > state.baselineAt)
       && (!input.eligible || input.eligible(candidate, state)),
     );
+    if (input.order) eligible.sort(input.order);
     if (mode === 'execute') {
       for (const candidate of eligible) {
         if (!lease.isValid()) throw new Error('automation polling lease was lost');

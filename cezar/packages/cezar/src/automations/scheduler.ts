@@ -63,6 +63,16 @@ class GithubRequestArbiter {
 }
 const githubRequests = new GithubRequestArbiter();
 
+/** Human priority from a `priority:<n>` label (the Factory convention); higher runs first, none = 0. */
+export function candidatePriority(candidate: Pick<GithubCandidate, 'labels'>): number {
+  let best = 0;
+  for (const label of candidate.labels) {
+    const match = /^priority:(-?[0-9]+)$/.exec(label);
+    if (match) best = Math.max(best, Number(match[1]));
+  }
+  return best;
+}
+
 export class ProjectAutomationScheduler {
   constructor(private readonly handle: ProjectAutomationHandle) {}
 
@@ -86,14 +96,20 @@ export class ProjectAutomationScheduler {
     let exhausted = false;
     let stillPinned = false;
     let polledState: AutomationRuntimeState = {};
+    /** Launches admitted this turn; `filters.maxAdmissionsPerCycle` bounds it for issue events. */
+    const turn = { admitted: 0 };
+    const capReached = () => definition.filters.maxAdmissionsPerCycle !== undefined && turn.admitted >= definition.filters.maxAdmissionsPerCycle;
     return runEventPollCycle({
       store, definition, mode, scheduled, onChange: this.handle.onChange,
       beforePoll: async () => {
         if (!this.handle.admit || !this.handle.launch) return;
         // Recheck a small bounded batch each scheduler turn. Receipts stay durable and ordered;
         // unknown or blocked work remains deferred for a later graph sync and poll.
-        for (const deferred of store.deferredReceipts(definition.id).slice(0, 10)) {
+        const waiting = store.deferredReceipts(definition.id)
+          .sort((a, b) => candidatePriority(b.candidate ?? { labels: [] }) - candidatePriority(a.candidate ?? { labels: [] }));
+        for (const deferred of waiting.slice(0, 10)) {
           if (deferred.revision !== definition.revision) continue;
+          if (capReached()) break;
           const candidate = deferred.candidate;
           if (!candidate || !candidate.event.startsWith('issue.')) continue;
           let admission: Extract<DependencyAdmission, { status: 'ready' }>;
@@ -111,6 +127,7 @@ export class ProjectAutomationScheduler {
             if (!reserved) continue;
             try {
               const launched = await this.handle.launch(definition, candidate, reserved.receiptId, admission);
+              turn.admitted += 1;
               store.appendReceipt({ ...reserved, status: 'launched', runId: launched.runId, updatedAt: new Date().toISOString() });
               store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url, result: 'launched', reason: `Deferred issue event admitted at graph revision ${admission.graphRevision}.`, receiptId: reserved.receiptId, runId: launched.runId });
             } catch (error) {
@@ -156,7 +173,8 @@ export class ProjectAutomationScheduler {
         return result;
       },
       eligible: (candidate, state) => !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
-      launch: (candidate: GithubCandidate) => this.launch(definition, candidate),
+      order: (a, b) => candidatePriority(b) - candidatePriority(a),
+      launch: (candidate: GithubCandidate) => this.launch(definition, candidate, turn, capReached),
       persist: (result, current) => {
         const cursor = laterCursor(current.cursor, result.cursor);
         return {
@@ -189,7 +207,7 @@ export class ProjectAutomationScheduler {
     });
   }
 
-  private async launch(definition: GithubAutomationDefinition, candidate: GithubCandidate): Promise<void> {
+  private async launch(definition: GithubAutomationDefinition, candidate: GithubCandidate, turn: { admitted: number } = { admitted: 0 }, capReached: () => boolean = () => false): Promise<void> {
     if (this.hasRecentReviewRequestReceipt(definition, candidate)) {
       this.handle.store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, result: 'duplicate', reason: 'A durable receipt already exists for this automation and pull request review-request burst.', githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url });
       return;
@@ -204,8 +222,11 @@ export class ProjectAutomationScheduler {
           const result = await this.handle.admit(candidate);
           if (result.status !== 'ready') throw new AutomationAdmissionDeferredError(result.reason);
           admission = result;
+          if (capReached()) throw new AutomationAdmissionDeferredError(`admission-cap: ${definition.filters.maxAdmissionsPerCycle} new launches per cycle already admitted; awaiting a later cycle`);
         }
-        return this.handle.launch!(definition, candidate, receiptId, admission);
+        const launched = await this.handle.launch!(definition, candidate, receiptId, admission);
+        if (candidate.event.startsWith('issue.')) turn.admitted += 1;
+        return launched;
       },
     });
   }

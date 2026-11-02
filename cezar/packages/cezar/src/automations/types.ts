@@ -34,6 +34,8 @@ export const automationFiltersSchema = z
     reviewers: stringList,
     lookbackDays: z.number().int().min(1).max(90).default(7),
     maxRecords: z.number().int().min(1).max(100).default(25),
+    /** Issue events only: new launches admitted per scheduler turn. Admissible candidates beyond it stay durably deferred (never dropped) and are admitted, highest `priority:<n>` first, on later turns. Omitted = unbounded. */
+    maxAdmissionsPerCycle: z.number().int().min(1).max(100).optional(),
     /** Tracker kind only: the vendor workflow status a matching item must currently be in
      *  (e.g. "To Do"). Case-insensitive match against the item's own `status` field. */
     status: z.string().trim().min(1).max(200).optional(),
