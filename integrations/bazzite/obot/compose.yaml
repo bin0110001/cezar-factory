@@ -31,10 +31,13 @@ services:
       OBOT_SERVER_DISABLE_UPDATE_CHECK: "true"
       OBOT_SERVER_PRODUCT_ANALYTICS_MODE: "off"
       OBOT_SERVER_MODEL_PROXY_URL: ""
+      OBOT_SERVER_MCPRUNTIME_BACKEND: docker
+      DOCKER_HOST: unix:///var/run/docker.sock
     ports:
       - 127.0.0.1:${OBOT_HOST_PORT:-8787}:8080
     volumes:
       - obot-data:/data
+      - /run/obot-runtime-api/podman.sock:/var/run/docker.sock:ro,z
     security_opt:
       - no-new-privileges:true
     cap_drop:
