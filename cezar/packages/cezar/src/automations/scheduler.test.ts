@@ -70,6 +70,133 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'run-after-unblock' });
   });
 
+  it('admits at most maxAdmissionsPerCycle new issues, highest priority first, and defers the rest durably', async () => {
+    const { store, definition } = await setup();
+    const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;
+    const low = { ...candidate, eventId: 'low', nodeId: 'I1', number: 1, labels: ['priority:1'] };
+    const high = { ...candidate, eventId: 'high', nodeId: 'I2', number: 2, labels: ['priority:5'] };
+    const polls = [[low, high], []];
+    const launch = vi.fn(async (_d: unknown, c: { number: number }) => ({ runId: `run-${c.number}` }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: polls.shift() ?? [], truncated: false, pages: 1 }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: `issue:github.com/acme/demo:${c.number}`, graphRevision: 1, reason: 'ready' }), launch: launch as never });
+    await scheduler.check(capped);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, 'high')?.status).toBe('launched');
+    expect(store.latestReceipt(definition.id, 'low')).toMatchObject({ status: 'deferred' });
+    expect(store.latestReceipt(definition.id, 'low')?.deferReason).toContain('admission-cap');
+    await scheduler.check(capped);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(store.latestReceipt(definition.id, 'low')?.status).toBe('launched');
+  });
+
+  it('recovers a labeling the cursor missed through full reconciliation, once per interval', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24 } } satisfies GithubAutomationDefinition;
+    const missed = { ...candidate, eventId: 'missed', event: 'issue.labeled' as const, nodeId: 'I9', number: 9, labels: ['factory:new'], changedLabel: 'factory:new' };
+    const reconcileLabeled = vi.fn(async () => ({ candidates: [missed], truncated: false }));
+    const launch = vi.fn(async () => ({ runId: 'run-missed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:9', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, 'missed')?.status).toBe('launched');
+    expect(store.state(definition.id)).toMatchObject({ lastReconcileRecovered: 1 });
+    await scheduler.check(labeled);
+    expect(reconcileLabeled).toHaveBeenCalledTimes(1);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not relaunch an already-received event during full reconciliation', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 1 } } satisfies GithubAutomationDefinition;
+    const seen = { ...candidate, eventId: 'seen', event: 'issue.labeled' as const, labels: ['factory:new'], changedLabel: 'factory:new' };
+    const launch = vi.fn(async () => ({ runId: 'run-seen' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [seen], truncated: false, pages: 1 }), reconcileLabeled: async () => ({ candidates: [seen], truncated: false }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.state(definition.id)).toMatchObject({ lastReconcileRecovered: 0 });
+  });
+
+  it('re-reads the issue before admission and keeps a stale one deferred with a reason', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async () => ({ runId: 'run-fresh' }));
+    const revalidate = vi.fn(async () => ({ eligible: false as const, reason: 'no-longer-eligible: label factory:new was removed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }), revalidate } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(definition);
+    expect(launch).not.toHaveBeenCalled();
+    expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'deferred' });
+    expect(store.latestReceipt(definition.id, candidate.eventId)?.deferReason).toContain('no-longer-eligible');
+    revalidate.mockResolvedValue({ eligible: true } as never);
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('survives a failed full reconciliation, retries it next turn, and previews it without side effects', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24 } } satisfies GithubAutomationDefinition;
+    const missed = { ...candidate, eventId: 'missed', event: 'issue.labeled' as const, nodeId: 'I9', number: 9, labels: ['factory:new'], changedLabel: 'factory:new' };
+    let outage = true;
+    const reconcileLabeled = vi.fn(async () => { if (outage) throw new Error('GitHub API rate limit exceeded'); return { candidates: [missed], truncated: false }; });
+    const launch = vi.fn(async () => ({ runId: 'run-missed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:9', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(store.state(definition.id)?.lastReconcileAt).toBeUndefined();
+    expect(store.state(definition.id)?.lastSuccessAt).toBeDefined();
+    expect(launch).not.toHaveBeenCalled();
+    outage = false;
+    const preview = await scheduler.check(labeled, 'preview');
+    expect(preview.candidates.map(c => c.eventId)).toEqual(['missed']);
+    expect(store.receipts()).toEqual([]);
+    expect(launch).not.toHaveBeenCalled();
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('initialSync eligible recovers a labeling older than the baseline; new_only does not', async () => {
+    for (const [initialSync, launches] of [['eligible', 1], ['new_only', 0]] as const) {
+      const { store, definition } = await setup();
+      const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24, initialSync } } satisfies GithubAutomationDefinition;
+      store.setState(definition.id, () => ({ baselineAt: '2026-08-01T00:00:00.000Z' }));
+      const old = { ...candidate, eventId: 'old', event: 'issue.labeled' as const, timestamp: '2026-07-26T02:00:00.000Z', labels: ['factory:new'], changedLabel: 'factory:new' };
+      const launch = vi.fn(async () => ({ runId: 'r' }));
+      const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled: async () => ({ candidates: [old], truncated: false }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+      await scheduler.check(labeled);
+      expect(launch).toHaveBeenCalledTimes(launches);
+    }
+  });
+
+  it('keeps the deferred queue across a restart and finishes admission with a fresh store and scheduler', async () => {
+    const { store, definition } = await setup();
+    const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;
+    const a = { ...candidate, eventId: 'a', nodeId: 'I1', number: 1, labels: ['priority:2'] };
+    const b = { ...candidate, eventId: 'b', nodeId: 'I2', number: 2, labels: ['priority:1'] };
+    const admit = async (c: { number: number }) => ({ status: 'ready' as const, repository: 'acme/demo', issueNumber: c.number, nodeId: `issue:github.com/acme/demo:${c.number}`, graphRevision: 1, reason: 'ready' });
+    const launch = vi.fn(async () => ({ runId: 'run' }));
+    const first = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [a, b], truncated: false, pages: 1 }) } as never }, admit, launch });
+    await first.check(capped);
+    expect(launch).toHaveBeenCalledTimes(1);
+    // "Restart": a brand-new store over the same directory and a brand-new scheduler.
+    store.flush?.({ throwOnError: true });
+    const reopened = AutomationStore.open((store as unknown as { dir?: string }).dir ?? dirs[dirs.length - 1]!);
+    expect(reopened.latestReceipt(definition.id, 'b')?.status).toBe('deferred');
+    const second = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store: reopened, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }) } as never }, admit, launch });
+    await second.check(capped);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(reopened.latestReceipt(definition.id, 'b')?.status).toBe('launched');
+    expect(reopened.latestReceipt(definition.id, 'a')?.status).toBe('launched');
+  });
+
+  it('adds bounded jitter to the next poll time', async () => {
+    const { store, definition } = await setup();
+    const jittered = { ...definition, filters: { ...definition.filters, pollJitterSeconds: 60 } } satisfies GithubAutomationDefinition;
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }) } as never }, admit: async () => { throw new Error('unused'); }, launch: async () => ({ runId: 'x' }) });
+    const before = Date.now();
+    await scheduler.check(jittered);
+    vi.restoreAllMocks();
+    const next = Date.parse(store.state(definition.id)!.nextCheckAt!);
+    expect(next - before).toBeGreaterThanOrEqual(330_000 - 50);
+    expect(next - before).toBeLessThan(335_000);
+  });
+
   it('deduplicates review-request bursts that straddle two polls', async () => {
     const { store, definition } = await setup();
     const reviewDefinition = {
@@ -621,6 +748,38 @@ describe('WorkspaceAutomationScheduler — a rejected check never re-arms at zer
       expect(failing).toHaveBeenCalledTimes(1);
       // Before the fix project 'a' owned the workspace's only slot and 'b' never got a turn.
       expect(healthy).toHaveBeenCalledTimes(1);
+      scheduler.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('WorkspaceAutomationScheduler — repository fairness', () => {
+  it('serves the longest-overdue repository first and never lets a busy one monopolize the single timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const T0 = Date.parse('2026-11-02T10:00:00Z');
+      vi.setSystemTime(T0);
+      const stores = new Map<string, AutomationStore>();
+      for (const [id, overdueMs] of [['busy', 600_000], ['small', 300_000]] as const) {
+        const dir = await mkdtemp(join(tmpdir(), 'cezar-fair-')); dirs.push(dir);
+        const store = AutomationStore.open(dir);
+        store.create({ name: id, enabled: true, events: ['issue.opened'], intervalSeconds: 300, filters: { lookbackDays: 7, maxRecords: 25 }, task: { prompt: 'x' } }, 'a');
+        store.setState('a', (current) => ({ ...current, nextCheckAt: new Date(T0 - overdueMs).toISOString() }));
+        stores.set(id, store);
+      }
+      const order: string[] = [];
+      const scheduler = new WorkspaceAutomationScheduler({
+        coordinator: { refresh: async () => undefined, enabledProjectIds: () => ['busy', 'small'], store: (id: string) => stores.get(id) } as never,
+        handle: (projectId: string, store: AutomationStore) => ({
+          projectId, timeZone: 'UTC', store,
+          github: { owner: 'acme', repo: projectId, poller: { poll: async () => { order.push(projectId); return { candidates: [], truncated: false, pages: 1 }; } } as never },
+        }),
+      });
+      await scheduler.start();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(order.slice(0, 2)).toEqual(['busy', 'small']);
       scheduler.stop();
     } finally {
       vi.useRealTimers();

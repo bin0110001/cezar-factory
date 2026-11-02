@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe('AutomationStore', () => {
-  it('writes definitions atomically at private permissions and preserves unknown fields', async () => {
+  it.skipIf(process.platform === 'win32')('writes definitions atomically at private permissions and preserves unknown fields', async () => {
     const dir = await directory();
     const store = AutomationStore.open(dir);
     const created = store.create(input, 'review-prs');

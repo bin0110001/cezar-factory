@@ -63,6 +63,16 @@ class GithubRequestArbiter {
 }
 const githubRequests = new GithubRequestArbiter();
 
+/** Human priority from a `priority:<n>` label (the Factory convention); higher runs first, none = 0. */
+export function candidatePriority(candidate: Pick<GithubCandidate, 'labels'>): number {
+  let best = 0;
+  for (const label of candidate.labels) {
+    const match = /^priority:(-?[0-9]+)$/.exec(label);
+    if (match) best = Math.max(best, Number(match[1]));
+  }
+  return best;
+}
+
 export class ProjectAutomationScheduler {
   constructor(private readonly handle: ProjectAutomationHandle) {}
 
@@ -86,14 +96,22 @@ export class ProjectAutomationScheduler {
     let exhausted = false;
     let stillPinned = false;
     let polledState: AutomationRuntimeState = {};
+    /** Launches admitted this turn; `filters.maxAdmissionsPerCycle` bounds it for issue events. */
+    const turn = { admitted: 0 };
+    /** Full-reconciliation bookkeeping for this turn (events it recovered bypass the cursor window). */
+    const reconcile = { ran: false, recovered: new Set<string>() };
+    const capReached = () => definition.filters.maxAdmissionsPerCycle !== undefined && turn.admitted >= definition.filters.maxAdmissionsPerCycle;
     return runEventPollCycle({
       store, definition, mode, scheduled, onChange: this.handle.onChange,
       beforePoll: async () => {
         if (!this.handle.admit || !this.handle.launch) return;
         // Recheck a small bounded batch each scheduler turn. Receipts stay durable and ordered;
         // unknown or blocked work remains deferred for a later graph sync and poll.
-        for (const deferred of store.deferredReceipts(definition.id).slice(0, 10)) {
+        const waiting = store.deferredReceipts(definition.id)
+          .sort((a, b) => candidatePriority(b.candidate ?? { labels: [] }) - candidatePriority(a.candidate ?? { labels: [] }));
+        for (const deferred of waiting.slice(0, 10)) {
           if (deferred.revision !== definition.revision) continue;
+          if (capReached()) break;
           const candidate = deferred.candidate;
           if (!candidate || !candidate.event.startsWith('issue.')) continue;
           let admission: Extract<DependencyAdmission, { status: 'ready' }>;
@@ -101,7 +119,9 @@ export class ProjectAutomationScheduler {
             const result = await this.handle.admit(candidate);
             if (result.status !== 'ready') continue;
             admission = result;
-          } catch {
+            await this.assertStillEligible(definition, candidate);
+          } catch (error) {
+            if (error instanceof AutomationAdmissionDeferredError) store.deferReceipt(deferred.receiptId, error.reason);
             continue;
           }
           const mutation = store.acquireMutationLease();
@@ -111,6 +131,7 @@ export class ProjectAutomationScheduler {
             if (!reserved) continue;
             try {
               const launched = await this.handle.launch(definition, candidate, reserved.receiptId, admission);
+              turn.admitted += 1;
               store.appendReceipt({ ...reserved, status: 'launched', runId: launched.runId, updatedAt: new Date().toISOString() });
               store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url, result: 'launched', reason: `Deferred issue event admitted at graph revision ${admission.graphRevision}.`, receiptId: reserved.receiptId, runId: launched.runId });
             } catch (error) {
@@ -153,10 +174,29 @@ export class ProjectAutomationScheduler {
           }
           exhausted = pinned(result);
         }
+        const hours = definition.filters.fullReconcileHours;
+        // A dry-run preview always reconciles (it launches nothing, persists nothing) so an operator can see what would be recovered.
+        const due = hours !== undefined
+          && (mode === 'preview' || !state.lastReconcileAt || Date.now() - Date.parse(state.lastReconcileAt) >= hours * 3_600_000);
+        if (due) {
+          try {
+            const full = await githubRequests.run(() => github.poller.reconcileLabeled(github.owner, github.repo, definition));
+            const seen = new Set(result.candidates.map(candidate => candidate.eventId));
+            const missed = full.candidates.filter(candidate => !seen.has(candidate.eventId) && !store.latestReceipt(definition.id, candidate.eventId));
+            for (const candidate of missed) reconcile.recovered.add(candidate.eventId);
+            result = { ...result, candidates: [...result.candidates, ...missed] };
+            reconcile.ran = true;
+            if (full.truncated) store.appendLog({ automationId: definition.id, revision: definition.revision, result: 'skipped', reason: 'Full reconciliation hit maxRecords; raise filters.maxRecords to examine more open issues.' });
+          } catch (error) {
+            store.appendLog({ automationId: definition.id, revision: definition.revision, result: 'error', reason: `Full reconciliation failed and will retry next turn: ${error instanceof Error ? error.message : String(error)}` });
+          }
+        }
         return result;
       },
-      eligible: (candidate, state) => !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
-      launch: (candidate: GithubCandidate) => this.launch(definition, candidate),
+      eligible: (candidate, state) => reconcile.recovered.has(candidate.eventId) || !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
+      bypassBaseline: candidate => definition.filters.initialSync === 'eligible' && reconcile.recovered.has(candidate.eventId),
+      order: (a, b) => candidatePriority(b) - candidatePriority(a),
+      launch: (candidate: GithubCandidate) => this.launch(definition, candidate, turn, capReached),
       persist: (result, current) => {
         const cursor = laterCursor(current.cursor, result.cursor);
         return {
@@ -166,12 +206,13 @@ export class ProjectAutomationScheduler {
             ? cursor
             : sameCursor(current.pinnedCursor, cursor) ? current.pinnedCursor : undefined,
           lastSuccessAt: new Date().toISOString(),
-          nextCheckAt: new Date(Date.now() + definition.intervalSeconds * 1000).toISOString(),
+          nextCheckAt: new Date(Date.now() + definition.intervalSeconds * 1000 + Math.floor(Math.random() * (definition.filters.pollJitterSeconds ?? 0) * 1000)).toISOString(),
           consecutiveFailures: 0,
           backoffUntil: undefined,
+          ...(reconcile.ran ? { lastReconcileAt: new Date().toISOString(), lastReconcileRecovered: reconcile.recovered.size } : {}),
         };
       },
-      reason: result => pollReason({
+      reason: result => reconcile.recovered.size ? `Full reconciliation recovered ${reconcile.recovered.size} missed event(s).` : pollReason({
         climbedTo,
         exhausted,
         // The marker only still describes this poll if the cursor did not move after all.
@@ -189,7 +230,20 @@ export class ProjectAutomationScheduler {
     });
   }
 
-  private async launch(definition: GithubAutomationDefinition, candidate: GithubCandidate): Promise<void> {
+  /** Pre-admission re-read (#225): a throw defers durably; a stale issue never launches. */
+  private async assertStillEligible(definition: GithubAutomationDefinition, candidate: GithubCandidate): Promise<void> {
+    const github = this.handle.github;
+    if (!github || !candidate.event.startsWith('issue.') || !github.poller.revalidate) return;
+    let verdict: Awaited<ReturnType<typeof github.poller.revalidate>>;
+    try {
+      verdict = await githubRequests.run(() => github.poller.revalidate(github.owner, github.repo, candidate, definition));
+    } catch (error) {
+      throw new AutomationAdmissionDeferredError(`revalidation-failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!verdict.eligible) throw new AutomationAdmissionDeferredError(verdict.reason);
+  }
+
+  private async launch(definition: GithubAutomationDefinition, candidate: GithubCandidate, turn: { admitted: number } = { admitted: 0 }, capReached: () => boolean = () => false): Promise<void> {
     if (this.hasRecentReviewRequestReceipt(definition, candidate)) {
       this.handle.store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, result: 'duplicate', reason: 'A durable receipt already exists for this automation and pull request review-request burst.', githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url });
       return;
@@ -204,8 +258,12 @@ export class ProjectAutomationScheduler {
           const result = await this.handle.admit(candidate);
           if (result.status !== 'ready') throw new AutomationAdmissionDeferredError(result.reason);
           admission = result;
+          await this.assertStillEligible(definition, candidate);
+          if (capReached()) throw new AutomationAdmissionDeferredError(`admission-cap: ${definition.filters.maxAdmissionsPerCycle} new launches per cycle already admitted; awaiting a later cycle`);
         }
-        return this.handle.launch!(definition, candidate, receiptId, admission);
+        const launched = await this.handle.launch!(definition, candidate, receiptId, admission);
+        if (candidate.event.startsWith('issue.')) turn.admitted += 1;
+        return launched;
       },
     });
   }

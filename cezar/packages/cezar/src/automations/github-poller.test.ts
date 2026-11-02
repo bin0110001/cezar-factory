@@ -309,3 +309,26 @@ describe('GithubPoller', () => {
     expect(matchesFilters(candidate, { ...definition, filters: { ...definition.filters, reviewers: ['dave'] } })).toBe(false);
   });
 });
+
+describe('GithubPoller admission-time checks', () => {
+  const labeledDef: GithubAutomationDefinition = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'] } };
+  const cand = { eventId: 'e', event: 'issue.labeled' as const, timestamp: item.created_at, tieBreaker: 'I', repo: 'acme/demo', nodeId: 'I_one', number: 7, title: 'x', url: item.html_url, author: 'alice', assignees: [], labels: ['factory:new'], changedLabel: 'factory:new' };
+  const issue = (state: string, labels: string[]) => JSON.stringify({ ...item, state, labels: labels.map(name => ({ name })) });
+
+  it('revalidates: closed or unlabeled issues are not eligible, current ones are', async () => {
+    const poll = (raw: string) => new GithubPoller({ run: async () => raw }).revalidate('acme', 'demo', cand, labeledDef);
+    expect(await poll(issue('open', ['factory:new']))).toEqual({ eligible: true });
+    expect(await poll(issue('closed', ['factory:new']))).toMatchObject({ eligible: false });
+    expect(await poll(issue('open', ['bug']))).toMatchObject({ eligible: false, reason: expect.stringContaining('was removed') });
+  });
+
+  it('reconcileLabeled returns the labeling event of each open issue still carrying the label', async () => {
+    const timeline = JSON.stringify([{ id: 5, node_id: 'LE_5', event: 'labeled', created_at: '2026-07-26T02:00:00.000Z', label: { name: 'factory:new' } }]);
+    const run = vi.fn(async (_exe: string, args: readonly string[]) =>
+      args.some(arg => arg.includes('/timeline')) ? timeline : JSON.stringify({ items: [{ ...item, labels: [{ name: 'factory:new' }] }] }));
+    const result = await new GithubPoller({ run }).reconcileLabeled('acme', 'demo', labeledDef);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({ event: 'issue.labeled', changedLabel: 'factory:new', number: 7 });
+    expect(run.mock.calls[0]![1].join(' ')).toContain('is:open');
+  });
+});
