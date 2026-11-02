@@ -1,10 +1,11 @@
 #!/usr/bin/env pwsh
 <##
 .SYNOPSIS
-Selects one existing open Factory issue for scheduled intake.
+Selects the issue named by an event task, or the oldest eligible issue for scheduled intake.
 
 .DESCRIPTION
-Fetches eligible issues once, orders them oldest first, and writes the selected
+Fetches eligible issues once. Event-triggered intake selects the issue named by
+-Task; scheduled intake selects the oldest eligible issue. Writes the selected
 issue (or a no-work result) to a bounded worktree-local artifact. The intake
 workflow consumes this artifact; issue discovery does not happen in the skill.
 ##>
@@ -12,6 +13,7 @@ workflow consumes this artifact; issue discovery does not happen in the skill.
 param(
     [string]$GhCommand = 'gh',
     [string]$Repo,
+    [string]$Task = '',
     [string]$OutputPath = '.factory/intake-issue.json'
 )
 
@@ -34,6 +36,13 @@ function Get-LabelNames($Issue) {
 $excluded = @('factory:blocked', 'factory:needs-plan', 'factory:working', 'factory:needs-help', 'factory:tracking')
 $raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', 'is:open label:"factory:new"', '--limit', '1000', '--json', 'number,title,body,url,createdAt,labels')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
+$targetIssue = $null
+if (-not [string]::IsNullOrWhiteSpace($Task)) {
+    $match = [regex]::Match($Task, '(?i)https?://github\.com/[^/\s]+/[^/\s]+/issues/(?<number>\d+)')
+    if (-not $match.Success) { $match = [regex]::Match($Task, '(?i)\bissue\s+#(?<number>\d+)\b') }
+    if (-not $match.Success) { throw 'The intake task must identify its GitHub issue by URL or issue number.' }
+    $targetIssue = [int]$match.Groups['number'].Value
+}
 $eligible = @($issues | Where-Object {
     $labels = @(Get-LabelNames $_)
     $types = @($labels | Where-Object { $_ -like 'type:*' })
@@ -44,8 +53,13 @@ $eligible = @($issues | Where-Object {
     $types.Count -eq 1 -and $risks.Count -eq 1
 } | Sort-Object @{ Expression = { [DateTimeOffset]::Parse([string]$_.createdAt) } }, @{ Expression = { [int]$_.number } })
 
-$selected = if ($eligible.Count) {
-    $issue = $eligible[0]
+$selectedIssue = if ($null -ne $targetIssue) {
+    @($eligible | Where-Object { [int]$_.number -eq $targetIssue } | Select-Object -First 1)
+} else {
+    @($eligible | Select-Object -First 1)
+}
+$selected = if ($selectedIssue.Count) {
+    $issue = $selectedIssue[0]
     [ordered]@{
         issue = [int]$issue.number
         title = [string]$issue.title
@@ -53,7 +67,7 @@ $selected = if ($eligible.Count) {
         url = [string]$issue.url
         createdAt = [string]$issue.createdAt
         labels = @(Get-LabelNames $issue)
-        terminalReason = 'selected-oldest-eligible-issue'
+        terminalReason = if ($null -ne $targetIssue) { 'selected-triggered-issue' } else { 'selected-oldest-eligible-issue' }
     }
 } else {
     [ordered]@{

@@ -1,11 +1,11 @@
 name: factory-maintenance
-description: Scheduled bounded Factory housekeeping - label audit, stale-workable refresh, and repository sweep. Issue intake is a separate workflow.
+description: Scheduled bounded Factory housekeeping with one existing-issue intake, stale-workable refresh, and repository sweep.
 steps:
   - id: startup
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1
     timeoutSeconds: 60
   # Liveness backstop first, so it runs even if a later step hangs: this hourly run cancels any earlier
   # run of a bounded workflow (including a previous stuck maintenance run) that outlived 30 minutes,
@@ -22,6 +22,24 @@ steps:
   - id: sync-issue-delivery
     name: Show PR progress on issues and close those delivered by PRs merged into dev
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/sync-issue-delivery.ps1 -OutputPath .factory/sync-issue-delivery.json
+    timeoutSeconds: 300
+  # Event intake handles new issues immediately. This one-item pull catches
+  # existing issues whose event was missed or predated the automation cursor.
+  - id: intake-select
+    name: Select one oldest eligible existing intake issue
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
+    timeoutSeconds: 300
+  - id: intake-classify
+    name: Classify the selected existing intake issue
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1 -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json
+    timeoutSeconds: 300
+  - id: intake-validate
+    name: Validate the intake result
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1 -Path .factory/intake-result.json
+    timeoutSeconds: 60
+  - id: intake-route
+    name: Route the selected issue to planning
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json
     timeoutSeconds: 300
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
