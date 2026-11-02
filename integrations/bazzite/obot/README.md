@@ -197,6 +197,10 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
 - Audit boundary: keep the Auditor role unassigned; it can access full request
   and response bodies. Share only sanitized container diagnostics and Obot
   audit metadata.
+- Caddy drops all Linux capabilities except `NET_BIND_SERVICE`. The official
+  Caddy image marks its binary with that file capability; keeping
+  `no-new-privileges` enabled prevents the binary from starting. Caddy listens
+  on unprivileged port 8443 and binds only to the configured LAN address.
 - Direct GitHub MCP client: fewer services and less operational overhead, but
   does not provide Obot's central vMCP selection, profile grants, or gateway
   audit boundary.

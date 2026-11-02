@@ -13,12 +13,12 @@ services:
       OBOT_HOST_PORT: ${OBOT_HOST_PORT:-8787}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
-      - obot-proxy-data:/data:Z
-      - obot-proxy-config:/config:Z
-    security_opt:
-      - no-new-privileges:true
+      - obot-proxy-data:/data
+      - obot-proxy-config:/config
     cap_drop:
       - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
   obot:
     image: ${OBOT_IMAGE:?Set OBOT_IMAGE to a version and immutable digest}
