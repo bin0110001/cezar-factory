@@ -23,6 +23,8 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
   eligible?: (candidate: C, state: AutomationRuntimeState) => boolean;
   /** Launch order for the eligible candidates; the poll order is kept when omitted. */
   order?: (a: C, b: C) => number;
+  /** Candidates exempt from the baseline cutoff (an explicit initial sync of existing eligible work). */
+  bypassBaseline?: (candidate: C) => boolean;
   isCurrent?: () => Promise<boolean>;
   launch?: (candidate: C) => Promise<void>;
   persist: (result: R, current: AutomationRuntimeState) => AutomationRuntimeState;
@@ -75,7 +77,7 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
     const result = await input.poll(state);
     if (!lease.isValid()) throw new Error('automation polling lease was lost');
     const eligible = result.candidates.filter(candidate =>
-      (!state.baselineAt || candidate.timestamp > state.baselineAt)
+      (!state.baselineAt || candidate.timestamp > state.baselineAt || input.bypassBaseline?.(candidate))
       && (!input.eligible || input.eligible(candidate, state)),
     );
     if (input.order) eligible.sort(input.order);
