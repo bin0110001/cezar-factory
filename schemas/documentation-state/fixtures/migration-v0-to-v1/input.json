@@ -1,0 +1,5 @@
+{
+  "summary": "The service may retry a request after a transient timeout.",
+  "source": "docs/legacy-notes.md",
+  "owner": ""
+}

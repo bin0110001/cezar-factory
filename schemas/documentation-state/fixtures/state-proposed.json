@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "factory-doc-state/v1",
+  "documentId": "api/widget/create",
+  "kind": "proposed-spec",
+  "state": "proposed",
+  "title": "Widget creation contract proposal",
+  "repository": { "slug": "example/widgets", "uri": "https://github.com/example/widgets" },
+  "ownership": { "owner": "widgets-maintainers", "team": "platform" },
+  "revision": {
+    "branch": "docs/widget-create",
+    "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "observedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceAnchors": [{ "path": "docs/contracts/widget-create.md", "startLine": 1 }]
+  },
+  "claims": [{ "id": "create-is-idempotent", "text": "Repeated create requests with the same idempotency key return the original widget.", "knowledge": "proposed", "speculative": true, "sourceAnchors": [], "evidence": [] }],
+  "verification": { "status": "not-verified", "evidence": [] },
+  "freshness": { "status": "unknown", "reason": "No implementation evidence exists yet." },
+  "sensitivity": "internal",
+  "projectPolicy": { "mode": "opt-in", "mandatoryGates": ["approved-contract", "security"], "advisoryChecks": ["spec-drift", "freshness"] },
+  "previousState": null,
+  "transitionReason": "Initial proposal.",
+  "transitionedAt": "2026-11-02T12:00:00Z",
+  "transitionedBy": "example/maintainer"
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "factory-doc-state/v1",
+  "documentId": "api/widget/create",
+  "kind": "proposed-spec",
+  "state": "proposed",
+  "title": "Invalid unmarked proposal",
+  "repository": { "slug": "example/widgets" },
+  "ownership": { "owner": "widgets-maintainers" },
+  "revision": { "branch": "docs/widget-create", "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "observedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sourceAnchors": [] },
+  "claims": [{ "id": "claim", "text": "This is an unsupported claim.", "knowledge": "proposed", "speculative": false, "sourceAnchors": [], "evidence": [] }],
+  "verification": { "status": "not-verified", "evidence": [] },
+  "freshness": { "status": "unknown", "reason": "No comparable evidence." },
+  "sensitivity": "internal",
+  "projectPolicy": { "mode": "opt-in", "mandatoryGates": ["approved-contract", "security"], "advisoryChecks": [] },
+  "previousState": null,
+  "transitionReason": "Initial proposal.",
+  "transitionedAt": "2026-11-02T12:00:00Z",
+  "transitionedBy": "example/maintainer"
+}

@@ -222,6 +222,57 @@ foreach ($entry in $resultExamples) {
     }
 }
 
+# Documentation-state contract fixtures combine Draft-07 shape validation with
+# cross-field lifecycle and revision checks that JSON Schema cannot express.
+$docStateSchema = Join-Path $factory 'schemas/documentation-state/state.schema.json'
+$docStateFixtures = Join-Path $factory 'schemas/documentation-state/fixtures'
+function Test-DocStateSemantics([hashtable]$Record) {
+    $allowedPrevious = @{
+        proposed = @('')
+        approved = @('proposed')
+        implemented = @('approved')
+        verified = @('implemented')
+        superseded = @('proposed', 'approved', 'implemented', 'verified')
+    }
+    $previous = if ($null -eq $Record.previousState) { '' } else { [string]$Record.previousState }
+    if ($previous -notin $allowedPrevious[[string]$Record.state]) { return $false }
+    if (@($Record.claims | Where-Object { $_.knowledge -eq 'proposed' -and $_.speculative -ne $true }).Count -gt 0) { return $false }
+    if (@($Record.claims | Where-Object { $_.knowledge -eq 'verified' -and ($_.speculative -ne $false -or @($_.evidence).Count -eq 0) }).Count -gt 0) { return $false }
+    if ($Record.state -eq 'verified') {
+        if ($Record.verification.status -ne 'verified' -or @($Record.claims | Where-Object knowledge -ne 'verified').Count -gt 0) { return $false }
+        if ($Record.freshness.status -ne 'fresh' -or $Record.freshness.checkedAgainstSha -cne $Record.revision.observedSha) { return $false }
+    }
+    switch ([string]$Record.freshness.status) {
+        'fresh' { if (-not $Record.freshness.checkedAgainstSha -or $Record.freshness.checkedAgainstSha -cne $Record.revision.observedSha) { return $false } }
+        'stale' { if (-not $Record.freshness.checkedAgainstSha -or $Record.freshness.checkedAgainstSha -ceq $Record.revision.observedSha) { return $false } }
+        'unknown' { if ($Record.freshness.ContainsKey('checkedAgainstSha')) { return $false } }
+    }
+    return $true
+}
+$docStateSchemaCases = @(
+    @{ Name = 'state-proposed.json'; SchemaValid = $true; SemanticValid = $true },
+    @{ Name = 'state-verified.json'; SchemaValid = $true; SemanticValid = $true },
+    @{ Name = 'state-invalid-proposed-claim.json'; SchemaValid = $false; SemanticValid = $false },
+    @{ Name = 'state-invalid-transition.json'; SchemaValid = $true; SemanticValid = $false },
+    @{ Name = 'state-invalid-stale-evidence.json'; SchemaValid = $true; SemanticValid = $false },
+    @{ Name = 'migration-v0-to-v1/expected.json'; SchemaValid = $true; SemanticValid = $true }
+)
+foreach ($case in $docStateSchemaCases) {
+    $fixturePath = Join-Path $docStateFixtures $case.Name
+    $raw = Get-Content -Raw $fixturePath
+    $record = $raw | ConvertFrom-Json -AsHashtable
+    $schemaValid = $false
+    try { $schemaValid = [bool](Test-Json -Json $raw -SchemaFile $docStateSchema -ErrorAction Stop) } catch { }
+    Assert "documentation state $($case.Name) schema validity is $($case.SchemaValid)" ($schemaValid -eq $case.SchemaValid)
+    Assert "documentation state $($case.Name) semantic validity is $($case.SemanticValid)" ((Test-DocStateSemantics $record) -eq $case.SemanticValid)
+}
+$migrationInput = Get-Content -Raw (Join-Path $docStateFixtures 'migration-v0-to-v1/input.json') | ConvertFrom-Json -AsHashtable
+$migrationExpected = Get-Content -Raw (Join-Path $docStateFixtures 'migration-v0-to-v1/expected.json') | ConvertFrom-Json -AsHashtable
+Assert 'documentation-state migration preserves legacy text as an explicit proposal' ($migrationExpected.claims[0].text -eq $migrationInput.summary -and $migrationExpected.claims[0].speculative -and $migrationExpected.state -eq 'proposed')
+Assert 'documentation-state migration does not infer verification or freshness' ($migrationExpected.verification.status -eq 'not-verified' -and $migrationExpected.freshness.status -eq 'unknown' -and $migrationExpected.migratedFrom.schemaVersion -eq 'unversioned/v0')
+$docRoutingScenarios = @(Select-String -Path (Join-Path $factory 'schemas/documentation-state/README.md') -Pattern '^\| (?![-:])[^|]+\|[^|]+\|[^|]+\|$')
+Assert 'documentation routing contract contains at least 12 deterministic scenarios' ($docRoutingScenarios.Count -ge 12)
+
 function Missing-StartupScripts([string]$WorkflowText) {
     $startup = [regex]::Match($WorkflowText, '(?m)^\s+command:.*factory-startup\.ps1.*-RequiredScripts\s+([^\s]+)')
     if (-not $startup.Success) { return @('startup manifest missing') }
