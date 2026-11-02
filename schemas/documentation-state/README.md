@@ -24,6 +24,13 @@ rewrite a record.
 | Generated wiki or search index | Derived output | Rebuild from Git; stale or conflicting output is discarded or marked stale. It is never a source of truth. |
 | Test and review evidence | Immutable run/review artifacts referenced by the record | Evidence supports only the exact revision and scope tested. The existing run/evidence contract owns full execution details. |
 
+The documentation record links to adjacent contracts by reference: #126 owns
+run/attempt/event IDs and causation; #130 owns reproducibility inputs and
+content-addressed artifacts; #132 owns acceptance-to-evidence mapping; #134
+owns memory provenance and supersession; and #146 owns dependency identities
+and readiness. This schema stores document claims and source anchors only; it
+does not duplicate those records or their lifecycle events.
+
 ## Lifecycle and claim rules
 
 Allowed transitions are `null -> proposed`, `proposed -> approved`,
@@ -101,8 +108,9 @@ not overrideable.
 The schema version is carried on every record. A v0/unversioned record is
 migrated by writing a new v1 record and retaining the original bytes. The
 migration example in `fixtures/migration-v0-to-v1/` maps old `summary` text to a
-proposed, explicitly speculative claim; unknown owner, sensitivity, freshness,
-and verification become `unknown`/`internal`/`not-verified` values. Migration
+proposed, explicitly speculative claim; an unknown owner becomes `unassigned`,
+unknown sensitivity defaults to `internal`, and freshness and verification
+become `unknown`/`not-verified`. Migration
 never infers approval, verification, or currentness. `migratedFrom` identifies
 the old format and source reference. Unsupported future versions are preserved
 but not used for routing or gates.
