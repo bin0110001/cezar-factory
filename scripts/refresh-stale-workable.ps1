@@ -22,7 +22,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $workableStates = @(
-    'factory:new',
     'factory:needs-plan',
     'factory:ready',
     'factory:review',

@@ -9,8 +9,8 @@ activity from which to advance its cursor.
 
 | Current outcome | Update emitted by the workflow | Next automation | Trigger labels |
 |---|---|---|---|
-| New issue | `factory:new` | Intake | `factory:new` on `issue.opened` or `issue.labeled` |
-| Existing backlog issue | Scheduled intake selects oldest `factory:new` | Intake | Schedule, then the same intake route |
+| New issue | `factory:new` | Intake for that exact issue | `factory:new` on `issue.opened` or `issue.labeled` |
+| Existing backlog issue | Hourly maintenance pull selects the oldest eligible `factory:new` | Intake | `[factory] maintenance` schedule, then the same intake route |
 | Intake classified | `factory:needs-plan` | Planning | `factory:needs-plan` |
 | Plan ready | `factory:ready` plus exactly one complexity label | Implementation | `factory:ready` plus `complexity:*` |
 | Implementation succeeds | `factory:review` | Review | `factory:review` |
@@ -30,7 +30,12 @@ implementation through `factory:changes-requested`.
 
 Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the
-filter envelope.
+filter envelope. Event-triggered intake uses the issue in its task context;
+the hourly catch-up path has no issue context and selects one oldest eligible
+issue. The stale-state refresher excludes `factory:new` because the scheduled
+intake pull handles that backlog directly. This keeps a missed event from
+stranding work without letting an event for one issue silently advance a
+different issue or racing the catch-up pull against a label replay.
 
 ## Exceptional user-input gate
 
@@ -52,12 +57,12 @@ while another issue waits for CI, independent review, or release. Do not wait
 for per-issue user scheduling; only a major architectural decision pauses for
 user input.
 
-The `[factory] maintenance` automation runs only fixed script steps plus the
-capped legacy-label audit: backlog-label audit, `refresh-stale-workable`, and
-`maintain-repository.ps1`. It does not select or classify issues for intake;
-`[factory] intake` is the only intake path. `refresh-stale-workable` is a
-repair loop, not a new lifecycle state. It selects at most two open
-issues older than 24 hours in `factory:new`, `factory:needs-plan`,
+The `[factory] maintenance` automation runs fixed script steps plus one
+existing-issue intake, the capped legacy-label audit, `refresh-stale-workable`,
+and `maintain-repository.ps1`. `[factory] intake` handles event-triggered
+issues; maintenance supplies the scheduled catch-up path.
+`refresh-stale-workable` is a repair loop, not a new lifecycle state. It selects
+at most two open issues older than 24 hours in `factory:needs-plan`,
 `factory:ready`, `factory:review`, `factory:changes-requested`, or
 `factory:investigate`. It skips manual/terminal states, multiple or missing
 lifecycle labels, audit/tracking markers, and `factory:ready` issues without

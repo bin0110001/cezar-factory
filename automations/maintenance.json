@@ -1,6 +1,6 @@
 {
   "name": "[factory] maintenance",
-  "description": "Hourly deterministic Factory housekeeping (label audit, stale refresh, repository sweep) (managed by cezar-factory; do not edit in the cockpit)",
+  "description": "Hourly deterministic Factory housekeeping with bounded existing-issue intake, stale refresh, and repository sweep (managed by cezar-factory; do not edit in the cockpit)",
   "kind": "schedule",
   "schedule": {
     "type": "hours",

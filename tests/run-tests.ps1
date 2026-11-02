@@ -168,7 +168,11 @@ $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.p
 Assert 'new-project onboarding creates dev from the default branch' ($onboardScript -match 'git/ref/heads/dev' -and $onboardScript -match 'refs/heads/dev' -and $onboardScript -match 'defaultBranchRef')
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance workflow does not select or route intake work' ($maintenanceWorkflow -notmatch 'select-intake-issue|classify-intake|route-intake')
+Assert 'maintenance workflow includes one bounded existing-issue intake pull' ($maintenanceWorkflow -match 'select-intake-issue\.ps1' -and $maintenanceWorkflow -match 'classify-intake\.ps1' -and $maintenanceWorkflow -match 'route-intake-or-no-work\.ps1')
+$staleWorkableScript = Get-Content -Raw (Join-Path $factory 'scripts/refresh-stale-workable.ps1')
+Assert 'stale-workable replay leaves new issues to the scheduled intake pull' ($staleWorkableScript -notmatch "'factory:new'")
+$intakeWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/intake.yaml')
+Assert 'intake workflow passes task context to the workflow-owned selector' ($intakeWorkflow -match 'select-intake-issue\.ps1 -Task "\{\{task\}\}"')
 Assert 'maintenance workflow recovers audit reservations before collection' ($maintenanceWorkflow -match 'recover-audit-reservations\.ps1' -and $maintenanceWorkflow -match 'id: recover-audit-reservations')
 $recoveryScript = Get-Content -Raw (Join-Path $factory 'scripts/recover-audit-reservations.ps1')
 Assert 'maintenance recovery uses Cezar loopback API and selected worktree identity' ($recoveryScript -match 'http://127\.0\.0\.1:4321' -and $recoveryScript -match '\.ai' -and $recoveryScript -match 'worktrees' -and $recoveryScript -match 'Split-Path \$Matches\.root -Leaf' -and $maintenanceWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_')
@@ -759,7 +763,8 @@ try {
             @{ number = 1; title = 'tracking epic'; body = ''; url = 'https://github.com/x/y/issues/1'; createdAt = '2026-01-01T00:00:00Z'; labels = @('factory:new', 'epic', 'type:feature', 'risk:medium') },
             @{ number = 2; title = 'ambiguous labels'; body = ''; url = 'https://github.com/x/y/issues/2'; createdAt = '2026-01-02T00:00:00Z'; labels = @('factory:new', 'type:bug', 'type:feature', 'risk:low') },
             @{ number = 3; title = 'eligible work'; body = ''; url = 'https://github.com/x/y/issues/3'; createdAt = '2026-01-03T00:00:00Z'; labels = @('factory:new', 'type:bug', 'risk:low') },
-            @{ number = 4; title = 'tracking label'; body = ''; url = 'https://github.com/x/y/issues/4'; createdAt = '2026-01-04T00:00:00Z'; labels = @('factory:new', 'factory:tracking', 'type:feature', 'risk:low') }
+            @{ number = 4; title = 'tracking label'; body = ''; url = 'https://github.com/x/y/issues/4'; createdAt = '2026-01-04T00:00:00Z'; labels = @('factory:new', 'factory:tracking', 'type:feature', 'risk:low') },
+            @{ number = 5; title = 'new eligible work'; body = ''; url = 'https://github.com/x/y/issues/5'; createdAt = '2026-01-05T00:00:00Z'; labels = @('factory:new', 'type:feature', 'risk:low') }
         )
     }
     $selectorState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
@@ -767,6 +772,14 @@ try {
     $selectorRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; OutputPath = $selectorOutput }
     $selectedIntake = Get-Content -Raw $selectorOutput | ConvertFrom-Json
     Assert 'intake selector skips epics, tracking parents, and ambiguous taxonomy' ($selectorRun.Code -eq 0 -and $selectedIntake.issue -eq 3)
+    $selectorTargetOutput = Join-Path $tmp 'intake-target-selection.json'
+    $selectorTargetRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #5 (new eligible work) at https://github.com/x/y/issues/5'; OutputPath = $selectorTargetOutput }
+    $selectedTargetIntake = Get-Content -Raw $selectorTargetOutput | ConvertFrom-Json
+    Assert 'event intake selects its triggering issue instead of the oldest issue' ($selectorTargetRun.Code -eq 0 -and $selectedTargetIntake.issue -eq 5 -and $selectedTargetIntake.terminalReason -eq 'selected-triggered-issue')
+    $selectorIneligibleOutput = Join-Path $tmp 'intake-ineligible-selection.json'
+    $selectorIneligibleRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #1 (tracking epic) at https://github.com/x/y/issues/1'; OutputPath = $selectorIneligibleOutput }
+    $selectedIneligibleIntake = Get-Content -Raw $selectorIneligibleOutput | ConvertFrom-Json
+    Assert 'event intake does not substitute another issue when its trigger is ineligible' ($selectorIneligibleRun.Code -eq 0 -and $null -eq $selectedIneligibleIntake.issue)
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')
