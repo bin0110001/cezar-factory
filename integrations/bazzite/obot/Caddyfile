@@ -1,0 +1,10 @@
+{
+	auto_https disable_redirects
+	admin 127.0.0.1:2019
+}
+
+https://{$OBOT_TLS_HOSTNAME}:{$OBOT_HTTPS_PORT} {
+	bind {$OBOT_BIND_ADDRESS}
+	tls internal
+	reverse_proxy 127.0.0.1:{$OBOT_HOST_PORT}
+}

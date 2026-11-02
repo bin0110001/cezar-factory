@@ -314,6 +314,23 @@ Assert 'Bazzite validation uses LiteLLM master key for gateway health' ((Get-Con
 Assert 'LiteLLM config mount is SELinux-safe' ((Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'litellm-config\.yaml:/app/config\.yaml:ro,Z')
 Assert 'Bazzite preflight rejects example registry' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')) -match 'registry\\.example')
 Assert 'Bazzite preflight requires OpenHands auth' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')) -match 'OPENHANDS_SESSION_API_KEY')
+$obotDir = Join-Path $factory 'integrations/bazzite/obot'
+$obotCompose = Get-Content -Raw (Join-Path $obotDir 'compose.yaml')
+$obotDeploy = Get-Content -Raw (Join-Path $obotDir 'deploy.sh')
+$obotValidate = Get-Content -Raw (Join-Path $obotDir 'validate.sh')
+$obotTeardown = Get-Content -Raw (Join-Path $obotDir 'teardown.sh')
+$obotDocs = Get-Content -Raw (Join-Path $obotDir 'README.md')
+$obotEnv = Get-Content -Raw (Join-Path $obotDir 'env.example')
+Assert 'Obot POC pins a supported image by version and digest' ($obotEnv -match '(?m)^OBOT_IMAGE=ghcr\.io/obot-platform/obot:v0\.27\.0@sha256:[a-f0-9]{64}$')
+Assert 'Obot HTTPS proxy pins a supported image by version and digest' ($obotEnv -match '(?m)^CADDY_IMAGE=docker\.io/library/caddy:[0-9]+\.[0-9]+\.[0-9]+-alpine@sha256:[a-f0-9]{64}$')
+Assert 'Obot POC requires authentication and publishes only a loopback port' ($obotCompose -match 'OBOT_SERVER_ENABLE_AUTHENTICATION: "true"' -and $obotCompose -match '127\.0\.0\.1:\$\{OBOT_HOST_PORT')
+Assert 'Obot TLS proxy binds the LAN address and uses an internal CA' ((Get-Content -Raw (Join-Path $obotDir 'Caddyfile')) -match 'tls internal' -and (Get-Content -Raw (Join-Path $obotDir 'Caddyfile')) -match 'bind \{\$OBOT_BIND_ADDRESS\}' -and $obotCompose -match 'network_mode: host')
+Assert 'Obot remote-only POC does not mount a container-runtime socket' ($obotCompose -notmatch 'docker\.sock|podman\.sock' -and $obotCompose -notmatch 'privileged:\s*true')
+Assert 'Obot deployment requires explicit topology services and local control-plane address' ($obotDeploy -match 'FACTORY_CONTROL_PLANE_SERVICES' -and $obotDeploy -match 'FACTORY_CONTROL_PLANE_ADDRESS' -and (Get-Content -Raw (Join-Path $factory 'config/server-topology.env.example')) -match 'FACTORY_CONTROL_PLANE_SERVICES=.*obot obot-https')
+Assert 'Obot deploy and validation require app and proxy data on secondary disk' ($obotDeploy -match 'OBOT_REQUIRED_PODMAN_STORAGE_MOUNT' -and $obotDeploy -match 'findmnt' -and $obotValidate -match 'volume inspect' -and $obotValidate -match 'graphroot' -and $obotValidate -match 'proxy_volume_mount')
+Assert 'Obot health validation uses official health endpoint and avoids raw log output' ($obotValidate -match '/api/healthz' -and $obotValidate -notmatch 'podman.*logs')
+Assert 'Obot teardown preserves app and CA data unless exact volume names are confirmed' ($obotTeardown -match '--purge-data' -and $obotTeardown -match 'volume rm' -and $obotTeardown -match 'confirmation_text' -and $obotTeardown -match 'All data volumes preserved')
+Assert 'Obot operator guide documents the least-privilege GitHub MCP and lifecycle evidence' ($obotDocs -match 'api\.githubcopilot\.com/mcp/x/repos/readonly' -and $obotDocs -match 'get_file_contents' -and $obotDocs -match 'backup' -and $obotDocs -match 'Restore' -and $obotDocs -match 'rollback' -and $obotDocs -match 'go/no-go')
 $bazziteCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
 Assert 'Bazzite composes a persistent loopback-only Vault service' ($bazziteCompose -match '(?ms)^  vault:.*?127\.0\.0\.1:8200:8200' -and $bazziteCompose -match 'vault-data:/vault/file:Z')
 Assert 'Vault uses integrated storage with an explicit mlock setting' ((Get-Content -Raw (Join-Path $factory 'integrations/bazzite/vault-config/vault.hcl')) -match 'storage "raft"' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/vault-config/vault.hcl')) -match 'disable_mlock = true')
@@ -473,19 +490,36 @@ try {
         @{ id = 'r-done'; status = 'done'; startedAt = $wdOld; workflow = 'factory-maintenance' }) } | ConvertTo-Json -Depth 5
     $wdJob = Start-Job -ArgumentList $wdPort, $wdRuns, $wdLog -ScriptBlock {
         param($port, $json, $log)
-        $listener = [System.Net.HttpListener]::new(); $listener.Prefixes.Add("http://127.0.0.1:$port/"); $listener.Start()
+        # HttpListener cannot start on some restricted Windows runners. Use a
+        # loopback TCP listener, matching tests/mock-cezar.ps1's fixture.
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+        $listener.Start()
         $until = [DateTime]::UtcNow.AddSeconds(60)
-        $pending = $null
-        while ([DateTime]::UtcNow -lt $until) {
-            # Keep one accept outstanding until it completes; abandoning it would swallow a request.
-            if (-not $pending) { $pending = $listener.GetContextAsync() }
-            if (-not $pending.Wait(1000)) { continue }
-            $ctx = $pending.Result; $pending = $null
-            if ($ctx.Request.HttpMethod -eq 'POST') { Add-Content $log $ctx.Request.Url.AbsolutePath; $body = '{}' } else { $body = $json }
-            $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-            $ctx.Response.ContentType = 'application/json'; $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length); $ctx.Response.Close()
+        try {
+            while ([DateTime]::UtcNow -lt $until) {
+                if (-not $listener.Pending()) { Start-Sleep -Milliseconds 50; continue }
+                $client = $listener.AcceptTcpClient()
+                $reader = $null
+                try {
+                    $stream = $client.GetStream()
+                    $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
+                    $requestLine = $reader.ReadLine()
+                    if (-not $requestLine) { continue }
+                    $parts = $requestLine.Split(' ')
+                    $method = $parts[0]; $path = $parts[1]
+                    while (($line = $reader.ReadLine()) -ne '') { }
+                    if ($method -eq 'POST') { Add-Content $log $path; $body = '{}' } else { $body = $json }
+                    $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+                    $head = "HTTP/1.1 200 OK`r`nContent-Type: application/json`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n"
+                    $headBytes = [Text.Encoding]::ASCII.GetBytes($head)
+                    $stream.Write($headBytes, 0, $headBytes.Length)
+                    $stream.Write($bytes, 0, $bytes.Length)
+                    $stream.Flush()
+                }
+                finally { if ($reader) { $reader.Dispose() }; $client.Dispose() }
+            }
         }
-        $listener.Stop()
+        finally { $listener.Stop() }
     }
     Start-Sleep -Seconds 2
     $wd = Run 'watchdog-automations.ps1' @{ ApiUrl = "http://127.0.0.1:$wdPort"; ProjectId = 'p'; MaxRunMinutes = 30; Workflow = 'factory-maintenance,factory-intake'; ExcludeRunId = 'r-self' }
