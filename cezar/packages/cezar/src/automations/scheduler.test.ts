@@ -115,6 +115,20 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.state(definition.id)).toMatchObject({ lastReconcileRecovered: 0 });
   });
 
+  it('re-reads the issue before admission and keeps a stale one deferred with a reason', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async () => ({ runId: 'run-fresh' }));
+    const revalidate = vi.fn(async () => ({ eligible: false as const, reason: 'no-longer-eligible: label factory:new was removed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }), revalidate } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(definition);
+    expect(launch).not.toHaveBeenCalled();
+    expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'deferred' });
+    expect(store.latestReceipt(definition.id, candidate.eventId)?.deferReason).toContain('no-longer-eligible');
+    revalidate.mockResolvedValue({ eligible: true } as never);
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
   it('deduplicates review-request bursts that straddle two polls', async () => {
     const { store, definition } = await setup();
     const reviewDefinition = {

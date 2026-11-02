@@ -281,6 +281,31 @@ export class GithubPoller {
   }
 
   /**
+   * Re-reads one issue just before admission. An issue that was closed, or lost the label that
+   * fired the event, since it was discovered is not eligible any more; the filters are evaluated
+   * against its CURRENT labels. Returns a human reason when it is not eligible.
+   */
+  async revalidate(
+    owner: string,
+    repo: string,
+    candidate: GithubCandidate,
+    definition: GithubAutomationDefinition,
+  ): Promise<{ eligible: true } | { eligible: false; reason: string }> {
+    const raw = await this.run('gh', ['api', '--method', 'GET', `repos/${owner}/${repo}/issues/${candidate.number}`]);
+    const item = githubItemSchema.extend({ state: z.string() }).parse(JSON.parse(raw));
+    if (item.state !== 'open') return { eligible: false, reason: 'no-longer-eligible: the issue is closed' };
+    const labels = item.labels.map(label => label.name);
+    if (candidate.event === 'issue.labeled' && candidate.changedLabel
+      && !labels.some(label => label.toLowerCase() === candidate.changedLabel!.toLowerCase())) {
+      return { eligible: false, reason: `no-longer-eligible: label ${candidate.changedLabel} was removed` };
+    }
+    if (!matchesFilters({ ...candidate, labels, assignees: item.assignees.map(a => a.login) }, definition)) {
+      return { eligible: false, reason: 'no-longer-eligible: current labels or assignees no longer match the filters' };
+    }
+    return { eligible: true };
+  }
+
+  /**
    * Full reconciliation for `issue.labeled` automations: the OPEN issues that currently carry a
    * watched label, each as the candidate for the labeling that applied it. Ignores the cursor, so
    * it repairs events a cursor or search page never delivered. The event ids are the ones the

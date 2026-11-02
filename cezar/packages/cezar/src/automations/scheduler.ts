@@ -119,7 +119,9 @@ export class ProjectAutomationScheduler {
             const result = await this.handle.admit(candidate);
             if (result.status !== 'ready') continue;
             admission = result;
-          } catch {
+            await this.assertStillEligible(definition, candidate);
+          } catch (error) {
+            if (error instanceof AutomationAdmissionDeferredError) store.deferReceipt(deferred.receiptId, error.reason);
             continue;
           }
           const mutation = store.acquireMutationLease();
@@ -226,6 +228,19 @@ export class ProjectAutomationScheduler {
     });
   }
 
+  /** Pre-admission re-read (#225): a throw defers durably; a stale issue never launches. */
+  private async assertStillEligible(definition: GithubAutomationDefinition, candidate: GithubCandidate): Promise<void> {
+    const github = this.handle.github;
+    if (!github || !candidate.event.startsWith('issue.') || !github.poller.revalidate) return;
+    let verdict: Awaited<ReturnType<typeof github.poller.revalidate>>;
+    try {
+      verdict = await githubRequests.run(() => github.poller.revalidate(github.owner, github.repo, candidate, definition));
+    } catch (error) {
+      throw new AutomationAdmissionDeferredError(`revalidation-failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!verdict.eligible) throw new AutomationAdmissionDeferredError(verdict.reason);
+  }
+
   private async launch(definition: GithubAutomationDefinition, candidate: GithubCandidate, turn: { admitted: number } = { admitted: 0 }, capReached: () => boolean = () => false): Promise<void> {
     if (this.hasRecentReviewRequestReceipt(definition, candidate)) {
       this.handle.store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, result: 'duplicate', reason: 'A durable receipt already exists for this automation and pull request review-request burst.', githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url });
@@ -241,6 +256,7 @@ export class ProjectAutomationScheduler {
           const result = await this.handle.admit(candidate);
           if (result.status !== 'ready') throw new AutomationAdmissionDeferredError(result.reason);
           admission = result;
+          await this.assertStillEligible(definition, candidate);
           if (capReached()) throw new AutomationAdmissionDeferredError(`admission-cap: ${definition.filters.maxAdmissionsPerCycle} new launches per cycle already admitted; awaiting a later cycle`);
         }
         const launched = await this.handle.launch!(definition, candidate, receiptId, admission);
