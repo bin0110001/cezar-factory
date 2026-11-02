@@ -239,6 +239,10 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
   label prevents the mounted Cezar runtime from verifying the promoted tree.
 - Caddy's exclusive named data and config volumes use private `Z` relabeling
   so Podman updates their SELinux category when it recreates the proxy.
+- Obot's read-only dedicated runtime socket bind uses private `Z` relabeling.
+  The socket is exclusive to Obot, and the private label grants its container
+  SELinux domain access without making the runtime socket shared with other
+  containers.
 - Obot drops every Linux capability except `CHOWN`, `DAC_READ_SEARCH`,
   `FOWNER`, `SETGID`, and `SETUID`. Its bundled PostgreSQL startup uses them
   to initialize and adjust `/data/postgresql`, inspect its existing files,

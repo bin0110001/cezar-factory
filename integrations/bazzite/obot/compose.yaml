@@ -37,7 +37,7 @@ services:
       - 127.0.0.1:${OBOT_HOST_PORT:-8787}:8080
     volumes:
       - obot-data:/data
-      - /run/obot-runtime-api/podman.sock:/var/run/docker.sock:ro,z
+      - /run/obot-runtime-api/podman.sock:/var/run/docker.sock:ro,Z
     security_opt:
       - no-new-privileges:true
     cap_drop:
