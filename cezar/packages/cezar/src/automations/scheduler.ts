@@ -194,6 +194,7 @@ export class ProjectAutomationScheduler {
         return result;
       },
       eligible: (candidate, state) => reconcile.recovered.has(candidate.eventId) || !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
+      bypassBaseline: candidate => definition.filters.initialSync === 'eligible' && reconcile.recovered.has(candidate.eventId),
       order: (a, b) => candidatePriority(b) - candidatePriority(a),
       launch: (candidate: GithubCandidate) => this.launch(definition, candidate, turn, capReached),
       persist: (result, current) => {

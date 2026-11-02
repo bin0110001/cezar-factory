@@ -44,6 +44,7 @@ A GitHub poll:
     "lookbackDays": 7,                               //   1-90 (default 7): how far back one poll looks
     "maxRecords": 25,                                //   1-100 (default 25): the most candidates one poll considers
     "pollJitterSeconds": 30,                         //   optional, 1-600: random delay added to each next poll time
+    "initialSync": "new_only",                       //   optional "eligible" | "new_only" (default): with fullReconcileHours, "eligible" also recovers open issues labeled before the baseline
     "fullReconcileHours": 24,                        //   optional, 1-720 (issue.labeled): also list open issues still carrying a changed label this often and recover labelings the cursor missed
     "maxAdmissionsPerCycle": 3                       //   optional, 1-100 (issue events): new launches per poll turn; the rest stay deferred and run later, highest priority:<n> label first
   },

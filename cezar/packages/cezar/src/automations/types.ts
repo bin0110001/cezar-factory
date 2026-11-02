@@ -36,6 +36,8 @@ export const automationFiltersSchema = z
     maxRecords: z.number().int().min(1).max(100).default(25),
     /** Issue events only: new launches admitted per scheduler turn. Admissible candidates beyond it stay durably deferred (never dropped) and are admitted, highest `priority:<n>` first, on later turns. Omitted = unbounded. */
     /** issue.labeled only: every this-many hours the poll also lists OPEN issues that still carry a changed label and recovers any whose labeling event the cursor never delivered (missed or skipped page). Already-received events are deduplicated by receipt. Omitted = never. */
+    /** With fullReconcileHours: 'eligible' also recovers open issues labeled BEFORE the automation was created (initial sync); 'new_only' (default) never replays history older than the baseline. */
+    initialSync: z.enum(['eligible', 'new_only']).optional(),
     fullReconcileHours: z.number().int().min(1).max(720).optional(),
     /** Up to this many seconds are added (randomly) to each next poll time so many automations do not hit GitHub in lockstep. Omitted = none. */
     pollJitterSeconds: z.number().int().min(1).max(600).optional(),

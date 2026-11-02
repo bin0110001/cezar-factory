@@ -150,6 +150,19 @@ describe('ProjectAutomationScheduler', () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it('initialSync eligible recovers a labeling older than the baseline; new_only does not', async () => {
+    for (const [initialSync, launches] of [['eligible', 1], ['new_only', 0]] as const) {
+      const { store, definition } = await setup();
+      const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24, initialSync } } satisfies GithubAutomationDefinition;
+      store.setState(definition.id, () => ({ baselineAt: '2026-08-01T00:00:00.000Z' }));
+      const old = { ...candidate, eventId: 'old', event: 'issue.labeled' as const, timestamp: '2026-07-26T02:00:00.000Z', labels: ['factory:new'], changedLabel: 'factory:new' };
+      const launch = vi.fn(async () => ({ runId: 'r' }));
+      const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled: async () => ({ candidates: [old], truncated: false }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }), launch });
+      await scheduler.check(labeled);
+      expect(launch).toHaveBeenCalledTimes(launches);
+    }
+  });
+
   it('adds bounded jitter to the next poll time', async () => {
     const { store, definition } = await setup();
     const jittered = { ...definition, filters: { ...definition.filters, pollJitterSeconds: 60 } } satisfies GithubAutomationDefinition;
