@@ -41,7 +41,7 @@ import { SubtaskToggle } from '@/components/subtask-toggle'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toaster'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { deriveAttention } from '@/lib/attention'
+import { ATTENTION_RANK, deriveAttention } from '@/lib/attention'
 import { shortAge } from '@/lib/format'
 import { isReadDoneItem, isUnread, unreadDoneCount } from '@/lib/read-state'
 import {
@@ -65,6 +65,13 @@ import {
   taskReferences,
   usageCells,
   workflowLabel,
+  lastExecutionAt,
+  nextRunAt,
+  formatRunDuration,
+  runDurationMs,
+  taskModelLabel,
+  sortTaskTable,
+  type TaskSortState,
   type UsageCell,
 } from '@/lib/tasks-table'
 import { usageMetricVisibility } from '@/lib/token-metrics'
@@ -98,6 +105,8 @@ export function TasksOverview({
   expandedColumns = normalizeExpandedColumns(undefined),
   onToggleColumn = () => undefined,
   columnsPending = false,
+  sort = { column: 'started', direction: 'desc' },
+  onSortChange = () => undefined,
 }: {
   /** Undefined while `/api/runs` has not answered: the header renders, the body stays empty —
    *  an empty state before we know there are no runs would be a lie. */
@@ -110,9 +119,8 @@ export function TasksOverview({
   /** Inline rename from the table's Task cell (spec step 15) — the route wires this to
    *  `PATCH /api/runs/:id`, the same flow as the run header's pencil. */
   onRename: (id: string, title: string) => void
-  /** Pin/unpin one task (#935). Pinned rows sort to the top of the table — `sortRuns` does that
-   *  for every surface at once — so the row's own control is also the only thing on this page
-   *  that explains why one is up there. */
+  /** Pin/unpin one task (#935). The shared sidebar ordering keeps pinned tasks at the top;
+   *  this table's selected column sort controls its row order. */
   onTogglePin?: (run: RunRecord, pinned: boolean) => void
   /** Injected so the ages are not racing the clock in tests. */
   now?: number
@@ -124,6 +132,8 @@ export function TasksOverview({
   onToggleColumn?: (id: TaskColumnId) => void
   /** Prevent a shallow write before the authoritative workspace state can preserve siblings. */
   columnsPending?: boolean
+  sort?: TaskSortState
+  onSortChange?: (sort: TaskSortState) => void
 }) {
   const [query, setQuery] = React.useState('')
   // The subtask accordion (#1110): ids of the parents whose dispatched rows are unfolded.
@@ -139,7 +149,7 @@ export function TasksOverview({
     })
   const all = runs ?? []
   const counts = listCounts(all)
-  const visible = sortRuns(filterRuns(all, query), view)
+  const visible = sortTaskTable(sortRuns(filterRuns(all, query), view), sort, now)
   // A live search overrides the fold wholesale: `filterRuns` keeps a child whose parent also
   // matched NESTED under it, and a match the accordion then hid would read as a search miss.
   const searching = query.trim() !== ''
@@ -256,6 +266,8 @@ export function TasksOverview({
                           expanded={isColumnExpanded(column.id, expandedColumns)}
                           onToggle={onToggleColumn}
                           disabled={columnsPending}
+                          sort={sort}
+                          onSortChange={onSortChange}
                         />
                       ))}
                     </tr>
@@ -428,17 +440,20 @@ function Th({
   right = false,
   columnId,
   folded = false,
+  sortDirection,
 }: {
   children: React.ReactNode
   right?: boolean
   columnId: TaskColumnId
   folded?: boolean
+  sortDirection?: 'ascending' | 'descending'
 }) {
   return (
     <th
       scope="col"
       data-column-id={columnId}
       data-folded={folded || undefined}
+      aria-sort={sortDirection}
       className={cn(
         'h-[38px] border-b border-border px-2.5 text-left text-[11px] font-semibold tracking-[0.05em] whitespace-nowrap text-soft-foreground uppercase first:pl-4 last:pr-4',
         right && 'text-right',
@@ -455,52 +470,45 @@ function TaskColumnHeader({
   expanded,
   onToggle,
   disabled,
+  sort,
+  onSortChange,
 }: {
   column: TaskColumnDefinition
   expanded: boolean
   onToggle: (id: TaskColumnId) => void
   disabled: boolean
+  sort: TaskSortState
+  onSortChange: (sort: TaskSortState) => void
 }) {
-  if (!column.canFold) {
-    return (
-      <Th columnId={column.id} right={column.align === 'right'}>
-        {column.label}
-      </Th>
-    )
-  }
-
+  const active = sort.column === column.id
+  const sortable = column.sortable !== false
   const action = expanded ? 'Fold' : 'Expand'
+  const sortButton = sortable ? (
+    <button
+      type="button"
+      aria-label={`Sort by ${column.label}`}
+      onClick={() => onSortChange({ column: column.id, direction: active && sort.direction === 'asc' ? 'desc' : 'asc' })}
+      className="inline-flex h-8 items-center gap-1 rounded-sm px-0.5 text-inherit outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      {expanded ? column.label : <TaskColumnIconView icon={column.icon} />}
+      {active ? <span aria-hidden="true">{sort.direction === 'asc' ? '↑' : '↓'}</span> : null}
+    </button>
+  ) : <span aria-label={column.label} className="inline-flex h-8 items-center px-0.5">{expanded ? column.label : <TaskColumnIconView icon={column.icon} />}</span>
+  const ariaSort = sortable && active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined
+  if (!column.canFold) return <Th columnId={column.id} right={column.align === 'right'} sortDirection={ariaSort}>{sortButton}</Th>
   return (
-    <Th columnId={column.id} right={column.align === 'right'} folded={!expanded}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={`${action} ${column.label} column`}
-            aria-pressed={expanded}
-            disabled={disabled}
-            onClick={() => onToggle(column.id)}
-            className={cn(
-              'inline-flex h-8 w-full items-center gap-1 rounded-sm px-0.5 text-inherit outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60',
-              column.align === 'right' ? 'justify-end' : 'justify-start',
-              !expanded && 'justify-center px-0',
-            )}
-          >
-            {expanded ? (
-              <>
-                <span>{column.label}</span>
-                <ChevronsLeftIcon className="size-3 opacity-55" aria-hidden="true" />
-              </>
-            ) : (
-              <>
-                <TaskColumnIconView icon={column.icon} />
-                <ChevronsRightIcon className="size-3 opacity-70" aria-hidden="true" />
-              </>
-            )}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{column.label} · {action} column</TooltipContent>
-      </Tooltip>
+    <Th columnId={column.id} right={column.align === 'right'} folded={!expanded} sortDirection={ariaSort}>
+      <div className={cn('flex items-center gap-0.5', column.align === 'right' ? 'justify-end' : 'justify-start', !expanded && 'justify-center')}>
+        {sortButton}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label={`${action} ${column.label} column`} aria-pressed={expanded} disabled={disabled} onClick={() => onToggle(column.id)} className="inline-flex h-8 items-center rounded-sm px-0.5 text-inherit outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60">
+              {expanded ? <ChevronsLeftIcon className="size-3 opacity-55" aria-hidden="true" /> : <ChevronsRightIcon className="size-3 opacity-70" aria-hidden="true" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{column.label} · {action} column</TooltipContent>
+        </Tooltip>
+      </div>
     </Th>
   )
 }
@@ -520,6 +528,13 @@ function TaskColumnIconView({ icon }: { icon?: TaskColumnIcon }) {
       return <CoinsIcon className={className} aria-hidden="true" />
     case 'cost':
       return <DollarSignIcon className={className} aria-hidden="true" />
+    case 'duration':
+    case 'nextRun':
+      return <Clock3Icon className={className} aria-hidden="true" />
+    case 'priority':
+      return <ScaleIcon className={className} aria-hidden="true" />
+    case 'model':
+      return <CpuIcon className={className} aria-hidden="true" />
     case 'cpu':
       return <CpuIcon className={className} aria-hidden="true" />
     case 'memory':
@@ -703,6 +718,10 @@ function TaskTableCell({
           />
         </td>
       )
+    case 'priority': {
+      const rank = ATTENTION_RANK[attention.bucket] + 1
+      return <td data-column-id={column.id} className={cn(TD_BASE, 'text-xs text-muted-foreground tabular-nums')} title={`Attention priority ${rank}: ${attention.label}`}><span aria-label={`Priority ${rank}: ${attention.label}`}>P{rank}</span></td>
+    }
     case 'workflow':
       return (
         <td data-column-id={column.id} className={cn(TD_BASE, 'text-[12.5px] text-muted-foreground')}>
@@ -747,10 +766,26 @@ function TaskTableCell({
           {cost || <Dash />}
         </td>
       )
+    case 'duration': {
+      const duration = runDurationMs(run, now)
+      return <td data-column-id={column.id} className={cn(TD_BASE, 'text-right text-xs text-muted-foreground tabular-nums')}>{duration === null ? <Dash /> : formatRunDuration(duration)}</td>
+    }
+    case 'nextRun': {
+      const at = nextRunAt(run)
+      if (at === null) return <td data-column-id={column.id} className={cn(TD_BASE, 'text-right text-xs text-muted-foreground')}><Dash /></td>
+      const delta = at - now
+      const amount = Math.abs(delta)
+      const relative = amount < 60_000 ? `${Math.floor(amount / 1000)}s` : amount < 3_600_000 ? `${Math.floor(amount / 60_000)}m` : amount < 86_400_000 ? `${Math.floor(amount / 3_600_000)}h` : `${Math.floor(amount / 86_400_000)}d`
+      return <td data-column-id={column.id} className={cn(TD_BASE, 'text-right text-xs text-muted-foreground tabular-nums')}><time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()}>{delta >= 0 ? `in ${relative}` : `${relative} ago`}</time></td>
+    }
+    case 'model': {
+      const model = taskModelLabel(run)
+      return <td data-column-id={column.id} className={cn(TD_BASE, 'text-xs text-muted-foreground')}>{model || <Dash />}</td>
+    }
     case 'started':
       return (
         <td data-column-id={column.id} className={cn(TD_BASE, 'text-right text-xs text-soft-foreground tabular-nums')}>
-          {shortAge(run.startedAt ?? run.createdAt, now)}
+          {lastExecutionAt(run) === null ? <Dash /> : shortAge(new Date(lastExecutionAt(run)!).toISOString(), now)}
         </td>
       )
     case 'cpu':
@@ -1195,6 +1230,8 @@ export function TasksOverviewRoute() {
         expandedColumns={taskTableColumns.expandedColumns}
         onToggleColumn={taskTableColumns.toggleColumn}
         columnsPending={taskTableColumns.isPending}
+        sort={taskTableColumns.sort}
+        onSortChange={(next) => taskTableColumns.setSort(next)}
       />
     </ReferenceStatusProvider>
   )

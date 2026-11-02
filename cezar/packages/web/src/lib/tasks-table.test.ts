@@ -17,6 +17,11 @@ import {
   prioritizeTaskReferences,
   usageCells,
   workflowLabel,
+  lastExecutionAt,
+  sortTaskTable,
+  formatRunDuration,
+  nextRunAt,
+  runDurationMs,
 } from '@/lib/tasks-table'
 
 let seq = 0
@@ -175,6 +180,62 @@ describe('filterRuns', () => {
 
   it('does not match on the task prompt — text the table never shows', () => {
     expect(filterRuns([run({ task: 'secret prompt words' })], 'secret')).toEqual([])
+  })
+})
+
+describe('task table sorting', () => {
+  it('sorts duration, next run, and available model/account fields numerically or by label', () => {
+    const short = run({ id: 'short', startedAt: '2026-10-02T11:50:00Z', finishedAt: '2026-10-02T11:55:00Z', model: 'Model B' })
+    const long = run({ id: 'long', startedAt: '2026-10-02T10:00:00Z', finishedAt: '2026-10-02T11:00:00Z', model: 'Model A', autoResumeAt: '2026-10-03T00:00:00Z' })
+    expect(runDurationMs(short)).toBe(5 * 60_000)
+    expect(formatRunDuration(65 * 60_000)).toBe('1h 5m')
+    expect(nextRunAt(long)).toBe(Date.parse('2026-10-03T00:00:00Z'))
+    expect(sortTaskTable([long, short], { column: 'duration', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['short', 'long'])
+    expect(sortTaskTable([short, long], { column: 'model', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['long', 'short'])
+    expect(sortTaskTable([short, long], { column: 'nextRun', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['long', 'short'])
+  })
+
+  it('uses the canonical attention ladder as task priority', () => {
+    const runs = [
+      run({ id: 'done', status: 'done' }),
+      run({ id: 'working', status: 'running' }),
+      run({ id: 'waiting', status: 'waiting' }),
+      run({ id: 'failed', status: 'failed' }),
+    ]
+    expect(sortTaskTable(runs, { column: 'priority', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['failed', 'waiting', 'working', 'done'])
+  })
+
+  it('sorts status values deterministically with task id as the tie breaker', () => {
+    const runs = [
+      run({ id: 'waiting-b', status: 'waiting' }),
+      run({ id: 'done', status: 'done' }),
+      run({ id: 'waiting-a', status: 'waiting' }),
+    ]
+    expect(sortTaskTable(runs, { column: 'status', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['done', 'waiting-a', 'waiting-b'])
+    expect(sortTaskTable(runs, { column: 'status', direction: 'desc' }).map((item) => item.id))
+      .toEqual(['waiting-a', 'waiting-b', 'done'])
+  })
+
+  it('uses latest run or resumed step, keeps never-run last, and ties by stable id', () => {
+    const older = run({ id: 'b', startedAt: '2026-10-01T10:00:00-04:00' })
+    const latestStep = run({ id: 'a', status: 'failed', startedAt: '2026-10-01T14:00:00Z', steps: [{ startedAt: '2026-10-02T12:00:00Z' } as never] })
+    const equal = run({ id: 'c', startedAt: '2026-10-02T08:00:00-04:00' })
+    const never = run({ id: 'z', startedAt: undefined })
+    const invalid = run({ id: 'zz', startedAt: 'not-a-timestamp' })
+    expect(lastExecutionAt(latestStep)).toBe(Date.parse('2026-10-02T12:00:00Z'))
+    expect(lastExecutionAt(invalid)).toBeNull()
+    expect(sortTaskTable([invalid, never, older, equal, latestStep], { column: 'started', direction: 'desc' }).map((item) => item.id))
+      .toEqual(['a', 'c', 'b', 'z', 'zz'])
+    expect(sortTaskTable([never, older], { column: 'started', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['b', 'z'])
+    const tiedTitles = [latestStep, older].map((item) => ({ ...item, title: 'Same name' }))
+    expect(sortTaskTable(tiedTitles, { column: 'task', direction: 'asc' }).map((item) => item.id))
+      .toEqual(['a', 'b'])
   })
 })
 

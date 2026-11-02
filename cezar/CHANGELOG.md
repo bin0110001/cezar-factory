@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- The Tasks table defaults to latest execution and lets each sortable column change order; the choice is saved in local storage. Its selected sort controls table order while sidebar pin and status ordering stays intact.
+
 # 0.14.0 (2026-10-02)
 
 ## Highlights
