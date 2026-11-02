@@ -201,6 +201,9 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
   Caddy image marks its binary with that file capability; keeping
   `no-new-privileges` enabled prevents the binary from starting. Caddy listens
   on unprivileged port 8443 and binds only to the configured LAN address.
+- The read-only Caddyfile bind mount uses the shared SELinux `z` label so the
+  host and Cezar's read-only Factory checkout can both read it. A private `Z`
+  label prevents the mounted Cezar runtime from verifying the promoted tree.
 - Direct GitHub MCP client: fewer services and less operational overhead, but
   does not provide Obot's central vMCP selection, profile grants, or gateway
   audit boundary.
