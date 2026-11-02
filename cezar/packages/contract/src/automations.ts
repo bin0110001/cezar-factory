@@ -83,6 +83,14 @@ export const automationFiltersSchema = z.object({
   status: z.string().optional(),
   lookbackDays: z.number(),
   maxRecords: z.number(),
+  /** Issue intake: new issue launches per poll turn; the rest stay deferred. Absent = unlimited. */
+  maxAdmissionsPerCycle: z.number().int().min(1).max(100).optional(),
+  /** Issue intake: hours between full reconciliations of open labeled issues. Absent = off. */
+  fullReconcileHours: z.number().int().min(1).max(720).optional(),
+  /** Issue intake: random seconds added to each next poll time. Absent = none. */
+  pollJitterSeconds: z.number().int().min(1).max(600).optional(),
+  /** Issue intake: `eligible` also recovers issues labeled before the baseline. */
+  initialSync: z.enum(['eligible', 'new_only']).optional(),
 });
 export type AutomationFilters = z.infer<typeof automationFiltersSchema>;
 
