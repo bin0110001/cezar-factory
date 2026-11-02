@@ -82,6 +82,7 @@ install -d -o "$RUNTIME_USER" -g "$RUNTIME_USER" -m 0700 \
 # Permit traversal to this account's directory but explicitly deny access to the
 # existing Factory Podman graphroot beneath the same secondary mount.
 setfacl -m "u:$RUNTIME_USER:--x" /var/mnt/podman
+setfacl -m "u:$SUDO_USER:--x" "$RUNTIME_ROOT"
 setfacl -m "u:$RUNTIME_USER:---" "$factory_storage_parent"
 
 storage_config="$RUNTIME_HOME/.config/containers/storage.conf"

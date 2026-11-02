@@ -36,7 +36,9 @@ The setup checks the mounted secondary disk and the existing Factory graphroot,
 allocates a separate subordinate-ID range, creates `/var/mnt/podman/obot-runtime`
 for the new account, and installs a socket-activated system service. It grants
 the account execute-only traversal at `/var/mnt/podman` and denies access to the
-Factory graphroot. The Unix socket is operator-owned and mode `0660`; Compose
+Factory graphroot. The operator receives execute-only traversal on the runtime
+root so deployment checks can resolve its mount point without listing or
+reading runtime data. The Unix socket is operator-owned and mode `0660`; Compose
 mounts it read-only into Obot. The API can manage containers only inside the
 dedicated rootless account, so do not reuse this account or socket for other
 services.
