@@ -163,6 +163,27 @@ describe('ProjectAutomationScheduler', () => {
     }
   });
 
+  it('keeps the deferred queue across a restart and finishes admission with a fresh store and scheduler', async () => {
+    const { store, definition } = await setup();
+    const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;
+    const a = { ...candidate, eventId: 'a', nodeId: 'I1', number: 1, labels: ['priority:2'] };
+    const b = { ...candidate, eventId: 'b', nodeId: 'I2', number: 2, labels: ['priority:1'] };
+    const admit = async (c: { number: number }) => ({ status: 'ready' as const, repository: 'acme/demo', issueNumber: c.number, nodeId: `issue:github.com/acme/demo:${c.number}`, graphRevision: 1, reason: 'ready' });
+    const launch = vi.fn(async () => ({ runId: 'run' }));
+    const first = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [a, b], truncated: false, pages: 1 }) } as never }, admit, launch });
+    await first.check(capped);
+    expect(launch).toHaveBeenCalledTimes(1);
+    // "Restart": a brand-new store over the same directory and a brand-new scheduler.
+    store.flush?.({ throwOnError: true });
+    const reopened = AutomationStore.open((store as unknown as { dir?: string }).dir ?? dirs[dirs.length - 1]!);
+    expect(reopened.latestReceipt(definition.id, 'b')?.status).toBe('deferred');
+    const second = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store: reopened, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }) } as never }, admit, launch });
+    await second.check(capped);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(reopened.latestReceipt(definition.id, 'b')?.status).toBe('launched');
+    expect(reopened.latestReceipt(definition.id, 'a')?.status).toBe('launched');
+  });
+
   it('adds bounded jitter to the next poll time', async () => {
     const { store, definition } = await setup();
     const jittered = { ...definition, filters: { ...definition.filters, pollJitterSeconds: 60 } } satisfies GithubAutomationDefinition;
