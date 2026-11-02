@@ -127,7 +127,9 @@ export async function runEventPollCycle<C extends { timestamp: string }, R exten
       if (mutation && lease.isValid() && mode === 'execute' && current()) {
         store.setState(definition.id, state => {
           const consecutiveFailures = (state.consecutiveFailures ?? 0) + 1;
-          const delay = Math.min(21_600_000, 60_000 * 2 ** (consecutiveFailures - 1));
+          // A rate-limit reply must not be retried a minute later: wait at least 15 minutes.
+          const rateLimited = /rate.?limit|secondary|abuse|429|retry-after/i.test(error instanceof Error ? error.message : String(error));
+          const delay = Math.min(21_600_000, Math.max(rateLimited ? 900_000 : 0, 60_000 * 2 ** (consecutiveFailures - 1)));
           const nextCheckAt = new Date(Date.now() + delay).toISOString();
           return { ...state, consecutiveFailures, nextCheckAt, backoffUntil: nextCheckAt };
         });

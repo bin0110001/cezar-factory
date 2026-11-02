@@ -129,6 +129,40 @@ describe('ProjectAutomationScheduler', () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it('survives a failed full reconciliation, retries it next turn, and previews it without side effects', async () => {
+    const { store, definition } = await setup();
+    const labeled = { ...definition, events: ['issue.labeled'], filters: { ...definition.filters, changedLabels: ['factory:new'], fullReconcileHours: 24 } } satisfies GithubAutomationDefinition;
+    const missed = { ...candidate, eventId: 'missed', event: 'issue.labeled' as const, nodeId: 'I9', number: 9, labels: ['factory:new'], changedLabel: 'factory:new' };
+    let outage = true;
+    const reconcileLabeled = vi.fn(async () => { if (outage) throw new Error('GitHub API rate limit exceeded'); return { candidates: [missed], truncated: false }; });
+    const launch = vi.fn(async () => ({ runId: 'run-missed' }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }), reconcileLabeled } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: 'issue:github.com/acme/demo:9', graphRevision: 1, reason: 'ready' }), launch });
+    await scheduler.check(labeled);
+    expect(store.state(definition.id)?.lastReconcileAt).toBeUndefined();
+    expect(store.state(definition.id)?.lastSuccessAt).toBeDefined();
+    expect(launch).not.toHaveBeenCalled();
+    outage = false;
+    const preview = await scheduler.check(labeled, 'preview');
+    expect(preview.candidates.map(c => c.eventId)).toEqual(['missed']);
+    expect(store.receipts()).toEqual([]);
+    expect(launch).not.toHaveBeenCalled();
+    await scheduler.check(labeled);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds bounded jitter to the next poll time', async () => {
+    const { store, definition } = await setup();
+    const jittered = { ...definition, filters: { ...definition.filters, pollJitterSeconds: 60 } } satisfies GithubAutomationDefinition;
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [], truncated: false, pages: 1 }) } as never }, admit: async () => { throw new Error('unused'); }, launch: async () => ({ runId: 'x' }) });
+    const before = Date.now();
+    await scheduler.check(jittered);
+    vi.restoreAllMocks();
+    const next = Date.parse(store.state(definition.id)!.nextCheckAt!);
+    expect(next - before).toBeGreaterThanOrEqual(330_000 - 50);
+    expect(next - before).toBeLessThan(335_000);
+  });
+
   it('deduplicates review-request bursts that straddle two polls', async () => {
     const { store, definition } = await setup();
     const reviewDefinition = {
