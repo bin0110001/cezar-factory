@@ -70,6 +70,24 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'run-after-unblock' });
   });
 
+  it('admits at most maxAdmissionsPerCycle new issues, highest priority first, and defers the rest durably', async () => {
+    const { store, definition } = await setup();
+    const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;
+    const low = { ...candidate, eventId: 'low', nodeId: 'I1', number: 1, labels: ['priority:1'] };
+    const high = { ...candidate, eventId: 'high', nodeId: 'I2', number: 2, labels: ['priority:5'] };
+    const polls = [[low, high], []];
+    const launch = vi.fn(async (_d: unknown, c: { number: number }) => ({ runId: `run-${c.number}` }));
+    const scheduler = new ProjectAutomationScheduler({ projectId: 'p', timeZone: 'UTC', store, github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: polls.shift() ?? [], truncated: false, pages: 1 }) } as never }, admit: async c => ({ status: 'ready', repository: 'acme/demo', issueNumber: c.number, nodeId: `issue:github.com/acme/demo:${c.number}`, graphRevision: 1, reason: 'ready' }), launch: launch as never });
+    await scheduler.check(capped);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, 'high')?.status).toBe('launched');
+    expect(store.latestReceipt(definition.id, 'low')).toMatchObject({ status: 'deferred' });
+    expect(store.latestReceipt(definition.id, 'low')?.deferReason).toContain('admission-cap');
+    await scheduler.check(capped);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(store.latestReceipt(definition.id, 'low')?.status).toBe('launched');
+  });
+
   it('deduplicates review-request bursts that straddle two polls', async () => {
     const { store, definition } = await setup();
     const reviewDefinition = {
