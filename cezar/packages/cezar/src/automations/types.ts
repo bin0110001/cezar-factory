@@ -37,6 +37,8 @@ export const automationFiltersSchema = z
     /** Issue events only: new launches admitted per scheduler turn. Admissible candidates beyond it stay durably deferred (never dropped) and are admitted, highest `priority:<n>` first, on later turns. Omitted = unbounded. */
     /** issue.labeled only: every this-many hours the poll also lists OPEN issues that still carry a changed label and recovers any whose labeling event the cursor never delivered (missed or skipped page). Already-received events are deduplicated by receipt. Omitted = never. */
     fullReconcileHours: z.number().int().min(1).max(720).optional(),
+    /** Up to this many seconds are added (randomly) to each next poll time so many automations do not hit GitHub in lockstep. Omitted = none. */
+    pollJitterSeconds: z.number().int().min(1).max(600).optional(),
     maxAdmissionsPerCycle: z.number().int().min(1).max(100).optional(),
     /** Tracker kind only: the vendor workflow status a matching item must currently be in
      *  (e.g. "To Do"). Case-insensitive match against the item's own `status` field. */

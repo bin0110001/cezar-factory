@@ -175,8 +175,9 @@ export class ProjectAutomationScheduler {
           exhausted = pinned(result);
         }
         const hours = definition.filters.fullReconcileHours;
-        const due = mode === 'execute' && hours !== undefined
-          && (!state.lastReconcileAt || Date.now() - Date.parse(state.lastReconcileAt) >= hours * 3_600_000);
+        // A dry-run preview always reconciles (it launches nothing, persists nothing) so an operator can see what would be recovered.
+        const due = hours !== undefined
+          && (mode === 'preview' || !state.lastReconcileAt || Date.now() - Date.parse(state.lastReconcileAt) >= hours * 3_600_000);
         if (due) {
           try {
             const full = await githubRequests.run(() => github.poller.reconcileLabeled(github.owner, github.repo, definition));
@@ -204,7 +205,7 @@ export class ProjectAutomationScheduler {
             ? cursor
             : sameCursor(current.pinnedCursor, cursor) ? current.pinnedCursor : undefined,
           lastSuccessAt: new Date().toISOString(),
-          nextCheckAt: new Date(Date.now() + definition.intervalSeconds * 1000).toISOString(),
+          nextCheckAt: new Date(Date.now() + definition.intervalSeconds * 1000 + Math.floor(Math.random() * (definition.filters.pollJitterSeconds ?? 0) * 1000)).toISOString(),
           consecutiveFailures: 0,
           backoffUntil: undefined,
           ...(reconcile.ran ? { lastReconcileAt: new Date().toISOString(), lastReconcileRecovered: reconcile.recovered.size } : {}),
