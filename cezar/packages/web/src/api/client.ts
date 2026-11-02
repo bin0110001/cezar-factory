@@ -1,7 +1,7 @@
 import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
-import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyDecisionResearchDispatch } from '@open-mercato/cezar-contract'
+import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse } from '@open-mercato/cezar-contract'
 import type {
   AgentConfigFileContent,
   AgentAccountDetailsResponse,
@@ -901,7 +901,7 @@ export async function dispatchDependencyCyclePlan(input: DependencyCyclePlanDisp
     param: { projectId: queryScope() }, json: input,
   }), '/dependency-graph/cycle-plans/dispatch')
 }
-export async function dispatchDependencyDecisionResearch(input: DependencyDecisionResearchDispatch): Promise<DependencyCyclePlanDispatchResponse> {
+export async function dispatchDependencyDecisionResearch(input: DependencyDecisionResearchDispatch): Promise<DependencyDecisionResearchDispatchResponse> {
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['decision-research'].dispatch.$post({
     param: { projectId: queryScope() }, json: input,
   }), '/dependency-graph/decision-research/dispatch')

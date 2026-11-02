@@ -3,6 +3,7 @@ import {
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
   githubRepositoryKeySchema, type GithubRepositoryKey,
+  dependencyDecisionResearchDispatchResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
@@ -5968,7 +5969,8 @@ export function createApp(deps: ServerDeps) {
         const project = c.get('project');
         const service = dependencyGraphService(project.root);
         const repository = await service.repositoryKey();
-        return c.json(await dispatchDecisionResearch({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, decisionId: input.decisionId }), 202);
+        const response = dependencyDecisionResearchDispatchResponseSchema.parse(await dispatchDecisionResearch({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, decisionId: input.decisionId }));
+        return response.status === 'started' ? c.json(response, 202) : c.json(response, 200);
       } catch (error) {
         const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision research dispatch failed';
         return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
@@ -7057,7 +7059,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
               .sort((a, b) => b.affectedNodeIds.length - a.affectedNodeIds.length || a.id.localeCompare(b.id));
             for (const decision of researchTargets) {
               const research = await dispatchDecisionResearch({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, decisionId: decision.id });
-              if (research.status === 'started') break;
+              if (research.status === 'started' || research.status === 'unavailable') break;
             }
             for (const candidate of planCycleRepairs(snapshot, 10).candidates) {
               const dispatch = await dispatchCycleReplan({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, candidateId: candidate.id });

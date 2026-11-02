@@ -1,4 +1,4 @@
-import { type GithubRepositoryKey } from '@open-mercato/cezar-contract';
+import { type DependencyDecisionResearchDispatchResponse, type GithubRepositoryKey } from '@open-mercato/cezar-contract';
 import type { RunManager } from '../../workflows/run.ts';
 import { DEPENDENCY_PLANNING_WORKFLOW } from './cycle-agent.ts';
 import type { DependencyGraphService } from './service.ts';
@@ -9,7 +9,7 @@ export async function dispatchDecisionResearch(options: {
   repository: GithubRepositoryKey;
   expectedGraphRevision: number;
   decisionId: string;
-}): Promise<{ status: 'started' | 'skipped'; runId?: string; reason?: string; fingerprint?: string }> {
+}): Promise<DependencyDecisionResearchDispatchResponse> {
   const { service, manager, repository } = options;
   const snapshot = service.read(repository);
   if (snapshot.revision !== options.expectedGraphRevision) return { status: 'skipped', reason: 'dependency graph revision changed' };
@@ -41,19 +41,22 @@ export async function dispatchDecisionResearch(options: {
     `Decision proposal: ${JSON.stringify({ id: decision.id, question: decision.question, options: decision.options, rationale: decision.rationale, evidence: decision.evidence.slice(0, 20) })}`,
     `Affected issue source data: ${JSON.stringify(sourceData)}`,
   ].join('\n\n');
+  let run: ReturnType<RunManager['startRun']>;
   try {
-    const run = manager.startRun(DEPENDENCY_PLANNING_WORKFLOW, {
+    run = manager.startRun(DEPENDENCY_PLANNING_WORKFLOW, {
       task: prompt,
       worktree: true,
       autonomous: false,
       generateFollowups: false,
       skipAutoName: true,
     });
-    await service.recordDecisionResearchResult(repository, fingerprint, { status: 'started', runId: run.id });
-    return { status: 'started', runId: run.id, fingerprint };
   } catch (error) {
-    const reason = error instanceof Error ? error.message.slice(0, 1_000) : String(error);
+    const reason = (error instanceof Error ? error.message : String(error))
+      .replace(/(?:gho|ghp|github_pat)_[A-Za-z0-9_-]+/g, '[redacted]')
+      .split('\n')[0]!.slice(0, 1_000);
     await service.recordDecisionResearchResult(repository, fingerprint, { status: 'failed', reason });
-    throw error;
+    return { status: 'unavailable', reason: 'Research could not start; the deterministic proposal remains available for human review.', fingerprint };
   }
+  await service.recordDecisionResearchResult(repository, fingerprint, { status: 'started', runId: run.id });
+  return { status: 'started', runId: run.id, fingerprint };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dependencyNodeId, type DependencyGraphEdge, type DependencyGraphSnapshot } from '@open-mercato/cezar-contract';
 import { discoverDecisionCandidates } from './discovery.ts';
+import { scanAndProposeDecisions } from './discovery-runner.ts';
 
 const at = '2026-10-30T12:00:00.000Z';
 const repository = 'acme/work';
@@ -66,5 +67,27 @@ describe('decision candidate mining', () => {
     for (const node of snapshot.nodes) if (node.kind === 'issue') node.bodyText = node.number === 2 ? 'Implement the API surface.' : node.number === 3 ? 'Update the user interface.' : undefined;
     const candidates = discoverDecisionCandidates(snapshot).candidates;
     expect(candidates.some((candidate) => candidate.sharedBlockerIds.includes(ids[0]!) && candidate.affectedNodeIds.length === 2)).toBe(true);
+  });
+
+  it('persists deterministic review proposals without a model or run manager', async () => {
+    let current = graph();
+    const service = {
+      repositoryKey: async () => repository,
+      read: () => current,
+      writeDecision: async (decision: DependencyGraphSnapshot['decisions'][number], expectedRevision: number) => {
+        if (expectedRevision !== current.revision) throw new Error('dependency graph revision conflict');
+        current = { ...current, revision: current.revision + 1, decisions: [...current.decisions, { ...decision, revision: 0 }] };
+        return current.revision;
+      },
+    } as never;
+    const result = await scanAndProposeDecisions(service, at);
+    expect(result).toMatchObject({ proposed: 1, scannedIssues: 3 });
+    expect(current.decisions[0]).toMatchObject({
+      createdBy: 'dependency-discovery-scanner',
+      requiredAuthorization: 'agent-proposal',
+      state: 'proposed',
+      affectedNodeIds: [ids[1], ids[2]],
+    });
+    expect(current.edges).toHaveLength(2);
   });
 });
