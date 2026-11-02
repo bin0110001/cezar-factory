@@ -1,0 +1,144 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryDocumentationStateV1",
+  "description": "Versioned record for authored documentation claims and their evidence. Cross-record transition and freshness rules are defined in README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "factory-doc-state/v1" },
+    "documentId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,199}$" },
+    "kind": { "enum": ["proposed-spec", "approved-contract", "architecture-explanation", "generated-code-structure", "adr", "run-evidence"] },
+    "state": { "enum": ["proposed", "approved", "implemented", "verified", "superseded"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "repository": { "$ref": "#/definitions/repository" },
+    "ownership": { "$ref": "#/definitions/ownership" },
+    "revision": { "$ref": "#/definitions/revision" },
+    "claims": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/definitions/claim" } },
+    "verification": { "$ref": "#/definitions/verification" },
+    "freshness": { "$ref": "#/definitions/freshness" },
+    "sensitivity": { "enum": ["public", "internal", "confidential", "secret", "licensed"] },
+    "projectPolicy": { "$ref": "#/definitions/projectPolicy" },
+    "previousState": { "oneOf": [{ "type": "null" }, { "enum": ["proposed", "approved", "implemented", "verified", "superseded"] }] },
+    "transitionReason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "transitionedAt": { "type": "string", "format": "date-time" },
+    "transitionedBy": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "migratedFrom": { "$ref": "#/definitions/migration" }
+  },
+  "required": ["schemaVersion", "documentId", "kind", "state", "title", "repository", "ownership", "revision", "claims", "verification", "freshness", "sensitivity", "projectPolicy", "previousState", "transitionReason", "transitionedAt", "transitionedBy"],
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "verified" } }, "required": ["state"] },
+      "then": {
+        "properties": {
+          "verification": {
+            "properties": {
+              "status": { "const": "verified" },
+              "verifier": { "type": "string", "minLength": 1 },
+              "toolVersion": { "type": "string", "minLength": 1 },
+              "evidence": { "minItems": 1 }
+            },
+            "required": ["status", "verifier", "verifiedAt", "toolVersion", "evidence"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "proposed" } }, "required": ["state"] },
+      "then": {
+        "properties": {
+          "claims": {
+            "items": {
+              "if": { "properties": { "knowledge": { "const": "proposed" } }, "required": ["knowledge"] },
+              "then": { "properties": { "speculative": { "const": true } }, "required": ["speculative"] }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "gitSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "repository": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "slug": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" }, "uri": { "type": "string", "minLength": 1, "maxLength": 500 } },
+      "required": ["slug"]
+    },
+    "ownership": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "owner": { "type": "string", "minLength": 1, "maxLength": 200 }, "team": { "type": "string", "maxLength": 200 } },
+      "required": ["owner"]
+    },
+    "revision": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "branch": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "worktree": { "type": "string", "maxLength": 500 },
+        "baseSha": { "$ref": "#/definitions/gitSha" },
+        "observedSha": { "$ref": "#/definitions/gitSha" },
+        "sourceAnchors": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/sourceAnchor" } }
+      },
+      "required": ["branch", "baseSha", "observedSha", "sourceAnchors"]
+    },
+    "sourceAnchor": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(/|$)).+$" },
+        "startLine": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "symbol": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["path"]
+    },
+    "claim": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "knowledge": { "enum": ["proposed", "verified"] },
+        "speculative": { "type": "boolean" },
+        "sourceAnchors": { "type": "array", "items": { "$ref": "#/definitions/sourceAnchor" } },
+        "evidence": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 1000 } }
+      },
+      "required": ["id", "text", "knowledge", "speculative", "sourceAnchors", "evidence"],
+      "allOf": [
+        { "if": { "properties": { "knowledge": { "const": "proposed" } }, "required": ["knowledge"] }, "then": { "properties": { "speculative": { "const": true } } } },
+        { "if": { "properties": { "knowledge": { "const": "verified" } }, "required": ["knowledge"] }, "then": { "properties": { "speculative": { "const": false }, "evidence": { "minItems": 1 } } } }
+      ]
+    },
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["not-verified", "verified"] },
+        "verifier": { "type": "string", "maxLength": 200 },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "toolVersion": { "type": "string", "maxLength": 200 },
+        "evidence": { "type": "array", "maxItems": 200, "items": { "type": "string", "minLength": 1, "maxLength": 1000 } }
+      },
+      "required": ["status", "evidence"]
+    },
+    "freshness": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["fresh", "stale", "unknown"] },
+        "checkedAt": { "type": "string", "format": "date-time" },
+        "checkedAgainstSha": { "$ref": "#/definitions/gitSha" },
+        "reason": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["status", "reason"]
+    },
+    "projectPolicy": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["opt-in", "opt-out"] },
+        "mandatoryGates": { "type": "array", "uniqueItems": true, "items": { "enum": ["approved-contract", "security"] } },
+        "advisoryChecks": { "type": "array", "uniqueItems": true, "items": { "enum": ["spec-drift", "freshness", "documentation-coverage"] } }
+      },
+      "required": ["mode", "mandatoryGates", "advisoryChecks"]
+    },
+    "migration": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 100 }, "sourceRef": { "type": "string", "minLength": 1, "maxLength": 500 } },
+      "required": ["schemaVersion", "sourceRef"]
+    }
+  }
+}
