@@ -7,6 +7,7 @@ import {
   type DependencyGraphSnapshot,
   type DependencySimulationInput,
 } from '@open-mercato/cezar-contract';
+import { DEPENDENCY_GRAPH_FULL_SYNC_INTERVAL_MS } from './github-source.ts';
 
 export type Readiness = 'ready' | 'blocked' | 'unknown';
 export interface ReadinessResult {
@@ -439,7 +440,13 @@ export function diffDependencySnapshots(before: DependencyGraphSnapshot, after: 
 }
 
 /** Counterfactual analysis only: proposed edges can never be promoted by simulation. */
-export function simulateDependencyGraph(snapshot: DependencyGraphSnapshot, input: Pick<DependencySimulationInput, 'expectedRevision'> & Partial<Omit<DependencySimulationInput, 'expectedRevision'>>) {
+export function simulateDependencyGraph(sourceSnapshot: DependencyGraphSnapshot, input: Pick<DependencySimulationInput, 'expectedRevision'> & Partial<Omit<DependencySimulationInput, 'expectedRevision'>>) {
+  const lastSuccessfulSyncAt = sourceSnapshot.source.lastSuccessfulSyncAt ? Date.parse(sourceSnapshot.source.lastSuccessfulSyncAt) : 0;
+  const staleByAge = sourceSnapshot.source.status === 'fresh' && lastSuccessfulSyncAt > 0
+    && Date.now() - lastSuccessfulSyncAt >= DEPENDENCY_GRAPH_FULL_SYNC_INTERVAL_MS;
+  const snapshot = dependencyGraphSnapshotSchema.parse(staleByAge
+    ? { ...sourceSnapshot, source: { ...sourceSnapshot.source, status: 'stale', warning: sourceSnapshot.source.warning ?? 'The last complete GitHub sync is more than 24 hours old.' } }
+    : sourceSnapshot);
   if (snapshot.revision !== input.expectedRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedRevision}, found ${snapshot.revision}`);
   const removeIds = input.removeEdgeIds ?? [];
   const completeIds = input.completeNodeIds ?? [];
@@ -469,9 +476,14 @@ export function simulateDependencyGraph(snapshot: DependencyGraphSnapshot, input
     if (existing.has(edge.id) && !remove.has(edge.id)) throw new Error(`simulation edge already exists: ${edge.id}`);
     if (isVerifiedBlockingEdge(edge)) throw new Error('simulation cannot assert a new verified blocking edge');
   }
+  // Candidate BLOCKS edges act as assumptions inside this counterfactual only. They remain
+  // proposed in the returned scenario and never enter the source snapshot or scheduler.
+  const hypotheticalEdges = additions.map((edge) => edge.kind === 'BLOCKS'
+    ? { ...edge, provenance: { ...edge.provenance, origin: 'system' as const, authority: 'verified' as const } }
+    : edge);
   const after = dependencyGraphSnapshotSchema.parse({
     ...snapshot,
-    edges: [...snapshot.edges.filter((edge) => !remove.has(edge.id)), ...additions],
+    edges: [...snapshot.edges.filter((edge) => !remove.has(edge.id)), ...hypotheticalEdges],
     nodes: snapshot.nodes.map((node) => complete.has(node.id) && (node.kind === 'issue' || node.kind === 'epic')
       ? { ...node, state: 'closed' as const }
       : resolve.has(node.id) && node.kind === 'decision'
@@ -492,12 +504,58 @@ export function simulateDependencyGraph(snapshot: DependencyGraphSnapshot, input
   ])].sort();
   const cyclesBefore = blockingCycles(snapshot);
   const cyclesAfter = blockingCycles(after);
+  const summarize = (value: DependencyGraphSnapshot) => {
+    const openIssues = value.nodes.filter((node) => (node.kind === 'issue' || node.kind === 'epic') && node.state === 'open');
+    const results = readiness(value, openIssues.map((node) => node.id));
+    return {
+      totalOpenIssues: openIssues.length,
+      ready: results.filter((result) => result.readiness === 'ready').length,
+      blocked: results.filter((result) => result.readiness === 'blocked').length,
+      unknown: results.filter((result) => result.readiness === 'unknown').length,
+      cycleCount: blockingCycles(value).length,
+    };
+  };
+  const beforeSummary = summarize(snapshot);
+  const afterSummary = summarize(after);
+  const beforeCycles = new Set(cyclesBefore.map((cycle) => cycle.join('\0')));
+  const afterCycles = new Set(cyclesAfter.map((cycle) => cycle.join('\0')));
+  const beforeReadiness = new Map(readiness(snapshot).map((result) => [result.nodeId, result.readiness]));
+  const afterReadiness = new Map(readiness(after).map((result) => [result.nodeId, result.readiness]));
+  const changedReadiness = [...afterReadiness.entries()]
+    .filter(([nodeId, value]) => beforeReadiness.get(nodeId) !== value)
+    .map(([nodeId, after]) => ({ nodeId, before: beforeReadiness.get(nodeId) ?? 'unknown', after }))
+    .sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  const addedCycles = cyclesAfter.filter((cycle) => !beforeCycles.has(cycle.join('\0')));
+  const removedCycles = cyclesBefore.filter((cycle) => !afterCycles.has(cycle.join('\0')));
+  const detailLimit = 50;
+  const readinessDetailLimit = 200;
   return {
+    repository: snapshot.repository,
     revision: snapshot.revision,
     persisted: false as const,
     freshness: snapshot.source.status,
+    scenario: {
+      addEdges: additions,
+      removeEdgeIds: [...remove].sort(),
+      completeNodeIds: [...complete].sort(),
+      resolveDecisionIds: [...resolve].sort(),
+    },
     before: readiness(snapshot, touched),
     after: readiness(after, touched),
+    summary: {
+      before: beforeSummary,
+      after: afterSummary,
+      changes: {
+        ready: afterSummary.ready - beforeSummary.ready,
+        blocked: afterSummary.blocked - beforeSummary.blocked,
+        unknown: afterSummary.unknown - beforeSummary.unknown,
+        cycles: afterSummary.cycleCount - beforeSummary.cycleCount,
+      },
+      changedReadiness: changedReadiness.slice(0, readinessDetailLimit),
+      addedCycles: addedCycles.slice(0, detailLimit),
+      removedCycles: removedCycles.slice(0, detailLimit),
+      truncatedDetails: changedReadiness.length > readinessDetailLimit || addedCycles.length > detailLimit || removedCycles.length > detailLimit,
+    },
     hypotheticalCompletions: [...complete].sort(),
     hypotheticalDecisionOutcomes: [...resolve].sort(),
     criticalPath: { status: 'unavailable' as const, reason: 'Issue duration estimates are not present in the source projection.' },

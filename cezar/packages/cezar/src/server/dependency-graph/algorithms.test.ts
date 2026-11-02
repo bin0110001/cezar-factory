@@ -8,10 +8,13 @@ const ids = [1, 2, 3].map((n) => dependencyNodeId('issue', repository, n));
 function edge(from: string, to: string, id: string): DependencyGraphEdge {
   return { id, kind: 'BLOCKS', from, to, direction: 'from-to', provenance: { origin: 'github-native', authority: 'verified', confidence: 1, recordedAt: at, evidence: [] }, createdAt: at, updatedAt: at };
 }
+function openIssueNode(id: string, number: number) {
+  return { kind: 'issue' as const, id, repository, number, title: id, state: 'open' as const, labels: [], url: `https://github.com/acme/work/issues/${number}`, revision: at, updatedAt: at };
+}
 function graph(status: DependencyGraphSnapshot['source']['status'] = 'fresh'): DependencyGraphSnapshot {
   return {
     schemaVersion: 1, repository, revision: 1, createdAt: at,
-    source: { status, lastSuccessfulSyncAt: at },
+    source: { status, lastSuccessfulSyncAt: new Date().toISOString() },
     nodes: ids.map((id, i) => ({ kind: 'issue' as const, id, repository, number: i + 1, title: `Issue ${i + 1}`, state: i === 0 ? 'closed' as const : 'open' as const, labels: [], url: `https://github.com/acme/work/issues/${i + 1}`, revision: at, updatedAt: at })),
     edges: [edge(ids[0]!, ids[1]!, '00000000-0000-4000-8000-000000000001'), edge(ids[1]!, ids[2]!, '00000000-0000-4000-8000-000000000002')], decisions: [],
   };
@@ -72,22 +75,97 @@ describe('dependency graph algorithms', () => {
   it('simulates bounded counterfactual changes without persisting or asserting new blockers', () => {
     const snapshot = graph();
     const simulated = simulateDependencyGraph(snapshot, { expectedRevision: 1, removeEdgeIds: ['00000000-0000-4000-8000-000000000002'], addEdges: [] });
-    expect(simulated).toMatchObject({ persisted: false, revision: 1, before: [{ nodeId: ids[2], readiness: 'blocked' }], after: [{ nodeId: ids[2], readiness: 'ready' }] });
+    expect(simulated).toMatchObject({ repository, persisted: false, revision: 1, before: [{ nodeId: ids[2], readiness: 'blocked' }], after: [{ nodeId: ids[2], readiness: 'ready' }] });
+    expect(simulated.summary.changes).toMatchObject({ ready: 1, blocked: -1, unknown: 0, cycles: 0 });
     expect(snapshot.edges).toHaveLength(2);
     expect(() => simulateDependencyGraph(snapshot, { expectedRevision: 0, removeEdgeIds: [], addEdges: [] })).toThrow(/revision conflict/);
+  });
+
+  it('keeps overlapping blockers from producing a false unlock estimate', () => {
+    const snapshot = graph();
+    const extraId = dependencyNodeId('issue', repository, 4);
+    snapshot.nodes.push({ kind: 'issue', id: extraId, repository, number: 4, title: 'Other prerequisite', state: 'open', labels: [], url: 'https://github.com/acme/work/issues/4', revision: at, updatedAt: at });
+    snapshot.edges.push(edge(extraId, ids[2]!, '00000000-0000-4000-8000-000000000004'));
+    const result = simulateDependencyGraph(snapshot, { expectedRevision: 1, addEdges: [], removeEdgeIds: [], completeNodeIds: [ids[1]!] });
+    expect(result.after.find((item) => item.nodeId === ids[2])).toMatchObject({ readiness: 'blocked', blockers: [extraId] });
+    expect(result.summary.after.blocked).toBe(1);
+  });
+
+  it('simulates candidate blocker patches on a pinned snapshot without changing source data', () => {
+    const live = graph();
+    const pinned = structuredClone(live);
+    const candidate = { ...edge(ids[2]!, ids[0]!, '00000000-0000-4000-8000-000000000003'), provenance: { ...edge(ids[2]!, ids[0]!, '00000000-0000-4000-8000-000000000003').provenance, origin: 'human' as const, authority: 'proposed' as const } };
+    live.revision = 2;
+    live.edges.pop();
+    const result = simulateDependencyGraph(pinned, { expectedRevision: 1, addEdges: [candidate], removeEdgeIds: [] });
+    expect(result.revision).toBe(1);
+    expect(result.scenario.addEdges[0]?.provenance.authority).toBe('proposed');
+    expect(result.summary).toMatchObject({ before: { cycleCount: 0 }, after: { cycleCount: 1 }, changes: { cycles: 1 } });
+    expect(result.summary.addedCycles).toEqual([[ids[0], ids[1], ids[2]]]);
+    expect(pinned.edges).toHaveLength(2);
+    expect(live.edges).toHaveLength(1);
+  });
+
+  it('reports an aged pinned snapshot as stale instead of treating its readiness as current', () => {
+    const snapshot = graph();
+    snapshot.source.lastSuccessfulSyncAt = '2020-01-01T00:00:00.000Z';
+    const result = simulateDependencyGraph(snapshot, { expectedRevision: 1, addEdges: [], removeEdgeIds: [] });
+    expect(result.freshness).toBe('stale');
+    expect(result.before.every((item) => item.readiness === 'unknown')).toBe(true);
+    expect(snapshot.source.status).toBe('fresh');
+  });
+
+  it('bounds scenario diff details while retaining whole-graph summary counts', () => {
+    const snapshot = graph();
+    const completeNodeIds: string[] = [];
+    const resolveDecisionIds: string[] = [];
+    const removeEdgeIds: string[] = [];
+    for (let index = 0; index < 100; index += 1) {
+      const suffix = (10_000 + index).toString(16).padStart(12, '0');
+      const completed = dependencyNodeId('issue', repository, 1_000 + index);
+      const completionTarget = dependencyNodeId('issue', repository, 2_000 + index);
+      completeNodeIds.push(completed);
+      snapshot.nodes.push(openIssueNode(completed, 1_000 + index), openIssueNode(completionTarget, 2_000 + index));
+      snapshot.edges.push(edge(completed, completionTarget, `00000000-0000-4000-8000-${suffix}`));
+
+      const decisionId = dependencyNodeId('decision', repository, `bundle-${index}`);
+      const decisionTarget = dependencyNodeId('issue', repository, 3_000 + index);
+      resolveDecisionIds.push(decisionId);
+      snapshot.nodes.push({ kind: 'decision', id: decisionId, repository, title: decisionId, state: 'proposed', requiredAuthorization: 'human-approval', revision: 0, updatedAt: at });
+      snapshot.nodes.push({ kind: 'issue', id: decisionTarget, repository, number: 3_000 + index, title: decisionTarget, state: 'open', labels: [], url: `https://github.com/acme/work/issues/${3_000 + index}`, revision: at, updatedAt: at });
+      snapshot.decisions.push({ id: decisionId, repository, question: decisionId, options: ['A', 'B'], rationale: '', evidence: [], reversible: false, requiredAuthorization: 'human-approval', state: 'proposed', affectedNodeIds: [decisionTarget], createdBy: 'test', createdAt: at, updatedAt: at, revision: 0 });
+      snapshot.edges.push(edge(decisionId, decisionTarget, `00000000-0000-4000-8000-${(20_000 + index).toString(16).padStart(12, '0')}`));
+
+      const removableBlocker = dependencyNodeId('issue', repository, 4_000 + index);
+      const removalTarget = dependencyNodeId('issue', repository, 5_000 + index);
+      snapshot.nodes.push(openIssueNode(removableBlocker, 4_000 + index), openIssueNode(removalTarget, 5_000 + index));
+      const removableEdge = `00000000-0000-4000-8000-${(30_000 + index).toString(16).padStart(12, '0')}`;
+      removeEdgeIds.push(removableEdge);
+      snapshot.edges.push(edge(removableBlocker, removalTarget, removableEdge));
+    }
+
+    const result = simulateDependencyGraph(snapshot, { expectedRevision: 1, addEdges: [], completeNodeIds, resolveDecisionIds, removeEdgeIds });
+
+    expect(result.summary.changes.ready).toBe(200);
+    expect(result.summary.changedReadiness).toHaveLength(200);
+    expect(result.summary.truncatedDetails).toBe(true);
   });
 
   it('simulates issue completion and decision outcomes in an isolated snapshot', () => {
     const snapshot = graph();
     const decisionId = dependencyNodeId('decision', repository, 'scenario');
+    const secondDecisionId = dependencyNodeId('decision', repository, 'second-scenario');
     snapshot.nodes.push({ kind: 'decision', id: decisionId, repository, title: 'Select API contract', state: 'proposed', requiredAuthorization: 'human-approval', revision: 0, updatedAt: at });
+    snapshot.nodes.push({ kind: 'decision', id: secondDecisionId, repository, title: 'Select storage contract', state: 'proposed', requiredAuthorization: 'human-approval', revision: 0, updatedAt: at });
     snapshot.edges.push(edge(decisionId, ids[2]!, '00000000-0000-4000-8000-000000000003'));
+    snapshot.edges.push(edge(secondDecisionId, ids[2]!, '00000000-0000-4000-8000-000000000004'));
     snapshot.decisions.push({ id: decisionId, repository, question: 'Select API contract', options: ['A', 'B'], rationale: '', evidence: [], reversible: false, requiredAuthorization: 'human-approval', state: 'proposed', affectedNodeIds: [ids[2]!], createdBy: 'test', createdAt: at, updatedAt: at, revision: 0 });
-    const result = simulateDependencyGraph(snapshot, { expectedRevision: 1, removeEdgeIds: [], addEdges: [], completeNodeIds: [ids[1]!], resolveDecisionIds: [decisionId] });
-    expect(result).toMatchObject({ persisted: false, hypotheticalCompletions: [ids[1]], hypotheticalDecisionOutcomes: [decisionId], criticalPath: { status: 'unavailable' } });
+    snapshot.decisions.push({ id: secondDecisionId, repository, question: 'Select storage contract', options: ['A', 'B'], rationale: '', evidence: [], reversible: false, requiredAuthorization: 'human-approval', state: 'proposed', affectedNodeIds: [ids[2]!], createdBy: 'test', createdAt: at, updatedAt: at, revision: 0 });
+    const result = simulateDependencyGraph(snapshot, { expectedRevision: 1, removeEdgeIds: [], addEdges: [], completeNodeIds: [ids[1]!], resolveDecisionIds: [decisionId, secondDecisionId] });
+    expect(result).toMatchObject({ persisted: false, hypotheticalCompletions: [ids[1]], hypotheticalDecisionOutcomes: [decisionId, secondDecisionId].sort(), criticalPath: { status: 'unavailable' } });
     expect(result.after.find((item) => item.nodeId === ids[2])).toMatchObject({ readiness: 'ready' });
     expect(snapshot.nodes.find((node) => node.id === ids[1])?.state).toBe('open');
-    expect(snapshot.decisions[0]?.state).toBe('proposed');
+    expect(snapshot.decisions.map((decision) => decision.state)).toEqual(['proposed', 'proposed']);
     expect(() => simulateDependencyGraph(snapshot, { expectedRevision: 1, addEdges: [], removeEdgeIds: [], resolveDecisionIds: [decisionId] })).not.toThrow();
   });
 

@@ -6062,7 +6062,10 @@ export function createApp(deps: ServerDeps) {
       try {
         const service = dependencyGraphService(c.get('project').root);
         const repository = await service.repositoryKey();
-        return c.json(simulateDependencyGraph(service.read(repository), c.req.valid('json')));
+        const input = c.req.valid('json');
+        // expectedRevision pins the immutable snapshot, so concurrent live syncs cannot
+        // change the scenario or turn a historical what-if into a current graph write.
+        return c.json(simulateDependencyGraph(service.readAt(repository, input.expectedRevision), input));
       } catch (error) {
         const message = error instanceof Error ? error.message.slice(0, 1_000) : 'simulation failed';
         return c.json({ error: message }, /revision conflict/.test(message) ? 409 : /not found|invalid|cannot assert|duplicate/.test(message) ? 400 : 503);
