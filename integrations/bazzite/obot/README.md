@@ -206,6 +206,8 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
   label prevents the mounted Cezar runtime from verifying the promoted tree.
 - Caddy's exclusive named data and config volumes use private `Z` relabeling
   so Podman updates their SELinux category when it recreates the proxy.
+- Obot drops every Linux capability except `CHOWN`, which its bundled
+  PostgreSQL startup needs to set ownership below `/data/postgresql`.
 - Direct GitHub MCP client: fewer services and less operational overhead, but
   does not provide Obot's central vMCP selection, profile grants, or gateway
   audit boundary.
