@@ -363,6 +363,17 @@ export class DependencyGraphStore {
     }));
   }
 
+  recordAuditEvent(repository: GithubRepositoryKey, expectedGraphRevision: number, kind: string, entityId: string, actor: string, payload: unknown, now = new Date().toISOString()): number {
+    this.assertOpen();
+    const tx = this.db.transaction(() => {
+      const currentRevision = rowNumber(this.db.prepare('SELECT revision FROM dependency_graph_meta WHERE repository=?').get(repository), 'revision');
+      if (currentRevision !== expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${expectedGraphRevision}, found ${currentRevision}`);
+      this.recordEvent(repository, currentRevision, kind, entityId, actor, payload, now);
+      return currentRevision;
+    });
+    return tx();
+  }
+
   reserveCycleAgentAttempt(repository: GithubRepositoryKey, expectedGraphRevision: number, fingerprint: string, now = new Date().toISOString(), cooldownMs = 24 * 60 * 60_000, maxAttempts = 3): { allowed: boolean; attempt: number; reason?: string } {
     this.assertOpen();
     const tx = this.db.transaction(() => {

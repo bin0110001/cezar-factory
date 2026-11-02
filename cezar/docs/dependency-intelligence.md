@@ -24,7 +24,7 @@ Allowed transitions are defined in the contract helper `canTransitionDecisionSta
 
 ## Current local surface
 
-Project routes under `/api/v1/p/:projectId/` provide bounded snapshot pages and diffs, node detail and impact, bounded neighborhood expansion, readiness and cycle diagnoses, review-only cycle repair candidates, health counts, decision ranking and candidate discovery, recent event history, weekly historical trends, sanitized diagnostics export, proposal creation and review transitions, counterfactual simulation, and explicit GitHub synchronization. Snapshot pages support server-side title/ID, repository, kind, state, and readiness filters and can pin a requested immutable revision. Synchronization starts only on `POST .../dependency-graph/sync`; read routes use the cached graph and mark data stale after 24 hours. Decision proposal writes use graph revision compare-and-swap and cannot approve themselves. Proposed agent records can be edited; the local operator can create proposals that require human approval. State transitions also require the current graph revision; operator approval transitions are served only on the local operator surface and are recorded in the audit log. Simulation accepts at most 100 edge additions/removals and 100 issue/decision outcomes, pins the requested immutable revision, cannot assert a new verified blocker, and reports `persisted: false`. It returns whole-graph readiness and cycle deltas, with detailed changes capped at 200 readiness rows and 50 cycles. The shareable scenario export omits issue content and edge provenance/evidence. Critical path remains unavailable until the source projection contains duration estimates; simulations never invent them.
+Project routes under `/api/v1/p/:projectId/` provide bounded snapshot pages and diffs, node detail and impact, bounded neighborhood expansion, readiness and cycle diagnoses, repair candidates with operator approval/apply/reject/rollback actions, health counts, decision ranking and candidate discovery, recent event history, weekly historical trends, sanitized diagnostics export, proposal creation and review transitions, counterfactual simulation, and explicit GitHub synchronization. Snapshot pages support server-side title/ID, repository, kind, state, and readiness filters and can pin a requested immutable revision. Synchronization starts only on `POST .../dependency-graph/sync`; read routes use the cached graph and mark data stale after 24 hours. Decision proposal writes use graph revision compare-and-swap and cannot approve themselves. Proposed agent records can be edited; the local operator can create proposals that require human approval. State transitions also require the current graph revision; operator approval transitions are served only on the local operator surface and are recorded in the audit log. Simulation accepts at most 100 edge additions/removals and 100 issue/decision outcomes, pins the requested immutable revision, cannot assert a new verified blocker, and reports `persisted: false`. It returns whole-graph readiness and cycle deltas, with detailed changes capped at 200 readiness rows and 50 cycles. The shareable scenario export omits issue content and edge provenance/evidence. Critical path remains unavailable until the source projection contains duration estimates; simulations never invent them.
 
 The current decision rank is explainable and deterministic: `immediate unlocks × 1000 + known priority reach × 10 + downstream reach`. Priority labels P0/critical through P3/low contribute weights 4 through 1; missing priority stays unknown and is counted separately. Bundle search evaluates sizes two through four among at most 12 candidates and caps work at 1,000 combinations. It counts a task only when at least one selected unresolved decision releases a blocker and all other blockers are already resolved or selected. Readiness, cycle diagnoses, and health summaries are cached by immutable graph revision and source status, so a new sync invalidates analysis without recomputing it for every read. When source freshness is stale, immediate unlock and composite score are unknown. Oldest affected issue age is measured at the immutable snapshot timestamp; missing creation dates are counted as unknown. Blocked duration stays unavailable because GitHub dependency links do not provide a verified blocked-since timestamp. These weights are a starting heuristic, not a duration or completion forecast.
 
@@ -61,9 +61,25 @@ Epic #145 is tracked here, not closed: four child issues have acceptance criteri
 
 Still open, with the reason:
 
-- **#158** repair approval, application and rollback: only low-risk metadata correction and its rollback exist. Structural repairs are review-only, the planner marks rollback as not required, and nothing applies a patch, so "an approved repair removes the target SCC and can be reversed" is unmet.
+- **#158** cycle repair approval, application and rollback: implementation is on PR #206 and awaits CI and merge; an approved repair removes the target SCC, then can be rolled back.
 - **#161** history and pilot: weekly trends and snapshot diffs exist, but the full integration pilot has not been run.
 
 ## Delivery sequence
 
 The implementation follows epic #145: contracts, local projection and reconciliation, bounded query API, deterministic readiness/SCC and impact ranking, graph and decision views, bounded discovery and replanning, guarded scheduler admission, then simulation and audit history. No GitHub Actions compute, generic agent framework, or required Hindsight/Langfuse service is introduced.
+
+## Approved cycle repairs
+
+Cycle repair candidates are read-only until a local operator selects verified blocker edges,
+previews the removals against the current graph revision, then approves or rejects with a rationale.
+Application accepts only same-repository GitHub issue dependencies, rechecks the exact candidate
+and edge set, and refuses stale source data, a surviving target cycle, new cycles, or readiness
+changes outside the candidate's affected issues. The server records approval before calling GitHub,
+verifies each mutation, synchronizes the resulting graph, and attempts reverse-order compensation if
+any step fails. A failed compensation is retained as an explicit recovery event.
+
+Applied repairs can be rolled back from graph history. Rollback is local-operator-only, revision
+checked, and audited before and after the GitHub writes. It restores only relations that are still
+absent; if a relation changed since application, rollback fails closed. Structural issue dependencies
+are never changed by discovery agents or automatic policy. The existing `policy-approved-low-risk`
+path remains limited to decision metadata fields.

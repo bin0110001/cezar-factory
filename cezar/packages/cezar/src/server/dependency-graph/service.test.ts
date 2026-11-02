@@ -30,6 +30,10 @@ class MemoryStore implements DependencyGraphStorePort {
     this.history.set(revision, structuredClone(this.snapshot));
     return revision;
   }
+  recordAuditEvent(_repository: GithubRepositoryKey, expected: number) {
+    if (expected !== this.snapshot.revision) throw new Error('dependency graph revision conflict');
+    return expected;
+  }
   reserveCycleAgentAttempt(_repository: GithubRepositoryKey, expected: number, _fingerprint: string) {
     if (expected !== this.snapshot.revision) throw new Error('dependency graph revision conflict');
     return { allowed: true, attempt: 1 };

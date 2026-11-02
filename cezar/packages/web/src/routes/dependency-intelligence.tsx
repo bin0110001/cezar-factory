@@ -4,7 +4,7 @@ import { AlertTriangleIcon, CircleCheckIcon, CircleHelpIcon, DownloadIcon, GitBr
 import { Button } from '@/components/ui/button'
 import { DependencyGraphCanvas } from '@/components/dependency-graph-canvas'
 import { sanitizeDependencyScenarioExport } from '@/lib/dependency-scenario-export'
-import { dispatchDependencyCyclePlan, dispatchDependencyDecisionResearch, getDecisionDiscoveryCandidates, getDependencyCycles, getDependencyDecisionRanking, getDependencyDiagnosticsExport, getDependencyGraph, getDependencyGraphEvents, getDependencyGraphHealth, getDependencyGraphTrends, getDependencyNeighborhood, getDependencyRepairCandidates, proposeDependencyDecision, simulateDependencyGraph, syncDependencyGraph, transitionDependencyDecision } from '@/api/client'
+import { applyDependencyCycleRepair, dispatchDependencyCyclePlan, dispatchDependencyDecisionResearch, getDecisionDiscoveryCandidates, getDependencyCycles, getDependencyDecisionRanking, getDependencyDiagnosticsExport, getDependencyGraph, getDependencyGraphEvents, getDependencyGraphHealth, getDependencyGraphTrends, getDependencyNeighborhood, getDependencyRepairCandidates, proposeDependencyDecision, rejectDependencyCycleRepair, rollbackDependencyCycleRepair, simulateDependencyGraph, syncDependencyGraph, transitionDependencyDecision } from '@/api/client'
 import type { DependencyGraphEdge } from '@open-mercato/cezar-contract'
 
 const key = ['dependency-graph'] as const
@@ -39,6 +39,8 @@ export function DependencyIntelligenceRoute() {
   const [editingDecisionId, setEditingDecisionId] = useState<string | null>(null)
   const [resolvingDecisionId, setResolvingDecisionId] = useState<string | null>(null)
   const [resolutionText, setResolutionText] = useState('')
+  const [repairSelections, setRepairSelections] = useState<Record<string, string[]>>({})
+  const [repairRationales, setRepairRationales] = useState<Record<string, string>>({})
   const graph = useQuery({ queryKey: [...key, offset, snapshotRevision, search, repositoryFilter, kind, state, readinessFilter], queryFn: () => getDependencyGraph({ limit: 100, offset, revision: snapshotRevision, search: search || undefined, repository: repositoryFilter || undefined, kind: kind as 'issue' | 'epic' | 'decision' | 'milestone' | 'external-blocker' | undefined, state: state || undefined, readiness: readinessFilter as 'ready' | 'blocked' | 'unknown' | undefined }), staleTime: 30_000 })
   const history = useQuery({ queryKey: [...key, 'events'], queryFn: () => getDependencyGraphEvents({ limit: 25 }), staleTime: 30_000 })
   const trends = useQuery({ queryKey: [...key, 'trends'], queryFn: getDependencyGraphTrends, staleTime: 30_000 })
@@ -58,6 +60,9 @@ export function DependencyIntelligenceRoute() {
   const simulate = useMutation({ mutationFn: simulateDependencyGraph, onMutate: clearSimulation, onSuccess: setSimulation })
   const diagnosticsExport = useMutation({ mutationFn: () => getDependencyDiagnosticsExport(), onSuccess: (value) => downloadJson(value, 'dependency-diagnostics.json') })
   const cyclePlan = useMutation({ mutationFn: dispatchDependencyCyclePlan, onSuccess: async () => { await client.invalidateQueries({ queryKey: key }) } })
+  const applyRepair = useMutation({ mutationFn: applyDependencyCycleRepair, onSuccess: async (result) => { setRepairSelections((values) => ({ ...values, [result.candidateId]: [] })); await client.invalidateQueries({ queryKey: key }) } })
+  const rejectRepair = useMutation({ mutationFn: rejectDependencyCycleRepair, onSuccess: async () => { await client.invalidateQueries({ queryKey: key }) } })
+  const rollbackRepair = useMutation({ mutationFn: rollbackDependencyCycleRepair, onSuccess: async () => { await client.invalidateQueries({ queryKey: key }) } })
   const decisionResearch = useMutation({ mutationFn: dispatchDependencyDecisionResearch, onSuccess: async () => { await client.invalidateQueries({ queryKey: key }) } })
   const data = graph.data
   const rankedDecisions = new Map((ranking.data?.decisions ?? []).map((item) => [item.id, item]))
@@ -143,10 +148,11 @@ export function DependencyIntelligenceRoute() {
             <div className="border-b px-4 py-3 text-sm font-medium">Recent graph history</div>
             {history.data?.events.length ? <ul className="divide-y">
               {history.data.events.map((event) => <li key={event.cursor} className="flex flex-wrap justify-between gap-2 px-4 py-3 text-sm">
-                <span><span className="font-medium">{event.kind}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{event.entityId}</span></span>
+                <span><span className="font-medium">{event.kind}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{event.entityId}</span>{event.kind === 'cycle-repair-applied' && (() => { const payload = event.payload as { repairId?: string }; const repairId = payload.repairId; const hasRollback = history.data?.events.some((item) => ['cycle-repair-rolled-back', 'cycle-repair-partial-rollback'].includes(item.kind) && (item.payload as { repairId?: string }).repairId === repairId); return repairId && !hasRollback ? <Button size="sm" variant="outline" className="ml-3" disabled={rollbackRepair.isPending || data.source.status !== 'fresh'} onClick={() => { const rationale = window.prompt('Why should this repair be rolled back?'); if (rationale && rationale.trim().length >= 8) rollbackRepair.mutate({ expectedGraphRevision: data.revision, repairId, rationale: rationale.trim() }) }}>Rollback repair</Button> : null })()}</span>
                 <span className="text-xs text-muted-foreground">r{event.revision} · {event.actor} · {new Date(event.createdAt).toLocaleString()}</span>
               </li>)}
             </ul> : <p className="p-4 text-sm text-muted-foreground">No local graph events have been recorded yet.</p>}
+            {rollbackRepair.isError && <p className="border-t p-3 text-sm text-destructive" role="alert">{rollbackRepair.error.message}</p>}
           </section>
           <section className="overflow-hidden rounded-xl border">
             <div className="border-b px-4 py-3 text-sm font-medium">Historical bottlenecks <span className="ml-2 text-xs font-normal text-muted-foreground">weekly immutable snapshot samples</span></div>
@@ -213,9 +219,29 @@ export function DependencyIntelligenceRoute() {
             </ul> : <p className="p-4 text-sm text-muted-foreground">No verified blocking cycles found in this snapshot.</p>}
           </section>
           <section className="overflow-hidden rounded-xl border">
-            <div className="border-b px-4 py-3 text-sm font-medium">Cycle repair plans <span className="ml-2 text-xs font-normal text-muted-foreground">review only · verified blockers are never changed</span></div>
-            {repairCandidates.data?.candidates.length ? <ul className="divide-y">{repairCandidates.data.candidates.map((candidate) => <li key={candidate.id} className="space-y-2 px-4 py-3"><p className="text-sm font-medium">Contract first decomposition · revision {candidate.graphRevision}</p><p className="text-sm text-muted-foreground">{candidate.proposal}</p><p className="text-xs text-muted-foreground">{candidate.cycleNodeIds.length} cycle nodes · {candidate.affectedIssueIds.length} downstream issues · simulation preserves {candidate.simulation.cyclesAfter} cycle(s). Human review required.</p><ul className="space-y-1">{candidate.evidence.map((edge) => <li key={edge.edgeId} className="truncate font-mono text-xs text-muted-foreground">{edge.from} → {edge.to}{edge.sourceUrl ? <> · <a href={edge.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">source</a></> : null}</li>)}</ul><div className="flex flex-wrap items-center gap-2"><p className="text-xs text-muted-foreground">{candidate.rationale}</p><Button size="sm" variant="outline" disabled={cyclePlan.isPending || data.source.status !== 'fresh'} onClick={() => cyclePlan.mutate({ expectedGraphRevision: candidate.graphRevision, candidateId: candidate.id })}>Ask read only planner</Button></div>{cyclePlan.data?.fingerprint && <p className="text-xs text-muted-foreground" role="status">Planner run {cyclePlan.data.runId ?? cyclePlan.data.reason} · cycle {cyclePlan.data.fingerprint}</p>}</li>)}</ul> : <p className="p-4 text-sm text-muted-foreground">No repair review plans are needed for this snapshot.</p>}
+            <div className="border-b px-4 py-3 text-sm font-medium">Cycle repair plans <span className="ml-2 text-xs font-normal text-muted-foreground">verified structural changes require explicit local operator approval</span></div>
+            {repairCandidates.data?.candidates.length ? <ul className="divide-y">{repairCandidates.data.candidates.map((candidate) => {
+              const selected = repairSelections[candidate.id] ?? []
+              const rationale = repairRationales[candidate.id] ?? ''
+              return <li key={candidate.id} className="space-y-3 px-4 py-3">
+                <p className="text-sm font-medium">Contract first decomposition · revision {candidate.graphRevision}</p>
+                <p className="text-sm text-muted-foreground">{candidate.proposal}</p>
+                <p className="text-xs text-muted-foreground">{candidate.cycleNodeIds.length} cycle nodes · {candidate.affectedIssueIds.length} downstream issues · simulation preserves {candidate.simulation.cyclesAfter} cycle(s). Applying a repair changes GitHub issue dependencies and requires explicit local operator approval.</p>
+                <fieldset className="space-y-1"><legend className="text-xs font-medium">Verified blocker edges in this cycle</legend>{candidate.evidence.map((edge) => <label key={edge.edgeId} className="flex items-start gap-2 font-mono text-xs text-muted-foreground"><input type="checkbox" checked={selected.includes(edge.edgeId)} disabled={data.source.status !== 'fresh'} onChange={(event) => { clearSimulation(); setRepairSelections((values) => ({ ...values, [candidate.id]: event.target.checked ? [...selected, edge.edgeId] : selected.filter((id) => id !== edge.edgeId) })) }} /><span className="truncate">{edge.from} → {edge.to}{edge.sourceUrl ? <> · <a href={edge.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">source</a></> : null}</span></label>)}</fieldset>
+                <label className="block text-xs text-muted-foreground">Approval rationale<textarea className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground" maxLength={1000} rows={2} value={rationale} onChange={(event) => setRepairRationales((values) => ({ ...values, [candidate.id]: event.target.value }))} placeholder="Why is this verified blocker safe to remove?" /></label>
+                <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" disabled={simulate.isPending || data.source.status !== 'fresh' || !selected.length} onClick={() => simulate.mutate({ expectedRevision: candidate.graphRevision, removeEdgeIds: selected })}>Preview selected changes</Button>{simulation?.revision === candidate.graphRevision && simulation.scenario.removeEdgeIds.slice().sort().join('\0') === selected.slice().sort().join('\0') && <span className="text-xs text-muted-foreground" role="status">Preview: {simulation.summary.before.cycleCount} cycles → {simulation.summary.after.cycleCount}; {simulation.summary.changedReadiness.length} readiness changes.</span>}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" disabled={cyclePlan.isPending || data.source.status !== 'fresh'} onClick={() => cyclePlan.mutate({ expectedGraphRevision: candidate.graphRevision, candidateId: candidate.id })}>Ask read only planner</Button>
+                  <Button size="sm" variant="danger-ghost" disabled={rejectRepair.isPending || data.source.status !== 'fresh' || rationale.trim().length < 8} onClick={() => { if (window.confirm('Reject this cycle repair proposal? The graph will not be changed.')) rejectRepair.mutate({ expectedGraphRevision: candidate.graphRevision, candidateId: candidate.id, rationale: rationale.trim() }) }}>Reject proposal</Button>
+                  <Button size="sm" disabled={applyRepair.isPending || data.source.status !== 'fresh' || !selected.length || rationale.trim().length < 8 || simulation?.revision !== candidate.graphRevision || simulation.scenario.removeEdgeIds.slice().sort().join('\0') !== selected.slice().sort().join('\0') || simulation.summary.after.cycleCount >= simulation.summary.before.cycleCount} onClick={() => { if (window.confirm(`Apply ${selected.length} GitHub dependency removal(s)? This changes the repository's blocker relationships.`)) applyRepair.mutate({ expectedGraphRevision: candidate.graphRevision, candidateId: candidate.id, removeEdgeIds: selected, rationale: rationale.trim() }) }}>Approve and apply selected</Button>
+                </div>
+                {cyclePlan.data?.fingerprint && <p className="text-xs text-muted-foreground" role="status">Planner run {cyclePlan.data.runId ?? cyclePlan.data.reason} · cycle {cyclePlan.data.fingerprint}</p>}
+              </li>
+            })}</ul> : <p className="p-4 text-sm text-muted-foreground">No repair review plans are needed for this snapshot.</p>}
             {cyclePlan.isError && <p className="border-t p-3 text-sm text-destructive" role="alert">{cyclePlan.error.message}</p>}
+            {rejectRepair.isError && <p className="border-t p-3 text-sm text-destructive" role="alert">{rejectRepair.error.message}</p>}
+            {applyRepair.isError && <p className="border-t p-3 text-sm text-destructive" role="alert">{applyRepair.error.message}</p>}
+            {applyRepair.data?.repairId && <p className="border-t p-3 text-xs text-muted-foreground" role="status">Repair {applyRepair.data.repairId} applied at graph revision {applyRepair.data.graphRevision}.</p>}
           </section>
         </> : null}
     {sync.isError && <p className="text-sm text-destructive" role="alert">{sync.error.message}</p>}

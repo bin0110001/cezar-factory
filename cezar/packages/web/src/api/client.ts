@@ -1,7 +1,7 @@
 import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
-import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse } from '@open-mercato/cezar-contract'
+import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse } from '@open-mercato/cezar-contract'
 import type {
   AgentConfigFileContent,
   AgentAccountDetailsResponse,
@@ -900,6 +900,21 @@ export async function dispatchDependencyCyclePlan(input: DependencyCyclePlanDisp
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['cycle-plans'].dispatch.$post({
     param: { projectId: queryScope() }, json: input,
   }), '/dependency-graph/cycle-plans/dispatch')
+}
+export async function applyDependencyCycleRepair(input: DependencyCycleRepairApply): Promise<DependencyCycleRepairResult> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['cycle-repairs'].apply.$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/cycle-repairs/apply')
+}
+export async function rejectDependencyCycleRepair(input: DependencyCycleRepairReject): Promise<DependencyCycleRepairRejectResponse> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['cycle-repairs'].reject.$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/cycle-repairs/reject')
+}
+export async function rollbackDependencyCycleRepair(input: DependencyCycleRepairRollback): Promise<DependencyCycleRepairResult> {
+  return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['cycle-repairs'].rollback.$post({
+    param: { projectId: queryScope() }, json: input,
+  }), '/dependency-graph/cycle-repairs/rollback')
 }
 export async function dispatchDependencyDecisionResearch(input: DependencyDecisionResearchDispatch): Promise<DependencyDecisionResearchDispatchResponse> {
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph']['decision-research'].dispatch.$post({

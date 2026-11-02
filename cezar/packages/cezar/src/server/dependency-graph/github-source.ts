@@ -37,6 +37,15 @@ export interface GithubGraphPage {
   rootIssueNewestUpdatedAt?: string;
 }
 
+export type GithubBlockerAction = 'add' | 'remove';
+
+export class GithubDependencyWriteError extends Error {
+  constructor(message: string, readonly mutationMayHaveApplied: boolean) {
+    super(message);
+    this.name = 'GithubDependencyWriteError';
+  }
+}
+
 export type DependencyGraphGhRunner = (repoRoot: string, args: string[], timeoutMs: number) => Promise<string>;
 export type DependencyGraphGitRunner = (repoRoot: string, args: string[], timeoutMs: number) => Promise<string>;
 
@@ -291,5 +300,54 @@ export class GithubDependencySource {
     const parsed = graphqlPageSchema.parse(JSON.parse(output));
     if (parsed.errors?.length) throw new Error(parsed.errors.map((error) => error.message).join('; ').slice(0, 1_000));
     return mapGithubGraphPage(parsed, repository);
+  }
+
+  /** Change one same-repository native issue dependency and verify the resulting relation. */
+  async setBlocker(blockedNumber: number, blockingNumber: number, action: GithubBlockerAction): Promise<{ changed: boolean }> {
+    if (!Number.isSafeInteger(blockedNumber) || blockedNumber < 1 || !Number.isSafeInteger(blockingNumber) || blockingNumber < 1) {
+      throw new Error('GitHub issue numbers must be positive integers');
+    }
+    if (blockedNumber === blockingNumber) throw new Error('an issue cannot block itself');
+    const repository = await this.repository();
+    const base = `repos/${repository.owner}/${repository.name}/issues`;
+    const dependenciesPath = `${base}/${blockedNumber}/dependencies/blocked_by`;
+    const readBlockers = async () => {
+      const raw = await this.runner(this.repoRoot, ['api', '--hostname', repository.host, `${dependenciesPath}?per_page=100`], 15_000);
+      const value = JSON.parse(raw) as unknown;
+      if (!Array.isArray(value) || value.some((item) => !item || typeof item !== 'object' || !Number.isSafeInteger((item as { number?: unknown }).number))) {
+        throw new Error('GitHub returned an invalid dependency list');
+      }
+      return new Set(value.map((item) => (item as { number: number }).number));
+    };
+    const before = await readBlockers();
+    const exists = before.has(blockingNumber);
+    if ((action === 'add' && exists) || (action === 'remove' && !exists)) return { changed: false };
+
+    const idRaw = await this.runner(this.repoRoot, ['api', '--hostname', repository.host, `${base}/${blockingNumber}`, '--jq', '.id'], 15_000);
+    const issueId = Number(idRaw);
+    if (!Number.isSafeInteger(issueId) || issueId < 1) throw new Error('GitHub did not return a valid blocker issue id');
+    const args = action === 'add'
+      ? ['api', '--hostname', repository.host, '--method', 'POST', '--field', `issue_id=${issueId}`, dependenciesPath]
+      : ['api', '--hostname', repository.host, '--method', 'DELETE', `${dependenciesPath}/${issueId}`];
+    try {
+      await this.runner(this.repoRoot, args, 20_000);
+    } catch (error) {
+      try {
+        const afterFailure = await readBlockers();
+        if (afterFailure.has(blockingNumber) === (action === 'add')) return { changed: true };
+      } catch {
+        throw new GithubDependencyWriteError(`GitHub dependency ${action} may have succeeded but its result could not be verified: ${error instanceof Error ? error.message.slice(0, 500) : 'request failed'}`, true);
+      }
+      throw error;
+    }
+
+    let after: Set<number>;
+    try {
+      after = await readBlockers();
+    } catch (error) {
+      throw new GithubDependencyWriteError(`GitHub dependency ${action} may have succeeded but its result could not be verified: ${error instanceof Error ? error.message.slice(0, 500) : 'request failed'}`, true);
+    }
+    if (after.has(blockingNumber) !== (action === 'add')) throw new GithubDependencyWriteError(`GitHub dependency ${action} could not be verified`, false);
+    return { changed: true };
   }
 }
