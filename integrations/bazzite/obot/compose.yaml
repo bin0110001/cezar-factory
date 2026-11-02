@@ -12,7 +12,7 @@ services:
       OBOT_HTTPS_PORT: ${OBOT_HTTPS_PORT:-8443}
       OBOT_HOST_PORT: ${OBOT_HOST_PORT:-8787}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
       - obot-proxy-data:/data
       - obot-proxy-config:/config
     cap_drop:
