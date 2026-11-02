@@ -192,6 +192,9 @@ export const automationRuntimeStateSchema = z.object({
   etags: z.record(z.string(), z.string()).optional(),
   backoffUntil: z.string().optional(),
   consecutiveFailures: z.number().optional(),
+  /** GitHub kind: the last completed full reconciliation and how many missed events it recovered. */
+  lastReconcileAt: z.string().optional(),
+  lastReconcileRecovered: z.number().optional(),
 });
 export type AutomationRuntimeState = z.infer<typeof automationRuntimeStateSchema>;
 
