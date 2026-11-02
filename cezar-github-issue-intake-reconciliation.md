@@ -1,6 +1,6 @@
 # Cezar Factory Enhancement: Reliable GitHub Issue Intake & Reconciliation
 
-**Status:** Proposed  
+**Status:** Filed as epic #222 with children #223-#228  
 **Target repository:** `bin0110001/cezar-factory`  
 **Purpose:** Make GitHub issue discovery and admission a reliable first-class Factory capability, replacing the recovery skill workaround once proven.
 
@@ -139,7 +139,7 @@ Use structured logs and conventional metrics for deterministic intake operations
 
 ## 7. Proposed issue breakdown
 
-Create one **parent enhancement** and six linked implementation issues. These are planning items, **not yet created on GitHub**.
+Create one **parent enhancement** and six linked implementation issues. Filed on GitHub as #222 (parent) and #223-#228 (children).
 
 ### Issue 1 — Durable GitHub issue intake service (P0)
 
