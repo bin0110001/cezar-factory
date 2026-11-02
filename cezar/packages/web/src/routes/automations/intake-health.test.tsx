@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { MemoryRouter } from 'react-router'
 import type { AutomationLogRecord } from '@open-mercato/cezar-api-client'
 
-import { deferralLabel, IntakeHealthCard, summarizeIntake } from './intake-health'
+import { deferralLabel, IntakeHealthCard, IntakeOverview, summarizeIntake } from './intake-health'
 
 afterEach(cleanup)
 
@@ -27,6 +28,35 @@ describe('summarizeIntake', () => {
     expect(deferralLabel('no-longer-eligible: closed')).toBe('No longer eligible')
     expect(deferralLabel('revalidation-failed: boom')).toBe('GitHub check failed')
     expect(deferralLabel('blocked by issue 9')).toBe('Blocked by dependency')
+  })
+})
+
+describe('IntakeOverview', () => {
+  const entry = (id: string, state: object, enabled = true, kind = 'github') =>
+    ({ id, name: id, kind, enabled, filters: { fullReconcileHours: 24 }, state }) as never
+
+  it('lists only enabled GitHub pollers with health and reconcile recovery', () => {
+    const { container } = render(
+      <MemoryRouter><IntakeOverview
+        timeZone="UTC"
+        now={Date.parse('2026-11-02T10:00:00.000Z')}
+        automations={[
+          entry('ok', { lastSuccessAt: '2026-11-02T09:55:00.000Z', lastReconcileAt: '2026-11-02T06:00:00.000Z', lastReconcileRecovered: 2 }),
+          entry('backed-off', { consecutiveFailures: 2, backoffUntil: '2026-11-02T11:00:00.000Z' }),
+          entry('paused', {}, false),
+          entry('nightly', {}, true, 'schedule'),
+        ]}
+      /></MemoryRouter>,
+    )
+    expect(container.querySelectorAll('[data-slot="intake-overview-row"]')).toHaveLength(2)
+    expect(screen.getByText('Healthy')).not.toBeNull()
+    expect(screen.getByText(/Backing off after 2/)).not.toBeNull()
+    expect(container.textContent).toContain('(+2)')
+  })
+
+  it('renders nothing without an enabled GitHub poller', () => {
+    const { container } = render(<IntakeOverview timeZone="UTC" automations={[entry('paused', {}, false)]} />)
+    expect(container.firstChild).toBeNull()
   })
 })
 

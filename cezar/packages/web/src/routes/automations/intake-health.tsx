@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Pill } from '@/components/pill'
 import type { StatusDotTone } from '@/components/status-dot'
 import { logTime } from '@/lib/automation-format'
+import { Link } from '@/lib/project-router'
 
 /** One issue the intake holds back: its newest log row says `deferred` and nothing launched since. */
 export interface WaitingCandidate {
@@ -58,7 +59,7 @@ export function deferralLabel(reason: string): string {
   return 'Blocked by dependency'
 }
 
-function health(state: AutomationListEntry['state'], now: number): { tone: StatusDotTone; text: string } {
+export function health(state: AutomationListEntry['state'], now: number): { tone: StatusDotTone; text: string } {
   if (!state?.lastSuccessAt && !state?.consecutiveFailures) return { tone: 'neutral', text: 'Not checked yet' }
   if (state?.backoffUntil && Date.parse(state.backoffUntil) > now) {
     return { tone: 'danger', text: `Backing off after ${state.consecutiveFailures ?? 1} failed check(s)` }
@@ -138,6 +139,42 @@ export function IntakeHealthCard({ automation, records, timeZone, now = Date.now
           ))}
         </ul>
       ) : null}
+    </Card>
+  )
+}
+
+/**
+ * Every enabled GitHub automation's intake health on one screen (the list page): which pollers are
+ * healthy, backed off or never checked, and what the last full reconciliation recovered.
+ */
+export function IntakeOverview({ automations, timeZone, now = Date.now() }: {
+  automations: readonly AutomationListEntry[]
+  timeZone: string
+  now?: number
+}) {
+  const pollers = automations.filter((automation) => automation.kind === 'github' && automation.enabled)
+  if (pollers.length === 0) return null
+  return (
+    <Card flush data-slot="intake-overview" className="px-4 py-3">
+      <div className="mb-2 text-[11px] font-semibold tracking-[.05em] uppercase text-soft-foreground">Issue intake</div>
+      <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px]">
+        {pollers.map((automation) => {
+          const status = health(automation.state, now)
+          const reconcile = (automation.filters as { fullReconcileHours?: number } | undefined)?.fullReconcileHours
+          return (
+            <li key={automation.id} data-slot="intake-overview-row" className="flex items-center gap-3">
+              <Link to={`/automations/${encodeURIComponent(automation.id)}/log`} className="min-w-0 flex-1 truncate font-medium hover:underline">{automation.name}</Link>
+              <Pill dot={status.tone} className="w-fit">{status.text}</Pill>
+              <span className="w-44 text-muted-foreground">
+                {automation.state?.lastSuccessAt ? `checked ${logTime(automation.state.lastSuccessAt, timeZone)}` : 'never checked'}
+              </span>
+              <span className="w-44 text-muted-foreground">
+                {reconcile === undefined ? 'reconcile off' : `reconcile ${automation.state?.lastReconcileAt ? logTime(automation.state.lastReconcileAt, timeZone) : 'pending'}${automation.state?.lastReconcileRecovered ? ` (+${automation.state.lastReconcileRecovered})` : ''}`}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
     </Card>
   )
 }
