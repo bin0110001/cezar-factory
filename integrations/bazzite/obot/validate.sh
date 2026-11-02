@@ -79,7 +79,7 @@ proxy_config_mount="$(findmnt -n -o TARGET -T "$proxy_config_path")"
 }
 
 runtime_mount="$("${podman_bin[@]}" inspect --format '{{range .Mounts}}{{if eq .Destination "/var/run/docker.sock"}}{{.Source}}:rw={{.RW}}{{end}}{{end}}' "$container")"
-[[ "$runtime_mount" == "$runtime_socket:rw=false" ]] || { echo "Obot validation failed: Obot is not using the read-only dedicated runtime socket ($runtime_mount)" >&2; exit 1; }
+[[ "$runtime_mount" == "$runtime_socket:rw=true" ]] || { echo "Obot validation failed: Obot is not using the dedicated runtime socket with the required API connection access ($runtime_mount)" >&2; exit 1; }
 proxy_mounts="$("${podman_bin[@]}" inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$proxy_container")"
 [[ "$proxy_mounts" != *"$runtime_socket"* && "$proxy_mounts" != *"/run/podman/podman.sock"* && "$proxy_mounts" != *"/var/run/docker.sock"* ]] || { echo "Obot validation failed: HTTPS proxy has a container-runtime socket mounted" >&2; exit 1; }
 bound_ports="$("${podman_bin[@]}" inspect --format '{{json .HostConfig.PortBindings}}' "$container")"
