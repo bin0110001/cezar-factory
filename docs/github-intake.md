@@ -43,3 +43,29 @@ recovery skill stays as a diagnostic fallback and must not be given independent 
 - **Capacity / quota**: admitted launches queue in the existing run manager and workspace
   semaphore, so a full agent or model tier delays execution but never drops the candidate (the
   receipt stays `launched` with a queued run, or `deferred` while an admission check fails).
+
+## Migration: retiring the recovery skill (#228)
+
+The recovery skill (kept outside this repo) periodically looks for eligible issues whose event was
+missed. Native coverage of each behavior:
+
+| Recovery-skill behavior | Native replacement |
+|---|---|
+| Find open issues carrying the trigger label that never ran | `fullReconcileHours` on the `issue.labeled` automation (receipt-deduplicated) |
+| Avoid starting too many at once | `maxAdmissionsPerCycle`, priority-ordered, deferred (never dropped) |
+| Skip issues that changed since discovery | Pre-admission re-read (`no-longer-eligible` deferral) |
+| Explain why an issue is waiting | Issue intake card / overview: `deferReason` codes |
+| Survive restarts and API failures | Receipts + leases, `reconcileAutomationReceipts`, bounded backoff |
+| Existing eligible issues at first run | `initialSync: eligible` |
+
+### Cutover checklist (do in order; stop on any failure)
+
+1. Enable `fullReconcileHours` (suggest 24) with `initialSync: eligible` on each intake automation.
+2. Run the skill read-only (diagnostics only): it must not dispatch, label, or create tasks.
+3. Soak for at least 7 days. Record daily: issues the skill reports as stranded that native intake
+   did not already hold or launch (target: 0), `lastReconcileRecovered` totals, backoff episodes.
+4. If the soak is clean, remove the skill's scheduling entry. Keep its diagnostic read-only mode.
+5. Rollback: re-enable the skill's schedule; native receipts keep both paths duplicate-safe because
+   every launch is gated by the same event-id receipt.
+
+Until step 4 completes, #228 stays open.
