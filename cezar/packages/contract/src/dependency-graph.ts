@@ -328,6 +328,26 @@ export const dependencyGraphSnapshotSchema = z.object({
 }).strict();
 export type DependencyGraphSnapshot = z.infer<typeof dependencyGraphSnapshotSchema>;
 
+export const dependencyGraphHistoricalTrendsSchema = z.object({
+  repository: githubRepositoryKeySchema,
+  fromRevision: z.number().int().nonnegative(),
+  toRevision: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  points: z.array(z.object({
+    week: z.iso.date(),
+    revision: z.number().int().nonnegative(),
+    sourceStatus: z.enum(['fresh', 'stale', 'offline', 'unknown']),
+    readiness: z.object({ ready: z.number().int().nonnegative(), blocked: z.number().int().nonnegative(), unknown: z.number().int().nonnegative() }).strict(),
+    cycles: z.number().int().nonnegative(),
+    oldestBlockedIssueAgeDays: z.number().int().nonnegative().nullable(),
+    resolvedDecisions: z.number().int().nonnegative(),
+    resolvedDecisionDelta: z.number().int(),
+    recurringCycleSignatures: z.array(z.string().max(10_000)).max(20),
+    topBottlenecks: z.array(z.object({ nodeId: dependencyNodeIdSchema, directBlockedIssues: z.number().int().positive() }).strict()).max(5),
+  }).strict()).max(100),
+}).strict();
+export type DependencyGraphHistoricalTrends = z.infer<typeof dependencyGraphHistoricalTrendsSchema>;
+
 /** Generated from the same contracts consumed by the service and browser. */
 export const dependencyGraphNodeJsonSchema = z.toJSONSchema(dependencyGraphNodeSchema);
 export const dependencyGraphEdgeJsonSchema = z.toJSONSchema(dependencyGraphEdgeSchema);

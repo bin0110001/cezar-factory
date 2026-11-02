@@ -56,13 +56,13 @@ Epic #145 is tracked here, not closed: four child issues have acceptance criteri
 | #155 discovery workflow | this implementation PR | deterministic proposals persist without a model; failed research returns a typed `unavailable` response and records a redacted failure event |
 | #156 cycle repair planner | #173 | `repair-planner.ts`, contract-first decomposition, verified edges never dropped |
 | #157 bounded replanning dispatch | #173 | `cycle-agent.ts`, attempt budgets and cooldown persisted in SQLite, non-recursive dispatch |
-| #160 simulator | this implementation PR | `algorithms.ts`, `dependency-intelligence.tsx`; immutable revision pinning, before/after readiness and cycle deltas, sanitized export, explicit unavailable critical path without duration estimates |
+| #160 simulator | #173 | `algorithms.ts`, `dependency-intelligence.tsx`; immutable revision pinning, before/after readiness and cycle deltas, sanitized export, explicit unavailable critical path without duration estimates |
 | #159 scheduler admission | #173, #185 | fail-closed admission, deferral replay, on-demand graph refresh. One clause, "end-to-end events visible in #135", depends on #135, which is not built; deferrals are visible in the automation log meanwhile |
+| #161 history and pilot | this implementation PR | typed weekly history includes the top five bottlenecks per point; seeded cross-repository and failure-injection pilot matrix, explicit limits and rollback steps in `dependency-intelligence-pilot.md` |
 
 Still open, with the reason:
 
-- **#158** cycle repair approval, application and rollback: implementation is on PR #206 and awaits CI and merge; an approved repair removes the target SCC, then can be rolled back.
-- **#161** history and pilot: weekly trends and snapshot diffs exist, but the full integration pilot has not been run.
+- **#161** history and pilot: this PR adds a bounded weekly bottleneck summary and a local seeded SQLite/GitHub-adapter pilot. The pilot performs no GitHub writes and is not production rollout evidence; see `dependency-intelligence-pilot.md` for its matrix and rollback steps.
 
 ## Delivery sequence
 

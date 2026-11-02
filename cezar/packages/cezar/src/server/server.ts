@@ -4,6 +4,7 @@ import {
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
   githubRepositoryKeySchema, type GithubRepositoryKey,
   dependencyDecisionResearchDispatchResponseSchema,
+  dependencyGraphHistoricalTrendsSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
@@ -6188,7 +6189,7 @@ export function createApp(deps: ServerDeps) {
       try {
         const service = dependencyGraphService(c.get('project').root);
         const repository = await service.repositoryKey();
-        return c.json(service.historicalTrends(repository));
+        return c.json(dependencyGraphHistoricalTrendsSchema.parse(service.historicalTrends(repository)));
       } catch (error) {
         return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph history unavailable' }, 503);
       }
