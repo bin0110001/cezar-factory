@@ -98,6 +98,8 @@ export class ProjectAutomationScheduler {
     let polledState: AutomationRuntimeState = {};
     /** Launches admitted this turn; `filters.maxAdmissionsPerCycle` bounds it for issue events. */
     const turn = { admitted: 0 };
+    /** Full-reconciliation bookkeeping for this turn (events it recovered bypass the cursor window). */
+    const reconcile = { ran: false, recovered: new Set<string>() };
     const capReached = () => definition.filters.maxAdmissionsPerCycle !== undefined && turn.admitted >= definition.filters.maxAdmissionsPerCycle;
     return runEventPollCycle({
       store, definition, mode, scheduled, onChange: this.handle.onChange,
@@ -170,9 +172,25 @@ export class ProjectAutomationScheduler {
           }
           exhausted = pinned(result);
         }
+        const hours = definition.filters.fullReconcileHours;
+        const due = mode === 'execute' && hours !== undefined
+          && (!state.lastReconcileAt || Date.now() - Date.parse(state.lastReconcileAt) >= hours * 3_600_000);
+        if (due) {
+          try {
+            const full = await githubRequests.run(() => github.poller.reconcileLabeled(github.owner, github.repo, definition));
+            const seen = new Set(result.candidates.map(candidate => candidate.eventId));
+            const missed = full.candidates.filter(candidate => !seen.has(candidate.eventId) && !store.latestReceipt(definition.id, candidate.eventId));
+            for (const candidate of missed) reconcile.recovered.add(candidate.eventId);
+            result = { ...result, candidates: [...result.candidates, ...missed] };
+            reconcile.ran = true;
+            if (full.truncated) store.appendLog({ automationId: definition.id, revision: definition.revision, result: 'skipped', reason: 'Full reconciliation hit maxRecords; raise filters.maxRecords to examine more open issues.' });
+          } catch (error) {
+            store.appendLog({ automationId: definition.id, revision: definition.revision, result: 'error', reason: `Full reconciliation failed and will retry next turn: ${error instanceof Error ? error.message : String(error)}` });
+          }
+        }
         return result;
       },
-      eligible: (candidate, state) => !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
+      eligible: (candidate, state) => reconcile.recovered.has(candidate.eventId) || !state.cursor || Date.parse(candidate.timestamp) >= Date.parse(state.cursor.timestamp) - CURSOR_OVERLAP_MS,
       order: (a, b) => candidatePriority(b) - candidatePriority(a),
       launch: (candidate: GithubCandidate) => this.launch(definition, candidate, turn, capReached),
       persist: (result, current) => {
@@ -187,9 +205,10 @@ export class ProjectAutomationScheduler {
           nextCheckAt: new Date(Date.now() + definition.intervalSeconds * 1000).toISOString(),
           consecutiveFailures: 0,
           backoffUntil: undefined,
+          ...(reconcile.ran ? { lastReconcileAt: new Date().toISOString(), lastReconcileRecovered: reconcile.recovered.size } : {}),
         };
       },
-      reason: result => pollReason({
+      reason: result => reconcile.recovered.size ? `Full reconciliation recovered ${reconcile.recovered.size} missed event(s).` : pollReason({
         climbedTo,
         exhausted,
         // The marker only still describes this poll if the cursor did not move after all.
