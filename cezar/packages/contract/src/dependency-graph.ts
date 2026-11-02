@@ -179,6 +179,14 @@ export const dependencyDecisionResearchDispatchSchema = z.object({
 }).strict();
 export type DependencyDecisionResearchDispatch = z.infer<typeof dependencyDecisionResearchDispatchSchema>;
 
+export const dependencyDecisionResearchDispatchResponseSchema = z.object({
+  status: z.enum(['started', 'skipped', 'unavailable']),
+  runId: z.string().optional(),
+  reason: z.string().optional(),
+  fingerprint: z.string().optional(),
+}).strict();
+export type DependencyDecisionResearchDispatchResponse = z.infer<typeof dependencyDecisionResearchDispatchResponseSchema>;
+
 
 const decisionNodeSchema = z.object({
   kind: z.literal('decision'),

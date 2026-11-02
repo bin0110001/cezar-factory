@@ -36,7 +36,7 @@ A background sync (startup + 10 seconds, then every 10 minutes) keeps each GitHu
 
 ## Bounded planning and mutation controls
 
-Fresh scheduled scans can persist deterministic decision candidates as `agent-proposal` records and dispatch at most one high-impact research run per project scan. The planner uses Cezar's existing run queue and worktree lifecycle, one workflow step, no recursive dispatch, and a read-only `Read` tool allowlist. Inputs label all issue content as untrusted; outputs remain run transcripts for review and never write GitHub or graph edges. Cycle attempts use stable SCC fingerprints, a three-attempt lifetime cap, and a 24-hour cooldown; decision research uses a two-attempt cap and six-hour cooldown. Failed, stale, and started outcomes are in the graph audit log.
+Fresh scheduled scans persist deterministic decision candidates as `agent-proposal` records before optional model research. If the model/run service is unavailable, the proposal remains in the human review queue, the failed attempt is audited, and the dispatch returns `unavailable` without failing the scan or retrying every candidate in the same pass. The planner uses Cezar's existing run queue and worktree lifecycle, one workflow step, no recursive dispatch, and a read-only `Read` tool allowlist. Inputs label all issue content as untrusted; outputs remain run transcripts for review and never write GitHub or graph edges. Cycle attempts use stable SCC fingerprints, a three-attempt lifetime cap, and a 24-hour cooldown; decision research uses a two-attempt cap and six-hour cooldown. Failed, stale, and started outcomes are in the graph audit log.
 
 Low-risk metadata correction is limited to the owner and evidence fields of an open `policy-approved-low-risk` decision proposal. The request must carry the current graph revision, decision revision, SHA-256 of the current decision, and an audit rationale. A rollback names a prior immutable graph revision and only restores those same metadata fields. Structural edits, authorization changes, and lifecycle changes stay on the human approval path. Scheduler issue events require a fresh graph and verified readiness both before admission and immediately before run creation; deferred receipts replay after later polls, and a local operator can override a deferred event with a reason and graph revision recorded in the automation log.
 
@@ -53,6 +53,7 @@ Epic #145 is tracked here, not closed: four child issues have acceptance criteri
 | #152 decision lifecycle and queue | #173 | transition graph in the contract, revision compare-and-swap, operator-only approvals, UI queue |
 | #153 health overview | #173 | `dependencyGraphHealth`, stale/offline reported as unknown, never as ready |
 | #154 decision discovery | #173 | `discovery.ts`, dedupe tests, no invented blocking edge |
+| #155 discovery workflow | this implementation PR | deterministic proposals persist without a model; failed research returns a typed `unavailable` response and records a redacted failure event |
 | #156 cycle repair planner | #173 | `repair-planner.ts`, contract-first decomposition, verified edges never dropped |
 | #157 bounded replanning dispatch | #173 | `cycle-agent.ts`, attempt budgets and cooldown persisted in SQLite, non-recursive dispatch |
 | #160 simulator | this implementation PR | `algorithms.ts`, `dependency-intelligence.tsx`; immutable revision pinning, before/after readiness and cycle deltas, sanitized export, explicit unavailable critical path without duration estimates |
@@ -60,7 +61,6 @@ Epic #145 is tracked here, not closed: four child issues have acceptance criteri
 
 Still open, with the reason:
 
-- **#155** discovery research dispatch: the "degraded mode when the model is unavailable" criterion has no test or code that demonstrates it.
 - **#158** repair approval, application and rollback: only low-risk metadata correction and its rollback exist. Structural repairs are review-only, the planner marks rollback as not required, and nothing applies a patch, so "an approved repair removes the target SCC and can be reversed" is unmet.
 - **#161** history and pilot: weekly trends and snapshot diffs exist, but the full integration pilot has not been run.
 
