@@ -27,6 +27,8 @@ and mutation leases so concurrent workers cannot corrupt cursors or receipts.
 
 ## Not yet built (open child issues)
 
-Webhook ingestion (#223), repository fairness and quota-aware deferral (#225), the Issue Intake
-UI (#227), and recovery-skill retirement with a soak test (#228) remain open. Until #228, the
+Repository fairness and quota-aware deferral (#225) and recovery-skill retirement with a soak test (#228)
+remain open. Webhooks are intentionally out of scope. The Issue intake card (health, last
+reconcile, admission limit, waiting issues with reason codes) is on each GitHub automation's log
+page. Until #228, the
 recovery skill stays as a diagnostic fallback and must not be given independent dispatch authority.

@@ -22,6 +22,7 @@ import {
 } from '@open-mercato/cezar-api-client'
 
 import { PageState } from './automations-route'
+import { IntakeHealthCard } from './intake-health'
 
 /**
  * `/automations/:id/log` — one automation's execution log (spec 2026-09-14-automations-redesign
@@ -102,6 +103,12 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
         </Button>
       </header>
 
+      {automation?.kind === 'github' && query.data ? (
+        <div className="flex justify-center px-5 pt-5">
+          <IntakeHealthCard automation={automation} records={query.data.records} timeZone={zone} />
+        </div>
+      ) : null}
+
       <div className="flex justify-center p-5">
         {query.isError ? (
           <div className="w-full max-w-[820px]"><PageState text={query.error instanceof Error ? query.error.message : String(query.error)} /></div>
@@ -132,7 +139,7 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
 /** Every result the log can hold, in the contract's order — the filter's menu. */
 const RESULTS: readonly AutomationLogResult[] = [
   'launched', 'no-match', 'duplicate', 'rate-limited', 'error', 'baseline', 'preview',
-  'manual', 'catch-up', 'skipped', 'failed',
+  'manual', 'catch-up', 'skipped', 'failed', 'deferred', 'admission-override',
 ]
 
 /** The seven bounded polls a GitHub automation can watch. */
