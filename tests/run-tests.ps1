@@ -1132,6 +1132,9 @@ finally { Pop-Location }
 
 $noRegistry = (& pwsh -NoProfile -File (Join-Path $scripts 'sync-all-automations.ps1') -FactoryPath $factory -RegistryPath (Join-Path $sg 'missing.json') *>&1 | Out-String) -replace '\s+', ' '
 $noRegistryExit = $LASTEXITCODE
+if ($noRegistryExit -eq 0 -or $noRegistry -notmatch 'Needs target configuration' -or $noRegistry -notmatch 'nothing was synchronized') {
+    Write-Host "sync-all missing-registry diagnostic: exit=$noRegistryExit output=[$noRegistry]"
+}
 Assert 'sync-all requires explicit target configuration and makes no synchronization' ($noRegistryExit -ne 0 -and $noRegistry -match 'Needs target configuration' -and $noRegistry -match 'nothing was synchronized')
 $emptyTargetRegistry = Join-Path $sg 'empty-target-registry.json'
 [IO.File]::WriteAllText($emptyTargetRegistry, '[]', [Text.UTF8Encoding]::new($false))
