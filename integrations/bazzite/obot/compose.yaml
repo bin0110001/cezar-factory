@@ -41,6 +41,8 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - SETGID
+      - SETUID
 
 volumes:
   obot-data:
