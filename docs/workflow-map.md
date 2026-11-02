@@ -64,6 +64,20 @@ lifecycle labels, audit/tracking markers, and `factory:ready` issues without
 exactly one complexity label. It removes and re-adds only the selected state
 label, causing the existing downstream automation to receive a fresh event.
 
+The legacy-label audit (`backlog-label-audit-*` steps and `recover-audit-reservations`) is a one-time
+migration. With no ambiguous candidates it already ends the run through the typed `no_work` output
+before any agent step, so an idle audit costs no agent session. Retire the audit steps, the skill, and
+`recover-audit-reservations.ps1` together once the `backlog-label-audit-prepare` receipt reports
+`candidateCount: 0` and `resolvedCount: 0` for every configured project over a week of hourly runs.
+
+## Health
+
+`[factory] health` (`factory-health`, daily 01:00) is read-only and runs no agent. It audits recent
+Cezar failures, publishes only Factory-defect evidence as a canonical Factory issue, runs the
+dry-run backlog reconciliation, and writes `.factory/health-report.json`. It replaces the separate
+`failure-audit` and `backlog-reconciliation` automations. `factory-environment-analysis` is
+on-demand and host-side only.
+
 ## Update contract
 
 Use `scripts/update-github-lifecycle.ps1` for operator-driven transitions:

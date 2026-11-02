@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.60] - 2026-11-01
+
+- Consolidate maintenance automations: add the daily read-only `factory-health`
+  workflow (`[factory] health`) that runs the failure audit and the dry-run
+  backlog reconciliation and writes a deterministic `.factory/health-report.json`
+  with no agent session. It replaces `failure-audit` and `backlog-reconciliation`;
+  those names remain accepted aliases in project configs, and `sync-automations`
+  pauses/prunes their old automations.
+- Classify collected failures deterministically (`factory-defect`, `environment`,
+  `project-defect`, `unknown`) and publish only Factory defects as Factory issues.
+- Retire the unused `factory-failure-audit`, `factory-intake`, and
+  `factory-implement-prepare` skills (still accepted in existing configs).
+- Make `factory-environment-analysis` explicitly on-demand and host-side.
 ## [0.3.58] - 2026-10-27
 
 - Make the maintenance backlog-label audit deterministic: workflow command steps

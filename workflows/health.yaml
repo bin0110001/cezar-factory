@@ -1,0 +1,27 @@
+name: factory-health
+description: Daily read-only project health - bounded Cezar failure audit with Factory-defect publication, plus a dry-run backlog reconciliation, summarized in one deterministic report. Runs no agent.
+steps:
+  - id: startup
+    name: Prepare workflow environment
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-health -Step collect-failures -RequireGh -RequiredScripts audit-factory-failures.ps1,publish-failure-audit.ps1,collect-backlog-snapshot.ps1,reconcile-backlog.ps1,write-health-report.ps1
+    timeoutSeconds: 60
+  - id: collect-failures
+    name: Collect bounded failure evidence
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-factory-failures.ps1 -OutputPath .factory/failure-audit-input.json
+    timeoutSeconds: 300
+  - id: publish-failures
+    name: Publish canonical Factory failure evidence
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/publish-failure-audit.ps1 -InputPath .factory/failure-audit-input.json -ReceiptPath .factory/failure-audit-publication.json -FactoryRepo bin0110001/cezar-factory
+    timeoutSeconds: 300
+  - id: collect-backlog
+    name: Collect the open GitHub issue snapshot
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-backlog-snapshot.ps1 -OutputPath .factory/github-issues.json
+    timeoutSeconds: 300
+  - id: reconcile-backlog
+    name: Propose bounded legal actions without claiming or dispatching issues
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/reconcile-backlog.ps1 -InputPath .factory/github-issues.json -OutputPath .factory/backlog-reconciliation.json -BatchCap 1 -ProjectConcurrencyCap 1 -DryRun
+    timeoutSeconds: 300
+  - id: report
+    name: Write the deterministic health report
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/write-health-report.ps1 -FailureInputPath .factory/failure-audit-input.json -PublicationPath .factory/failure-audit-publication.json -BacklogPath .factory/backlog-reconciliation.json -OutputPath .factory/health-report.json
+    timeoutSeconds: 300

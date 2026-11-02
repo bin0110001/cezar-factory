@@ -12,7 +12,6 @@ workflows:
   - investigate
 
 skills:
-  - factory-intake
   - factory-plan
   - factory-implement
   - factory-review

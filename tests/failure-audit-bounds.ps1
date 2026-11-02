@@ -53,7 +53,15 @@ try {
     $firstSignature = @($run.record.failures | Where-Object runId -eq 'run-alpha' | Select-Object -First 1)
     $secondSignature = @($run.record.failures | Where-Object runId -eq 'run-beta' | Select-Object -First 1)
     Check 'fingerprint ignores volatile run IDs and timestamps' ($firstSignature.Count -eq 1 -and $secondSignature.Count -eq 1 -and $firstSignature[0].fingerprint -eq $secondSignature[0].fingerprint)
-    $run = Collect @('-MaxCandidates', '1')
+    Set-Content (Join-Path $runs 'run-class-factory.handoff.md') 'error unknown workflow factory-gone'
+    Set-Content (Join-Path $runs 'run-class-env.handoff.md') 'error request timed out waiting for provider'
+    Set-Content (Join-Path $runs 'run-class-project.handoff.md') 'error 3 tests failed in project suite'
+    foreach ($n in 'factory', 'env', 'project') { Set-Content (Join-Path $runs "run-class-$n.ndjson") '' }
+    $run = Collect
+    $byRun = @{}; foreach ($f in @($run.record.failures)) { $byRun[[string]$f.runId] = [string]$f.classification }
+    Check 'failures are classified deterministically' ($byRun['run-class-factory'] -eq 'factory-defect' -and $byRun['run-class-env'] -eq 'environment' -and $byRun['run-class-project'] -eq 'project-defect' -and $byRun['run-alpha'] -eq 'unknown')
+    Check 'classified artifact still satisfies schema' (Test-Json -Json ($run.record | ConvertTo-Json -Depth 12) -SchemaFile (Join-Path $factory 'schemas/failure-audit-result.schema.json'))
+    foreach ($n in 'factory', 'env', 'project') { Remove-Item (Join-Path $runs "run-class-$n.*") }    $run = Collect @('-MaxCandidates', '1')
     Check 'candidate discovery exhaustion is disclosed' ($run.record.status -eq 'limited' -and (@($run.record.limitations) -join ' ') -match 'discovery budget')
     Check 'scan and run counts are bounded' ($run.record.candidatesScanned -le 2 -and $run.record.runsInspected -le 1)
 

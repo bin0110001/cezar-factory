@@ -1,5 +1,5 @@
 name: factory-environment-analysis
-description: Collect bounded runtime, schedule, and failure evidence for Factory analysis
+description: On-demand, host-side only (no automation, not installed into projects) - collect bounded runtime, schedule, and failure evidence for Factory analysis
 steps:
   - id: startup
     name: Prepare workflow environment

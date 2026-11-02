@@ -20,9 +20,8 @@ The goal is a verified end state, not merely a source-tree change:
    registry is absent or empty, report that the release is ready but needs
    target configuration and make no external changes.
 4. Run the `factory-release` skill: the shared-mount release (`promote-stable.ps1`, which runs the
-   full test suite as its gate) and, for any non-shared target, its legacy procedure.
-   Run the `factory-release` skill's configured release procedure. Always run
-   `scripts/push-factory-updates.ps1 -SyncAutomations`, including when the
+   full test suite as its gate) and, for any non-shared target, its legacy procedure,
+   which always runs `scripts/push-factory-updates.ps1 -SyncAutomations` even when the
    Factory version appears unchanged. Never scan drives or invent targets.
 5. For Bazzite-hosted runtime changes, use the `homelab-ssh` instructions and
    the supported Bazzite deployment flow. Verify all of the following before

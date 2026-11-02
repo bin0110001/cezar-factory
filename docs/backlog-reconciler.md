@@ -1,11 +1,14 @@
 # Backlog reconciler
 
-`[factory] backlog-reconciliation` is the on-demand entry point. It is a
-paused scheduled automation so it does not run on a timer; `cez automation run
-<id>` queues one run. `workflows/backlog-reconciliation.yaml` owns both script
-calls: it collects the snapshot with `scripts/collect-backlog-snapshot.ps1`,
-then invokes `scripts/reconcile-backlog.ps1` with `-DryRun` and both caps set
-to one. The final report reads only `.factory/backlog-reconciliation.json`.
+The reconciler runs as part of the daily `[factory] health` automation
+(`workflows/health.yaml`), which also owns the failure audit. It is installed
+only for projects that enable the `backlog_reconciliation` feature or list the
+`health` workflow (the retired `backlog-reconciliation` and `failure-audit`
+workflow names are aliases for it). The workflow collects the snapshot with
+`scripts/collect-backlog-snapshot.ps1`, runs `scripts/reconcile-backlog.ps1`
+with `-DryRun` and both caps set to one, and `scripts/write-health-report.ps1`
+folds `.factory/backlog-reconciliation.json` into `.factory/health-report.json`.
+No agent reads the proposal; the earlier LLM "report" step only echoed it.
 
 The collector reads open and closed issue state through `gh`, but writes only
 the open issues to `.factory/github-issues.json`. It converts lifecycle labels,
@@ -15,7 +18,6 @@ An unknown or open dependency is not marked ready. A malformed lease marker
 stops collection instead of silently ignoring a potentially active claim.
 The collector also stops when GitHub returns 1,000 issues, the CLI's maximum
 page size, because that can indicate a truncated snapshot.
-
 `scripts/reconcile-backlog.ps1` remains read-only by default. It accepts a
 compact GitHub-state snapshot and emits `.factory/backlog-reconciliation.json`.
 

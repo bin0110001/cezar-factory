@@ -36,8 +36,8 @@ if (Test-Path $cfgPath) {
             & (Join-Path $PSScriptRoot 'diff.ps1') -ProjectPath $project -FactoryPath $factory | Out-Null
             Check 'installed files match source (no drift)' ($LASTEXITCODE -eq 0) '(run diff.ps1)'
         }
-        foreach ($s in $cfg['skills']) { Check "skill $s installed" (Test-Path (Join-Path $project ".ai/skills/$s/SKILL.md")) }
-        foreach ($w in $cfg['workflows']) { Check "workflow $w installed" (Test-Path (Join-Path $project ".ai/cezar/workflows/factory-$w.yaml")) }
+        foreach ($s in @($cfg['skills']) | Where-Object { $script:RetiredSkills -notcontains $_ }) { Check "skill $s installed" (Test-Path (Join-Path $project ".ai/skills/$s/SKILL.md")) }
+        foreach ($w in @($cfg['workflows']) | ForEach-Object { if ($script:WorkflowAliases.ContainsKey([string]$_)) { $script:WorkflowAliases[[string]$_] } else { $_ } } | Select-Object -Unique) { Check "workflow $w installed" (Test-Path (Join-Path $project ".ai/cezar/workflows/factory-$w.yaml")) }
         foreach ($a in (Get-ChildItem (Join-Path $fdir 'automations') -Filter *.json -ErrorAction SilentlyContinue)) {
             $def = $null; try { $def = Get-Content -Raw $a.FullName | ConvertFrom-Json } catch { }
             Check "automation $($a.Name) valid JSON definition" ([bool]($def -and $def.name -and $def.task -and $def.task.prompt))

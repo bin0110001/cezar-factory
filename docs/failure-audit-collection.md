@@ -1,6 +1,6 @@
 # Bounded failure collection
 
-The `factory-failure-audit` workflow reads recent local Cezar run handoffs and
+The failure-audit steps of the daily `factory-health` workflow (the former `factory-failure-audit`) read recent local Cezar run handoffs and
 event tails and writes `.factory/failure-audit-input.json` in its worktree.
 The collector is read-only apart from that artifact. Cezar check steps inherit
 the service environment, which does not include a per-project ID. When a
@@ -28,3 +28,13 @@ creates a second issue for the same project and normalized signature set,
 closes an issue, or restarts intake. It does not publish when collection status
 is `limited`. Recovery remains a separate
 explicit workflow action and must stay disabled when coverage is limited.
+
+## Classification
+
+The collector classifies each failure deterministically (`classification` in the artifact):
+`factory-defect` (unknown workflow, missing required script, invalid schema, validation or routing
+failure, missing managed skill, automation drift), `environment` (timeouts, connection/provider
+errors, rate limits, cancellation, gh missing), `project-defect` (test, build, or lint output), or
+`unknown`. Only `factory-defect` rows are published as Factory issues; the rest appear in the
+publisher receipt message and in `.factory/health-report.json`. An artifact without
+`classification` (an older collector) is published as before. No agent classifies failures.
