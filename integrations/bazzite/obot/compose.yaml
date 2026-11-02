@@ -13,8 +13,8 @@ services:
       OBOT_HOST_PORT: ${OBOT_HOST_PORT:-8787}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
-      - obot-proxy-data:/data
-      - obot-proxy-config:/config
+      - obot-proxy-data:/data:Z
+      - obot-proxy-config:/config:Z
     cap_drop:
       - ALL
     cap_add:
