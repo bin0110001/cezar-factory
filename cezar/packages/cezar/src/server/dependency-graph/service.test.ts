@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DecisionRecord, DependencyGraphSnapshot, GithubRepositoryKey } from '@open-mercato/cezar-contract';
+import { dependencyGraphHistoricalTrendsSchema, dependencyNodeId, type DecisionRecord, type DependencyGraphSnapshot, type GithubRepositoryKey } from '@open-mercato/cezar-contract';
 import { DependencyGraphService, type DependencyGraphStorePort } from './service.ts';
 
 const repo: GithubRepositoryKey = 'acme/work';
@@ -136,6 +136,20 @@ describe('dependency graph sync coordinator', () => {
       { week: '2026-10-19', revision: 1, resolvedDecisions: 0, resolvedDecisionDelta: 0 },
       { week: '2026-10-26', revision: 2, resolvedDecisions: 1, resolvedDecisionDelta: 1 },
     ]);
+    service.close();
+  });
+
+  it('keeps a bounded deterministic top-bottleneck sample in each historical point', () => {
+    const store = new MemoryStore();
+    const ids = [1, 2, 3].map((number) => dependencyNodeId('issue', repo, number));
+    const at = '2026-10-26T12:00:00.000Z';
+    const node = (number: number) => ({ kind: 'issue' as const, id: ids[number - 1]!, repository: repo, number, title: `Issue ${number}`, state: 'open' as const, labels: [], url: `https://github.com/acme/work/issues/${number}`, revision: at, updatedAt: at });
+    const edge = (to: string, tail: string) => ({ id: `00000000-0000-4000-8000-${tail.padStart(12, '0')}`, kind: 'BLOCKS' as const, from: ids[0]!, to, direction: 'from-to' as const, provenance: { origin: 'github-native' as const, authority: 'verified' as const, confidence: 1, recordedAt: at, evidence: [] }, createdAt: at, updatedAt: at });
+    store.snapshot = { ...store.snapshot, revision: 1, createdAt: at, source: { status: 'fresh' }, nodes: [node(1), node(2), node(3)], edges: [edge(ids[1]!, '1'), edge(ids[2]!, '2')] };
+    store.history.set(1, structuredClone(store.snapshot));
+    const service = new DependencyGraphService('C:/repo', { store, gitRunner: async () => 'https://github.com/acme/work.git', ghRunner: async () => pageJson(), env: {} });
+    const trends = dependencyGraphHistoricalTrendsSchema.parse(service.historicalTrends(repo));
+    expect(trends.points[0]?.topBottlenecks).toEqual([{ nodeId: ids[0], directBlockedIssues: 2 }]);
     service.close();
   });
 });

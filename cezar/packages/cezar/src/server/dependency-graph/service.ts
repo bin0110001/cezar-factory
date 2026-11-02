@@ -167,16 +167,17 @@ export class DependencyGraphService {
         oldestBlockedIssueAgeDays: health.aging.oldestBlockedIssueAgeDays,
         resolvedDecisions: snapshot.decisions.filter((decision) => decision.state === 'resolved').length,
         cycleSignatures: health.diagnostics.cycles.map((cycle) => [...cycle].sort().join('|')).sort(),
+        topBottlenecks: health.diagnostics.bottlenecks.slice(0, 5),
       };
     });
     return {
       repository,
       fromRevision: points[0]?.revision ?? current.revision,
       toRevision: current.revision,
-      points: points.map((point, index) => ({
+      points: points.map(({ cycleSignatures, ...point }, index) => ({
         ...point,
         resolvedDecisionDelta: index === 0 ? 0 : point.resolvedDecisions - points[index - 1]!.resolvedDecisions,
-        recurringCycleSignatures: index === 0 ? [] : point.cycleSignatures.filter((signature) => points.slice(0, index).some((prior) => prior.cycleSignatures.includes(signature))),
+        recurringCycleSignatures: index === 0 ? [] : cycleSignatures.filter((signature) => points.slice(0, index).some((prior) => prior.cycleSignatures.includes(signature))),
       })),
       truncated: index.length < current.revision,
     };

@@ -1,7 +1,7 @@
 import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
-import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse } from '@open-mercato/cezar-contract'
+import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
 import type {
   AgentConfigFileContent,
   AgentAccountDetailsResponse,
@@ -867,7 +867,7 @@ export async function getDependencyGraphEvents(params: { limit?: number; before?
     param: { projectId: queryScope() }, query: { limit: String(params.limit ?? 25), before: params.before === undefined ? undefined : String(params.before) },
   }, init(opts)), '/dependency-graph/events');
 }
-export type DependencyGraphTrends = { repository: string; fromRevision: number; toRevision: number; truncated: boolean; points: Array<{ week: string; revision: number; sourceStatus: string; readiness: { ready: number; blocked: number; unknown: number }; cycles: number; oldestBlockedIssueAgeDays: number | null; resolvedDecisions: number; resolvedDecisionDelta: number; recurringCycleSignatures: string[] }> }
+export type DependencyGraphTrends = DependencyGraphHistoricalTrends
 export async function getDependencyGraphTrends(opts?: ReadOptions): Promise<DependencyGraphTrends> {
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].history.trends.$get({
     param: { projectId: queryScope() },

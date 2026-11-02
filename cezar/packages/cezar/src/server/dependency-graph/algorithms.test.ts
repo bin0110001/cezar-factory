@@ -54,7 +54,9 @@ describe('dependency graph algorithms', () => {
       snapshot.nodes[index]!.id, snapshot.nodes[index + 1]!.id,
       `00000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
     ));
+    const startedAt = Date.now();
     expect(blockingCycles(snapshot)).toEqual([]);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
   });
 
   it('bounds distinct downstream impact and ignores unverified suggestions', () => {
