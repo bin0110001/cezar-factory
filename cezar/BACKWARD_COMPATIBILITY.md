@@ -33,6 +33,9 @@ Consumed by the bundled React cockpit (`packages/cezar/web/dist`, shipped in loc
 
 What is protected now: **the shape of each route under `/api/v1`**, the three-way scope aliasing, and the SSE event vocabulary. Removing or renaming a route, or changing a response shape, is breaking exactly as before. Routes:
 
+- Dependency graph reads: `GET /api/v1/dependency-graph`, `GET /api/v1/dependency-graph/node`, `GET /api/v1/dependency-graph/neighborhood`, `GET /api/v1/dependency-graph/readiness`, `GET /api/v1/dependency-graph/cycles`, `GET /api/v1/dependency-graph/repair-candidates`, `GET /api/v1/dependency-graph/decision-ranking`, `GET /api/v1/dependency-graph/discovery-candidates`, `GET /api/v1/dependency-graph/health`, `GET /api/v1/dependency-graph/events`, `GET /api/v1/dependency-graph/history/trends`, `GET /api/v1/dependency-graph/diagnostics/export`, `GET /api/v1/dependency-graph/snapshot-diff`
+- Dependency graph writes and dispatch: `POST /api/v1/dependency-graph/admission-override`, `POST /api/v1/dependency-graph/cycle-plans/dispatch`, `POST /api/v1/dependency-graph/decision-research/dispatch`, `POST /api/v1/dependency-graph/sync`, `POST /api/v1/dependency-graph/simulate`, `POST /api/v1/dependency-graph/decisions`, `POST /api/v1/dependency-graph/decision-transition`, `POST /api/v1/dependency-graph/decision-metadata`, `POST /api/v1/dependency-graph/decision-metadata/rollback`
+
 - Factory and verification: `GET /api/v1/factory-release`, `POST /api/v1/projects/:projectId/verification/full-regression`
 - Workspace lifecycle dashboard: `GET /api/v1/workspace/dashboard/workspaces`, `POST /api/v1/workspace/dashboard/workspaces/action`
 - Static/GUI: `GET /` and every SPA shell route, `/new` (bookmarklet deep-link, query `?skill=&ref=&auto=&key=`), `/assets/:file`, `/icon.svg` (canonical brand mark / favicon; `/open-mercato.svg` remains as a compatibility alias serving the same bytes)
