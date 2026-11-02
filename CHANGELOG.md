@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.61] - 2026-11-02
+
+- Make missing Factory target configuration explicit and verify that
+  verification and test entry points cannot invoke live deployment tools.
+
 ## [0.3.60] - 2026-11-01
 
 - Consolidate maintenance automations: add the daily read-only `factory-health`
