@@ -1,4 +1,7 @@
-import type { AutomationListEntry, AutomationLogRecord } from '@open-mercato/cezar-api-client'
+import { useState } from 'react'
+
+import type { AutomationCheck, AutomationListEntry, AutomationLogRecord } from '@open-mercato/cezar-api-client'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Pill } from '@/components/pill'
 import type { StatusDotTone } from '@/components/status-dot'
@@ -68,12 +71,30 @@ function health(state: AutomationListEntry['state'], now: number): { tone: Statu
  * The "Issue intake" card on an automation's log page: is polling healthy, when did it last
  * succeed and reconcile, and which issues are queued behind a limit or a blocker, and why.
  */
-export function IntakeHealthCard({ automation, records, timeZone, now = Date.now() }: {
+export function IntakeHealthCard({ automation, records, timeZone, now = Date.now(), onPreview }: {
   automation?: AutomationListEntry
   records: readonly AutomationLogRecord[]
   timeZone: string
   now?: number
+  /** Runs a dry-run check (launches nothing, including reconciliation) and resolves with its result. */
+  onPreview?: () => Promise<AutomationCheck>
 }) {
+  const [preview, setPreview] = useState<{ busy: boolean; text?: string }>({ busy: false })
+  const runPreview = async () => {
+    if (!onPreview) return
+    setPreview({ busy: true })
+    try {
+      const check = await onPreview()
+      setPreview({
+        busy: false,
+        text: check.status === 'error'
+          ? `Preview failed: ${check.error ?? 'unknown error'}`
+          : `Dry run: ${check.matches ?? 0} issue(s) would launch${check.truncated ? ' (more than the record limit)' : ''}. Nothing was started.`,
+      })
+    } catch (error) {
+      setPreview({ busy: false, text: `Preview failed: ${error instanceof Error ? error.message : String(error)}` })
+    }
+  }
   const state = automation?.state
   const status = health(state, now)
   const summary = summarizeIntake(records)
@@ -85,7 +106,13 @@ export function IntakeHealthCard({ automation, records, timeZone, now = Date.now
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[11px] font-semibold tracking-[.05em] uppercase text-soft-foreground">Issue intake</span>
         <Pill dot={status.tone} className="w-fit">{status.text}</Pill>
+        {onPreview ? (
+          <Button variant="outline" size="sm" className="ml-auto" disabled={preview.busy} onClick={() => void runPreview()}>
+            Preview check
+          </Button>
+        ) : null}
       </div>
+      {preview.text ? <p data-slot="intake-preview" className="mb-2 mt-0 text-[12.5px] text-muted-foreground">{preview.text}</p> : null}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-[12.5px] sm:grid-cols-4">
         <Stat label="Last success" value={stamp(state?.lastSuccessAt)} />
         <Stat label="Next check" value={stamp(automation?.nextRunAt ?? state?.nextCheckAt)} />

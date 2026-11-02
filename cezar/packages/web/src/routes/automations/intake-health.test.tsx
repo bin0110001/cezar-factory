@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AutomationLogRecord } from '@open-mercato/cezar-api-client'
 
@@ -50,6 +50,13 @@ describe('IntakeHealthCard', () => {
     expect(screen.getByText('3 / cycle')).not.toBeNull()
     expect(container.querySelector('[data-slot="intake-waiting"]')?.textContent).toContain('Admission limit')
     expect(container.querySelectorAll('[data-slot="intake-waiting"] li')).toHaveLength(1)
+  })
+
+  it('runs a dry-run preview and reports what would launch', async () => {
+    const onPreview = async () => ({ id: 'c', automationId: 'a', mode: 'preview' as const, status: 'complete' as const, createdAt: '2026-11-02T10:00:00.000Z', matches: 2 })
+    const { container } = render(<IntakeHealthCard automation={automation} records={[]} timeZone="UTC" onPreview={onPreview} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview check' }))
+    await waitFor(() => expect(container.querySelector('[data-slot="intake-preview"]')?.textContent).toContain('2 issue(s) would launch'))
   })
 
   it('reports backoff when the poller is backed off', () => {

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeftIcon, ArrowUpRightIcon, PencilIcon, RotateCcwIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { getAutomationLog, retryAutomationReceipt } from '@/api/client'
+import { checkAutomation, getAutomationCheck, getAutomationLog, retryAutomationReceipt } from '@/api/client'
 import { onWorkspaceEvent } from '@/api/global-events'
 import { Pill } from '@/components/pill'
 import { StatusDot } from '@/components/status-dot'
@@ -14,6 +14,7 @@ import { logTime, resultTone, statusTone, usd, AUTOMATION_COST_VISIBLE } from '@
 import { Link, useNavigate } from '@/lib/project-router'
 import {
   queryScope,
+  type AutomationCheck,
   type AutomationEvent,
   type AutomationListEntry,
   type AutomationLogRecord,
@@ -105,7 +106,7 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
 
       {automation?.kind === 'github' && query.data ? (
         <div className="flex justify-center px-5 pt-5">
-          <IntakeHealthCard automation={automation} records={query.data.records} timeZone={zone} />
+          <IntakeHealthCard automation={automation} records={query.data.records} timeZone={zone} onPreview={() => previewCheck(automationId)} />
         </div>
       ) : null}
 
@@ -134,6 +135,17 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
       </div>
     </div>
   )
+}
+
+/** A dry-run check: queue it, then poll the server's in-memory record until it settles. */
+async function previewCheck(automationId: string): Promise<AutomationCheck> {
+  const { checkId } = await checkAutomation(automationId, 'preview')
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const check = await getAutomationCheck(checkId)
+    if (check.status === 'complete' || check.status === 'error') return check
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error('The preview did not finish in time.')
 }
 
 /** Every result the log can hold, in the contract's order — the filter's menu. */
