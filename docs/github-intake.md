@@ -32,3 +32,14 @@ remain open. Webhooks are intentionally out of scope. The Issue intake card (hea
 reconcile, admission limit, waiting issues with reason codes) is on each GitHub automation's log
 page. Until #228, the
 recovery skill stays as a diagnostic fallback and must not be given independent dispatch authority.
+
+## Fairness and capacity (design decision, recorded as the safest reversible assumption)
+
+- **Repository fairness** comes from the workspace scheduler's single timer: it always fires the
+  longest-overdue automation across all projects, and each check advances that automation's own
+  `nextCheckAt`, so a busy repository cannot monopolize polling (regression test in
+  `scheduler.test.ts`). Per-automation `maxAdmissionsPerCycle` bounds each repository's share of
+  new launches per turn. No separate weighting layer is added; revisit if weights are needed.
+- **Capacity / quota**: admitted launches queue in the existing run manager and workspace
+  semaphore, so a full agent or model tier delays execution but never drops the candidate (the
+  receipt stays `launched` with a queued run, or `deferred` while an admission check fails).

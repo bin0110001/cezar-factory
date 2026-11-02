@@ -754,3 +754,35 @@ describe('WorkspaceAutomationScheduler — a rejected check never re-arms at zer
     }
   });
 });
+
+describe('WorkspaceAutomationScheduler — repository fairness', () => {
+  it('serves the longest-overdue repository first and never lets a busy one monopolize the single timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const T0 = Date.parse('2026-11-02T10:00:00Z');
+      vi.setSystemTime(T0);
+      const stores = new Map<string, AutomationStore>();
+      for (const [id, overdueMs] of [['busy', 600_000], ['small', 300_000]] as const) {
+        const dir = await mkdtemp(join(tmpdir(), 'cezar-fair-')); dirs.push(dir);
+        const store = AutomationStore.open(dir);
+        store.create({ name: id, enabled: true, events: ['issue.opened'], intervalSeconds: 300, filters: { lookbackDays: 7, maxRecords: 25 }, task: { prompt: 'x' } }, 'a');
+        store.setState('a', (current) => ({ ...current, nextCheckAt: new Date(T0 - overdueMs).toISOString() }));
+        stores.set(id, store);
+      }
+      const order: string[] = [];
+      const scheduler = new WorkspaceAutomationScheduler({
+        coordinator: { refresh: async () => undefined, enabledProjectIds: () => ['busy', 'small'], store: (id: string) => stores.get(id) } as never,
+        handle: (projectId: string, store: AutomationStore) => ({
+          projectId, timeZone: 'UTC', store,
+          github: { owner: 'acme', repo: projectId, poller: { poll: async () => { order.push(projectId); return { candidates: [], truncated: false, pages: 1 }; } } as never },
+        }),
+      });
+      await scheduler.start();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(order.slice(0, 2)).toEqual(['busy', 'small']);
+      scheduler.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
