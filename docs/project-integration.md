@@ -6,12 +6,13 @@ does not require this checkout layout.
 
 ## Explicit targets and deployment boundary
 
-Release and synchronization commands use only the host-local
-`config/factory-projects.json` registry or a `-ProjectPath` supplied explicitly
-by the operator. They do not search drives or infer projects from nearby
-checkouts. If neither source provides a target, the command returns a
-`Needs target configuration` error before changing a project or contacting
-Cezar.
+Release and synchronization commands resolve targets from the host-local
+`config/factory-projects.json` registry or from explicit path parameters that
+the command supports, such as `-RegistryPath` or `-ProjectPath`. They do not
+search drives or infer projects from nearby checkouts. If the selected registry
+is missing or empty and no supported explicit target was supplied, the command
+returns a `Needs target configuration` error before changing a project or
+contacting Cezar.
 
 `scripts/verify.ps1` checks only the project path passed to it (or the current
 directory) and does not deploy. `tests/run-tests.ps1` uses local fixtures and
