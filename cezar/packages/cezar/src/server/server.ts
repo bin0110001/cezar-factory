@@ -1,4 +1,5 @@
-import { backlogAdmitFragment } from './backlog/admission-hook.ts';
+import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
+import { applyBacklogEdit, backlogEditSchema, backlogOverview, backlogRecommendation } from './backlog/api.ts';
 import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
@@ -5932,6 +5933,25 @@ export function createApp(deps: ServerDeps) {
       } catch (error) {
         return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
       }
+    })
+    .get('/backlog', async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const repository = `${remote.owner}/${remote.repo}`;
+      return c.json(backlogOverview({ store: await sharedBacklogStore(), repository, obligations: await sharedObligationStore() }));
+    })
+    .get('/backlog/recommendation', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(25).default(5) })), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      return c.json(backlogRecommendation({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, limit: c.req.valid('query').limit }));
+    })
+    .post('/backlog/:number', jsonZodValidator(backlogEditSchema), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const number = Number(c.req.param('number'));
+      if (!Number.isInteger(number) || number < 1) return c.json({ error: 'invalid issue number' }, 400);
+      const result = applyBacklogEdit(await sharedBacklogStore(), `${remote.owner}/${remote.repo}`, number, c.req.valid('json'), 'human:local');
+      return result.ok ? c.json({ record: result.record }) : c.json({ error: result.message, code: result.code }, result.status);
     })
     .get('/dependency-graph/cycles', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
       try {

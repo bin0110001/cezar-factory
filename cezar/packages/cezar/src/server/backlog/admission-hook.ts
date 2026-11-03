@@ -2,6 +2,7 @@ import { isManifestStale, type ImpactManifest } from '../impact/manifest.ts';
 import { ManifestStore } from '../impact/manifest-store.ts';
 import { impactSnapshot } from '../../workspace/lifecycle.ts';
 import type { BacklogStore } from './store.ts';
+import { ObligationStore } from './integration-obligations.ts';
 import { rankCandidates } from './ranking.ts';
 import { DEFAULT_SCHEDULING_CONFIG, decideOne, type RunningWork, type SchedulingConfig, type SchedulingDecision } from './scheduling.ts';
 
@@ -64,6 +65,23 @@ export function createBacklogAdmission(options: {
 }
 
 let sharedStore: BacklogStore | undefined;
+let sharedObligations: ObligationStore | undefined;
+/** Process-wide projection store, created on first use so a disabled feature never touches disk. */
+export async function sharedBacklogStore(): Promise<BacklogStore> {
+  if (!sharedStore) {
+    const { BacklogStore: Store } = await import('./store.ts');
+    sharedStore = new Store();
+  }
+  return sharedStore;
+}
+export async function sharedObligationStore(): Promise<ObligationStore> {
+  if (!sharedObligations) {
+    const { cezarHomeDir } = await import('../../paths.ts');
+    const { resolve } = await import('node:path');
+    sharedObligations = new ObligationStore({ path: resolve(cezarHomeDir(), 'backlog', 'obligations.sqlite') });
+  }
+  return sharedObligations;
+}
 const manifests = new ManifestStore();
 
 /** Live, unexpired workspace claims on this host, joined with their stored manifests. A read failure throws so the caller fails closed. */
@@ -80,12 +98,9 @@ export async function runningFromRegistry(root: string, repository: string, stor
 export async function backlogAdmissionForProject(owner: string, repo: string, root?: string, env: NodeJS.ProcessEnv = process.env): Promise<BacklogAdmissionCheck | undefined> {
   const mode = backlogSchedulingMode(env);
   if (mode === 'off') return undefined;
-  if (!sharedStore) {
-    const { BacklogStore: Store } = await import('./store.ts');
-    sharedStore = new Store();
-  }
+  const store = await sharedBacklogStore();
   return createBacklogAdmission({
-    repository: `${owner}/${repo}`, store: sharedStore, mode,
+    repository: `${owner}/${repo}`, store, mode,
     manifest: (n) => manifests.get(`${owner}/${repo}`, n),
     ...(root ? { running: () => runningFromRegistry(root, `${owner}/${repo}`, manifests) } : {}),
     onDecision: (d) => { console.info(`[backlog-scheduling:${mode}] ${d.id} ${d.kind} ${d.reason} ${d.decisionKey}`); },

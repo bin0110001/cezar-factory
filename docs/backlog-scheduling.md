@@ -60,3 +60,14 @@ mode treats an issue as dispatchable only if its migrated lane is Ready — roll
 the log before enabling `enforce`. Quota (#93) remains an upstream gate; the hook assumes capacity is available.
 Running-work and manifest suppliers are optional inputs (`createBacklogAdmission({ running, manifest })`) and are
 not yet connected to the workspace registry.
+
+## HTTP API and UI (#194, #201)
+`GET /api/v1/backlog` (lanes, scheduler reasons, conflict edges, merge debt, override audit, per-issue revisions),
+`GET /api/v1/backlog/recommendation?limit=` (next Ready candidate with factor breakdown + items needing a human),
+`POST /api/v1/backlog/:number` (`{expectedRevision, fields | action:"undo", reason}`; 409 stale revision, 422 rule
+violation, 404 unknown). Handlers live in `server/backlog/api.ts`. The web page is `/backlog`
+(`packages/web/src/routes/backlog.tsx`): lanes with the scheduler's own reason codes, per-card priority editing with
+revision checks and undo, merge debt, conflict list and the human-override audit. It is reachable by URL; a sidebar
+entry was not added because the nav and command-palette tests pin exact item lists.
+Edits are written to the local projection only; pushing them to the GitHub issue-body block is the `pendingPush`/`markPushed`
+protocol (no poller drives it yet).
