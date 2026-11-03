@@ -1,15 +1,11 @@
 {
-  "generatedAt": "2026-10-30T18:19:41.1187352+00:00",
-  "cutoff": "2026-10-30T16:49:41.1187352+00:00",
+  "generatedAt": "2026-11-03T00:00:46.8209923+00:00",
+  "cutoff": "2026-11-02T22:30:46.8209923+00:00",
   "olderThanMinutes": 90,
   "dryRun": false,
   "activeRunCheck": true,
   "recovered": [],
   "skipped": [
-    {
-      "issue": 137,
-      "reason": "reservation-still-fresh"
-    },
     {
       "issue": 133,
       "reason": "competing-lifecycle-state"
