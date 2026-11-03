@@ -42,7 +42,8 @@ export function createBacklogAdmission(options: {
     const now = (options.now ?? (() => new Date()))();
     // Labels seed the projection once; later human edits are never overwritten (see store.ensureFromLabels).
     const { record } = options.store.ensureFromLabels(options.repository, candidate.number, { labels: candidate.labels, issueState: 'open' }, { now: now.toISOString() });
-    const [ranked] = rankCandidates([{ record, createdAt: candidate.timestamp }], now);
+    const timers = options.store.timers(options.repository, candidate.number);
+    const [ranked] = rankCandidates([{ record, createdAt: timers.createdAt ?? candidate.timestamp, expediteUntil: timers.expediteUntil, snoozeUntil: timers.snoozeUntil }], now);
     const manifest = await options.manifest?.(candidate.number) ?? null;
     // If running work cannot be read, fail closed: capacity is reported unknown (a distinct deferral), never "nothing running".
     let running: RunningWork[] = [];
