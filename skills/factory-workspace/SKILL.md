@@ -40,6 +40,26 @@ SQLite-backed; Git remains authoritative for branches, commits, and worktrees.
    - If another owner holds the issue, preserve both workspaces and report the
      ownership conflict. Do not force a second claim.
 
+## Declaring and checking impact
+
+Once you hold a claim and have a Change Impact Manifest for the issue (schema in
+`docs/impact-manifest.md`), reserve its predicted files so other agents and developers
+see them:
+
+- `cez workspace impact-predict --issue <id> --run <executionId> --fence <n> --manifest <file>`
+  validates the manifest, stores it for the scheduler, and records the advisory
+  reservation. It is rejected if your execution is stale or fenced; a reservation expires
+  and is never a lock (issue ownership and the merge lock are the enforced controls).
+- `cez workspace impact --issue <id>` compares the files you have actually changed with
+  the prediction. Unpredicted files are recorded once as a mismatch; if you keep touching
+  files outside the prediction, update the manifest and run `impact-predict` again.
+- `cez workspace impact-snapshot` shows owners, reservations and predicted/actual
+  overlaps. It only covers this host's registry; with work on other hosts add
+  `--multi-host` and treat "no overlap" as unknown, not as safe.
+
+Outside Factory (a developer working in their own window) this is optional: run
+`impact-snapshot` before starting to see who is already editing the same paths.
+
 ## Finishing work
 
 Commit the intended changes and keep the workspace clean before running

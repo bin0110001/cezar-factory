@@ -194,6 +194,7 @@ describe('ProjectGroups', () => {
       '/p/shop/git',
       '/p/shop/github',
       '/p/shop/dependencies',
+      '/p/shop/backlog',
       '/p/shop/skills',
       '/p/shop/workflows',
       '/p/shop/settings',

@@ -7,6 +7,7 @@ import {
   WorkflowIcon,
   ZapIcon,
   TicketIcon,
+  KanbanIcon,
   WaypointsIcon,
 } from 'lucide-react'
 import type { ComponentType, SVGProps } from 'react'
@@ -53,6 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/github', label: 'GitHub', icon: GithubIcon, match: ['/github'], forge: true },
   { to: '/tracker', label: 'Tracker', icon: TicketIcon, match: ['/tracker'], tracker: true },
   { to: '/dependencies', label: 'Dependencies', icon: WaypointsIcon, match: ['/dependencies'] },
+  { to: '/backlog', label: 'Backlog', icon: KanbanIcon, match: ['/backlog'] },
   { to: '/automations', label: 'Automations', icon: ZapIcon, match: ['/automations'], automations: true },
   { to: '/skills', label: 'Skills', icon: SparklesIcon, match: ['/skills'], badge: 'skills-update' },
   { to: '/workflows', label: 'Workflows', icon: WorkflowIcon, match: ['/workflows'] },

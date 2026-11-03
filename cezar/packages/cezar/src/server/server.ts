@@ -1,3 +1,9 @@
+import { execFile as backlogExecFileCb } from 'node:child_process';
+import { promisify as backlogPromisify } from 'node:util';
+import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
+import { syncOpenIssues } from './backlog/github-sync.ts';
+import { BACKLOG_SYNC_INTERVAL_MS, backlogSyncEnabled, runBacklogSyncOnce } from './backlog/sync-timer.ts';
+import { applyBacklogEdit, backlogEditSchema, backlogOverview, backlogRecommendation } from './backlog/api.ts';
 import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
@@ -3960,6 +3966,7 @@ export function createApp(deps: ServerDeps) {
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
             admit: candidate => checkDependencyAdmission(project.root, candidate),
+            ...backlogAdmitFragment(remote.owner, remote.repo, project.root),
             launch: parsed.data.mode === 'execute'
               ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkDependencyAdmission(project.root, candidate, { refresh: false }), dispatchEnabled: capabilities().dispatch })
               : undefined,
@@ -5931,6 +5938,35 @@ export function createApp(deps: ServerDeps) {
         return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
       }
     })
+    .get('/backlog', async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const repository = `${remote.owner}/${remote.repo}`;
+      return c.json(backlogOverview({ store: await sharedBacklogStore(), repository, obligations: await sharedObligationStore() }));
+    })
+    .get('/backlog/recommendation', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(25).default(5) })), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      return c.json(backlogRecommendation({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, limit: c.req.valid('query').limit }));
+    })
+    .post('/backlog/sync', async (c) => {
+      const root = c.get('project').root;
+      const remote = parseRemote((await getRepoInfo(root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const gh = async (args: string[]) => { const { stdout } = await backlogPromisify(backlogExecFileCb)('gh', args, { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true }); return stdout.trim(); };
+      const results = await syncOpenIssues({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, gh });
+      const counts: Record<string, number> = {};
+      for (const r of results) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      return c.json({ counts, results: results.filter((r) => r.status !== 'in-sync').slice(0, 200) });
+    })
+    .post('/backlog/:number', jsonZodValidator(backlogEditSchema), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const number = Number(c.req.param('number'));
+      if (!Number.isInteger(number) || number < 1) return c.json({ error: 'invalid issue number' }, 400);
+      const result = applyBacklogEdit(await sharedBacklogStore(), `${remote.owner}/${remote.repo}`, number, c.req.valid('json'), 'human:local');
+      return result.ok ? c.json({ record: result.record }) : c.json({ error: result.message, code: result.code }, result.status);
+    })
     .get('/dependency-graph/cycles', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
       try {
         const service = dependencyGraphService(c.get('project').root);
@@ -7255,6 +7291,11 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       try { await graphServiceForScheduler(project.root).refreshIfNeeded({ maxAgeMs: 5 * 60_000 }); } catch { /* admission retries on demand and reports the reason */ }
     }
   };
+  const backlogSyncRun = (): void => { void runBacklogSyncOnce([...automationProjects.values()].map((p) => ({ root: p.root, github: p.github })), { log: (m) => console.info(m) }).catch(() => undefined); };
+  const backlogSyncStartup = backlogSyncEnabled() ? setTimeout(backlogSyncRun, 30_000) : undefined;
+  const backlogSyncInterval = backlogSyncEnabled() ? setInterval(backlogSyncRun, BACKLOG_SYNC_INTERVAL_MS) : undefined;
+  backlogSyncStartup?.unref?.();
+  backlogSyncInterval?.unref?.();
   const dependencySyncStartup = setTimeout(() => { void runDependencySync(); }, 10_000);
   const dependencySyncInterval = setInterval(() => { void runDependencySync(); }, 10 * 60_000);
   dependencySyncStartup.unref?.();
@@ -7281,6 +7322,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
         admit: candidate => checkScheduledDependencyAdmission(project.root, candidate),
+        ...(project.github ? backlogAdmitFragment(project.github.owner, project.github.repo, project.root) : {}),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,
         // by `getDriver()` — a project with none simply fails that call and the scheduler backs off.
@@ -7351,7 +7393,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
+  server.once('close', () => { if (backlogSyncStartup) clearTimeout(backlogSyncStartup); if (backlogSyncInterval) clearInterval(backlogSyncInterval); clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }

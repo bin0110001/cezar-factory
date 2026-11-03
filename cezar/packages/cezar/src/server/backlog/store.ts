@@ -104,6 +104,9 @@ export class BacklogStore {
         revision INTEGER NOT NULL,
         remote_version INTEGER NOT NULL DEFAULT 0,
         last_write_id TEXT,
+        expedite_until TEXT,
+        snooze_until TEXT,
+        created_at TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE INDEX backlog_records_repo ON backlog_records(repository);
@@ -205,8 +208,8 @@ export class BacklogStore {
     for (const f of ['basePriority', 'lane'] as const) {
       if (migration.fields[f] !== undefined) provenance[f] = { source: 'migrated', actor: 'label-migration', at: now, reason: `from labels: ${migration.sourceLabels.join(', ')}` };
     }
-    this.db.prepare(`INSERT INTO backlog_records (key, repository, issue_number, fields, base_fields, issue_state, archived, provenance, revision, updated_at)
-      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 1, ?)`).run(key, repository.toLowerCase(), issueNumber, JSON.stringify(fields), input.issueState, input.archived ? 1 : 0, JSON.stringify(provenance), now);
+    this.db.prepare(`INSERT INTO backlog_records (key, repository, issue_number, fields, base_fields, issue_state, archived, provenance, revision, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)`).run(key, repository.toLowerCase(), issueNumber, JSON.stringify(fields), input.issueState, input.archived ? 1 : 0, JSON.stringify(provenance), now, now);
     this.insertAudit(key, 1, 'label-migration', 'migrated', 'migrated from labels', {}, fields, now);
     return { record: this.get(repository, issueNumber)!, created: true, warnings: migration.warnings };
   }
@@ -290,6 +293,65 @@ export class BacklogStore {
     this.db.prepare('UPDATE backlog_records SET issue_state = ?, archived = ?, updated_at = ? WHERE key = ?')
       .run(state.issueState ?? record.issueState, (state.archived ?? record.archived) ? 1 : 0, now, key);
     return this.get(repository, issueNumber)!;
+  }
+
+
+  // ---- reprioritisation actions (#194) -------------------------------------------------------
+
+  /** Time-boxed human controls. Expedite lapses on its own; snooze keeps the issue out of dispatch until it passes. */
+  setTimers(repository: string, issueNumber: number, timers: { expediteUntil?: string | null; snoozeUntil?: string | null }, options: WriteOptions): BacklogRecord {
+    const key = recordKey(repository, issueNumber);
+    const run = this.db.transaction(() => {
+      const row = this.db.prepare('SELECT * FROM backlog_records WHERE key = ?').get(key);
+      if (!row) throw new BacklogError('not_found', `no backlog record for ${key}`);
+      for (const v of [timers.expediteUntil, timers.snoozeUntil]) if (v != null && Number.isNaN(Date.parse(v))) throw new BacklogError('invalid_field', `invalid timestamp ${v}`);
+      const now = options.now ?? new Date().toISOString();
+      const next = {
+        expedite_until: timers.expediteUntil === undefined ? row.expedite_until : timers.expediteUntil,
+        snooze_until: timers.snoozeUntil === undefined ? row.snooze_until : timers.snoozeUntil,
+      };
+      if (next.expedite_until === row.expedite_until && next.snooze_until === row.snooze_until) return;
+      const revision = (row.revision as number) + 1;
+      this.db.prepare('UPDATE backlog_records SET expedite_until = ?, snooze_until = ?, revision = ?, updated_at = ? WHERE key = ?').run(next.expedite_until, next.snooze_until, revision, now, key);
+      this.insertAudit(key, revision, options.actor, options.source ?? 'human', options.reason ?? null, { expediteUntil: row.expedite_until, snoozeUntil: row.snooze_until }, { expediteUntil: next.expedite_until, snoozeUntil: next.snooze_until }, now);
+    });
+    run();
+    return this.get(repository, issueNumber)!;
+  }
+
+  timers(repository: string, issueNumber: number): { expediteUntil: string | null; snoozeUntil: string | null; createdAt: string | null } {
+    const row = this.db.prepare('SELECT expedite_until, snooze_until, created_at FROM backlog_records WHERE key = ?').get(recordKey(repository, issueNumber));
+    return { expediteUntil: (row?.expedite_until as string | null) ?? null, snoozeUntil: (row?.snooze_until as string | null) ?? null, createdAt: (row?.created_at as string | null) ?? null };
+  }
+
+  /** Expedite with a TTL: sets the flag and its expiry together, audited as one change. */
+  expedite(repository: string, issueNumber: number, ttlHours: number, options: WriteOptions): BacklogRecord {
+    if (!(ttlHours > 0 && ttlHours <= 24 * 30)) throw new BacklogError('invalid_field', 'expedite TTL must be between 0 and 720 hours');
+    const now = options.now ?? new Date().toISOString();
+    const until = new Date(Date.parse(now) + ttlHours * 3_600_000).toISOString();
+    this.update(repository, issueNumber, { expedite: true }, { ...options, now });
+    return this.setTimers(repository, issueNumber, { expediteUntil: until }, { ...options, now });
+  }
+
+  /** Revert the most recent human/inferred field change if nothing has happened since (revision must still match). */
+  undoLast(repository: string, issueNumber: number, options: WriteOptions): BacklogRecord {
+    const record = this.get(repository, issueNumber);
+    if (!record) throw new BacklogError('not_found', `no backlog record for ${recordKey(repository, issueNumber)}`);
+    const last = this.audit(repository, issueNumber).at(-1);
+    if (!last || last.revision !== record.revision || (last.source !== 'human' && last.source !== 'inferred')) {
+      throw new BacklogError('stale_revision', 'nothing to undo: the latest change is not an undoable edit or has been superseded');
+    }
+    const before = last.before as Partial<BacklogFields> & { expediteUntil?: string | null; snoozeUntil?: string | null };
+    if ('expediteUntil' in before || 'snoozeUntil' in before) {
+      return this.setTimers(repository, issueNumber, { expediteUntil: before.expediteUntil ?? null, snoozeUntil: before.snoozeUntil ?? null }, { ...options, reason: options.reason ?? 'undo' });
+    }
+    return this.update(repository, issueNumber, before, { ...options, source: 'human', reason: options.reason ?? 'undo' });
+  }
+
+  /** All-or-nothing bulk edit (e.g. move a set of issues to Backlog); any invalid item rolls back every item. */
+  bulkUpdate(items: Array<{ repository: string; issueNumber: number }>, patch: Partial<BacklogFields>, options: WriteOptions): BacklogRecord[] {
+    const run = this.db.transaction(() => items.map((i) => this.update(i.repository, i.issueNumber, patch, { ...options, reason: options.reason ?? 'bulk update' })));
+    return run();
   }
 
   // ---- GitHub reconciliation ---------------------------------------------------------------
