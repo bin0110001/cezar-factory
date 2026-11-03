@@ -17,6 +17,7 @@ import {
 } from './claude-cli-runner.ts';
 import { ASK_MAX_QUESTIONS, parseAskRequest, type AskQuestion } from './ask.ts';
 import { readNdjson } from './ndjson.ts';
+import { codexMcpConfig, resolveMcpGateway } from './mcp-gateway.ts';
 import { V1TextCoalescer } from './v1-text-coalescer.ts';
 import {
   CodexAppServerRpc,
@@ -418,6 +419,8 @@ class CodexSession implements AgentSession {
       // CEZ_CODEX_NETWORK=0 remains the backwards-compatible explicit sandbox opt-out.
       sandbox: process.env.CEZ_CODEX_NETWORK === '0' ? 'workspace-write' : 'danger-full-access',
       approvalPolicy: 'never',
+      // MCP servers reach Codex only through the Obot gateway (undefined when it isn't configured).
+      config: codexMcpConfig(resolveMcpGateway()),
     };
     if (this.spec.resume && this.spec.sessionId) {
       await this.rpc.request('thread/resume', { threadId: this.spec.sessionId, ...clean(overrides) });

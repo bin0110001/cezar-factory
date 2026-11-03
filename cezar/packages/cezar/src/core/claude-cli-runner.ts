@@ -16,6 +16,7 @@ import type {
 export type { AgentSession, SessionOptions } from './agent-runner.ts';
 import { isSignalTerminationExit, trackChildExit } from './agent-runner.ts';
 import { buildChildEnv } from './agent-env.ts';
+import { claudeMcpArgs, gatewayEnv, resolveMcpGateway, type McpGateway } from './mcp-gateway.ts';
 import { disclaimedCommand } from './disclaim-spawn.ts';
 import { resolveClaudeBin } from './claude-bin.ts';
 import { costWeightedTokens, type RawUsage } from './usage.ts';
@@ -117,11 +118,12 @@ export class ClaudeCliRunner implements AgentRunner {
     onEvent?: (event: AgentEvent) => void,
     opts: SessionOptions = {},
   ): AgentSession {
-    const args = buildClaudeArgs(spec);
+    const gateway = resolveMcpGateway();
+    const args = buildClaudeArgs(spec, process.env, gateway);
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      const env = buildChildEnv({ backend: this.backend, extraEnv: spec.env });
+      const env = buildChildEnv({ backend: this.backend, extraEnv: { ...gatewayEnv(gateway), ...spec.env } });
       const [file, argv] = disclaimedCommand(this.bin, args, env);
       child = nodeSpawn(file, argv, { cwd: spec.cwd, env });
     } catch (err) {
@@ -388,6 +390,7 @@ export class ClaudeCliRunner implements AgentRunner {
 export function buildClaudeArgs(
   spec: AgentRunSpec,
   env: NodeJS.ProcessEnv = process.env,
+  gateway: McpGateway | null = null,
 ): string[] {
   const args: string[] = [
     '--print',
@@ -421,6 +424,7 @@ export function buildClaudeArgs(
   for (const dir of spec.additionalDirectories ?? []) {
     args.push('--add-dir', dir);
   }
+  args.push(...claudeMcpArgs(gateway));
   return args;
 }
 
