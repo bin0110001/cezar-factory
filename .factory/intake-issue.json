@@ -1,0 +1,13 @@
+{
+  "issue": 177,
+  "title": "Docs integration: Project-scoped repository search/read through Obot MCP",
+  "body": "Parent epic: https://github.com/bin0110001/cezar-factory/issues/174\n\n## Objective\nMake a source-grounded documentation knowledge layer available to coding agents through the existing Factory MCP/skill provisioning path, avoiding token-heavy wiki dumps.\n\n## Tasks\n- [ ] Integrate chosen documentation backend behind read-only search/read adapter. Prefer OpenWiki search/read if benchmark confirms; maintain backend-independent tool contract and fallback to checked-in docs.\n- [ ] Scope tools by repo/project/branch/commit and identity; expose anchored snippets, source SHA, freshness, evidence link and bounded result size.\n- [ ] Inject via existing Obot MCP gateway and runner adapters (#164 #165 #167), with project-specific skills/resolver (#168 #169), dev/stable publication (#170).\n- [ ] Add concise agent instructions: when to query, when to inspect source directly, how to spot stale/contradictory claims; no full-context auto-injection.\n- [ ] Validate cross-tenant/project isolation, private repo permissions, sandbox auth, tool timeout, retry/cache, offline availability and prompt-injection resistance in retrieved docs.\n- [ ] Respect licensed asset/data exclusions; audit documentation access without logging secrets.\n## Acceptance criteria\n- [ ] Agent can answer a question with grounded document+source references and relevant SHA in both pilot repos.\n- [ ] Stale/index-absent results visibly marked and tool fails safely; code editing continues when optional service is down.\n- [ ] Unauthorized workspace/repo reads denied in automated tests.\n- [ ] Retrieval budget caps and p95 latency captured in Langfuse/OTel.\n## Dependencies\nEpic https://github.com/bin0110001/cezar-factory/issues/174; **blocked by** generator selection and documentation contract; integrate with #164 #167 #169 #170 #172.\n\n## Dependency cross-links\n**Blocked by:** #175, #176. **Blocks:** #180, #181, #182.\nParent: #174. All dependencies are within bin0110001/cezar-factory unless otherwise stated.",
+  "url": "https://github.com/bin0110001/cezar-factory/issues/177",
+  "createdAt": "10/31/2026 20:39:50",
+  "labels": [
+    "risk:medium",
+    "factory:new",
+    "type:refactor"
+  ],
+  "terminalReason": "selected-oldest-eligible-issue"
+}

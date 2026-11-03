@@ -1,0 +1,8 @@
+{
+  "noWork": false,
+  "issue": 177,
+  "type": "type:refactor",
+  "risk": "risk:medium",
+  "summary": "Docs integration: Project-scoped repository search/read through Obot MCP",
+  "unresolvedQuestions": ""
+}
