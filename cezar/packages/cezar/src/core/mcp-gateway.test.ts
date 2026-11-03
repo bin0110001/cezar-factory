@@ -56,7 +56,7 @@ describe('gateway config builders', () => {
   });
 
   it('buildClaudeArgs appends the gateway config only when given one', () => {
-    const spec = { cwd: '/repo', prompt: 'p' } as Parameters<typeof buildClaudeArgs>[0];
+    const spec = { cwd: '/repo', prompt: 'p' } as unknown as Parameters<typeof buildClaudeArgs>[0];
     expect(buildClaudeArgs(spec, {})).not.toContain('--mcp-config');
     expect(buildClaudeArgs(spec, {}, gw)).toContain('--mcp-config');
   });
