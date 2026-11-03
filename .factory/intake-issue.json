@@ -1,0 +1,13 @@
+{
+  "issue": 215,
+  "title": "Versioned generic worker profiles, resource requests and scheduling contract",
+  "body": "## Objective\nExtend existing #112 capability advertisement and #198 admission, not replace them. Profiles are reusable policy/requirement overlays, independent of machine brands and test frameworks.\n## Work\n- [ ] Audit #49/#50/#112 capability schema, existing Cezar worker metadata and #198. Define typed versioned inventory (OS/architecture, executors, installed runtimes, resource quantities, isolation, display, network, storage/accessibility, custom namespaced capabilities) and freshness semantics.\n- [ ] Define portable requested requirements: hard capabilities, min resources, affinity/anti-affinity, exclusive/shared leases, max concurrency, network isolation zone, scheduling priority, profile tags, locality preference; use deterministic boolean matching with explainable reasons.\n- [ ] Profiles are declarative templates and policy defaults (e.g. general-compute, gui, lightweight-network-peer, asset-enabled); admin may attach multiple profiles/overrides; reject unsafe narrowing/privilege escalation and stale inventory.\n- [ ] Bind worker selection to #198 atomic admission, contention/fairness/backpressure; distinguish resources reserved for coding vs verification without second queue.\n- [ ] Schema migrations, defaults for pre-existing local-only workers, version negotiation, redacted inspection CLI and fixtures for Windows/Linux/other OS compatibility.\n## Acceptance\n- [ ] Identical test requests match different hardware with equivalent advertised capabilities; changing resource inventory changes matching without source code modification.\n- [ ] Unschedulable, stale, incompatible, saturated, and policy-denied are distinct reason codes. Same-display exclusive jobs serialize. No double allocation under concurrency.\n- [ ] Existing local-only worker configuration and current test adapters still work.\n## Depends on\n#49 #50 #112 #198; coordinate transport child #214 (verify actual issue ID if ordering differs).\n\n## Cross-cutting constraints\n- Parent #213; reuse #47 #49 #50 #112 #113 #198; generic core with project-owned adapters. No hardcoded host hardware, OS-specific paths, Godot-only schema or duplicate scheduler/store.\n- Preserve single-node/backward compatibility and no GitHub Actions compute. Negative/failure tests, docs, schema versioning, audited local rollout, reviewed PR and evidence required.\n",
+  "url": "https://github.com/bin0110001/cezar-factory/issues/215",
+  "createdAt": "11/02/2026 16:01:54",
+  "labels": [
+    "type:maintenance",
+    "risk:medium",
+    "factory:new"
+  ],
+  "terminalReason": "selected-oldest-eligible-issue"
+}

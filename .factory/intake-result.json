@@ -1,0 +1,8 @@
+{
+  "noWork": false,
+  "issue": 215,
+  "type": "type:maintenance",
+  "risk": "risk:medium",
+  "summary": "Versioned generic worker profiles, resource requests and scheduling contract",
+  "unresolvedQuestions": ""
+}
