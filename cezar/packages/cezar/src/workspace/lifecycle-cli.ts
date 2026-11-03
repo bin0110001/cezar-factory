@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { ManifestStore } from '../server/impact/manifest-store.ts';
+import { parseManifest } from '../server/impact/manifest.ts';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +11,7 @@ import {
   recordIntegrationValidationFailure, recordWorkspacePreflight, resumeBlockedWorkspace, retryLifecycleOutbox, renewReadyWorkspaceLease, finalizeIntegratedWorkspace,
   acquireIntegrationLock, completeIntegration, handoffWorkspace, pruneWorkspace, recoverWorkspace,
   releaseIntegrationLock, renewIntegrationLock, transitionWorkspace, verifiedFactoryContext, workspaceOverlaps,
+  recordPredictedImpact, reconcileActualImpact, impactSnapshot,
   type LifecycleState,
 } from './lifecycle.ts';
 
@@ -20,6 +23,9 @@ const USAGE = `cez workspace <command>
   adopt --issue <id>                   register the current Git worktree without changing it
   preflight --issue <id>               compare the workspace branch with its integration target
   validate --issue <id>                run configured checks and mark work ready on success
+  impact-predict --issue <id> --run <id> --fence <n> --manifest <file>  reserve predicted impact from a validated manifest
+  impact --issue <id>                  compare actual git changes with the prediction (records mismatches)
+  impact-snapshot [--multi-host]       owners, reservations and predicted/actual overlaps (local-host scope)
   handoff --run <id> --fence <n>       mark a completed Factory coding phase ready for integration
   integrate --issue <id> --pr <id>     verify a merged PR, test its merge commit, then finalize
   reconcile                            retry ready PR integration and durable GitHub status updates
@@ -178,7 +184,7 @@ function flags(args: string[]): Record<string, string | boolean> {
     const arg = args[i]!;
     if (!arg.startsWith('--')) throw new Error(`Unexpected argument: ${arg}`);
     const name = arg.slice(2);
-    if (name === 'force' || name === 'json' || name === 'drain') result[name] = true;
+    if (name === 'force' || name === 'json' || name === 'drain' || name === 'multi-host') result[name] = true;
     else {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`--${name} needs a value.`);
@@ -523,6 +529,21 @@ export async function runWorkspaceCommand(args: string[], opts: { cwd?: string; 
         break;
       }
       case 'overlaps': result = await workspaceOverlaps({ cwd }); break;
+      case 'impact-predict': {
+        // Reserve predicted impact from a validated manifest file; the manifest is also persisted for the scheduler.
+        const parsedManifest = parseManifest(JSON.parse(await readFile(resolve(cwd, required(parsed.manifest, 'manifest')), 'utf8')));
+        if (!parsedManifest.ok) throw new Error(`Manifest is invalid: ${parsedManifest.errors.join('; ')}`);
+        const m = parsedManifest.manifest;
+        new ManifestStore().save(m);
+        result = await recordPredictedImpact({
+          issue: required(parsed.issue, 'issue'), executionId: required(parsed.run, 'run'), fencingToken: integerFlag(parsed.fence, 'fence'), cwd,
+          predicted: { baseSha: m.repo.baseSha, manifestRevision: m.manifestRevision, files: m.files.map((f) => ({ path: f.path, glob: f.glob })), contracts: m.contracts.map((c) => c.id) },
+          ...(parsed.minutes === undefined ? {} : { minutes: integerFlag(parsed.minutes, 'minutes') }),
+        });
+        break;
+      }
+      case 'impact': result = await reconcileActualImpact({ issue: required(parsed.issue, 'issue'), cwd }); break;
+      case 'impact-snapshot': result = await impactSnapshot({ cwd, multiHost: parsed['multi-host'] === true }); break;
       case 'doctor': result = await lifecycleDoctor({ cwd }); break;
       case 'outbox': result = typeof parsed['approve-hindsight'] === 'string'
         ? await approveHindsightLesson({ eventId: parsed['approve-hindsight'], cwd })

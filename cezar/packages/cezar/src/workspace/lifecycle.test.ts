@@ -427,6 +427,31 @@ describe('local workspace lifecycle', () => {
     expect(expired.overlaps).toEqual([]); // expired claims are not permanent
   }, 30_000);
 
+  it('exposes impact verbs on the workspace CLI: predict from a manifest, reconcile, snapshot', async () => {
+    const claim = await claimWorkspace({ issue: '71', cwd: repo, owner: 'external:test:710', base: 'dev' });
+    const manifestPath = join(home, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify({
+      schemaVersion: 1, issue: { repository: 'o/r', number: 71 }, repo: { repository: 'o/r', branch: 'dev', baseSha: claim.baseCommit },
+      manifestRevision: 1, generatedAt: 'x', mode: 'code-first', coverage: 'complete',
+      files: [{ path: 'src/a.ts', op: 'modify', confidence: 0.9, source: 'human' }],
+    }));
+    const run = async (args: string[]) => {
+      const out: string[] = []; const err: string[] = [];
+      const code = await runWorkspaceCommand([args[0]!, '--json', ...args.slice(1)], { cwd: repo, io: { log: (m: string) => out.push(m), error: (m: string) => err.push(m) } as never });
+      return { code, out: out.join('\n'), err: err.join('\n') };
+    };
+    const predicted = await run(['impact-predict', '--issue', '71', '--run', claim.executionId, '--fence', String(claim.fencingToken), '--manifest', manifestPath]);
+    expect(predicted.code, predicted.err).toBe(0);
+    writeFileSync(join(claim.workspacePath, 'other.ts'), 'x');
+    const reconciled = await run(['impact', '--issue', '71']);
+    expect(reconciled.err).toBe('');
+    expect(JSON.parse(reconciled.out)).toMatchObject({ mismatch: true, unpredicted: ['other.ts'], reservation: 'active' });
+    const snap = await run(['impact-snapshot', '--multi-host']);
+    expect(JSON.parse(snap.out).coordination).toMatchObject({ domain: 'local-host', degraded: true });
+    const bad = await run(['impact-predict', '--issue', '71', '--run', claim.executionId, '--fence', String(claim.fencingToken), '--manifest', join(home, 'nope.json')]);
+    expect(bad.code).not.toBe(0);
+  }, 30_000);
+
   it('recovers a stale execution with a higher fence and preserves its workspace', async () => {
     const claim = await claimWorkspace({ issue: '53', cwd: repo, owner: 'external:test:530', base: 'dev' });
     const recovered = await recoverWorkspace({ issue: '53', cwd: repo, force: true, owner: 'external:test:531' });

@@ -36,6 +36,10 @@ export function createBacklogAdmission(options: {
   manifest?: (issueNumber: number) => Promise<ImpactManifest | null> | ImpactManifest | null;
   config?: Partial<SchedulingConfig>;
   now?: () => Date;
+  /** Where forced-overlap (INTEGRATE) decisions leave their durable, idempotent obligation. */
+  obligations?: Pick<ObligationStore, 'ensure'>;
+  /** Audited human decision to run despite overlap (e.g. from an override record); undefined = none. */
+  forceOverlap?: (issueNumber: number) => { actor: string; reason: string } | null | undefined;
   onDecision?: (decision: SchedulingDecision) => void;
 }): BacklogAdmissionCheck {
   const config: SchedulingConfig = { ...DEFAULT_SCHEDULING_CONFIG, ...options.config, enforce: options.mode === 'enforce' };
@@ -56,8 +60,13 @@ export function createBacklogAdmission(options: {
       dependency: { status: 'ready', blockers: [], graphRevision: 0 },
       capacity: { status: runningKnown ? 'available' : 'unknown' },
       manifest,
+      forceOverlap: options.forceOverlap?.(candidate.number) ?? null,
       ...(manifest && candidate.baseSha !== undefined ? { manifestStale: isManifestStale(manifest, candidate.baseSha) } : {}),
     }, running, config);
+    if (decision.kind === 'INTEGRATE' && decision.obligationKey && options.obligations && options.mode === 'enforce') {
+      const other = decision.affects[0] ?? 'unknown';
+      options.obligations.ensure(options.repository, ranked!.id, other, decision.obligationKey, { kind: decision.reason, detail: decision.detail }, now.toISOString());
+    }
     options.onDecision?.(decision);
     const runnable = decision.kind === 'RUN' || decision.kind === 'BATCH' || decision.kind === 'COORDINATE' || decision.kind === 'INTEGRATE';
     return { allow: runnable || options.mode === 'shadow', reason: `${decision.reason}: ${decision.detail}`, shadow: options.mode === 'shadow', decision };
@@ -102,6 +111,7 @@ export async function backlogAdmissionForProject(owner: string, repo: string, ro
   return createBacklogAdmission({
     repository: `${owner}/${repo}`, store, mode,
     manifest: (n) => manifests.get(`${owner}/${repo}`, n),
+    obligations: await sharedObligationStore(),
     ...(root ? { running: () => runningFromRegistry(root, `${owner}/${repo}`, manifests) } : {}),
     onDecision: (d) => { console.info(`[backlog-scheduling:${mode}] ${d.id} ${d.kind} ${d.reason} ${d.decisionKey}`); },
   });

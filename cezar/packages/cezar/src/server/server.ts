@@ -1,4 +1,7 @@
+import { execFile as backlogExecFileCb } from 'node:child_process';
+import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
+import { syncOpenIssues } from './backlog/github-sync.ts';
 import { applyBacklogEdit, backlogEditSchema, backlogOverview, backlogRecommendation } from './backlog/api.ts';
 import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
@@ -5944,6 +5947,16 @@ export function createApp(deps: ServerDeps) {
       const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
       if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
       return c.json(backlogRecommendation({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, limit: c.req.valid('query').limit }));
+    })
+    .post('/backlog/sync', async (c) => {
+      const root = c.get('project').root;
+      const remote = parseRemote((await getRepoInfo(root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const gh = async (args: string[]) => { const { stdout } = await backlogPromisify(backlogExecFileCb)('gh', args, { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true }); return stdout.trim(); };
+      const results = await syncOpenIssues({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, gh });
+      const counts: Record<string, number> = {};
+      for (const r of results) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      return c.json({ counts, results: results.filter((r) => r.status !== 'in-sync').slice(0, 200) });
     })
     .post('/backlog/:number', jsonZodValidator(backlogEditSchema), async (c) => {
       const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
