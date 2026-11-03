@@ -19,7 +19,7 @@ fail() { echo "Obot runtime setup blocked: $*" >&2; exit 1; }
 id "$SUDO_USER" >/dev/null 2>&1 || fail "operator account $SUDO_USER does not exist"
 operator_group="$(id -gn "$SUDO_USER")"
 [[ "$operator_group" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || fail "unexpected operator group name"
-for command_name in podman useradd usermod runuser setfacl systemctl systemd-tmpfiles timeout; do
+for command_name in podman useradd usermod runuser setfacl systemctl systemd-tmpfiles timeout restorecon; do
   command -v "$command_name" >/dev/null || fail "$command_name is required on Bazzite"
 done
 for target in "$SERVICE_PATH" "$SOCKET_PATH" "$TMPFILES_PATH"; do
@@ -166,6 +166,7 @@ systemctl stop "$SERVICE_NAME.socket" >/dev/null 2>&1 || true
 systemctl stop "$SERVICE_NAME.service" >/dev/null 2>&1 || true
 systemctl reset-failed "$SERVICE_NAME.service"
 systemctl enable --now "$SERVICE_NAME.socket"
+restorecon -F "$RUNTIME_API_DIR" "$RUNTIME_API_SOCKET"
 
 api_url="unix://$RUNTIME_API_SOCKET"
 graphroot=""

@@ -39,10 +39,14 @@ the account execute-only traversal at `/var/mnt/podman` and denies access to the
 Factory graphroot. The operator receives execute-only traversal on the runtime
 root so deployment checks can resolve its mount point without listing or
 reading runtime data. The Unix socket is operator-owned and mode `0660`; Compose
-mounts it into Obot with a private SELinux label. The mount must allow socket
-connections because Linux requires write access to connect to a pathname Unix
-socket. Obot's runtime API can manage containers only inside the dedicated
-rootless account, so do not reuse this account or socket for other services.
+mounts it into Obot with API connection access. Linux requires write access to
+connect to a pathname Unix socket. Podman's SELinux integration requires
+`label=disable` for a container using this API socket, so only the Obot app
+container opts out of SELinux labeling. User namespaces, capabilities,
+seccomp, `no-new-privileges`, and the dedicated rootless runtime account remain
+in force. Runtime setup restores the socket's default host SELinux label.
+Obot's runtime API can manage containers only inside the dedicated rootless
+account, so do not reuse this account or socket for other services.
 
 Copy `env.example` to `.env`, set a random bootstrap token, and restrict the
 file to the owning account:
@@ -240,10 +244,10 @@ the live OAuth and isolated-client evidence supports a written go/no-go.
   label prevents the mounted Cezar runtime from verifying the promoted tree.
 - Caddy's exclusive named data and config volumes use private `Z` relabeling
   so Podman updates their SELinux category when it recreates the proxy.
-- Obot's dedicated runtime socket bind uses private `Z` relabeling. Its socket
-  connection needs write access, and the API can manage workloads only inside
-  the dedicated rootless account. The socket is exclusive to Obot; the private
-  label does not share it with other containers.
+- The Obot app alone uses `label=disable`, as required by Podman's documented
+  API-socket-in-container pattern. The socket remains mode `0660`, mounts only
+  into Obot, and belongs to the dedicated rootless runtime account. Caddy and
+  all other containers retain their SELinux labels.
 - Obot drops every Linux capability except `CHOWN`, `DAC_READ_SEARCH`,
   `FOWNER`, `SETGID`, and `SETUID`. Its bundled PostgreSQL startup uses them
   to initialize and adjust `/data/postgresql`, inspect its existing files,
