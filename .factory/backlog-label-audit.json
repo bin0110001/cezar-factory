@@ -1,5 +1,5 @@
 {
-  "considered": [213],
+  "considered": [],
   "changed": [],
-  "skipped": [{"issue": 213, "reason": "epic with decomposition planned into multiple children; requires human review for prioritization and scope approval", "added": ["factory:tracking"]}]
+  "skipped": []
 }
