@@ -159,3 +159,19 @@ workflow needs to create smaller issues. Omit `subIssues` for a ready plan.
 The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
 writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
 resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.
+
+## Change impact manifest
+
+Alongside the plan, write `impact-manifest.json` in the run artifacts following
+`docs/impact-manifest.md` (schema v1): the repository/branch/base commit you planned
+against, `files` you expect to add/modify/delete/rename (mark glob entries `glob: true`),
+affected `modules` and public `contracts`, and `coverage`. Rules:
+
+- Use `source: "human"` only for paths the issue text names; use `"agent-hypothesis"`
+  for your own inference, with a lower `confidence`. Never invent a file path as fact.
+- List anything you could not analyse under `unknownZones` and set `coverage` to
+  `partial` or `unknown`. Unknown coverage makes the scheduler serialise the work; it is
+  never read as conflict-free.
+- Low-risk code-first work needs only the files you will touch; deeper contracts and
+  modules are for spec-first, high-impact changes.
+- Put licensed or secret paths in `sensitiveGlobs` so they are hidden from dashboards.

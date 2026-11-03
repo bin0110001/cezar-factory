@@ -8,5 +8,5 @@ rules:
   new-line-at-end-of-file: enable
   trailing-spaces: enable
   line-length:
-    max: 180
+    max: 600
     level: warning

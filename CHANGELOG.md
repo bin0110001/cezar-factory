@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.62] - 2026-11-03
+
+- Add conflict-aware scheduling guidance (epic #192): the `factory-plan` skill now
+  produces a Change Impact Manifest and `factory-workspace` documents the
+  `cez workspace impact-predict|impact|impact-snapshot` verbs. Scheduler behavior
+  is unchanged unless `CEZAR_BACKLOG_SCHEDULING` is set.
+
 ## [0.3.61] - 2026-11-02
 
 - Make missing Factory target configuration explicit and verify that

@@ -2535,3 +2535,33 @@ export async function refreshTrackerWatch(projectId: string, watchId: string, si
   return trackerWatchSnapshotSchema.parse(await unwrap(await cez.api.v1.p[':projectId'].tracker.watch[':watchId'].$post(
     { param: { projectId, watchId } }, { init: { signal } }), '/tracker/watch'))
 }
+
+export interface BacklogCardData {
+  id: string; lane: string; basePriority: string; rank: string | null; score: number | null;
+  status: { kind: 'dispatchable' | 'deferred' | 'not-dispatchable' | 'running'; reasonCode: string; detail: string };
+  topFactors: Array<{ name: string; points: number }>; badges: string[]; conflictsWith: string[];
+}
+export interface BacklogData {
+  lanes: Array<{ lane: string; cards: BacklogCardData[] }>;
+  edges: Array<{ from: string; to: string; level: string; source: string }>;
+  mergeDebt: { open: number; needsAgent: number; items: Array<{ key: string; state: string; issues: string[]; githubIssue: number | null }> };
+  overrideAudit: Array<{ id: string; at: string; actor: string; reason: string | null; changed: string[] }>;
+  views: { blocked: string[]; deferred: string[] };
+  revisions: Record<string, number>;
+  conflicts: number;
+}
+export interface BacklogRecommendationData {
+  next: { id: string; score: number; factors: Array<{ name: string; points: number }> } | null;
+  top: Array<{ id: string; score: number }>;
+  needsHuman: Array<{ id: string; reason: string }>;
+}
+export async function getBacklog(opts?: ReadOptions): Promise<BacklogData> {
+  return unwrap(await cez.api.v1.p[':projectId'].backlog.$get({ param: { projectId: queryScope() } }, init(opts)), '/backlog') as unknown as BacklogData;
+}
+export async function getBacklogRecommendation(limit = 5, opts?: ReadOptions): Promise<BacklogRecommendationData> {
+  return unwrap(await cez.api.v1.p[':projectId'].backlog.recommendation.$get({ param: { projectId: queryScope() }, query: { limit: String(limit) } }, init(opts)), '/backlog/recommendation') as unknown as BacklogRecommendationData;
+}
+export async function editBacklogIssue(input: { number: number; expectedRevision: number; fields: Record<string, unknown>; action?: 'update' | 'undo'; reason?: string }) {
+  const { number, ...json } = input;
+  return unwrap(await cez.api.v1.p[':projectId'].backlog[':number'].$post({ param: { projectId: queryScope(), number: String(number) }, json: json as never }), '/backlog/:number');
+}
