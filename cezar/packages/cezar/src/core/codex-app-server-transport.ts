@@ -2,6 +2,7 @@ import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:ch
 import { trackChildExit } from './agent-runner.ts';
 import { buildChildEnv } from './agent-env.ts';
 import { disclaimedCommand } from './disclaim-spawn.ts';
+import { gatewayEnv, resolveMcpGateway } from './mcp-gateway.ts';
 import { EOF_KILL_GRACE_MS, EOF_TERM_GRACE_MS, KILL_GRACE_MS } from './claude-cli-runner.ts';
 
 export interface CodexAppServerMessage {
@@ -22,7 +23,7 @@ export function resolveCodexExecutable(override?: string): string {
 }
 
 export function buildCodexAppServerEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
-  return buildChildEnv({ backend: 'codex', extraEnv });
+  return buildChildEnv({ backend: 'codex', extraEnv: { ...gatewayEnv(resolveMcpGateway()), ...extraEnv } });
 }
 
 /** Spawn the authenticated host's app-server with the same least-privilege env used by runs. */

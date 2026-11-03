@@ -147,12 +147,21 @@ export class AcpClient {
     );
   }
 
-  newSession(cwd: string, timeoutMs?: number): Promise<Record<string, unknown>> {
-    return this.request('session/new', { cwd, mcpServers: [] }, { timeoutMs });
+  newSession(
+    cwd: string,
+    timeoutMs?: number,
+    mcpServers: Array<Record<string, unknown>> = [],
+  ): Promise<Record<string, unknown>> {
+    return this.request('session/new', { cwd, mcpServers }, { timeoutMs });
   }
 
-  loadSession(sessionId: string, cwd: string, timeoutMs?: number): Promise<Record<string, unknown>> {
-    return this.request('session/load', { sessionId, cwd, mcpServers: [] }, { timeoutMs });
+  loadSession(
+    sessionId: string,
+    cwd: string,
+    timeoutMs?: number,
+    mcpServers: Array<Record<string, unknown>> = [],
+  ): Promise<Record<string, unknown>> {
+    return this.request('session/load', { sessionId, cwd, mcpServers }, { timeoutMs });
   }
 
   prompt(sessionId: string, prompt: AcpContentBlock[]): Promise<Record<string, unknown>> {

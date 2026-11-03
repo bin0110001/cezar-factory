@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "obot": {
+      "type": "http",
+      "url": "${OBOT_MCP_URL:-https://obot.192.168.86.69.sslip.io:8443/mcp-servers}",
+      "headersHelper": "node integrations/mcp-gateway/headers.mjs"
+    }
+  }
+}

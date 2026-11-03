@@ -17,7 +17,8 @@ import {
   type SessionOptions,
 } from './agent-runner.ts';
 import { buildChildEnv } from './agent-env.ts';
-import { AcpClient, type AcpContentBlock, type AcpMessage, type AcpRequestAnswer } from './acp-client.ts';
+import { acpMcpServers, gatewayEnv, resolveMcpGateway } from './mcp-gateway.ts';
+import { AcpClient,type AcpContentBlock, type AcpMessage, type AcpRequestAnswer } from './acp-client.ts';
 import { abortAcpTurn, endAcpReplay, mapAcpFrame, type AcpUiMapperState } from './acp-ui-mapper.ts';
 import { EOF_KILL_GRACE_MS, EOF_TERM_GRACE_MS } from './claude-cli-runner.ts';
 import {
@@ -114,7 +115,7 @@ export function buildCopilotArgs(spec: Pick<AgentRunSpec, 'model' | 'additionalD
 /** The per-run environment: `buildChildEnv`'s least-privilege set for this backend. Copilot's own
  *  `COPILOT_` family and the shared `gh` names are what `agent-env.ts` already allows it. */
 export function buildCopilotEnv(backend: AgentBackend, extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
-  return buildChildEnv({ backend, extraEnv });
+  return buildChildEnv({ backend, extraEnv: { ...gatewayEnv(resolveMcpGateway()), ...extraEnv } });
 }
 
 /**
@@ -311,7 +312,12 @@ class CopilotAcpSession implements AgentSession {
           this.replayDone = resolve;
         });
         try {
-          await this.client.loadSession(this.spec.sessionId, this.spec.cwd, HANDSHAKE_TIMEOUT_MS);
+          await this.client.loadSession(
+            this.spec.sessionId,
+            this.spec.cwd,
+            HANDSHAKE_TIMEOUT_MS,
+            acpMcpServers(resolveMcpGateway()),
+          );
           this.acpSessionId = this.spec.sessionId;
           resumed = true;
           await Promise.race([replayEnded, delay(REPLAY_WAIT_MS)]);
@@ -329,7 +335,9 @@ class CopilotAcpSession implements AgentSession {
       }
     }
     if (!this.acpSessionId) {
-      const created = await this.client.newSession(this.spec.cwd, HANDSHAKE_TIMEOUT_MS).catch((error: unknown) => {
+      const created = await this.client
+        .newSession(this.spec.cwd, HANDSHAKE_TIMEOUT_MS, acpMcpServers(resolveMcpGateway()))
+        .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(
           isCopilotAuthFailure(`${message}\n${this.stderrText()}`)
