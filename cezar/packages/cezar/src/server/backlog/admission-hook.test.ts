@@ -12,8 +12,8 @@ describe('backlog admission hook', () => {
     expect(backlogSchedulingMode({})).toBe('off');
     expect(backlogSchedulingMode({ CEZAR_BACKLOG_SCHEDULING: 'bogus' })).toBe('off');
     expect(backlogSchedulingMode({ CEZAR_BACKLOG_SCHEDULING: 'Shadow' })).toBe('shadow');
-    expect(backlogAdmitFragment('o', 'r', {})).toEqual({});
-    expect(backlogAdmitFragment('o', 'r', { CEZAR_BACKLOG_SCHEDULING: 'shadow' }).backlogAdmit).toBeTypeOf('function');
+    expect(backlogAdmitFragment('o', 'r', undefined, {})).toEqual({});
+    expect(backlogAdmitFragment('o', 'r', undefined, { CEZAR_BACKLOG_SCHEDULING: 'shadow' }).backlogAdmit).toBeTypeOf('function');
   });
   it('shadow mode records the would-be deferral but never blocks', async () => {
     const decisions: string[] = [];

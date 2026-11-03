@@ -3961,7 +3961,7 @@ export function createApp(deps: ServerDeps) {
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
             admit: candidate => checkDependencyAdmission(project.root, candidate),
-            ...backlogAdmitFragment(remote.owner, remote.repo),
+            ...backlogAdmitFragment(remote.owner, remote.repo, project.root),
             launch: parsed.data.mode === 'execute'
               ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkDependencyAdmission(project.root, candidate, { refresh: false }), dispatchEnabled: capabilities().dispatch })
               : undefined,
@@ -7283,7 +7283,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
         admit: candidate => checkScheduledDependencyAdmission(project.root, candidate),
-        ...(project.github ? backlogAdmitFragment(project.github.owner, project.github.repo) : {}),
+        ...(project.github ? backlogAdmitFragment(project.github.owner, project.github.repo, project.root) : {}),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,
         // by `getDriver()` — a project with none simply fails that call and the scheduler backs off.

@@ -1,4 +1,6 @@
-import type { ImpactManifest } from '../impact/manifest.ts';
+import { isManifestStale, type ImpactManifest } from '../impact/manifest.ts';
+import { ManifestStore } from '../impact/manifest-store.ts';
+import { impactSnapshot } from '../../workspace/lifecycle.ts';
 import type { BacklogStore } from './store.ts';
 import { rankCandidates } from './ranking.ts';
 import { DEFAULT_SCHEDULING_CONFIG, decideOne, type RunningWork, type SchedulingConfig, type SchedulingDecision } from './scheduling.ts';
@@ -20,7 +22,8 @@ export function backlogSchedulingMode(env: NodeJS.ProcessEnv = process.env): Bac
 }
 
 export interface BacklogAdmissionResult { allow: boolean; reason: string; shadow: boolean; decision: SchedulingDecision }
-export type BacklogAdmissionCheck = (candidate: { number: number; labels: string[]; timestamp: string }) => Promise<BacklogAdmissionResult>;
+export type BacklogAdmissionCandidate = { number: number; labels: string[]; timestamp: string; /** Current head of the target branch, when known, for manifest freshness. */ baseSha?: string };
+export type BacklogAdmissionCheck = (candidate: BacklogAdmissionCandidate) => Promise<BacklogAdmissionResult>;
 
 export function createBacklogAdmission(options: {
   repository: string;
@@ -41,13 +44,18 @@ export function createBacklogAdmission(options: {
     const { record } = options.store.ensureFromLabels(options.repository, candidate.number, { labels: candidate.labels, issueState: 'open' }, { now: now.toISOString() });
     const [ranked] = rankCandidates([{ record, createdAt: candidate.timestamp }], now);
     const manifest = await options.manifest?.(candidate.number) ?? null;
+    // If running work cannot be read, fail closed: capacity is reported unknown (a distinct deferral), never "nothing running".
+    let running: RunningWork[] = [];
+    let runningKnown = true;
+    try { running = (await options.running?.() ?? []).filter((r) => r.id !== ranked!.id); } catch { runningKnown = false; }
     const decision = decideOne({
       candidate: ranked!,
       // The scheduler already passed the #159 dependency gate and the #93 quota gate before this hook runs.
       dependency: { status: 'ready', blockers: [], graphRevision: 0 },
-      capacity: { status: 'available' },
+      capacity: { status: runningKnown ? 'available' : 'unknown' },
       manifest,
-    }, await options.running?.() ?? [], config);
+      ...(manifest && candidate.baseSha !== undefined ? { manifestStale: isManifestStale(manifest, candidate.baseSha) } : {}),
+    }, running, config);
     options.onDecision?.(decision);
     const runnable = decision.kind === 'RUN' || decision.kind === 'BATCH' || decision.kind === 'COORDINATE' || decision.kind === 'INTEGRATE';
     return { allow: runnable || options.mode === 'shadow', reason: `${decision.reason}: ${decision.detail}`, shadow: options.mode === 'shadow', decision };
@@ -55,8 +63,20 @@ export function createBacklogAdmission(options: {
 }
 
 let sharedStore: BacklogStore | undefined;
+const manifests = new ManifestStore();
+
+/** Live, unexpired workspace claims on this host, joined with their stored manifests. A read failure throws so the caller fails closed. */
+export async function runningFromRegistry(root: string, repository: string, store: Pick<ManifestStore, 'get'>): Promise<RunningWork[]> {
+  const snapshot = await impactSnapshot({ cwd: root });
+  return snapshot.entries
+    .filter((e) => !e.leaseExpired && ['working', 'validating', 'ready', 'integrating', 'blocked', 'recoverable'].includes(e.state))
+    .map((e) => {
+      const manifest = store.get(repository, Number(e.issue));
+      return { id: `${repository}#${e.issue}`, repository, ...(manifest ? { manifest } : {}) };
+    });
+}
 /** Build the hook for a GitHub project, or undefined when backlog scheduling is off (the default). */
-export async function backlogAdmissionForProject(owner: string, repo: string, env: NodeJS.ProcessEnv = process.env): Promise<BacklogAdmissionCheck | undefined> {
+export async function backlogAdmissionForProject(owner: string, repo: string, root?: string, env: NodeJS.ProcessEnv = process.env): Promise<BacklogAdmissionCheck | undefined> {
   const mode = backlogSchedulingMode(env);
   if (mode === 'off') return undefined;
   if (!sharedStore) {
@@ -65,16 +85,18 @@ export async function backlogAdmissionForProject(owner: string, repo: string, en
   }
   return createBacklogAdmission({
     repository: `${owner}/${repo}`, store: sharedStore, mode,
+    manifest: (n) => manifests.get(`${owner}/${repo}`, n),
+    ...(root ? { running: () => runningFromRegistry(root, `${owner}/${repo}`, manifests) } : {}),
     onDecision: (d) => { console.info(`[backlog-scheduling:${mode}] ${d.id} ${d.kind} ${d.reason} ${d.decisionKey}`); },
   });
 }
 
 /** Synchronous handle fragment: empty when off, otherwise a lazily-initialised hook. */
-export function backlogAdmitFragment(owner: string, repo: string, env: NodeJS.ProcessEnv = process.env): { backlogAdmit?: (candidate: { number: number; labels: string[]; timestamp: string }) => Promise<BacklogAdmissionResult> } {
+export function backlogAdmitFragment(owner: string, repo: string, root?: string, env: NodeJS.ProcessEnv = process.env): { backlogAdmit?: (candidate: BacklogAdmissionCandidate) => Promise<BacklogAdmissionResult> } {
   if (backlogSchedulingMode(env) === 'off') return {};
   return {
     backlogAdmit: async (candidate) => {
-      const hook = await backlogAdmissionForProject(owner, repo, env);
+      const hook = await backlogAdmissionForProject(owner, repo, root, env);
       if (!hook) throw new Error('backlog scheduling was disabled while a launch was in flight');
       return hook(candidate);
     },
