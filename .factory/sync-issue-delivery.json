@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "baseBranch": "dev",
+  "mergedPullRequests": 50,
+  "openPullRequests": 10,
+  "promoted": [
+    {
+      "issue": 193,
+      "pr": 248,
+      "from": [
+        "factory:needs-plan"
+      ]
+    },
+    {
+      "issue": 195,
+      "pr": 249,
+      "from": [
+        "factory:needs-plan"
+      ]
+    },
+    {
+      "issue": 196,
+      "pr": 249,
+      "from": [
+        "factory:needs-plan"
+      ]
+    }
+  ],
+  "closed": [],
+  "skipped": [],
+  "errors": []
+}

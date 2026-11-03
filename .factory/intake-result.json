@@ -1,0 +1,8 @@
+{
+  "noWork": false,
+  "issue": 200,
+  "type": "type:maintenance",
+  "risk": "risk:medium",
+  "summary": "Dynamic impact drift: Mid-run conflict detection and bounded replanning",
+  "unresolvedQuestions": ""
+}

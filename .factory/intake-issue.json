@@ -1,0 +1,13 @@
+{
+  "issue": 200,
+  "title": "Dynamic impact drift: Mid-run conflict detection and bounded replanning",
+  "body": "<!-- factory-conflict-aware-scheduling-2026-11-01:child-8 -->\nParent epic: #192\n\n## Objective\nReconcile declared impact with edits in progress and target branch evolution; avoid late integration surprises while protecting agent progress.\n## Work\n- [ ] Event triggers: new modified paths, contract changes, branch rebase/base SHA divergence, lease health, dependency reprioritization, human override, cancelled task.\n- [ ] Incremental git diff and manifest-vs-actual comparison, severity thresholds and debounce; no repeated LLM planning for each edit.\n- [ ] On conflict choose continue with tracked obligation, checkpoint/pause lower priority, await merge, bounded replan with changed files, or human decision; no silent unilateral code loss.\n- [ ] Record remediation provenance, preserve worktree and local state when pausing; use existing #131 lifecycle and recovery.\n- [ ] Cap iterations/cost, implement cooldown and idempotency, update predicted impact after verified analysis.\n## Acceptance\n- [ ] Mid-run newly shared file triggers coordination before merge, no runaway agent loop.\n- [ ] External branch updates mark stale manifests; failed planner preserves code and scheduling resumes deterministically.\n- [ ] No false Ready/complete on pause or restart.\n## Dependencies\nBlocked by manifest, analyzer, coordination and scheduler siblings; integrates #131 #178 and #127.\n\n## Definition of done\n- [ ] Implementation code + schema/API docs and local test commands committed.\n- [ ] Relevant deterministic unit/integration tests and failure fixtures pass.\n- [ ] Existing owner integrations preserved, no duplicate scheduling/ledger services.\n- [ ] Link PR, validation evidence and rollout/feature-flag behavior to this issue.\n\nAll compute runs on locally managed workers; no GitHub Actions compute.",
+  "url": "https://github.com/bin0110001/cezar-factory/issues/200",
+  "createdAt": "11/02/2026 02:09:16",
+  "labels": [
+    "type:maintenance",
+    "risk:medium",
+    "factory:new"
+  ],
+  "terminalReason": "selected-oldest-eligible-issue"
+}
