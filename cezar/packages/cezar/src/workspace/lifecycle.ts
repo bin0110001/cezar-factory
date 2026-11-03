@@ -7,6 +7,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { cezarHomeDir } from '../paths.ts';
+import { globToRegExp } from '../server/impact/manifest.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -138,6 +139,11 @@ function openRegistry(commonDir: string, home = cezarHomeDir()): { db: Database;
       repo_id TEXT NOT NULL, target_branch TEXT NOT NULL, execution_id TEXT NOT NULL,
       lock_token TEXT NOT NULL, lease_expires_at TEXT NOT NULL,
       PRIMARY KEY(repo_id,target_branch)
+    );
+    CREATE TABLE IF NOT EXISTS impact_reservations (
+      execution_id TEXT PRIMARY KEY REFERENCES executions(id), repo_id TEXT NOT NULL, issue_key TEXT NOT NULL,
+      base_sha TEXT NOT NULL, manifest_revision INTEGER NOT NULL, predicted_json TEXT NOT NULL,
+      expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS event_history ON events(repo_id, issue_key, seq);
     CREATE TABLE IF NOT EXISTS event_outbox (
@@ -717,6 +723,18 @@ export async function lifecycleMetrics(options: { cwd?: string; home?: string; w
   } finally { db.close(); }
 }
 
+/** Every path a workspace has changed relative to its base: committed, staged, unstaged and untracked. */
+async function changedPaths(record: Pick<LifecycleRecord, 'workspacePath' | 'baseCommit'>): Promise<Set<string>> {
+  const collect = async (args: string[]) => (await git(record.workspacePath, args)).split('\0').filter(Boolean);
+  const [committed, staged, unstaged, untracked] = await Promise.all([
+    collect(['diff', '--name-only', '-z', `${record.baseCommit}...HEAD`]),
+    collect(['diff', '--cached', '--name-only', '-z']),
+    collect(['diff', '--name-only', '-z']),
+    collect(['ls-files', '--others', '--exclude-standard', '-z']),
+  ]);
+  return new Set([...committed, ...staged, ...unstaged, ...untracked].map((path) => path.replaceAll('\\', '/')));
+}
+
 /** Advisory only: report paths changed in more than one active issue workspace. */
 export async function workspaceOverlaps(options: { cwd?: string; home?: string } = {}): Promise<Array<{
   issues: string[]; paths: string[]; workspaces: string[];
@@ -725,15 +743,9 @@ export async function workspaceOverlaps(options: { cwd?: string; home?: string }
   const changedByIssue = new Map<string, { paths: Set<string>; workspace: string }>();
   for (const record of records) {
     if (!['working', 'validating', 'ready', 'integrating', 'blocked', 'recoverable'].includes(record.state)) continue;
-    const collect = async (args: string[]) => (await git(record.workspacePath, args)).split('\0').filter(Boolean);
-    const [committed, staged, unstaged, untracked] = await Promise.all([
-      collect(['diff', '--name-only', '-z', `${record.baseCommit}...HEAD`]),
-      collect(['diff', '--cached', '--name-only', '-z']),
-      collect(['diff', '--name-only', '-z']),
-      collect(['ls-files', '--others', '--exclude-standard', '-z']),
-    ]);
+    const paths = await changedPaths(record);
     changedByIssue.set(record.issue, {
-      paths: new Set([...committed, ...staged, ...unstaged, ...untracked].map((path) => path.replaceAll('\\', '/'))),
+      paths,
       workspace: record.workspacePath,
     });
   }
@@ -755,6 +767,159 @@ export async function workspaceOverlaps(options: { cwd?: string; home?: string }
     }
   }
   return [...byPair.values()].map((item) => ({ ...item, paths: item.paths.sort() }));
+}
+
+export interface PredictedImpact {
+  baseSha: string;
+  manifestRevision: number;
+  /** Repo-relative paths or globs (use `glob: true` entries for patterns). */
+  files: Array<{ path: string; glob?: boolean }>;
+  contracts?: string[];
+}
+
+/**
+ * Attach advisory predicted-impact reservations to the fenced execution (#197). Reuses the active
+ * execution's fencing token and lease; no second lease store. Reservations expire after `minutes`
+ * (default 120) so a stale one is never permanent.
+ */
+export async function recordPredictedImpact(options: {
+  issue: string; executionId: string; fencingToken: number; predicted: PredictedImpact; minutes?: number; cwd?: string; home?: string; now?: number;
+}): Promise<{ expiresAt: string }> {
+  const issue = resolveIssue(options.issue);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const current = getActive(db, repoId, issue);
+    if (!current || current.executionId !== options.executionId || current.fencingToken !== options.fencingToken) {
+      throw new Error('Impact reservation rejected: execution is stale or fenced.');
+    }
+    const now = options.now ?? Date.now();
+    const expiresAt = new Date(now + leaseMinutes(options.minutes ?? 120) * 60_000).toISOString();
+    const nowIso = new Date(now).toISOString();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.prepare(`INSERT INTO impact_reservations(execution_id,repo_id,issue_key,base_sha,manifest_revision,predicted_json,expires_at,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(execution_id) DO UPDATE SET base_sha=excluded.base_sha,
+        manifest_revision=excluded.manifest_revision,predicted_json=excluded.predicted_json,expires_at=excluded.expires_at,updated_at=excluded.updated_at`)
+        .run(current.executionId, repoId, issue, options.predicted.baseSha, options.predicted.manifestRevision, JSON.stringify(options.predicted), expiresAt, nowIso, nowIso);
+      event(db, repoId, issue, current.executionId, 'impact_predicted', {
+        manifestRevision: options.predicted.manifestRevision, baseSha: options.predicted.baseSha, files: options.predicted.files.length, expiresAt,
+      });
+      db.exec('COMMIT;');
+    } catch (error) { try { db.exec('ROLLBACK;'); } catch { /* keep original */ } throw error; }
+    return { expiresAt };
+  } finally { db.close(); }
+}
+
+export interface ImpactReconciliation {
+  issue: string;
+  predicted: string[];
+  actual: string[];
+  /** Changed but not predicted: the prediction was wrong or incomplete. */
+  unpredicted: string[];
+  /** Predicted (non-glob) but untouched so far. */
+  untouched: string[];
+  /** True when any change was unpredicted; also recorded once per distinct set as an `impact_mismatch` event. */
+  mismatch: boolean;
+  /** No reservation, or it expired: absence of a prediction is reported, never read as "no impact". */
+  reservation: 'active' | 'expired' | 'none';
+}
+
+function predictedMatches(predicted: PredictedImpact, path: string): boolean {
+  return predicted.files.some((f) => (f.glob ? globToRegExp(f.path).test(path) : f.path.toLowerCase() === path.toLowerCase()));
+}
+
+/** Compare git-observed changes of a workspace with its prediction. */
+export async function reconcileActualImpact(options: { issue: string; cwd?: string; home?: string; now?: number }): Promise<ImpactReconciliation> {
+  const issue = resolveIssue(options.issue);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const current = getActive(db, repoId, issue);
+    if (!current) throw new Error(`Issue ${issue} has no active workspace to reconcile.`);
+    const actual = [...await changedPaths(current)].sort();
+    const row = db.prepare('SELECT predicted_json,expires_at FROM impact_reservations WHERE execution_id=?').get(current.executionId);
+    if (!row) return { issue, predicted: [], actual, unpredicted: actual, untouched: [], mismatch: false, reservation: 'none' };
+    const predicted = JSON.parse(String(row.predicted_json)) as PredictedImpact;
+    const expired = Date.parse(String(row.expires_at)) <= (options.now ?? Date.now());
+    const unpredicted = actual.filter((p) => !predictedMatches(predicted, p));
+    const touched = new Set(actual.map((p) => p.toLowerCase()));
+    const untouched = predicted.files.filter((f) => !f.glob && !touched.has(f.path.toLowerCase())).map((f) => f.path);
+    const mismatch = unpredicted.length > 0;
+    if (mismatch) {
+      const signature = createHash('sha256').update(JSON.stringify(unpredicted)).digest('hex');
+      const last = db.prepare(`SELECT payload_json FROM events WHERE repo_id=? AND issue_key=? AND execution_id=? AND event_type='impact_mismatch' ORDER BY seq DESC LIMIT 1`)
+        .get(repoId, issue, current.executionId);
+      if (!last || (JSON.parse(String(last.payload_json)) as { signature?: string }).signature !== signature) {
+        event(db, repoId, issue, current.executionId, 'impact_mismatch', { signature, unpredicted: unpredicted.slice(0, 200), manifestRevision: predicted.manifestRevision });
+      }
+    }
+    return { issue, predicted: predicted.files.map((f) => f.path), actual, unpredicted, untouched, mismatch, reservation: expired ? 'expired' : 'active' };
+  } finally { db.close(); }
+}
+
+export interface ImpactSnapshotEntry {
+  issue: string; owner: string; state: LifecycleState; workspace: string; leaseExpiresAt: string; leaseExpired: boolean;
+  reservation: 'active' | 'expired' | 'none'; baseSha: string | null; manifestRevision: number | null;
+  /** Changed paths while the lifecycle state is live; empty for terminal states. */
+  actual: string[];
+}
+export interface ImpactSnapshot {
+  /** Mutual exclusion and the overlap view are only valid within this host/registry. */
+  coordination: { domain: 'local-host'; degraded: boolean; note: string };
+  entries: ImpactSnapshotEntry[];
+  /** Pairs whose predicted-or-actual paths intersect, among live, unexpired entries. */
+  overlaps: Array<{ issues: string[]; paths: string[]; basis: 'actual' | 'predicted' }>;
+}
+
+/** Normalized read-only view for the scheduler, UI and external-developer skill. */
+export async function impactSnapshot(options: { cwd?: string; home?: string; now?: number; multiHost?: boolean } = {}): Promise<ImpactSnapshot> {
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const records = await lifecycleStatus(options);
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  const now = options.now ?? Date.now();
+  try {
+    const entries: ImpactSnapshotEntry[] = [];
+    const claims = new Map<string, { predicted: Set<string>; actual: Set<string> }>();
+    for (const record of records) {
+      const live = ['working', 'validating', 'ready', 'integrating', 'blocked', 'recoverable'].includes(record.state);
+      const row = db.prepare('SELECT predicted_json,expires_at,base_sha,manifest_revision FROM impact_reservations WHERE execution_id=?').get(record.executionId);
+      const predicted = row ? JSON.parse(String(row.predicted_json)) as PredictedImpact : null;
+      const expired = row ? Date.parse(String(row.expires_at)) <= now : false;
+      const actual = live ? [...await changedPaths(record).catch(() => new Set<string>())].sort() : [];
+      entries.push({
+        issue: record.issue, owner: record.ownerId, state: record.state, workspace: record.workspacePath,
+        leaseExpiresAt: record.leaseExpiresAt, leaseExpired: Date.parse(record.leaseExpiresAt) <= now,
+        reservation: !row ? 'none' : expired ? 'expired' : 'active', baseSha: row ? String(row.base_sha) : null,
+        manifestRevision: row ? Number(row.manifest_revision) : null, actual,
+      });
+      if (live && Date.parse(record.leaseExpiresAt) > now) {
+        claims.set(record.issue, {
+          predicted: new Set(predicted && !expired ? predicted.files.filter((f) => !f.glob).map((f) => f.path.toLowerCase()) : []),
+          actual: new Set(actual.map((p) => p.toLowerCase())),
+        });
+      }
+    }
+    const overlaps: ImpactSnapshot['overlaps'] = [];
+    const issues = [...claims.keys()].sort((a, b) => Number(a) - Number(b));
+    for (let i = 0; i < issues.length; i++) for (let j = i + 1; j < issues.length; j++) {
+      const a = claims.get(issues[i]!)!, b = claims.get(issues[j]!)!;
+      const aAll = new Set([...a.actual, ...a.predicted]), bAll = new Set([...b.actual, ...b.predicted]);
+      const paths = [...aAll].filter((p) => bAll.has(p)).sort();
+      if (paths.length === 0) continue;
+      overlaps.push({ issues: [issues[i]!, issues[j]!], paths, basis: paths.some((p) => a.actual.has(p) && b.actual.has(p)) ? 'actual' : 'predicted' });
+    }
+    const multi = options.multiHost === true;
+    return {
+      coordination: {
+        domain: 'local-host', degraded: multi,
+        note: multi
+          ? 'Multiple hosts modify this repository without a shared coordinator: absence of overlap is NOT guaranteed.'
+          : 'Overlap is computed from this host registry only; work on other hosts is invisible.',
+      },
+      entries, overlaps,
+    };
+  } finally { db.close(); }
 }
 
 /** Persist deterministic merge preflight evidence against the active fencing token. */
