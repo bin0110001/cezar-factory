@@ -35,3 +35,9 @@ duplicate scheduler processes on one host; multi-host exclusion needs the #197 c
 Wiring `decideOne`/the ledger into `automations/scheduler.ts` and the existing #93/#159 gates,
 intake dedupe and the Refinement/Ready checklists, reprioritisation actions (undo, bulk, snooze UI),
 the recommendation HTTP API, and #127/#128 events. These remain open on #194 and #198.
+
+## UI read model (#201)
+`server/backlog/view.ts` `buildBacklogView()` reshapes ranking, scheduler decisions, integration obligations and
+audit into lanes, cards (priority, rank, score, top factors, scheduler reason code/detail, badges), conflict edges,
+merge debt and the human-override audit, plus blocked/deferred views. The web components, the HTTP route (with its
+contract-parity and route-inventory tests) and the extension of #88/#135/#151 are not built yet.
