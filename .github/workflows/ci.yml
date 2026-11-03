@@ -15,6 +15,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML linter
+        run: python -m pip install yamllint==1.37.1
+      - name: Lint Factory YAML syntax and structure
+        run: yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies templates .github/workflows
       - uses: actions/setup-node@v4
         with:
           node-version: 22

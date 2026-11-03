@@ -30,8 +30,22 @@ function Run([string]$Script, [hashtable]$Args2) {
 }
 
 function Copy-Factory([string]$From, [string]$To) {
-    New-Item -ItemType Directory $To | Out-Null
-    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests', 'cezar', 'node_modules', '.factory' } | Copy-Item -Destination $To -Recurse
+    $sourceRoot = (Resolve-Path -LiteralPath $From).Path
+    New-Item -ItemType Directory -Force $To | Out-Null
+    foreach ($entry in Get-ChildItem -LiteralPath $sourceRoot -Force -Recurse) {
+        $relative = [IO.Path]::GetRelativePath($sourceRoot, $entry.FullName)
+        $parts = $relative -split '[\\/]'
+        if ($parts[0] -in '.git', 'tests', 'cezar', 'node_modules', '.factory') { continue }
+        if (-not $entry.PSIsContainer -and $entry.Name -match '^\.env(?:\..+)?$') { continue }
+        $destination = Join-Path $To $relative
+        if ($entry.PSIsContainer) {
+            New-Item -ItemType Directory -Force -Path $destination | Out-Null
+        } else {
+            $parent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Copy-Item -LiteralPath $entry.FullName -Destination $destination -Force
+        }
+    }
 }
 
 # ---- Static checks -------------------------------------------------------
@@ -96,6 +110,7 @@ Assert 'backlog audit documents read-only collector and deterministic preparatio
 Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
 Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
 Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
 Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
@@ -1081,6 +1096,11 @@ try {
     $staleApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
     Assert 'backlog audit consumer refuses changed live labels' ($staleApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -contains 'factory:auditing')
     $state = Get-Gh; $state.labels = @($state.labels | Where-Object { $_ -ne 'factory:ready' }); $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels | Where-Object { $_ -ne 'factory:ready' }); $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $wrongKeyProposalPath = Join-Path $tmp 'backlog-label-audit-wrong-key.json'
+    @{ considered = @(5); changed = @(@{ number = 5; added = @('factory:new', 'type:maintenance', 'risk:medium'); reason = 'well-formed classification with wrong issue key' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $wrongKeyProposalPath
+    $wrongKeyApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $wrongKeyProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $candidateIssueState = @((Get-Gh).issues | Where-Object { $_.number -eq 5 })[0]
+    Assert 'backlog audit consumer rejects number-keyed outcomes before mutation' ($wrongKeyApply.Code -ne 0 -and $wrongKeyApply.Out -match 'exactly one changed or skipped outcome' -and $candidateIssueState.labels -contains 'factory:auditing' -and $candidateIssueState.labels -notcontains 'factory:new')
     $badProposalPath = Join-Path $tmp 'backlog-label-audit-invalid.json'
     @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium', 'factory:done'); reason = 'invalid multiple states' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $badProposalPath
     $invalidApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $badProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }

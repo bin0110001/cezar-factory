@@ -41,7 +41,7 @@ export function DependencyIntelligenceRoute() {
   const [resolutionText, setResolutionText] = useState('')
   const [repairSelections, setRepairSelections] = useState<Record<string, string[]>>({})
   const [repairRationales, setRepairRationales] = useState<Record<string, string>>({})
-  const graph = useQuery({ queryKey: [...key, offset, snapshotRevision, search, repositoryFilter, kind, state, readinessFilter], queryFn: () => getDependencyGraph({ limit: 100, offset, revision: snapshotRevision, search: search || undefined, repository: repositoryFilter || undefined, kind: kind as 'issue' | 'epic' | 'decision' | 'milestone' | 'external-blocker' | undefined, state: state || undefined, readiness: readinessFilter as 'ready' | 'blocked' | 'unknown' | undefined }), staleTime: 30_000 })
+  const graph = useQuery({ queryKey: [...key, offset, snapshotRevision, search, repositoryFilter, kind, state, readinessFilter], queryFn: () => getDependencyGraph({ limit: 100, offset, revision: snapshotRevision, search: search || undefined, repository: repositoryFilter || undefined, kind: (kind || undefined) as 'issue' | 'epic' | 'decision' | 'milestone' | 'external-blocker' | undefined, state: state || undefined, readiness: (readinessFilter || undefined) as 'ready' | 'blocked' | 'unknown' | undefined }), staleTime: 30_000 })
   const history = useQuery({ queryKey: [...key, 'events'], queryFn: () => getDependencyGraphEvents({ limit: 25 }), staleTime: 30_000 })
   const trends = useQuery({ queryKey: [...key, 'trends'], queryFn: getDependencyGraphTrends, staleTime: 30_000 })
   const cycles = useQuery({ queryKey: [...key, 'cycles'], queryFn: () => getDependencyCycles(20), staleTime: 30_000 })
