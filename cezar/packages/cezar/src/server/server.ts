@@ -2,6 +2,7 @@ import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
 import { syncOpenIssues } from './backlog/github-sync.ts';
+import { BACKLOG_SYNC_INTERVAL_MS, backlogSyncEnabled, runBacklogSyncOnce } from './backlog/sync-timer.ts';
 import { applyBacklogEdit, backlogEditSchema, backlogOverview, backlogRecommendation } from './backlog/api.ts';
 import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
@@ -7290,6 +7291,11 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       try { await graphServiceForScheduler(project.root).refreshIfNeeded({ maxAgeMs: 5 * 60_000 }); } catch { /* admission retries on demand and reports the reason */ }
     }
   };
+  const backlogSyncRun = (): void => { void runBacklogSyncOnce([...automationProjects.values()].map((p) => ({ root: p.root, github: p.github })), { log: (m) => console.info(m) }).catch(() => undefined); };
+  const backlogSyncStartup = backlogSyncEnabled() ? setTimeout(backlogSyncRun, 30_000) : undefined;
+  const backlogSyncInterval = backlogSyncEnabled() ? setInterval(backlogSyncRun, BACKLOG_SYNC_INTERVAL_MS) : undefined;
+  backlogSyncStartup?.unref?.();
+  backlogSyncInterval?.unref?.();
   const dependencySyncStartup = setTimeout(() => { void runDependencySync(); }, 10_000);
   const dependencySyncInterval = setInterval(() => { void runDependencySync(); }, 10 * 60_000);
   dependencySyncStartup.unref?.();
@@ -7387,7 +7393,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
+  server.once('close', () => { if (backlogSyncStartup) clearTimeout(backlogSyncStartup); if (backlogSyncInterval) clearInterval(backlogSyncInterval); clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }

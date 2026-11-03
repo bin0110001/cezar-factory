@@ -71,3 +71,9 @@ revision checks and undo, merge debt, conflict list and the human-override audit
 entry was not added because the nav and command-palette tests pin exact item lists.
 Edits are written to the local projection only; pushing them to the GitHub issue-body block is the `pendingPush`/`markPushed`
 protocol (no poller drives it yet).
+
+## Sidebar and scheduled sync
+`/backlog` now has a sidebar entry (and command-palette row). A background GitHub sync runs every 10 minutes
+(`server/backlog/sync-timer.ts`) only when **both** `CEZAR_BACKLOG_SCHEDULING` is `shadow|enforce` **and**
+`CEZAR_BACKLOG_SYNC=on`, because it writes the `factory-backlog` block into issue bodies. It is single-flight, isolates
+per-project failures, and logs `[backlog-sync] <repo> {status counts}`. `POST /api/v1/backlog/sync` runs the same pass on demand.
