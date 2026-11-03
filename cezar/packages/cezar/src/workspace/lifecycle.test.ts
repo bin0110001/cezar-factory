@@ -16,6 +16,7 @@ import {
   workspaceOverlaps, reconcileWorkspaceLifecycle,
   recoverWorkspace, resumeBlockedWorkspace, approveHindsightLesson,
   recordWorkspacePreflight, renewReadyWorkspaceLease,
+  recordPredictedImpact, reconcileActualImpact, impactSnapshot,
 } from './lifecycle.ts';
 
 const GIT_ID = ['-c', 'user.name=Lifecycle Test', '-c', 'user.email=lifecycle@example.test'];
@@ -394,6 +395,37 @@ describe('local workspace lifecycle', () => {
       workspaces: [first.workspacePath, second.workspacePath],
     }]);
   });
+
+  it('tracks predicted versus actual impact on the fenced execution, with expiry and honest coordination scope', async () => {
+    const a = await claimWorkspace({ issue: '61', cwd: repo, owner: 'external:test:610', base: 'dev', minutes: 60 });
+    const b = await claimWorkspace({ issue: '62', cwd: repo, owner: 'external:test:620', base: 'dev', minutes: 60 });
+    const predicted = { baseSha: a.baseCommit, manifestRevision: 3, files: [{ path: 'src/a.ts' }, { path: 'docs/**', glob: true }] };
+    await expect(recordPredictedImpact({ issue: '61', executionId: a.executionId, fencingToken: a.fencingToken + 1, predicted, cwd: repo }))
+      .rejects.toThrow(/stale or fenced/);
+    expect((await reconcileActualImpact({ issue: '61', cwd: repo })).reservation).toBe('none');
+    await recordPredictedImpact({ issue: '61', executionId: a.executionId, fencingToken: a.fencingToken, predicted, cwd: repo });
+    await recordPredictedImpact({ issue: '62', executionId: b.executionId, fencingToken: b.fencingToken, predicted: { ...predicted, files: [{ path: 'SRC/A.ts' }] }, cwd: repo });
+    mkdirSync(join(a.workspacePath, 'docs'), { recursive: true });
+    writeFileSync(join(a.workspacePath, 'docs', 'x.md'), 'x');
+    writeFileSync(join(a.workspacePath, 'surprise.ts'), 'y');
+    const rec = await reconcileActualImpact({ issue: '61', cwd: repo });
+    expect(rec).toMatchObject({ mismatch: true, reservation: 'active', unpredicted: ['surprise.ts'], untouched: ['src/a.ts'] });
+    await reconcileActualImpact({ issue: '61', cwd: repo }); // same unpredicted set: no duplicate event
+    const events = await lifecycleEvents({ cwd: repo, issue: '61', limit: 50 });
+    expect(events.filter((e) => e.type === 'impact_mismatch')).toHaveLength(1);
+    expect(events.some((e) => e.type === 'impact_predicted')).toBe(true);
+
+    const snap = await impactSnapshot({ cwd: repo });
+    expect(snap.coordination).toMatchObject({ domain: 'local-host', degraded: false });
+    expect(snap.entries.map((e) => [e.issue, e.reservation])).toEqual(expect.arrayContaining([['61', 'active'], ['62', 'active']]));
+    expect(snap.overlaps).toEqual([{ issues: ['61', '62'], paths: ['src/a.ts'], basis: 'predicted' }]);
+    expect((await impactSnapshot({ cwd: repo, multiHost: true })).coordination.degraded).toBe(true);
+
+    const later = Date.now() + 3 * 3_600_000;
+    const expired = await impactSnapshot({ cwd: repo, now: later });
+    expect(expired.entries.every((e) => e.reservation === 'expired' && e.leaseExpired)).toBe(true);
+    expect(expired.overlaps).toEqual([]); // expired claims are not permanent
+  }, 30_000);
 
   it('recovers a stale execution with a higher fence and preserves its workspace', async () => {
     const claim = await claimWorkspace({ issue: '53', cwd: repo, owner: 'external:test:530', base: 'dev' });
