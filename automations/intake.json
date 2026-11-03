@@ -9,7 +9,10 @@
     "allLabels": ["factory:new"],
     "excludeLabels": ["factory:blocked", "factory:needs-plan", "factory:working", "factory:needs-help", "factory:tracking", "epic"],
     "lookbackDays": 30,
-    "maxRecords": 1
+    "maxRecords": 25,
+    "maxAdmissionsPerCycle": 1,
+    "fullReconcileHours": 24,
+    "initialSync": "eligible"
   },
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
