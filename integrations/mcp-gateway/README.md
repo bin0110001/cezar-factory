@@ -33,3 +33,21 @@ Register each server in Obot (the GitHub remote endpoint and its read-only
 tool allow-list are described in the Obot README) and add it to the vMCP.
 Clients need no change. Hindsight is still called directly by
 `scripts/hindsight/`; register it in Obot before routing it through the gateway.
+
+## Developer sessions (Claude Code windows)
+
+The committed `.mcp.json` registers the gateway as the project's `obot` server.
+Its `headersHelper` (`headers.mjs`) reads `OBOT_MCP_TOKEN` from the gitignored
+`.env` here, falling back to the main checkout's copy so git worktrees need no
+duplicate secret. Claude Code strips credential-named variables from helpers,
+so the token cannot come from the environment. `OBOT_MCP_URL` overrides the URL.
+
+- First use: accept the project-trust dialog and approve the `obot` server.
+- TLS: Node does not read the Windows certificate store. Set
+  `NODE_EXTRA_CA_CERTS` to the Caddy root cert before launching Claude Code
+  (a settings `env` entry is reported unreliable; verify with `claude --debug`).
+- Gateway-only is not enforced by `.mcp.json`: user-level servers such as
+  `hindsight` remain available. To enforce it, set `allowedMcpServers` and
+  `allowManagedMcpServersOnly` in managed settings
+  (`C:\Program Files\ClaudeCode\managed-settings.json`, needs admin), after
+  Hindsight is registered in Obot.
