@@ -65,7 +65,7 @@ services:
       HINDSIGHT_API_PORT: 8888
     volumes:
       - hindsight-data:/home/hindsight/.pg0:Z
-    restart: unless-stopped
+    restart: always
     ports:
       - "127.0.0.1:8888:8888"
 
