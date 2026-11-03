@@ -70,6 +70,26 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'run-after-unblock' });
   });
 
+  it('defers a launch the backlog gate refuses and launches once it allows (after the dependency gate)', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async () => ({ runId: 'run-backlog' }));
+    let allow = false;
+    const handle: ProjectAutomationHandle = {
+      projectId: 'p', timeZone: 'UTC', store,
+      github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never },
+      admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }),
+      backlogAdmit: async () => ({ allow, reason: 'not-ready: lane is Refinement, not Ready', shadow: false }),
+      launch,
+    };
+    const scheduler = new ProjectAutomationScheduler(handle);
+    await scheduler.check(definition);
+    expect(launch).not.toHaveBeenCalled();
+    expect(store.latestReceipt(definition.id, candidate.eventId)?.status).toBe('deferred');
+    allow = true;
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
   it('admits at most maxAdmissionsPerCycle new issues, highest priority first, and defers the rest durably', async () => {
     const { store, definition } = await setup();
     const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;

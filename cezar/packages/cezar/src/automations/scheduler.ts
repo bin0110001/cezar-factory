@@ -45,6 +45,8 @@ export interface ProjectAutomationHandle {
   tracker?: { getDriver: () => Promise<TrackerDriver | TrackerFailure>; poller: TrackerPoller };
   launch?: AutomationLauncher;
   admit?: AutomationAdmissionCheck;
+  /** Optional backlog lane/conflict/WIP gate layered after `admit` (#198); undefined = off. */
+  backlogAdmit?: (candidate: GithubCandidate) => Promise<{ allow: boolean; reason: string; shadow: boolean }>;
   launchSchedule?: ScheduleLauncher;
   launchTracker?: TrackerAutomationLauncher;
   onChange?: (automationId: string, revision: number) => void;
@@ -260,6 +262,10 @@ export class ProjectAutomationScheduler {
           admission = result;
           await this.assertStillEligible(definition, candidate);
           if (capReached()) throw new AutomationAdmissionDeferredError(`admission-cap: ${definition.filters.maxAdmissionsPerCycle} new launches per cycle already admitted; awaiting a later cycle`);
+          if (this.handle.backlogAdmit) {
+            const backlog = await this.handle.backlogAdmit(candidate);
+            if (!backlog.allow) throw new AutomationAdmissionDeferredError(`backlog-scheduling: ${backlog.reason}`);
+          }
         }
         const launched = await this.handle.launch!(definition, candidate, receiptId, admission);
         if (candidate.event.startsWith('issue.')) turn.admitted += 1;

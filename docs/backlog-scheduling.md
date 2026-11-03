@@ -41,3 +41,22 @@ the recommendation HTTP API, and #127/#128 events. These remain open on #194 and
 audit into lanes, cards (priority, rank, score, top factors, scheduler reason code/detail, badges), conflict edges,
 merge debt and the human-override audit, plus blocked/deferred views. The web components, the HTTP route (with its
 contract-parity and route-inventory tests) and the extension of #88/#135/#151 are not built yet.
+
+## Scheduler wiring (#198)
+`ProjectAutomationHandle.backlogAdmit` is an optional gate evaluated in `ProjectAutomationScheduler.launch`
+**after** the existing #159 dependency admission, revalidation and per-cycle cap, so those owners and their
+regression suites are unchanged. A refusal is a durable `AutomationAdmissionDeferredError` (`backlog-scheduling: <reason>`),
+retried on later turns like any other deferral. `server.ts` installs it for both the manual check and the scheduled
+handle through `backlogAdmitFragment`, controlled by env `CEZAR_BACKLOG_SCHEDULING`:
+
+| value | behaviour |
+| --- | --- |
+| unset / `off` | hook not installed (default; identical to before) |
+| `shadow` | decision computed and logged (`[backlog-scheduling:shadow] ...`), never blocks |
+| `enforce` | non-run decisions (not Ready, hold, conflict, WIP) defer the launch |
+
+Unset the variable to kill the feature. Records are seeded from labels once (`ensureFromLabels`), so enforce
+mode treats an issue as dispatchable only if its migrated lane is Ready — roll out in `shadow` first and review
+the log before enabling `enforce`. Quota (#93) remains an upstream gate; the hook assumes capacity is available.
+Running-work and manifest suppliers are optional inputs (`createBacklogAdmission({ running, manifest })`) and are
+not yet connected to the workspace registry.
