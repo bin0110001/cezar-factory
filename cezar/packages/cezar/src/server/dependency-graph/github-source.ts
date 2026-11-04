@@ -57,7 +57,6 @@ const linkedIssueSchema = z.object({
   createdAt: z.iso.datetime({ offset: true }).optional(),
   url: z.url({ protocol: /^https$/ }),
   repository: z.object({ nameWithOwner: z.string().min(3) }).strict(),
-  labels: z.object({ totalCount: z.number().int().nonnegative(), nodes: z.array(z.object({ name: z.string() }).strict()) }).strict(),
 }).passthrough();
 
 const issueSchema = linkedIssueSchema.extend({
@@ -112,7 +111,6 @@ fragment IssueFields on Issue {
 }
 fragment LinkedIssueFields on Issue {
   number title state createdAt updatedAt url repository { nameWithOwner }
-  labels(first: 100) { totalCount nodes { name } }
 }`;
 
 function hostFromUrl(url: string): string {
@@ -136,10 +134,11 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
   const nodes = new Map<string, DependencyGraphNode>();
   const edges = new Map<string, DependencyGraphEdge>();
   const issueIds = new Map<string, string>();
+  const idAliases = new Map<string, string>();
   let dependencyTruncated = false;
   let watermark: string | undefined;
 
-  const addIssue = (issue: z.infer<typeof linkedIssueSchema>, labels: string[] = issue.labels.nodes.map((label) => label.name), bodyText?: string): string => {
+  const addIssue = (issue: z.infer<typeof linkedIssueSchema>, labels: string[] = [], bodyText?: string): string => {
     const issueRepository = keyFor(expected.host, issue.repository.nameWithOwner);
     const issueKey = `${issueRepository}#${issue.number}`;
     const proposedKind = labels.some((label) => label.toLowerCase() === 'epic' || label.toLowerCase() === 'factory:tracking') ? 'epic' : 'issue';
@@ -153,7 +152,10 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
     const latest = existingIssue && existingIssue.updatedAt > issue.updatedAt
       ? existingIssue
       : previousIssue && previousIssue.updatedAt > issue.updatedAt ? previousIssue : undefined;
-    if (previous && previous.id !== id) nodes.delete(previous.id);
+    if (previous && previous.id !== id) {
+      nodes.delete(previous.id);
+      idAliases.set(previous.id, id);
+    }
     const mergedLabels = [...new Set([...(existing && 'labels' in existing ? existing.labels : previous && 'labels' in previous ? previous.labels : []), ...labels])];
     issueIds.set(issueKey, id);
     nodes.set(id, {
@@ -219,10 +221,26 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
     }
   }
 
+  const canonicalId = (id: string): string => {
+    const visited = new Set<string>();
+    while (idAliases.has(id) && !visited.has(id)) {
+      visited.add(id);
+      id = idAliases.get(id)!;
+    }
+    return id;
+  };
+  const canonicalEdges = new Map<string, DependencyGraphEdge>();
+  for (const edge of edges.values()) {
+    const from = canonicalId(edge.from);
+    const to = canonicalId(edge.to);
+    const id = stableDependencyEdgeId(from, to, edge.kind);
+    canonicalEdges.set(id, { ...edge, id, from, to });
+  }
+
   const rootDates = repository.issues.nodes.map((issue) => issue.updatedAt).sort();
   return {
     nodes: [...nodes.values()],
-    edges: [...edges.values()],
+    edges: [...canonicalEdges.values()],
     repository: repositoryKey,
     repoUrl: repository.url,
     ...(watermark ? { watermark } : {}),
