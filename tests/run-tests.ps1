@@ -1010,7 +1010,9 @@ try {
     Set-Gh @('factory:investigate')
     Assert 'route: major architecture investigation requests user input' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Set-Gh @('factory:investigate')
-    Assert 'route: external dependency investigation marks blocked' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'dependency'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:blocked')
+    Assert 'route: model-classified dependency without verified blocker re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'dependency'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -notcontains 'factory:blocked')
+    Set-Gh @('factory:investigate')
+    Assert 'route: model-classified environment without verified blocker re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'environment'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -notcontains 'factory:blocked')
     Set-Gh @('factory:ready', 'factory:working', 'type:bug')
     Assert 'route: conflicting state labels collapse to one' ((Invoke-Route 'implement-result' $impl) -eq 0 -and @((Get-Gh).labels | Where-Object { $_ -like 'factory:*' }).Count -eq 1)
 
