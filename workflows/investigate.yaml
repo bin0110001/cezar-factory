@@ -3,7 +3,7 @@ description: Classify repeated failures, retry or re-plan automatically, and req
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,validate-result.ps1,route-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,ensure-investigation-result.ps1,validate-result.ps1,route-state.ps1
     timeoutSeconds: 60
   - id: resolved
     name: Finish early when the issue is already resolved
@@ -29,7 +29,7 @@ steps:
       task into the required integer "issue" field.
   - id: validate
     name: Validate investigation result
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind investigation -Path .factory/investigate-result.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-investigation-result.ps1 -Task "{{task}}" -Path .factory/investigate-result.json
     timeoutSeconds: 60
     onFail:
       retry: investigate
