@@ -393,6 +393,17 @@ interface ActiveRun {
   agentInactivityWatchdog?: boolean;
   agentInactivityClosed?: boolean;
   agentInactivityTimeoutMinutes?: number;
+  agentActivityTimer?: NodeJS.Timeout;
+  agentActivityWindow?: {
+    stepId: string;
+    startedAt: number;
+    lastAt: number;
+    lastKind: string;
+    counts: Record<string, number>;
+    longestQuietGapMs: number;
+  };
+  agentActivityLastAt?: number;
+  agentActivityLastKind?: string;
   /** The inactivity watchdog closed this session; a plain final wait is not success evidence. */
   idleClosed?: boolean;
   monitoringWakeTimer?: NodeJS.Timeout;
@@ -3815,6 +3826,7 @@ export class RunManager {
     const sink = this.makeUiSink(runId, stepId);
     const onEvent = (event: AgentEvent) => {
       if (state.cancelled || this.active.get(runId) !== state) return;
+      this.recordAgentActivity(runId, state, stepId, `agent.${event.type}`);
       this.refreshAgentInactivityWatchdog(runId, state, stepId);
       if (event.type === 'image') {
         const saved = this.persistAttachment(runId, event.mediaType, event.data);
@@ -4133,6 +4145,7 @@ export class RunManager {
     );
     state.session = session;
     state.sessionEverOpened = true;
+    this.startAgentActivityRecorder(runId, state, stepId);
     this.startAgentInactivityWatchdog(runId, state, stepId);
     this.flushDeferred(runId);
     state.interrupt = () => session.interrupt();
@@ -4202,6 +4215,7 @@ export class RunManager {
       this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);
       this.clearAgentInactivityWatchdog(state);
+      this.stopAgentActivityRecorder(runId, state);
       this.clearAutosaveTimer(state);
       if (!state.cancelled && this.active.get(runId) === state && state.cwd !== this.repoRoot) {
         await autosaveCommit(state.cwd, 'turn end');
@@ -4796,6 +4810,7 @@ export class RunManager {
     const sink = this.makeUiSink(runId, step.id);
     const onEvent = (event: AgentEvent) => {
       if (state.cancelled || this.active.get(runId) !== state) return;
+      this.recordAgentActivity(runId, state, step.id, `agent.${event.type}`);
       this.refreshAgentInactivityWatchdog(runId, state, step.id);
       if (event.type === 'image') {
         const saved = this.persistAttachment(runId, event.mediaType, event.data);
@@ -5135,6 +5150,7 @@ export class RunManager {
     state.sessionEverOpened = true;
     this.flushDeferred(runId);
     state.currentStepId = step.id;
+    this.startAgentActivityRecorder(runId, state, step.id);
     if (!interactive) this.startAgentInactivityWatchdog(runId, state, step.id);
     state.interrupt = () => session.interrupt();
     if (session.pid !== undefined) registerRunProcess(runId, session.pid);
@@ -5160,6 +5176,7 @@ export class RunManager {
       this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);
       this.clearAgentInactivityWatchdog(state);
+      this.stopAgentActivityRecorder(runId, state);
       if (this.active.get(runId) === state) {
         this.leaveMonitoring(runId);
         this.waiting.delete(runId);
@@ -5191,6 +5208,10 @@ export class RunManager {
    * so the cockpit shows attention and the run releases its workspace slot. */
   private handleRunnerUiEvent(runId: string, state: ActiveRun, sink: UiEventSink, event: UiEvent): void {
     if (state.cancelled || (this.active.has(runId) && this.active.get(runId) !== state)) return;
+    const activityKind = event.type === 'item.delta'
+      ? `ui.${event.field}-delta`
+      : `ui.${event.type}`;
+    this.recordAgentActivity(runId, state, state.currentStepId, activityKind);
     this.refreshAgentInactivityWatchdog(runId, state, state.currentStepId);
     this.recordUsageUiEvent(runId, state, event);
     sink.handle(event);
@@ -5828,6 +5849,80 @@ export class RunManager {
     this.refreshAgentInactivityWatchdog(runId, state, stepId);
   }
 
+  /** Start compact, content-free activity diagnostics for later delay analysis. */
+  private startAgentActivityRecorder(runId: string, state: ActiveRun, stepId: string): void {
+    this.stopAgentActivityRecorder(runId, state);
+    const now = Date.now();
+    state.agentActivityWindow = {
+      stepId,
+      startedAt: now,
+      lastAt: now,
+      lastKind: 'session.opened',
+      counts: { 'session.opened': 1 },
+      longestQuietGapMs: 0,
+    };
+    state.agentActivityLastAt = now;
+    state.agentActivityLastKind = 'session.opened';
+    state.agentActivityTimer = setInterval(() => this.flushAgentActivitySummary(runId, state), 60_000);
+    state.agentActivityTimer.unref?.();
+  }
+
+  private recordAgentActivity(runId: string, state: ActiveRun, stepId: string | undefined, kind: string): void {
+    if (!stepId || stepId !== state.currentStepId || !state.agentActivityWindow) return;
+    const window = state.agentActivityWindow;
+    if (window.stepId !== stepId) return;
+    const now = Date.now();
+    const quietGap = Math.max(0, now - (state.agentActivityLastAt ?? now));
+    window.longestQuietGapMs = Math.max(window.longestQuietGapMs, quietGap);
+    window.counts[kind] = (window.counts[kind] ?? 0) + 1;
+    window.lastAt = now;
+    window.lastKind = kind;
+    state.agentActivityLastAt = now;
+    state.agentActivityLastKind = kind;
+  }
+
+  private flushAgentActivitySummary(runId: string, state: ActiveRun): void {
+    const window = state.agentActivityWindow;
+    if (!window || Object.keys(window.counts).length === 0) return;
+    const endedAt = Date.now();
+    try {
+      this.store.appendEvent(runId, {
+        type: 'note',
+        category: 'agent-activity-summary',
+        stepId: window.stepId,
+        message: `agent activity summary: ${Math.round((endedAt - window.startedAt) / 1000)}s window; longest quiet gap ${Math.round(window.longestQuietGapMs / 1000)}s; last activity ${window.lastKind}`,
+        windowStartedAt: new Date(window.startedAt).toISOString(),
+        windowEndedAt: new Date(endedAt).toISOString(),
+        durationMs: endedAt - window.startedAt,
+        eventCounts: { ...window.counts },
+        longestQuietGapMs: window.longestQuietGapMs,
+        lastActivityKind: window.lastKind,
+        lastActivityAt: new Date(window.lastAt).toISOString(),
+      });
+    } catch {
+      // Diagnostics are best-effort and must never interrupt agent work.
+    }
+    state.agentActivityWindow = {
+      stepId: window.stepId,
+      startedAt: endedAt,
+      lastAt: window.lastAt,
+      lastKind: window.lastKind,
+      counts: {},
+      longestQuietGapMs: 0,
+    };
+  }
+
+  private stopAgentActivityRecorder(runId: string, state: ActiveRun): void {
+    if (state.agentActivityTimer) {
+      clearInterval(state.agentActivityTimer);
+      state.agentActivityTimer = undefined;
+    }
+    this.flushAgentActivitySummary(runId, state);
+    state.agentActivityWindow = undefined;
+    state.agentActivityLastAt = undefined;
+    state.agentActivityLastKind = undefined;
+  }
+
   /** Renew the stall watchdog on provider activity, never on elapsed wall time. */
   private refreshAgentInactivityWatchdog(runId: string, state: ActiveRun, stepId: string | undefined): void {
     if (
@@ -5843,6 +5938,7 @@ export class RunManager {
     state.agentInactivityTimer = setTimeout(() => {
       state.agentInactivityTimer = undefined;
       if (state.cancelled || !state.session?.open) return;
+      this.flushAgentActivitySummary(runId, state);
       state.agentInactivityClosed = true;
       state.idleClosed = true;
       state.agentInactivityWatchdog = false;
@@ -5850,6 +5946,11 @@ export class RunManager {
         type: 'lifecycle',
         stepId,
         message: `agent session produced no activity for ${timeoutMinutes} minutes; closing the stalled session`,
+        quietForMs: Date.now() - (state.agentActivityLastAt ?? Date.now()),
+        lastActivityKind: state.agentActivityLastKind,
+        lastActivityAt: state.agentActivityLastAt === undefined
+          ? undefined
+          : new Date(state.agentActivityLastAt).toISOString(),
       });
       state.session.end();
     }, timeoutMinutes * 60_000);

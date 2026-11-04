@@ -64,8 +64,10 @@ Five moves that make the cockpit worth the browser tab:
   Settings → Resources controls how long a session may go without provider
   activity before cezar closes it as stalled (default **30 minutes**; `0`
   disables this watchdog). Text, reasoning, tool activity and streamed output
-  renew the timer. The separate idle timeout still governs sessions parked for
-  an answer.
+  renew the timer. Timestamped activity summaries are recorded in the run event
+  log by category, with counts and the longest quiet gap, so slow work can be
+  diagnosed without copying prompt or tool-output contents into diagnostics.
+  The separate idle timeout still governs sessions parked for an answer.
 - 🛡️ **Review gate.** A finished run with changes waits in `review`. Read the diff,
   type notes that go straight back into the agent's session, or push a
   `gh pr create --draft`. You stay the merge button.

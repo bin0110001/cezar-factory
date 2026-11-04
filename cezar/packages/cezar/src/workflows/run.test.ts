@@ -2075,6 +2075,42 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
     }
   });
 
+  it('records compact activity summaries without persisting provider content', () => {
+    vi.useFakeTimers();
+    const runId = 'activity-summary-test';
+    const appendEvent = vi.spyOn(store, 'appendEvent').mockImplementation(() => ({} as never));
+    const state = { currentStepId: 'work' } as never;
+    const internal = manager as unknown as {
+      startAgentActivityRecorder(runId: string, state: never, stepId: string): void;
+      recordAgentActivity(runId: string, state: never, stepId: string | undefined, kind: string): void;
+      stopAgentActivityRecorder(runId: string, state: never): void;
+    };
+    try {
+      internal.startAgentActivityRecorder(runId, state, 'work');
+      internal.recordAgentActivity(runId, state, 'work', 'agent.tool-call');
+      vi.advanceTimersByTime(60_000);
+      internal.recordAgentActivity(runId, state, 'work', 'ui.output-delta');
+      internal.stopAgentActivityRecorder(runId, state);
+
+      expect(appendEvent).toHaveBeenCalledWith(runId, expect.objectContaining({
+        type: 'note',
+        category: 'agent-activity-summary',
+        stepId: 'work',
+        eventCounts: expect.objectContaining({ 'session.opened': 1, 'agent.tool-call': 1 }),
+        lastActivityKind: 'agent.tool-call',
+      }));
+      expect(appendEvent).toHaveBeenCalledWith(runId, expect.objectContaining({
+        category: 'agent-activity-summary',
+        eventCounts: { 'ui.output-delta': 1 },
+        lastActivityKind: 'ui.output-delta',
+      }));
+    } finally {
+      internal.stopAgentActivityRecorder(runId, state);
+      appendEvent.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('an autonomous run parks on an intermediate ask it is nudged past and repeats', async () => {
     const record = manager.startRun(BLOCKING_CHECK, {
       task: 'mock:autonomous mock:ask-repeat choose a path',
