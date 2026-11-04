@@ -1,5 +1,5 @@
 name: factory-investigate
-description: Classify repeated failures, then retry (factory:ready) or escalate (factory:needs-help)
+description: Classify repeated failures, retry or re-plan automatically, and request input only for major architectural choices
 steps:
   - id: startup
     name: Prepare workflow environment
