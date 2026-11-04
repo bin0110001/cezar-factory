@@ -7,8 +7,12 @@ const repo: GithubRepositoryRef = {
 };
 const at = '2026-10-30T12:00:00.000Z';
 
-function linked(number: number, repository = 'acme/work') {
-  return { number, title: `Issue ${number}`, state: 'OPEN', updatedAt: at, url: `https://github.com/${repository}/issues/${number}`, repository: { nameWithOwner: repository } };
+function linked(number: number, repository = 'acme/work', labels: string[] = []) {
+  return {
+    number, title: `Issue ${number}`, state: 'OPEN', updatedAt: at,
+    url: `https://github.com/${repository}/issues/${number}`, repository: { nameWithOwner: repository },
+    labels: { totalCount: labels.length, nodes: labels.map((name) => ({ name })) },
+  };
 }
 
 function issue(number: number, extra: Record<string, unknown> = {}) {
@@ -54,6 +58,28 @@ describe('GitHub dependency projection', () => {
     expect(edge.to).toBe(dependent.id);
     expect(isVerifiedBlockingEdge(edge)).toBe(true);
     expect(page.edges.find((entry) => entry.kind === 'PART_OF')).toMatchObject({ kind: 'PART_OF', direction: 'from-to' });
+  });
+
+  it('classifies linked epic references consistently before the epic root is visited', () => {
+    const page = mapGithubGraphPage({
+      data: { repository: {
+        nameWithOwner: 'acme/work', url: repo.url,
+        issues: {
+          nodes: [
+            issue(2, { blockedBy: { totalCount: 1, nodes: [linked(1, 'acme/work', ['factory:tracking'])] } }),
+            issue(3, { blocking: { totalCount: 1, nodes: [linked(1, 'acme/work', ['factory:tracking'])] } }),
+            issue(4, { parent: linked(1, 'acme/work', ['factory:tracking']) }),
+            issue(1, { labels: { totalCount: 1, nodes: [{ name: 'factory:tracking' }] } }),
+          ],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      } },
+    }, repo, at);
+
+    const epic = page.nodes.find((node) => 'number' in node && node.number === 1)!;
+    expect(epic.id).toBe('epic:github.com/acme/work:1');
+    expect(page.edges).toHaveLength(3);
+    expect(page.edges.every((edge) => edge.from === epic.id || edge.to === epic.id)).toBe(true);
   });
 
   it('preserves cross-repository identities and reports truncated native dependency data', () => {

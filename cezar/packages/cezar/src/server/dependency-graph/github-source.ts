@@ -57,6 +57,7 @@ const linkedIssueSchema = z.object({
   createdAt: z.iso.datetime({ offset: true }).optional(),
   url: z.url({ protocol: /^https$/ }),
   repository: z.object({ nameWithOwner: z.string().min(3) }).strict(),
+  labels: z.object({ totalCount: z.number().int().nonnegative(), nodes: z.array(z.object({ name: z.string() }).strict()) }).strict(),
 }).passthrough();
 
 const issueSchema = linkedIssueSchema.extend({
@@ -111,6 +112,7 @@ fragment IssueFields on Issue {
 }
 fragment LinkedIssueFields on Issue {
   number title state createdAt updatedAt url repository { nameWithOwner }
+  labels(first: 100) { totalCount nodes { name } }
 }`;
 
 function hostFromUrl(url: string): string {
@@ -137,7 +139,7 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
   let dependencyTruncated = false;
   let watermark: string | undefined;
 
-  const addIssue = (issue: z.infer<typeof linkedIssueSchema>, labels: string[] = [], bodyText?: string): string => {
+  const addIssue = (issue: z.infer<typeof linkedIssueSchema>, labels: string[] = issue.labels.nodes.map((label) => label.name), bodyText?: string): string => {
     const issueRepository = keyFor(expected.host, issue.repository.nameWithOwner);
     const issueKey = `${issueRepository}#${issue.number}`;
     const proposedKind = labels.some((label) => label.toLowerCase() === 'epic' || label.toLowerCase() === 'factory:tracking') ? 'epic' : 'issue';
