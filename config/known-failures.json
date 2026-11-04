@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {"id": "network-transport", "pattern": "\\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\\b|connection reset by peer|connection refused|temporary failure in name resolution|server (?:is )?shutting down", "action": "skip-operational", "reason": "Network or service transport failure; restore connectivity before retrying the original run."},
+    {"id": "provider-unavailable", "pattern": "(?:HTTP(?:/\\d(?:\\.\\d)?)?|status(?: code)?)\\s*[:=]?\\s*(?:429|502|503|504)\\b|rate limit exceeded|service unavailable", "action": "skip-operational", "reason": "Provider rate limit or service outage; no source repair is justified."}
+  ]
+}

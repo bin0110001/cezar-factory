@@ -3,6 +3,11 @@
   "unmapped": "full",
   "checks": [
     {
+      "id": "factory-failure-repair",
+      "patterns": ["scripts/repair-latest-failure.py", "tests/test_factory_failure_repair.py", "config/known-failures.json", "config/failure-repair.json.example", "skills/factory-repair-latest-failure/**"],
+      "command": "$runner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $args = if ($runner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_failure_repair') } else { @('-B', '-m', 'unittest', 'tests.test_factory_failure_repair') }; & $runner @args; if ($LASTEXITCODE -ne 0) { throw 'Failure repair regression tests failed.' }"
+    },
+    {
       "id": "automation-catalog",
       "patterns": ["automations/**", "routing/**"],
       "command": "pwsh -NoProfile -File scripts/validate-automation-catalog.ps1"

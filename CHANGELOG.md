@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.64] - 2026-11-04
+
+- Add a latest-failure repair workflow with deterministic known-operational-error
+  exits, durable fingerprint and PR history, one hosted repair attempt, reviewed
+  delivery, and explicit non-stable deployment configuration. Stable is excluded.
+
 ## [0.3.63] - 2026-11-04
 
 - Preserve a missing investigation result as an explicit unknown, low-confidence
