@@ -820,6 +820,11 @@ try {
     $selectorRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; OutputPath = $selectorOutput }
     $selectedIntake = Get-Content -Raw $selectorOutput | ConvertFrom-Json
     Assert 'intake selector skips epics, tracking parents, and ambiguous taxonomy' ($selectorRun.Code -eq 0 -and $selectedIntake.issue -eq 3)
+    $selectorScheduledOutput = Join-Path $tmp 'intake-scheduled-selection.json'
+    $selectorScheduledTask = "Run the scheduled intake workflow. The workflow's registered selector chooses at most one oldest eligible existing issue labeled factory:new. If it reports no eligible issue, report that no work was available and stop."
+    $selectorScheduledRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = $selectorScheduledTask; OutputPath = $selectorScheduledOutput }
+    $selectedScheduledIntake = Get-Content -Raw $selectorScheduledOutput | ConvertFrom-Json
+    Assert 'scheduled intake treats generic task context as a request for the oldest eligible issue' ($selectorScheduledRun.Code -eq 0 -and $selectedScheduledIntake.issue -eq 3 -and $selectedScheduledIntake.terminalReason -eq 'selected-oldest-eligible-issue')
     $selectorTargetOutput = Join-Path $tmp 'intake-target-selection.json'
     $selectorTargetRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #5 (new eligible work) at https://github.com/x/y/issues/5'; OutputPath = $selectorTargetOutput }
     $selectedTargetIntake = Get-Content -Raw $selectorTargetOutput | ConvertFrom-Json
@@ -828,6 +833,9 @@ try {
     $selectorIneligibleRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #1 (tracking epic) at https://github.com/x/y/issues/1'; OutputPath = $selectorIneligibleOutput }
     $selectedIneligibleIntake = Get-Content -Raw $selectorIneligibleOutput | ConvertFrom-Json
     Assert 'event intake does not substitute another issue when its trigger is ineligible' ($selectorIneligibleRun.Code -eq 0 -and $null -eq $selectedIneligibleIntake.issue)
+    $selectorMalformedOutput = Join-Path $tmp 'intake-malformed-event.json'
+    $selectorMalformedRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue event without an identifier'; OutputPath = $selectorMalformedOutput }
+    Assert 'event intake fails closed when its trigger identifier is missing' ($selectorMalformedRun.Code -ne 0 -and -not (Test-Path $selectorMalformedOutput))
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')

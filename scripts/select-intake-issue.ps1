@@ -40,8 +40,11 @@ $targetIssue = $null
 if (-not [string]::IsNullOrWhiteSpace($Task)) {
     $match = [regex]::Match($Task, '(?i)https?://github\.com/[^/\s]+/[^/\s]+/issues/(?<number>\d+)')
     if (-not $match.Success) { $match = [regex]::Match($Task, '(?i)\bissue\s+#(?<number>\d+)\b') }
-    if (-not $match.Success) { throw 'The intake task must identify its GitHub issue by URL or issue number.' }
-    $targetIssue = [int]$match.Groups['number'].Value
+    if ($match.Success) {
+        $targetIssue = [int]$match.Groups['number'].Value
+    } elseif ($Task -notmatch '(?i)^\s*Run the scheduled intake workflow\b') {
+        throw 'The intake task must identify its GitHub issue by URL or issue number, or use the scheduled intake task template.'
+    }
 }
 $eligible = @($issues | Where-Object {
     $labels = @(Get-LabelNames $_)
