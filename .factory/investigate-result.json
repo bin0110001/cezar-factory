@@ -1,0 +1,10 @@
+{
+  "issue": 68,
+  "failureClassification": "requirements",
+  "evidence": "Issue #68 is a Phase 6 feature request to build bounded release self-healing, drift reconciliation and incident ledger. The issue was moved to factory:investigate state as part of Factory intake but no implementation work has been started. The issue defines comprehensive requirements including: per-class budgets/backoffs, normalized fingerprints, SQLite incident ledger, idempotent repair commands, drift detection (release/automation/shade, failed refetch, compatibility, infrastructure), diagnosis, local PR workflow, and recovery when Cezar unavailable. Related parent issue #60 provides foundational context.",
+  "attemptsReviewed": "No implementation attempts exist. Issue #68 is at initial investigation phase after being moved from factory:tracking to factory:investigate by Factory maintenance. No prior code changes, test failures, or PRs specifically implementing issue #68 features have been committed.",
+  "rootCauseHypothesis": "This is not a failure but an unstarted requirements specification. The issue was newly moved to factory:investigate state by maintenance. The 'failure' mentioned in Comment 9 refers to the process of identifying that this work area needed investigation to establish requirements, not an implementation failure.",
+  "confidence": "high",
+  "recommendedAction": "Route back to implementation by converting requirements into actionable implementation plan. Require PR targeting dev branch with closing keyword, automated tests, and validation against acceptance criteria. After implementation PR is reviewed and merged to dev, issue will auto-close via factory-maintenance workflow.",
+  "automaticRetryAppropriate": false
+}
