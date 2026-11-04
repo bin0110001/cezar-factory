@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-11-04T04:00:48.9260339+00:00",
+  "workingCutoff": "2026-11-03T04:00:47.6376411+00:00",
+  "staleCutoff": "2026-09-05T04:00:47.6400375+00:00",
+  "considered": 92,
+  "movedToInvestigate": [],
+  "limitations": [],
+  "staleIssues": [],
+  "staleSummary": null,
+  "unsupportedChecks": [
+    "TODO/FIXME discovery",
+    "documentation drift",
+    "flaky-test detection"
+  ],
+  "terminalReason": "deterministic-maintenance-complete"
+}
