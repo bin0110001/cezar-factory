@@ -73,7 +73,12 @@ export function scoreCandidate(input: RankingInput, now: Date, tierRankFraction:
   const missing: string[] = [];
   const add = (name: string, points: number, detail: string) => factors.push({ name, points: Math.round(points * 1000) / 1000, detail });
 
-  add('base-priority', config.tierWeight[record.basePriority], `human priority ${record.basePriority}`);
+  // Missing priority is neutral P2 for ranking, never a dispatch gate. Keep the
+  // stored value unset so a later human priority edit remains explicit.
+  const scoringPriority: BasePriority = record.basePriority === 'unset' ? 'P2' : record.basePriority;
+  add('base-priority', config.tierWeight[scoringPriority], record.basePriority === 'unset'
+    ? 'unset priority uses neutral P2 weight'
+    : `human priority ${record.basePriority}`);
   if (record.backlogRank === null) add('rank', 0, 'unranked'); else add('rank', config.rankBonus * (1 - tierRankFraction), 'position within priority tier');
   const expediteLive = record.expedite && (!input.expediteUntil || new Date(input.expediteUntil).getTime() > now.getTime());
   if (record.expedite) add('expedite', expediteLive ? config.expediteBonus : 0, expediteLive ? 'human expedite' : 'expedite expired');
@@ -121,7 +126,7 @@ export interface Recommendation {
   next: RankedCandidate | null;
   /** Top eligible candidates with their full breakdown. */
   top: RankedCandidate[];
-  /** Items that need a human before they can ever run (unprioritised or stuck in intake). */
+  /** Reserved for decisions that truly require human input; missing priority is not one. */
   needsHuman: { id: string; reason: string }[];
   /** Hash-free replay token: identical inputs/config/time bucket produce the identical value. */
   basis: { configVersion: number; candidates: number; at: string };
@@ -129,8 +134,6 @@ export interface Recommendation {
 
 export function recommend(ranked: RankedCandidate[], now: Date, limit = 5): Recommendation {
   const eligible = ranked.filter((r) => r.eligible);
-  const needsHuman = ranked.filter((r) => r.record.issueState === 'open' && !r.record.archived && (r.record.basePriority === 'unset'
-    && (r.record.lane === 'Inbox' || r.record.lane === 'Refinement' || r.record.lane === 'Backlog')))
-    .map((r) => ({ id: r.id, reason: 'base priority is unset; a human must triage it' }));
+  const needsHuman: Recommendation['needsHuman'] = [];
   return { next: eligible[0] ?? null, top: eligible.slice(0, limit), needsHuman, basis: { configVersion: ranked[0]?.configVersion ?? RANKING_CONFIG_VERSION, candidates: ranked.length, at: now.toISOString() } };
 }

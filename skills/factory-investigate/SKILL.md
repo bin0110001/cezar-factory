@@ -59,7 +59,10 @@ Use the following classification framework:
   - Retry implementation (only for implementation failures with clear fixes).
   - Investigate further (for environment, dependency, or unknown causes).
   - Request a user decision only for a major architectural choice.
-  - Return external environment or dependency blockers to `factory:blocked`.
+  - Describe environment or dependency failures with concrete evidence. The
+    investigation result alone cannot establish an external blocker; unless a
+    deterministic operational gate or operator confirms one, recommend an
+    automatic re-plan.
   - Re-plan and continue automatically for other failures.
 
 After a confirmed resolution, include a concise durable-knowledge candidate so
@@ -69,9 +72,10 @@ the workflow can retain the lesson through Hindsight after normal review.
 
 - Set `automaticRetryAppropriate` and `confidence` honestly. A clear retry
   returns to `factory:ready`; an unclear implementation path returns to
-  `factory:needs-plan` for an automatic revised plan. Only a major architectural
-  choice may route to `factory:needs-help`; environment, dependency, and merge
-  blockers route to `factory:blocked`.
+  `factory:needs-plan` for an automatic revised plan. Investigation prose
+  cannot set `factory:blocked`; that state requires a verified operational
+  blocker or explicit operator action. Only a major architectural choice may
+  route to `factory:needs-help`.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/investigate-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
 - Use these exact `failureClassification` values: implementation, test, flaky-test, environment, dependency, merge-conflict, requirements, architecture, unknown.
 - The escalation summary posted by the workflow is built from your result. Make these fields complete:

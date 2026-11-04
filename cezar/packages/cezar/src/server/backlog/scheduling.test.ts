@@ -61,10 +61,12 @@ describe('ranking', () => {
     const snoozed = rankCandidates([input(1, ready('P2'), { snoozeUntil: '2026-11-10T00:00:00Z' })], NOW)[0]!;
     expect(snoozed.eligible).toBe(false);
   });
-  it('replays identically and flags items needing a human', () => {
+  it('uses neutral P2 scoring for unset priority without creating a human gate', () => {
     const items = [input(1, { lane: 'Inbox' }), input(2, ready('P1'))];
     expect(JSON.stringify(rankCandidates(items, NOW))).toBe(JSON.stringify(rankCandidates(items, NOW)));
-    expect(recommend(rankCandidates(items, NOW), NOW).needsHuman.map((n) => n.id)).toEqual([`${REPO}#1`]);
+    const ranked = rankCandidates(items, NOW);
+    expect(ranked.find((r) => r.record.issueNumber === 1)!.factors.find((f) => f.name === 'base-priority')!.points).toBe(600);
+    expect(recommend(ranked, NOW).needsHuman).toEqual([]);
   });
 });
 

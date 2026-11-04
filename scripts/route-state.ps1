@@ -280,10 +280,10 @@ switch ($Event) {
             Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
         }
-        if ($result.failureClassification -in @('environment', 'dependency', 'merge-conflict')) {
-            Set-State 'factory:blocked'; Done 'factory:blocked' 'external dependency or environment blocker'
-        }
-        Add-Comment 'No major architectural decision or external blocker prevents progress. Returning the issue to planning with the investigation evidence so the next implementation attempt can use a revised approach.'
+        # An agent's classification is not proof of an external blocker. Only
+        # deterministic operational gates or an explicit operator action may
+        # set factory:blocked; otherwise continue through automatic planning.
+        Add-Comment 'The investigation did not establish a verified external blocker or a major architectural decision. Returning the issue to planning with the evidence so work can continue automatically. Use factory:blocked only for a blocker confirmed by an operational gate or operator evidence.'
         Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'automatic re-plan after investigation'
     }
 }
