@@ -4490,9 +4490,14 @@ export class RunManager {
       emit({ type: 'step-start', stepId: step.id, name: step.name ?? step.id, kind, iteration });
 
       if (kind === 'agent') {
-        // The last agent step of the workflow is interactive: after its turn
-        // the session stays open for follow-ups until finish/idle/cancel.
-        const interactive = i === lastAgentIdx && i === workflow.steps.length - 1;
+        // The last agent step of a user-started workflow is interactive: after
+        // its turn the session stays open for follow-ups until finish/idle/cancel.
+        // Autonomous runs have no user to follow up, so keep the runner's wall
+        // clock deadline even when this is the final step. Otherwise an
+        // automation that keeps producing output without completing can occupy
+        // a run slot forever.
+        const interactive =
+          input.autonomous !== true && i === lastAgentIdx && i === workflow.steps.length - 1;
         const failure = await this.runAgentStep(
           runId,
           state,
