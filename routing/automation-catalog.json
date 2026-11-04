@@ -9,6 +9,7 @@
     "stateAuthority": "cezar"
   },
   "automationProfiles": {
+    "factory-repair-latest-failure": {"runner":"codex","model":"gpt-6.1-sol","spendTier":"premium-repair"},
     "factory-intake": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-plan": {"runner":"claude","model":"sonnet","spendTier":"premium-planning","complexityVariants":{"complexity:small":{"runner":"claude","model":"sonnet","spendTier":"premium-planning"},"complexity:medium":{"runner":"claude","model":"sonnet","spendTier":"premium-planning"},"complexity:large":{"runner":"claude","model":"sonnet","spendTier":"premium-planning"}}},
     "factory-investigate": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},

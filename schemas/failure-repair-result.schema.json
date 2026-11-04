@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "classification", "rootCause", "summary", "files", "patch", "requestedFiles", "selfReview"],
+  "properties": {
+    "status": {"type": "string", "enum": ["repaired", "unresolved", "needs-context"]},
+    "classification": {"type": "string", "enum": ["code", "test", "configuration", "operational", "unknown"]},
+    "rootCause": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "files": {"type": "array", "maxItems": 30, "items": {"type": "string", "minLength": 1}},
+    "patch": {"type": "string", "maxLength": 65536},
+    "requestedFiles": {
+      "type": "array", "maxItems": 8,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "startLine", "endLine"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "startLine": {"type": "integer", "minimum": 1},
+          "endLine": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "selfReview": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scope", "risk", "invariants", "unresolvedFindings"],
+      "properties": {
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "risk": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "invariants": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "unresolvedFindings": {"type": "array", "maxItems": 20, "items": {"type": "string"}}
+      }
+    }
+  }
+}
