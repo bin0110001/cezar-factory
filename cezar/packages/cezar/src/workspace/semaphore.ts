@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DEFAULT_IDLE_TIMEOUT_MINUTES, DEFAULT_MONITORING_WAKE_MINUTES, loadWorkspaceConfig } from './config.ts';
+import { DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES, DEFAULT_IDLE_TIMEOUT_MINUTES, DEFAULT_MONITORING_WAKE_MINUTES, loadWorkspaceConfig } from './config.ts';
 
 /**
  * Workspace-wide resource governance (spec 2026-07-20-multi-project-workspace,
@@ -40,6 +40,8 @@ export interface WorkspaceResourceLimits {
   maxMonitoringSessions?: number;
   /** Plain waiting/ASK session idle timeout in minutes; null/0 disables it. */
   idleTimeoutMinutes?: number | null;
+  /** Active agent session inactivity timeout in minutes; null/0 disables it. */
+  agentInactivityTimeoutMinutes?: number | null;
   /** Automatic monitoring re-check cadence in minutes. Default ON at
    *  `DEFAULT_MONITORING_WAKE_MINUTES`; explicit `null` means stay parked; absent means
    *  "this loader predates the key" and reads as the default. */
@@ -114,6 +116,7 @@ const DEFAULT_LIMITS: WorkspaceResourceLimits = {
   maxParallel: 2,
   maxMonitoringSessions: 2,
   idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES,
+  agentInactivityTimeoutMinutes: DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES,
   monitoringWakeIntervalMinutes: DEFAULT_MONITORING_WAKE_MINUTES,
   autoResumeOnUsageLimit: true,
   memoryLimitMb: null,
@@ -135,6 +138,7 @@ async function loadResourceLimits(): Promise<WorkspaceResourceLimits> {
     maxParallel: resources.maxParallel,
     maxMonitoringSessions: resources.maxMonitoringSessions,
     idleTimeoutMinutes: resources.idleTimeoutMinutes,
+    agentInactivityTimeoutMinutes: resources.agentInactivityTimeoutMinutes,
     monitoringWakeIntervalMinutes: resources.monitoringWakeIntervalMinutes,
     autoResumeOnUsageLimit: resources.autoResumeOnUsageLimit,
     memoryLimitMb: resources.memoryLimitMb,
@@ -195,6 +199,12 @@ export class WorkspaceSemaphore {
     return this.limits.idleTimeoutMinutes === undefined
       ? DEFAULT_IDLE_TIMEOUT_MINUTES
       : this.limits.idleTimeoutMinutes;
+  }
+
+  agentInactivityTimeoutMinutes(): number | null {
+    return this.limits.agentInactivityTimeoutMinutes === undefined
+      ? DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES
+      : this.limits.agentInactivityTimeoutMinutes;
   }
 
   /** Cadence for automatic monitoring re-checks, or null when the operator chose "park

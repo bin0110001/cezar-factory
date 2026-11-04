@@ -392,6 +392,7 @@ describe('response parsing', () => {
     resources: {
       maxParallel: 2,
       maxMonitoringSessions: 2,
+      agentInactivityTimeoutMinutes: 30,
       monitoringWakeIntervalMinutes: 5,
       autoResumeOnUsageLimit: true,
       memoryLimitMb: null,
@@ -410,6 +411,18 @@ describe('response parsing', () => {
     reply(workspaceConfig(resources))
     await expect(getWorkspaceConfig()).resolves.toMatchObject({
       resources: { idleTimeoutMinutes: expected },
+    })
+  })
+
+  it.each([
+    ['absent defaults to 30', {}, 30],
+    ['null stays disabled', { agentInactivityTimeoutMinutes: null }, null],
+    ['zero stays disabled', { agentInactivityTimeoutMinutes: 0 }, 0],
+    ['positive values pass through', { agentInactivityTimeoutMinutes: 60 }, 60],
+  ])('normalizes active-agent inactivity timeout: %s', async (_label, resources, expected) => {
+    reply(workspaceConfig(resources))
+    await expect(getWorkspaceConfig()).resolves.toMatchObject({
+      resources: { agentInactivityTimeoutMinutes: expected },
     })
   })
 

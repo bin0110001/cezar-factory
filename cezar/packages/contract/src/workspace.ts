@@ -44,6 +44,7 @@ export const workspaceConfigResponseSchema = z.object({
     maxParallel: z.number(),
     maxMonitoringSessions: z.number(),
     idleTimeoutMinutes: z.number().nullable(),
+    agentInactivityTimeoutMinutes: z.number().nullable(),
     monitoringWakeIntervalMinutes: z.number().nullable(),
     /** Resume a run a provider usage limit stopped, once the limit resets. Default `true`. */
     autoResumeOnUsageLimit: z.boolean(),
@@ -113,6 +114,7 @@ export const setWorkspaceConfigInputSchema = z.object({
       maxParallel: z.number().int().min(1).max(16).optional(),
       maxMonitoringSessions: z.number().int().min(0).max(16).optional(),
       idleTimeoutMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+      agentInactivityTimeoutMinutes: z.number().int().min(0).max(1440).nullable().optional(),
       monitoringWakeIntervalMinutes: z.number().int().min(1).max(60).nullable().optional(),
       autoResumeOnUsageLimit: z.boolean().optional(),
       memoryLimitMb: z.number().int().min(0).max(1_048_576).nullable().optional(),

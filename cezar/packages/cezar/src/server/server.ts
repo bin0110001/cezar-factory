@@ -621,6 +621,7 @@ export interface WorkspaceConfigResponse {
     maxParallel: number;
     maxMonitoringSessions: number;
     idleTimeoutMinutes: number | null;
+    agentInactivityTimeoutMinutes: number | null;
     monitoringWakeIntervalMinutes: number | null;
     autoResumeOnUsageLimit: boolean;
     memoryLimitMb: number | null;
@@ -3170,6 +3171,7 @@ export function createApp(deps: ServerDeps) {
       maxParallel: config.resources.maxParallel,
       maxMonitoringSessions: config.resources.maxMonitoringSessions,
       idleTimeoutMinutes: config.resources.idleTimeoutMinutes,
+      agentInactivityTimeoutMinutes: config.resources.agentInactivityTimeoutMinutes,
       monitoringWakeIntervalMinutes: config.resources.monitoringWakeIntervalMinutes,
       autoResumeOnUsageLimit: config.resources.autoResumeOnUsageLimit,
       memoryLimitMb: config.resources.memoryLimitMb,
@@ -3246,6 +3248,9 @@ export function createApp(deps: ServerDeps) {
           }
           if (resources?.idleTimeoutMinutes !== undefined) {
             config.resources.idleTimeoutMinutes = resources.idleTimeoutMinutes;
+          }
+          if (resources?.agentInactivityTimeoutMinutes !== undefined) {
+            config.resources.agentInactivityTimeoutMinutes = resources.agentInactivityTimeoutMinutes;
           }
           if (resources?.monitoringWakeIntervalMinutes !== undefined) {
             config.resources.monitoringWakeIntervalMinutes = resources.monitoringWakeIntervalMinutes;
@@ -3327,6 +3332,7 @@ export function createApp(deps: ServerDeps) {
         maxParallel: z.number().int().min(1).max(16).optional(),
         maxMonitoringSessions: z.number().int().min(0).max(16).optional(),
         idleTimeoutMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+        agentInactivityTimeoutMinutes: z.number().int().min(0).max(1440).nullable().optional(),
         monitoringWakeIntervalMinutes: z.number().int().min(1).max(60).nullable().optional(),
         autoResumeOnUsageLimit: z.boolean().optional(),
         memoryLimitMb: z.number().int().min(0).max(1_048_576).nullable().optional(),

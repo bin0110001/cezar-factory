@@ -87,6 +87,9 @@ export const DEFAULT_MONITORING_WAKE_MINUTES = 5;
 /** Plain user-wait sessions retain a bounded liveness safeguard by default (#992). */
 export const DEFAULT_IDLE_TIMEOUT_MINUTES = 15;
 
+/** Maximum silence allowed from an active agent session before it is considered stalled. */
+export const DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES = 30;
+
 const resourcesSchema = z
   .object({
     /** Workspace-wide parallel-task cap (moved from per-repo config.json). */
@@ -95,6 +98,8 @@ const resourcesSchema = z
     maxMonitoringSessions: z.number().int().min(0).max(16).default(2).catch(2),
     /** Plain `waiting`/`CEZ:ASK` session idle timeout; null or 0 disables this safeguard. */
     idleTimeoutMinutes: z.number().int().min(0).max(1440).nullable().default(DEFAULT_IDLE_TIMEOUT_MINUTES).catch(DEFAULT_IDLE_TIMEOUT_MINUTES),
+    /** Active workflow sessions stop only after this long without provider activity; 0 disables. */
+    agentInactivityTimeoutMinutes: z.number().int().min(0).max(1440).nullable().default(DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES).catch(DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES),
     /**
      * Cadence for re-checking monitored work; `null` parks at zero model cost until a
      * user (or an external integration) resumes the session.

@@ -2261,6 +2261,11 @@ export async function getWorkspaceConfig(opts?: ReadOptions): Promise<WorkspaceC
       idleTimeoutMinutes: answer.resources.idleTimeoutMinutes === undefined
         ? 15
         : answer.resources.idleTimeoutMinutes,
+      // Older servers omit this additive key; preserve an explicit opt-out while
+      // defaulting only an absent value.
+      agentInactivityTimeoutMinutes: answer.resources.agentInactivityTimeoutMinutes === undefined
+        ? 30
+        : answer.resources.agentInactivityTimeoutMinutes,
     },
   }
 }

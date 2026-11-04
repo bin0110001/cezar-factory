@@ -28,6 +28,7 @@ describe('WorkspaceSemaphore', () => {
     const sem = new WorkspaceSemaphore();
     expect(sem.maxParallel()).toBe(2);
     expect(sem.idleTimeoutMinutes()).toBe(15);
+    expect(sem.agentInactivityTimeoutMinutes()).toBe(30);
     expect(sem.memoryLimitMb()).toBeNull();
     expect(sem.monitoringWakeIntervalMinutes()).toBe(5); // #810 — monitoring must self-resume
     expect(sem.busy()).toBe(0);
@@ -47,6 +48,23 @@ describe('WorkspaceSemaphore', () => {
       timeout = 30;
       await sem.refresh();
       expect(sem.idleTimeoutMinutes()).toBe(30);
+    });
+  });
+
+  describe('agentInactivityTimeoutMinutes', () => {
+    it('preserves zero and null as explicit opt-outs', () => {
+      expect(new WorkspaceSemaphore({ initial: { agentInactivityTimeoutMinutes: null } }).agentInactivityTimeoutMinutes()).toBeNull();
+      expect(new WorkspaceSemaphore({ initial: { agentInactivityTimeoutMinutes: 0 } }).agentInactivityTimeoutMinutes()).toBe(0);
+    });
+
+    it('refreshes the cached timeout', async () => {
+      let timeout: number | null = 30;
+      const sem = new WorkspaceSemaphore({
+        load: () => Promise.resolve({ maxParallel: 2, memoryLimitMb: null, agentInactivityTimeoutMinutes: timeout }),
+      });
+      timeout = 45;
+      await sem.refresh();
+      expect(sem.agentInactivityTimeoutMinutes()).toBe(45);
     });
   });
 

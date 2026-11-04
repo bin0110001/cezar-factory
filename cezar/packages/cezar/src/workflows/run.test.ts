@@ -20,7 +20,13 @@ import { createWorktree } from '../git-worktree.ts';
 import { RunStore, type RunRecord, type StepState } from '../runs/store.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import { parseTaskMarkers } from '../runs/task-markers.ts';
-import { appendTurnText, endsWithMonitoringMarker, RunManager, turnEndMarkerText } from './run.ts';
+import {
+  appendTurnText,
+  DEFAULT_AGENT_INACTIVITY_TIMEOUT_MS,
+  endsWithMonitoringMarker,
+  RunManager,
+  turnEndMarkerText,
+} from './run.ts';
 import type { WorkflowDef } from './types.ts';
 
 type UsageAccountingHarness = {
@@ -2015,6 +2021,59 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
     // The question must still leave a trace even though nothing parked on it.
     expect(notes.some((m) => m.includes('question overridden by the auto-continue nudge'))).toBe(true);
   }, 40_000);
+
+  it('does not impose a wall-clock deadline on an autonomous final step', async () => {
+    const startSession = vi.spyOn(ClaudeCliRunner.prototype, 'startSession');
+    try {
+      const record = manager.startRun(SINGLE_STEP, {
+        task: 'mock:done finish the investigation',
+        worktree: false,
+        autonomous: true,
+      });
+      currentId = record.id;
+      await waitFor(record.id, (r) => r?.status === 'done');
+
+      expect(startSession.mock.calls[0]?.[0].timeoutMs).toBe(0);
+    } finally {
+      startSession.mockRestore();
+    }
+  }, 30_000);
+
+  it('allows long agent work while progress continues, then closes after inactivity', () => {
+    vi.useFakeTimers();
+    const runId = 'progress-watchdog-test';
+    const appendEvent = vi.spyOn(store, 'appendEvent').mockImplementation(() => ({} as never));
+    const end = vi.fn();
+    const state = {
+      cancelled: false,
+      currentStepId: 'work',
+      session: { open: true, end },
+    } as never;
+    const internal = manager as unknown as {
+      startAgentInactivityWatchdog(runId: string, state: never, stepId: string): void;
+      refreshAgentInactivityWatchdog(runId: string, state: never, stepId: string | undefined): void;
+      clearAgentInactivityWatchdog(state: never): void;
+    };
+    try {
+      internal.startAgentInactivityWatchdog(runId, state, 'work');
+      for (let i = 0; i < 3; i += 1) {
+        vi.advanceTimersByTime(DEFAULT_AGENT_INACTIVITY_TIMEOUT_MS - 1_000);
+        internal.refreshAgentInactivityWatchdog(runId, state, 'work');
+      }
+      expect(end).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(DEFAULT_AGENT_INACTIVITY_TIMEOUT_MS);
+      expect(end).toHaveBeenCalledOnce();
+      expect(appendEvent).toHaveBeenCalledWith(runId, expect.objectContaining({
+        type: 'lifecycle',
+        message: 'agent session produced no activity for 30 minutes; closing the stalled session',
+      }));
+    } finally {
+      internal.clearAgentInactivityWatchdog(state);
+      appendEvent.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 
   it('an autonomous run parks on an intermediate ask it is nudged past and repeats', async () => {
     const record = manager.startRun(BLOCKING_CHECK, {

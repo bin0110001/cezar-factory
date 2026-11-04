@@ -40,6 +40,7 @@ function serve(resources: Partial<WorkspaceConfigResponse['resources']> = {}) {
       maxParallel: 2,
       maxMonitoringSessions: 2,
       idleTimeoutMinutes: 15,
+      agentInactivityTimeoutMinutes: 30,
       monitoringWakeIntervalMinutes: null,
       autoResumeOnUsageLimit: true,
       memoryLimitMb: null,
@@ -99,6 +100,7 @@ const saveMemory = () =>
 const puts = () => requests.filter((r) => r.method === 'PUT' && r.url === '/api/v1/workspace/config')
 const monitoringSelect = () => document.querySelector<HTMLInputElement>('[data-slot="resources-max-monitoring"]')
 const idleTimeout = () => document.querySelector<HTMLInputElement>('[data-slot="resources-idle-timeout"]')
+const agentInactivityTimeout = () => document.querySelector<HTMLInputElement>('[data-slot="resources-agent-inactivity-timeout"]')
 const wakeMode = () => document.querySelector<HTMLSelectElement>('[data-slot="resources-monitoring-wake-mode"]')
 const wakeInterval = () => document.querySelector<HTMLInputElement>('[data-slot="resources-monitoring-wake-interval"]')
 const saveWake = () => document.querySelector<HTMLButtonElement>('[data-action="resources-save-monitoring-wake"]')
@@ -163,6 +165,17 @@ describe('Global settings → Resources', () => {
     fireEvent.blur(idleTimeout()!)
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(puts()[0]?.body).toEqual({ resources: { idleTimeoutMinutes: 0 } })
+  })
+
+  it('saves the active agent inactivity timeout separately from total runtime', async () => {
+    serve({ agentInactivityTimeoutMinutes: 30 })
+    renderResources()
+    await waitFor(() => expect(agentInactivityTimeout()).not.toBeNull())
+    expect(agentInactivityTimeout()!.value).toBe('30')
+    fireEvent.change(agentInactivityTimeout()!, { target: { value: '60' } })
+    fireEvent.blur(agentInactivityTimeout()!)
+    await waitFor(() => expect(puts()).toHaveLength(1))
+    expect(puts()[0]?.body).toEqual({ resources: { agentInactivityTimeoutMinutes: 60 } })
   })
 
   it('is a typed integer field with arrows, not a dropdown — stepping saves once', async () => {

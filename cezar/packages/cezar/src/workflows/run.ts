@@ -104,6 +104,7 @@ import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidat
 import { reviewGateEnabled } from '../runs/review-gate.ts';
 import { resolveProfileEnvForRoot } from '../workspace/agent-profiles.ts';
 import { DEFAULT_AGENT_ACCOUNT_ID } from '../workspace/agent-accounts.ts';
+import { DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES } from '../workspace/config.ts';
 import { WorkspaceSemaphore, type AccountHolds } from '../workspace/semaphore.ts';
 import { UiEventSink } from '../runs/ui-event-sink.ts';
 import type { UiEvent } from '../core/ui-events.ts';
@@ -124,6 +125,8 @@ const CHECK_OUTPUT_CAP = 20_000;
 /** Backstop for a command step with no explicit `timeoutSeconds`: long enough for a real test suite,
  *  short enough that a hung command cannot block a run (or a worker slot) indefinitely. */
 export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
+/** Close a live workflow session only after this much time without provider activity. */
+export const DEFAULT_AGENT_INACTIVITY_TIMEOUT_MS = DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES * 60_000;
 /** Time a command gets to exit after SIGTERM before its whole process group is killed. */
 const COMMAND_KILL_GRACE_MS = 5_000;
 
@@ -386,6 +389,10 @@ interface ActiveRun {
   session?: AgentSession;
   currentStepId?: string;
   idleTimer?: NodeJS.Timeout;
+  agentInactivityTimer?: NodeJS.Timeout;
+  agentInactivityWatchdog?: boolean;
+  agentInactivityClosed?: boolean;
+  agentInactivityTimeoutMinutes?: number;
   /** The inactivity watchdog closed this session; a plain final wait is not success evidence. */
   idleClosed?: boolean;
   monitoringWakeTimer?: NodeJS.Timeout;
@@ -3808,6 +3815,7 @@ export class RunManager {
     const sink = this.makeUiSink(runId, stepId);
     const onEvent = (event: AgentEvent) => {
       if (state.cancelled || this.active.get(runId) !== state) return;
+      this.refreshAgentInactivityWatchdog(runId, state, stepId);
       if (event.type === 'image') {
         const saved = this.persistAttachment(runId, event.mediaType, event.data);
         if (saved) this.store.appendEvent(runId, { type: 'image', stepId, ...saved });
@@ -4118,13 +4126,14 @@ export class RunManager {
         model: continueModel,
         sessionId: spawnSessionId,
         resume: sessionId !== undefined,
-        timeoutMs: 0,
+          timeoutMs: 0,
       },
       onEvent,
       { onUiEvent: (event) => this.handleRunnerUiEvent(runId, state, sink, event) },
     );
     state.session = session;
     state.sessionEverOpened = true;
+    this.startAgentInactivityWatchdog(runId, state, stepId);
     this.flushDeferred(runId);
     state.interrupt = () => session.interrupt();
     if (session.pid !== undefined) registerRunProcess(runId, session.pid);
@@ -4156,7 +4165,7 @@ export class RunManager {
         });
         this.store.appendEvent(runId, { type: 'lifecycle', message: `run stopped — ${message}` });
       } else if (this.active.get(runId) === state && (await this.idleClosedFails(runId, state))) {
-        const message = this.inactivityFailureMessage();
+        const message = this.inactivityFailureMessage(state);
         const failedAt = finishedAt();
         this.store.updateStep(runId, stepId, { status: 'failed', error: message, finishedAt: failedAt });
         this.store.updateRun(runId, {
@@ -4192,6 +4201,7 @@ export class RunManager {
     } finally {
       this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);
+      this.clearAgentInactivityWatchdog(state);
       this.clearAutosaveTimer(state);
       if (!state.cancelled && this.active.get(runId) === state && state.cwd !== this.repoRoot) {
         await autosaveCommit(state.cwd, 'turn end');
@@ -4490,9 +4500,14 @@ export class RunManager {
       emit({ type: 'step-start', stepId: step.id, name: step.name ?? step.id, kind, iteration });
 
       if (kind === 'agent') {
-        // The last agent step of the workflow is interactive: after its turn
-        // the session stays open for follow-ups until finish/idle/cancel.
-        const interactive = i === lastAgentIdx && i === workflow.steps.length - 1;
+        // The last agent step of a user-started workflow is interactive: after
+        // its turn the session stays open for follow-ups until finish/idle/cancel.
+        // Autonomous runs have no user to follow up, so keep the runner's wall
+        // clock deadline even when this is the final step. Otherwise an
+        // automation that keeps producing output without completing can occupy
+        // a run slot forever.
+        const interactive =
+          input.autonomous !== true && i === lastAgentIdx && i === workflow.steps.length - 1;
         const failure = await this.runAgentStep(
           runId,
           state,
@@ -4661,7 +4676,7 @@ export class RunManager {
       });
       emit({ type: 'lifecycle', message: `run stopped — ${error}` });
     } else if (idleFailed) {
-      const error = this.inactivityFailureMessage();
+      const error = this.inactivityFailureMessage(state);
       const run = this.store.getRun(runId);
       for (const s of run?.steps ?? []) {
         if (s.status === 'running' || s.status === 'waiting') {
@@ -4781,6 +4796,7 @@ export class RunManager {
     const sink = this.makeUiSink(runId, step.id);
     const onEvent = (event: AgentEvent) => {
       if (state.cancelled || this.active.get(runId) !== state) return;
+      this.refreshAgentInactivityWatchdog(runId, state, step.id);
       if (event.type === 'image') {
         const saved = this.persistAttachment(runId, event.mediaType, event.data);
         if (saved) emit({ type: 'image', stepId: step.id, ...saved });
@@ -5096,18 +5112,10 @@ export class RunManager {
           env: stepProfile.env,
           model: backendModel,
           sessionId,
-          // Interactive sessions have no wall clock — the idle timer rules.
-          //
-          // A non-final step keeps its wall clock (`DEFAULT_RUN_TIMEOUT_MS`)
-          // even though it may now park on a `CEZ:ASK` and sit open waiting for
-          // an answer (#917). Dropping it for every intermediate step is the
-          // wrong trade: it would leave a runaway step with nothing to stop it,
-          // to buy a park that is bounded by the 15-minute idle timer first in
-          // all but the longest steps. What matters is that neither expiry can
-          // strand the run — both close the session, and a park whose session
-          // closed unanswered settles as `failed` with a Continue button (see
-          // the `askPark` branch in `execute`), never as a run stuck `waiting`.
-          timeoutMs: interactive ? 0 : undefined,
+          // Workflow sessions are bounded by observed inactivity in RunManager,
+          // not elapsed wall time. A long step can continue while the backend
+          // reports activity; the shared watchdog closes a silent stalled session.
+        timeoutMs: 0,
         },
         onEvent,
         {
@@ -5127,6 +5135,7 @@ export class RunManager {
     state.sessionEverOpened = true;
     this.flushDeferred(runId);
     state.currentStepId = step.id;
+    if (!interactive) this.startAgentInactivityWatchdog(runId, state, step.id);
     state.interrupt = () => session.interrupt();
     if (session.pid !== undefined) registerRunProcess(runId, session.pid);
 
@@ -5150,6 +5159,7 @@ export class RunManager {
     } finally {
       this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);
+      this.clearAgentInactivityWatchdog(state);
       if (this.active.get(runId) === state) {
         this.leaveMonitoring(runId);
         this.waiting.delete(runId);
@@ -5181,6 +5191,7 @@ export class RunManager {
    * so the cockpit shows attention and the run releases its workspace slot. */
   private handleRunnerUiEvent(runId: string, state: ActiveRun, sink: UiEventSink, event: UiEvent): void {
     if (state.cancelled || (this.active.has(runId) && this.active.get(runId) !== state)) return;
+    this.refreshAgentInactivityWatchdog(runId, state, state.currentStepId);
     this.recordUsageUiEvent(runId, state, event);
     sink.handle(event);
     if (event.type !== 'ask.requested' || state.cancelled) return;
@@ -5485,7 +5496,10 @@ export class RunManager {
    * fallback keeps an ordinary unfinished wait from wearing a success badge
    * while preserving the existing Continue path.
    */
-  private inactivityFailureMessage(): string {
+  private inactivityFailureMessage(state: ActiveRun): string {
+    if (state.agentInactivityClosed) {
+      return `the agent reported no activity for ${state.agentInactivityTimeoutMinutes ?? DEFAULT_AGENT_INACTIVITY_TIMEOUT_MINUTES} minutes; the stalled session was closed — continue to resume it`;
+    }
     return 'the session closed after inactivity before the task declared completion — continue to resume it';
   }
 
@@ -5801,6 +5815,52 @@ export class RunManager {
     if (state.idleTimer) {
       clearTimeout(state.idleTimer);
       state.idleTimer = undefined;
+    }
+    this.clearAgentInactivityWatchdog(state);
+  }
+
+  private startAgentInactivityWatchdog(runId: string, state: ActiveRun, stepId: string): void {
+    const timeoutMinutes = this.semaphore.agentInactivityTimeoutMinutes();
+    state.agentInactivityTimeoutMinutes = timeoutMinutes ?? undefined;
+    state.agentInactivityWatchdog = true;
+    state.agentInactivityClosed = false;
+    if (timeoutMinutes === null || timeoutMinutes === 0) return;
+    this.refreshAgentInactivityWatchdog(runId, state, stepId);
+  }
+
+  /** Renew the stall watchdog on provider activity, never on elapsed wall time. */
+  private refreshAgentInactivityWatchdog(runId: string, state: ActiveRun, stepId: string | undefined): void {
+    if (
+      !state.agentInactivityWatchdog ||
+      !stepId ||
+      stepId !== state.currentStepId ||
+      state.cancelled ||
+      !state.session?.open
+    ) return;
+    const timeoutMinutes = state.agentInactivityTimeoutMinutes;
+    if (timeoutMinutes === undefined || timeoutMinutes <= 0) return;
+    if (state.agentInactivityTimer) clearTimeout(state.agentInactivityTimer);
+    state.agentInactivityTimer = setTimeout(() => {
+      state.agentInactivityTimer = undefined;
+      if (state.cancelled || !state.session?.open) return;
+      state.agentInactivityClosed = true;
+      state.idleClosed = true;
+      state.agentInactivityWatchdog = false;
+      this.store.appendEvent(runId, {
+        type: 'lifecycle',
+        stepId,
+        message: `agent session produced no activity for ${timeoutMinutes} minutes; closing the stalled session`,
+      });
+      state.session.end();
+    }, timeoutMinutes * 60_000);
+    state.agentInactivityTimer.unref?.();
+  }
+
+  private clearAgentInactivityWatchdog(state: ActiveRun): void {
+    state.agentInactivityWatchdog = false;
+    if (state.agentInactivityTimer) {
+      clearTimeout(state.agentInactivityTimer);
+      state.agentInactivityTimer = undefined;
     }
   }
 

@@ -34,6 +34,7 @@ const MAX_PARALLEL_MIN = 1
 const MAX_PARALLEL_MAX = 16
 const MAX_MONITORING_MAX = 16
 const IDLE_TIMEOUT_MAX = 1440
+const AGENT_INACTIVITY_TIMEOUT_MAX = 1440
 const WAKE_INTERVAL_MIN = 1
 const WAKE_INTERVAL_MAX = 60
 /** Below this a limit would pause almost any real agent immediately — reject it as a footgun. */
@@ -178,6 +179,23 @@ function ResourcesForm({ config }: { config: WorkspaceConfigResponse }) {
         />
         <p className="text-[11px] text-soft-foreground">
           Minutes; 0 keeps plain waiting sessions alive. Monitoring sessions are already exempt.
+        </p>
+      </SettingsField>
+
+      <SettingsField
+        title="Active agent inactivity timeout"
+        hint="Stop an active workflow only after its provider has sent no progress for this long. Time spent working does not count against the limit; streamed text, tool activity, and turn updates renew it. Set 0 to disable the safeguard."
+      >
+        <IntegerStepper
+          aria-label="Active agent inactivity timeout"
+          data-slot="resources-agent-inactivity-timeout"
+          value={config.resources.agentInactivityTimeoutMinutes ?? 0}
+          min={0}
+          max={AGENT_INACTIVITY_TIMEOUT_MAX}
+          onCommit={(minutes) => save.mutateAsync({ resources: { agentInactivityTimeoutMinutes: minutes ?? 0 } })}
+        />
+        <p className="text-[11px] text-soft-foreground">
+          Minutes without provider activity; defaults to 30. Set 0 to keep a silent session alive indefinitely.
         </p>
       </SettingsField>
 
