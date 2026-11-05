@@ -107,6 +107,19 @@ request GitHub auto-merge. This applies to every approved risk level. High risk
 alone is not a reason to stop for user approval; request input only when the
 plan exposes a major architectural decision.
 
+When the change fixes broken code (a failing deploy, test, workflow, or runtime, or a
+regression), merge the PR yourself once local validation has passed and the
+self-review is recorded: `gh pr merge <number> --squash`. Do not use `--auto` or
+wait for GitHub auto-merge; this repository has no branch rules on `dev`, so GitHub
+rejects it ("Protected branch rules not configured"). Before merging, confirm the PR
+head is your pushed, validated commit (`gh pr view <number> --json headRefOid`), and
+that `gh pr view <number> --json mergeable,mergeStateStatus` is `MERGEABLE`/`CLEAN`.
+After merging, confirm the fix is on `origin/dev` (grep for the changed line) before
+promoting or deploying; never assume a PR merged someone else's earlier snapshot of
+your branch. If the merge is refused or conflicts, resolve it and re-validate rather
+than bypassing a gate. Runs outside Dev mode still follow the production-release gates
+above.
+
 Use an independent technical reviewer when another eligible maintainer is
 available. In a solo-maintainer repository, the author must instead record a
 structured self-review on the PR covering scope, risk, important invariants,

@@ -38,7 +38,9 @@ The goal is a verified end state, not merely a source-tree change:
    required runtime, or cannot be validated, stop and report the exact
    mismatch. Do not pull, reset, copy over, or delete the remote checkout.
 7. After validation and independent review, ensure the implementation PR
-   targets `dev` and request GitHub auto-merge. Do not merge a failed,
+   targets `dev`. For a fix to broken code, merge it yourself with
+   `gh pr merge <number> --squash` (not `--auto`; GitHub rejects it here), after
+   confirming the PR head is your validated commit. Do not merge a failed,
    unreviewed, unresolved, or blocked PR. If no PR exists, report the exact
    remaining handoff rather than silently creating unrelated work.
 

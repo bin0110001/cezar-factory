@@ -21,10 +21,13 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
    `pwsh -NoProfile -File scripts/factory/test-changed.ps1`). On pass: stage only the issue's files, commit
    (reference the issue), `git push -u origin HEAD`. On failure: fix it and rerun; do not push red.
 3. **PR.** Open (or reuse) a PR into the configured base branch with `Closes #N`, add a structured
-   self-review (scope, risk, invariants, validation evidence, unresolved findings), request auto-merge, and
-   set the issue label to `factory:implemented`/`factory:pr-open` per `AGENTS.md`. Run `gh` outside the sandbox.
-4. **Deploy.** Wait for the PR to merge (`gh pr view --json state,mergedAt`). Never wait on or poll GitHub
-   Actions/status checks: there is no hosted CI, and local test results are the validation. Then use `ship-deploy`.
+   self-review (scope, risk, invariants, validation evidence, unresolved findings), and set the issue label to
+   `factory:implemented`/`factory:pr-open` per `AGENTS.md`. Run `gh` outside the sandbox.
+4. **Merge and deploy.** For a fix to broken code, merge the PR yourself (`gh pr merge <n> --squash`; never
+   `--auto`, GitHub rejects it here): first confirm the PR head is your pushed, validated commit and the PR is
+   `MERGEABLE`/`CLEAN`, then after merging confirm the fix is on `origin/dev` (grep for the changed line). Never
+   wait on or poll GitHub Actions/status checks: there is no hosted CI, and local test results are the validation.
+   Then use `ship-deploy`.
 5. **Verify.** Use `ship-verify` to queue the same workflow, then `ship-status` with `-Wait` to follow it.
 6. **Decide.**
    - Passed: comment on the issue with attempt count, SHA and run id; stop.
