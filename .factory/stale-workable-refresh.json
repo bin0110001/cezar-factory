@@ -1,38 +1,38 @@
 {
-  "generatedAt": "2026-11-05T00:28:22.2127027+00:00",
-  "cutoff": "2026-11-04T00:28:14.8249583+00:00",
+  "generatedAt": "2026-11-05T20:00:34.5083911+00:00",
+  "cutoff": "2026-11-04T20:00:25.6793951+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 96,
-  "eligible": 48,
+  "considered": 99,
+  "eligible": 52,
   "refreshed": [
     {
       "issue": 66,
       "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
       "url": "https://github.com/bin0110001/cezar-factory/issues/66",
-      "state": "factory:investigate",
+      "state": "factory:ready",
       "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 291.5,
+      "ageHours": 311.0,
       "labels": [
         "type:maintenance",
         "risk:medium",
-        "factory:investigate",
-        "complexity:medium"
+        "factory:ready",
+        "complexity:small"
       ],
       "action": "refreshed"
     },
     {
-      "issue": 69,
-      "title": "Migrate shadow copies safely and retire legacy push delivery",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/69",
-      "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 20:58:17",
-      "ageHours": 291.5,
+      "issue": 90,
+      "title": "Capacity: Provider telemetry adapters and manual quota overrides",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/90",
+      "state": "factory:ready",
+      "createdAt": "10/24/2026 14:27:03",
+      "ageHours": 293.6,
       "labels": [
+        "type:maintenance",
         "risk:medium",
-        "factory:needs-plan",
-        "type:refactor",
+        "factory:ready",
         "complexity:medium"
       ],
       "action": "refreshed"
@@ -112,6 +112,11 @@
     {
       "issue": 105,
       "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 94,
+      "state": "factory:working",
       "reason": "manual-or-terminal-state"
     },
     {

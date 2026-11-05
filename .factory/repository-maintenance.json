@@ -1,14 +1,20 @@
 {
-  "generatedAt": "2026-11-05T00:28:26.6013873+00:00",
-  "workingCutoff": "2026-11-04T00:28:22.6578868+00:00",
-  "staleCutoff": "2026-09-06T00:28:22.6603898+00:00",
-  "considered": 96,
+  "generatedAt": "2026-11-05T20:00:44.0274391+00:00",
+  "workingCutoff": "2026-11-04T20:00:35.0081905+00:00",
+  "staleCutoff": "2026-09-06T20:00:35.0114743+00:00",
+  "considered": 99,
   "movedToInvestigate": [
+    {
+      "issue": 94,
+      "action": "investigated",
+      "reason": "failed-run",
+      "updatedAt": "11/05/2026 19:50:19"
+    },
     {
       "issue": 55,
       "action": "investigated",
       "reason": "failed-run",
-      "updatedAt": "11/04/2026 21:42:57"
+      "updatedAt": "11/05/2026 19:03:50"
     }
   ],
   "limitations": [],
