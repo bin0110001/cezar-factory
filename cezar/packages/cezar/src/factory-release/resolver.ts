@@ -89,8 +89,10 @@ export function materializeRuntimeScript(): string {
     'controller = object.__new__(ReleaseController)',
     'controller.releases = pathlib.Path(store) / "releases"',
     'release = controller.releases / sha',
-    'manifest = controller.verify_release(release, expected_sha=sha)',
-    'if manifest["manifestDigest"] != digest: raise RuntimeError("pinned release manifest changed")',
+    // verify_release returns a summary (sourceSha, manifestDigest, artifactDigest, state), not the manifest.
+    'verified = controller.verify_release(release, expected_sha=sha)',
+    'if verified["manifestDigest"] != digest: raise RuntimeError("pinned release manifest changed")',
+    'manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))',
     'entries = extract_archive(release / "artifact.tar", pathlib.Path(destination), "release/")',
     'if entries != manifest["files"]: raise RuntimeError("archive entries differ from the verified manifest")',
     'startup = pathlib.Path(destination) / "scripts" / "factory-startup.ps1"',

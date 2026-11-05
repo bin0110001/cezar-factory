@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { computeFactoryManifestDigest } from '@open-mercato/cezar-contract';
@@ -78,6 +79,47 @@ describe('pinned runtime materialization script', () => {
     const lines = materializeRuntimeScript().split('\n');
     expect(lines.length).toBeGreaterThan(5);
     expect(lines.filter((line) => /;\s*(if|for|while|with|try)\b/.test(line))).toEqual([]);
+  });
+
+  // Regression: the script indexed verify_release()'s return value as if it were the manifest
+  // (KeyError 'files'). Syntax checking cannot see that, so run it against a release built by the
+  // real controller, with a real git archive, exactly as Cezar does.
+  it('materializes a release built by the real controller', async () => {
+    const python = findPython();
+    expect(python, 'no Python interpreter found; materialization cannot be exercised').not.toBeNull();
+    const [command, ...prefix] = python!;
+    const factoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+    temp = await mkdtemp(join(tmpdir(), 'factory-materialize-'));
+    const repo = join(temp, 'repo');
+    const store = join(temp, 'store');
+    const destination = join(temp, 'runtime', 'tree');
+    await mkdir(join(repo, 'scripts'), { recursive: true });
+    await writeFile(join(repo, 'scripts', 'factory-startup.ps1'), '# startup');
+    const git = (...args: string[]) => {
+      const out = spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], { encoding: 'utf8', windowsHide: true });
+      expect(out.status, out.stderr).toBe(0);
+      return out.stdout.trim();
+    };
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-q', '-m', 'release fixture');
+    const sha = git('rev-parse', 'HEAD');
+
+    const build = spawnSync(command, [...prefix, '-c', [
+      'import json, pathlib, sys',
+      'sys.path.insert(0, sys.argv[1])',
+      'from scripts.release.factory_release_controller import ReleaseController',
+      'controller = ReleaseController(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]), "origin", "stable", 3, 30, 1)',
+      'print(json.dumps(controller._build(sys.argv[4], "materialize-test")))',
+    ].join('\n'), factoryRoot, repo, store, sha], { encoding: 'utf8', windowsHide: true });
+    expect(build.status, build.stderr).toBe(0);
+    const { manifestDigest } = JSON.parse(build.stdout.trim().split('\n').pop()!) as { manifestDigest: string };
+
+    const run = spawnSync(command, [...prefix, '-c', materializeRuntimeScript(), factoryRoot, store, sha, manifestDigest, destination], { encoding: 'utf8', windowsHide: true });
+    expect(run.stderr).toBe('');
+    expect(run.status).toBe(0);
+    expect(await readFile(join(destination, 'scripts', 'factory-startup.ps1'), 'utf8')).toBe('# startup');
+    expect(JSON.parse(await readFile(join(destination, '.factory-runtime.json'), 'utf8'))).toEqual({ sourceSha: sha, manifestDigest });
   });
 });
 
