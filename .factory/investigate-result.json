@@ -1,0 +1,10 @@
+{
+  "issue": 99,
+  "failureClassification": "requirements",
+  "evidence": "Issue #99 requests a verification baseline model and outcome-classifying comparison engine with run-to-run provenance. Code inspection of the repository and memory recall showed no existing comparison engine implementation - only a local promotion scheduler with baseline comparison usage (factory_local_scheduler.py). Dependencies #52 (finding ledger, PR #84) and #53 (impact selection, PR #85) are both open PRs stacked on #83 (isolated verification executor, also open). While PR #85 implements the selector/comparison engine logic, it's not merged to dev. The issue states it depends on #49 (Merged PR #79), #52, and #53 to be implemented. No test artifacts or past implementation attempts were found.",
+  "attemptsReviewed": "Memory recall returned 3 entries about Cezar Factory live validation using LiteLLM on Bazzite and vLLM on Mac mini - not implementation of the requested comparison engine. Code search found no comparison engine. A previous investigation result classifier (commit c13fe2a) classified this as unknown due to lack of prior attempts.",
+  "rootCauseHypothesis": "The comparison engine exists in PR #85 but is not implemented in the main worktree because it depends on #84 and #83 which are also open. The worktree is on branch 'cez/adfdd424' which does not include the comparison engine implementation.",
+  "confidence": "high",
+  "recommendedAction": "Merge the dependency chain (#83 -> #84 -> #85) to dev first to unblock the current worktree state. After dependencies land, option A: Cherry-pick the comparison engine from #85 into this worktree and proceed with issue #99. OR option B: Close issue #99 as 'Blocked - awaiting dependency PRs (#83, #84, #85)' and create a new issue that tracks it to the complete merged state.",
+  "automaticRetryAppropriate": false
+}
