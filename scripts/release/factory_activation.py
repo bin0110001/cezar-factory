@@ -22,6 +22,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -95,6 +96,8 @@ class ActivationCoordinator:
         api_override: str = "",
         timeout_seconds: int = 8,
         request: Callable[[str, str, Any | None], Any] | None = None,
+        ready_seconds: int | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self.controller = controller
         self.store = controller.store
@@ -102,6 +105,10 @@ class ActivationCoordinator:
         self.api_override = api_override.rstrip("/")
         self.timeout_seconds = max(1, min(timeout_seconds, 30))
         self.request = request or self._http_request
+        # A Cezar that has just restarted refuses connections for a few seconds. Reads are retried inside this
+        # window instead of failing the whole activation; an injected request (tests) opts out unless asked.
+        self.ready_seconds = max(0, ready_seconds if ready_seconds is not None else (0 if request else 90))
+        self.sleep = sleep
         self.journal_dir = self.store / "activations"
         self.receipt_dir = self.store / "receipts"
         self.quarantine_dir = self.store / "quarantine"
@@ -140,8 +147,23 @@ class ActivationCoordinator:
         project = urllib.parse.quote(target["projectId"], safe="")
         return f"{base}/api/v1/p/{project}{suffix}"
 
+    @staticmethod
+    def _transient(error: Exception) -> bool:
+        text = str(error)
+        return " failed: " in text or any(f"HTTP {code}" in text for code in (502, 503, 504))
+
     def _api(self, target: dict[str, str], method: str, suffix: str, body: Any | None = None) -> Any:
-        return self.request(method, self._url(target, suffix), body)
+        url = self._url(target, suffix)
+        if method != "GET" or not self.ready_seconds:
+            return self.request(method, url, body)
+        deadline = time.monotonic() + self.ready_seconds
+        while True:
+            try:
+                return self.request(method, url, body)
+            except ActivationError as exc:
+                if not self._transient(exc) or time.monotonic() >= deadline:
+                    raise
+                self.sleep(3)
 
     def load_targets(self) -> list[dict[str, str]]:
         if not self.registry_path.is_file():
@@ -752,6 +774,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--channel", default="stable")
     p.add_argument("--sha", default=None)
     p.add_argument("--timeout-seconds", type=int, default=8)
+    p.add_argument("--ready-seconds", type=int, default=None, help="how long reads wait for a restarting Cezar (default 90)")
     return p
 
 
@@ -761,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
         repo = pathlib.Path(args.repo).expanduser()
         registry = pathlib.Path(args.registry).expanduser() if args.registry else repo / "config" / "factory-projects.json"
         controller = ReleaseController(repo, pathlib.Path(args.store).expanduser(), args.remote, args.channel, 3, 30, 4)
-        coordinator = ActivationCoordinator(controller, registry, api_override=args.api_url, timeout_seconds=args.timeout_seconds)
+        coordinator = ActivationCoordinator(controller, registry, api_override=args.api_url, timeout_seconds=args.timeout_seconds, ready_seconds=args.ready_seconds)
         if args.command == "activate":
             result = coordinator.activate(args.sha)
         elif args.command == "rollback":

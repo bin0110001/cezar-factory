@@ -38,7 +38,7 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
 
 ## Rules
 
-- Never promote or deploy an untested commit; never bypass `promote-stable.ps1`.
+- Never promote by hand or bypass the host promoter (`docs/promotion-pipeline.md`); `ship-deploy` only watches it. The PR body must carry a `## Self-review` section or the promoter blocks the merge as lacking evidence.
 - Do not create replacement tasks or inspect the automation's worktree to "do the work"; the workflow is the work.
 - Only one project is configured today; to extend, add an entry to `ship-loop.json`.
 - End with a handoff: issue, PR, deployed SHA, each attempt (run id, outcome), final status.

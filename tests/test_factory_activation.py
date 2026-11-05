@@ -187,6 +187,46 @@ class FactoryActivationTests(unittest.TestCase):
             self.coordinator.activate(self.candidate_sha)
         self.assertEqual(json.loads((self.controller.channels / "stable.json").read_text())["currentSha"], self.previous_sha)
 
+    def _flaky(self, failures: int, message: str):
+        calls = {"n": 0}
+
+        def request(method, url, body=None):
+            calls["n"] += 1
+            if method == "GET" and calls["n"] <= failures:
+                raise ActivationError(message)
+            return self.fake(method, url, body)
+
+        return request, calls
+
+    def test_reads_wait_through_a_restarting_cezar_instead_of_failing_fast(self) -> None:
+        request, calls = self._flaky(3, "Cezar API GET /api/v1/p/shop/factory-release failed: [Errno 111] Connection refused")
+        sleeps: list[float] = []
+        coordinator = ActivationCoordinator(self.controller, self.registry, request=request, ready_seconds=60, sleep=sleeps.append)
+        target = coordinator.load_targets()[0]
+        coordinator._diagnostic(target)
+        self.assertEqual(len(sleeps), 3)
+        self.assertGreater(calls["n"], 3)
+
+    def test_a_cezar_that_never_comes_back_still_fails_after_the_window(self) -> None:
+        request, _calls = self._flaky(10_000, "Cezar API GET /x failed: timed out")
+        ticks = iter(range(0, 10_000, 40))
+        coordinator = ActivationCoordinator(self.controller, self.registry, request=request, ready_seconds=60, sleep=lambda _s: None)
+        import scripts.release.factory_activation as module
+        original = module.time.monotonic
+        module.time.monotonic = lambda: float(next(ticks))
+        try:
+            with self.assertRaisesRegex(ActivationError, "timed out"):
+                coordinator._diagnostic(coordinator.load_targets()[0])
+        finally:
+            module.time.monotonic = original
+
+    def test_a_definite_http_error_is_not_retried(self) -> None:
+        request, calls = self._flaky(5, "Cezar API GET /x returned HTTP 404: not found")
+        coordinator = ActivationCoordinator(self.controller, self.registry, request=request, ready_seconds=60, sleep=lambda _s: None)
+        with self.assertRaisesRegex(ActivationError, "HTTP 404"):
+            coordinator._diagnostic(coordinator.load_targets()[0])
+        self.assertEqual(calls["n"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

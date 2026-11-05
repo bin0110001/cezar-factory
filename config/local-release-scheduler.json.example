@@ -11,5 +11,17 @@
       "required": true,
       "timeoutSeconds": 300
     }
-  ]
+  ],
+  "promotion": {
+    "mode": "controlled",
+    "ghCommand": ["gh"],
+    "canaries": {
+      "projectId": "cezar-factory",
+      "items": [
+        { "id": "health", "automation": "[factory] health", "timeoutSeconds": 900 }
+      ]
+    },
+    "stable": { "branch": "stable" },
+    "breaker": { "maxConsecutiveFailures": 3, "pauseSeconds": 3600 }
+  }
 }

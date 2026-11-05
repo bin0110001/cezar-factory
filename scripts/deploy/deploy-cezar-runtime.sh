@@ -11,8 +11,60 @@ SERVICE="${CEZAR_USER_SERVICE:-container-cezar.service}"
 HEALTH_URL="${CEZAR_HEALTH_URL:-http://127.0.0.1:4321/api/v1/health}"
 RELEASE_URL="${CEZAR_RELEASE_URL:-http://127.0.0.1:4321/api/v1/factory-release}"
 
+IDLE_WAIT="${FACTORY_DEPLOY_IDLE_WAIT_SECONDS:-0}"
+MAX_DEFER="${FACTORY_DEPLOY_MAX_DEFER_SECONDS:-7200}"
+STATE_DIR="${FACTORY_AUTODEPLOY_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/cezar-factory/autodeploy}"
+DEFER_FILE="$STATE_DIR/runtime-deferred-since"
+
 log() { printf '%s deploy-cezar-runtime: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { log "FAILED: $*" >&2; exit 1; }
+
+# Number of Cezar runs currently executing across the registered projects (0 when unreadable or Cezar is down).
+active_runs() {
+  if [[ -n "${FACTORY_ACTIVE_RUNS_COMMAND:-}" ]]; then bash -c "$FACTORY_ACTIVE_RUNS_COMMAND"; return; fi
+  command -v python3 >/dev/null || { echo 0; return; }
+  python3 - "$ROOT_DIR/config/factory-projects.json" <<'COUNT_RUNS'
+import json, sys, urllib.parse, urllib.request
+busy = 0
+try:
+    projects = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    projects = []
+for project in projects:
+    try:
+        url = f"{project['apiUrl'].rstrip('/')}/api/v1/p/{urllib.parse.quote(project['projectId'], safe='')}/runs"
+        with urllib.request.urlopen(url, timeout=10) as response:
+            busy += sum(1 for run in json.load(response) if run.get("status") == "running")
+    except Exception:
+        pass
+print(busy)
+COUNT_RUNS
+}
+
+# A restart interrupts running work, so wait for an idle Cezar. After IDLE_WAIT seconds defer (exit 25) and let the
+# next tick retry; after MAX_DEFER seconds of continuous deferral restart anyway so a busy queue cannot starve a deploy.
+wait_for_idle() {
+  local waited=0 busy now since
+  mkdir -p "$STATE_DIR"
+  while :; do
+    busy="$(active_runs)"
+    if [[ "$busy" == 0 ]]; then rm -f "$DEFER_FILE"; return 0; fi
+    now="$(date +%s)"
+    [[ -f "$DEFER_FILE" ]] || echo "$now" > "$DEFER_FILE"
+    since="$(cat "$DEFER_FILE" 2>/dev/null || echo "$now")"
+    if (( now - since >= MAX_DEFER )); then
+      log "idle wait exceeded ${MAX_DEFER}s; restarting despite $busy active run(s)"
+      rm -f "$DEFER_FILE"
+      return 0
+    fi
+    if (( waited >= IDLE_WAIT )); then
+      log "DEFERRED: $busy Cezar run(s) active; not restarting until idle"
+      exit 25
+    fi
+    sleep 15
+    waited=$((waited + 15))
+  done
+}
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "expected a full source commit SHA, got '$SOURCE_SHA'"
 head="$(git -C "$ROOT_DIR" rev-parse HEAD)"
@@ -50,6 +102,7 @@ if [[ "$running_image_id" == "$target_image_id" && "$service_state" == active ]]
 fi
 
 if (( ! healthy )); then
+  wait_for_idle
   log "restarting $SERVICE with image $target_image_id"
   if ! systemctl --user restart "$SERVICE"; then
     if [[ -n "$previous_image_id" && "$previous_image_id" != "$target_image_id" ]]; then

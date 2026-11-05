@@ -12,8 +12,9 @@
         "defaultAutomation": "health"
       },
       "deploy": {
-        "promoteStable": true,
-        "hostForce": true
+        "owner": "host-promoter",
+        "timeoutMinutes": 90,
+        "pollSeconds": 30
       }
     }
   }

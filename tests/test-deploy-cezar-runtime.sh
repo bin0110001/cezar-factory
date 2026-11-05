@@ -132,4 +132,37 @@ set -e
 [[ "$(cat "$TMP/state/running-id")" == "$previous_id" ]] || fail 'service was not restarted with the prior image after failure'
 [[ "$(cat "$TMP/state/restarts")" == 3 ]] || fail 'failed deployment did not restart new and prior image exactly once each'
 
+# A restart must wait for an idle Cezar: busy defers (exit 25) without restarting, idle proceeds, and a deferral
+# older than the limit restarts anyway so a permanently busy queue cannot starve a deploy.
+printf 'RUN idle-gate\n' >> "$TMP/repo/cezar/Dockerfile"
+git -C "$TMP/repo" add cezar/Dockerfile
+git -C "$TMP/repo" commit -m 'change Cezar source for idle gate' >/dev/null
+IDLE_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
+restarts_before="$(cat "$TMP/state/restarts")"
+export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/idle-state"
+set +e
+FACTORY_ACTIVE_RUNS_COMMAND='echo 2' FACTORY_DEPLOY_IDLE_WAIT_SECONDS=0 bash "$SCRIPT" "$IDLE_SHA" > "$TMP/deferred.log" 2>&1
+code=$?
+set -e
+[[ "$code" == 25 ]] || fail "busy Cezar did not defer with exit 25 (got $code)"
+grep -q 'DEFERRED' "$TMP/deferred.log" || fail 'deferral was not logged'
+[[ "$(cat "$TMP/state/restarts")" == "$restarts_before" ]] || fail 'busy Cezar was restarted anyway'
+[[ -f "$TMP/idle-state/runtime-deferred-since" ]] || fail 'deferral did not record when it started'
+
+FACTORY_ACTIVE_RUNS_COMMAND='echo 0' bash "$SCRIPT" "$IDLE_SHA" > "$TMP/idle.log" 2>&1 || fail 'idle Cezar deploy failed'
+[[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'idle Cezar was not restarted'
+[[ ! -f "$TMP/idle-state/runtime-deferred-since" ]] || fail 'successful idle restart left the deferral marker'
+
+printf 'RUN starved\n' >> "$TMP/repo/cezar/Dockerfile"
+git -C "$TMP/repo" add cezar/Dockerfile
+git -C "$TMP/repo" commit -m 'change Cezar source for starvation guard' >/dev/null
+STARVED_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
+mkdir -p "$TMP/idle-state"
+echo $(( $(date +%s) - 100000 )) > "$TMP/idle-state/runtime-deferred-since"
+restarts_before="$(cat "$TMP/state/restarts")"
+FACTORY_ACTIVE_RUNS_COMMAND='echo 5' FACTORY_DEPLOY_MAX_DEFER_SECONDS=7200 bash "$SCRIPT" "$STARVED_SHA" > "$TMP/starved.log" 2>&1 || fail 'starvation guard did not let the deploy through'
+grep -q 'restarting despite' "$TMP/starved.log" || fail 'starvation guard did not log why it restarted a busy Cezar'
+[[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'starvation guard did not restart'
+unset FACTORY_AUTODEPLOY_STATE_DIR
+
 echo 'Cezar runtime deployment tests passed.'

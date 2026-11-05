@@ -1,9 +1,9 @@
 [Unit]
-Description=Poll merged Factory dev changes for local validation
+Description=Check for a newly merged Factory dev SHA every 5 minutes
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=10min
+OnBootSec=3min
+OnUnitInactiveSec=5min
 Persistent=true
 Unit=factory-local-promotion.service
 
