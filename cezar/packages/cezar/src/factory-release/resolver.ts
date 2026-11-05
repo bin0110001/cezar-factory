@@ -79,6 +79,26 @@ export function factoryRuntimeRootForSha(sha: string, env: NodeJS.ProcessEnv = p
 
 export type RuntimeMaterializer = (args: { storeRoot: string; sourceRoot: string; sha: string; manifestDigest: string; env: NodeJS.ProcessEnv }) => Promise<string>;
 
+/** The Python run to materialize a pinned release. Statements are newline-separated: a one-line `if ...: raise` after `;` is a SyntaxError. */
+export function materializeRuntimeScript(): string {
+  return [
+    'import json, pathlib, sys',
+    'repo, store, sha, digest, destination = sys.argv[1:]',
+    'sys.path.insert(0, repo)',
+    'from scripts.release.factory_release_controller import ReleaseController, extract_archive',
+    'controller = object.__new__(ReleaseController)',
+    'controller.releases = pathlib.Path(store) / "releases"',
+    'release = controller.releases / sha',
+    'manifest = controller.verify_release(release, expected_sha=sha)',
+    'if manifest["manifestDigest"] != digest: raise RuntimeError("pinned release manifest changed")',
+    'entries = extract_archive(release / "artifact.tar", pathlib.Path(destination), "release/")',
+    'if entries != manifest["files"]: raise RuntimeError("archive entries differ from the verified manifest")',
+    'startup = pathlib.Path(destination) / "scripts" / "factory-startup.ps1"',
+    'if not startup.is_file(): raise RuntimeError("Factory artifact has no scripts/factory-startup.ps1")',
+    '(pathlib.Path(destination) / ".factory-runtime.json").write_text(json.dumps({"sourceSha": sha, "manifestDigest": digest}), encoding="utf-8")',
+  ].join('\n');
+}
+
 async function materializeRuntime({ storeRoot, sourceRoot, sha, manifestDigest, env }: Parameters<RuntimeMaterializer>[0]): Promise<string> {
   if (!sourceRoot.trim()) throw new FactoryReleaseResolutionError('runtime-source-unavailable', 'FACTORY_RUNTIME_SOURCE_ROOT is not configured');
   const runtimeRoot = factoryRuntimeRootForSha(sha, env);
@@ -98,22 +118,7 @@ async function materializeRuntime({ storeRoot, sourceRoot, sha, manifestDigest, 
   await mkdir(parent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(parent, `.${sha}.`));
   const destination = join(temporaryRoot, 'tree');
-  const script = [
-    'import json, pathlib, sys',
-    'repo, store, sha, digest, destination = sys.argv[1:]',
-    'sys.path.insert(0, repo)',
-    'from scripts.release.factory_release_controller import ReleaseController, extract_archive',
-    'controller = object.__new__(ReleaseController)',
-    'controller.releases = pathlib.Path(store) / "releases"',
-    'release = controller.releases / sha',
-    'manifest = controller.verify_release(release, expected_sha=sha)',
-    'if manifest["manifestDigest"] != digest: raise RuntimeError("pinned release manifest changed")',
-    'entries = extract_archive(release / "artifact.tar", pathlib.Path(destination), "release/")',
-    'if entries != manifest["files"]: raise RuntimeError("archive entries differ from the verified manifest")',
-    'startup = pathlib.Path(destination) / "scripts" / "factory-startup.ps1"',
-    'if not startup.is_file(): raise RuntimeError("Factory artifact has no scripts/factory-startup.ps1")',
-    '(pathlib.Path(destination) / ".factory-runtime.json").write_text(json.dumps({"sourceSha": sha, "manifestDigest": digest}), encoding="utf-8")',
-  ].join('\n'); // newlines, not '; ': one-line `if ...: raise` is a SyntaxError after a semicolon
+  const script = materializeRuntimeScript();
   try {
     const python = env.CEZ_FACTORY_CONTROLLER_PYTHON || 'python3';
     await execFileAsync(python, ['-c', script, resolve(sourceRoot), storeRoot, sha, manifestDigest, destination], {

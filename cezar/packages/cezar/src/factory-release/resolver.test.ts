@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { computeFactoryManifestDigest } from '@open-mercato/cezar-contract';
-import { resolveFactoryRelease, resolvePinnedFactoryRelease } from './resolver.ts';
+import { spawnSync } from 'node:child_process';
+import { materializeRuntimeScript, resolveFactoryRelease, resolvePinnedFactoryRelease } from './resolver.ts';
 
 const sha256 = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 let temp = '';
@@ -49,6 +50,36 @@ async function optionsFor(fixture: Awaited<ReturnType<typeof fixtureStore>>, cha
     runtimeMaterializer: async () => runtimeRoot,
   };
 }
+
+/** First interpreter that runs; null when none does. */
+function findPython(): string[] | null {
+  for (const candidate of [[process.env.CEZ_FACTORY_CONTROLLER_PYTHON ?? ''], ['python3'], ['python'], ['py', '-3']]) {
+    if (!candidate[0]) continue;
+    const probe = spawnSync(candidate[0], [...candidate.slice(1), '-c', 'import sys; sys.exit(0)'], { windowsHide: true });
+    if (probe.status === 0) return candidate;
+  }
+  return null;
+}
+
+describe('pinned runtime materialization script', () => {
+  // Regression: statements were joined with '; ', and a one-line `if ...: raise` after ';' is a
+  // SyntaxError, so every materialization failed and /api/v1/factory-release answered 503. The fake
+  // materializer in the tests below never runs this script, so it must be checked directly.
+  it('is valid Python', () => {
+    const python = findPython();
+    expect(python, 'no Python interpreter found; the materialization script cannot be checked').not.toBeNull();
+    const [command, ...prefix] = python!;
+    const result = spawnSync(command, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+  });
+
+  it('keeps one statement per line', () => {
+    const lines = materializeRuntimeScript().split('\n');
+    expect(lines.length).toBeGreaterThan(5);
+    expect(lines.filter((line) => /;\s*(if|for|while|with|try)\b/.test(line))).toEqual([]);
+  });
+});
 
 describe('Factory release resolver', () => {
   it('selects the registry channel and returns its verified immutable SHA', async () => {
