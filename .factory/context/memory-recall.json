@@ -1,0 +1,28 @@
+{
+  "status": "ok",
+  "banksQueried": [
+    "project-neonpath",
+    "factory"
+  ],
+  "memoryIds": [
+    "084ad0a8-0976-41cf-a282-183621bc40d1",
+    "483bcefd-2812-4cf9-93c5-ed07be579b99",
+    "c538c67a-3292-4eff-ab07-96e8899c4bda"
+  ],
+  "memoryCount": 3,
+  "contextChars": 225,
+  "selected": [
+    {
+      "id": "084ad0a8-0976-41cf-a282-183621bc40d1",
+      "excerpt": "Cezar Factory live validation uses LiteLLM on Bazzite and vLLM on Mac mini."
+    },
+    {
+      "id": "483bcefd-2812-4cf9-93c5-ed07be579b99",
+      "excerpt": "Cezar Factory live validation uses LiteLLM on Bazzite and vLLM on Mac mini."
+    },
+    {
+      "id": "c538c67a-3292-4eff-ab07-96e8899c4bda",
+      "excerpt": "Cezar Factory live validation uses LiteLLM on Bazzite and vLLM on Mac mini."
+    }
+  ]
+}
