@@ -10,6 +10,16 @@ troubleshooting must continue when production-only target configuration or
 host parity is unavailable; report production release as pending only when
 relevant.
 
+All validation runs on our own compute; nothing runs on GitHub. There is no hosted
+CI: never add or restore `.github/workflows/*`, never trigger, wait on, poll, or
+cite GitHub Actions or status checks (`gh pr checks`, `gh run ...`), and never treat
+"no GitHub checks" as a blocker or a reason to wait. Validation is the local suite
+(`tests/run-tests.ps1`, the `.githooks` pre-commit hook, `scripts/factory/test-changed.ps1`,
+and the `promote-stable.ps1` gate), and its receipts are the validation evidence for
+review and auto-merge (see `docs/local-validation.md`). If a GitHub workflow runs
+anyway, it is a stray left on another branch or in repository settings: report it and
+remove it; do not wait for it or work around it.
+
 Workflows own scripts. Every Factory script runs from a `command:` step in
 `workflows/*.yaml`; skills and workflow `prompt:` text must never instruct the
 model to run a Factory script, extract an issue number for one (pass `-Task
@@ -41,7 +51,7 @@ When asked to complete outstanding issues, work the repository backlog
 autonomously. Select the next eligible issue from the existing queue using its
 readiness, dependencies, priority, and age; do not wait for the user to schedule
 each issue or approve routine assumptions. Decomposed children enter planning
-automatically and continue in dependency order. If one issue is waiting on CI,
+automatically and continue in dependency order. If one issue is waiting on
 independent technical review, or release, continue with other eligible issues
 instead of pausing the whole backlog. Ask the user only to decide a major
 architectural choice that materially changes compatibility, ownership, or the

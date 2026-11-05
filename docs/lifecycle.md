@@ -55,7 +55,7 @@ stateDiagram-v2
    - `factory:ready` → `factory:working`: Implementation automation
    - `factory:working` → `factory:review`: Implementation automation (after completion)
    - `factory:review` → `factory:changes-requested`: Review automation
-   - `factory:review` → `factory:done`: Independent review, current-head eligibility and required checks pass, auto-merge is requested for that exact head, and GitHub reports the PR merged; otherwise remain in review
+   - `factory:review` → `factory:done`: Independent review, current-head eligibility and local validation receipts pass, auto-merge is requested for that exact head, and GitHub reports the PR merged; otherwise remain in review
    - A decomposed tracking parent closes after creating and queueing its child issues; children plan and implement autonomously in dependency order.
    - `factory:changes-requested` → `factory:working`: Fix automation
    - `factory:human-review` → `factory:needs-plan`: User resolves a major architectural decision; planning resumes automatically

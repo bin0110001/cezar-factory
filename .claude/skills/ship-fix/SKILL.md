@@ -23,7 +23,8 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
 3. **PR.** Open (or reuse) a PR into the configured base branch with `Closes #N`, add a structured
    self-review (scope, risk, invariants, validation evidence, unresolved findings), request auto-merge, and
    set the issue label to `factory:implemented`/`factory:pr-open` per `AGENTS.md`. Run `gh` outside the sandbox.
-4. **Deploy.** Wait for the PR to merge (`gh pr checks`, `gh pr view --json state`). Then use `ship-deploy`.
+4. **Deploy.** Wait for the PR to merge (`gh pr view --json state,mergedAt`). Never wait on or poll GitHub
+   Actions/status checks: there is no hosted CI, and local test results are the validation. Then use `ship-deploy`.
 5. **Verify.** Use `ship-verify` to queue the same workflow, then `ship-status` with `-Wait` to follow it.
 6. **Decide.**
    - Passed: comment on the issue with attempt count, SHA and run id; stop.

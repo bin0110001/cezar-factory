@@ -196,4 +196,4 @@ $env:CEZ_API_URL = 'http://localhost:PORT'; $env:CEZ_PROJECT_ID = '<id>'   # Cez
 
 ## CI
 
-`tests/run-tests.ps1` is the factory's own CI (`.github/workflows/ci.yml`): static checks, plus install, drift, upgrade, rollback, override, ambiguity, result-validation, state-routing (fake `gh`) and automation-sync (mock cockpit) scenarios against the fixture projects in `tests/fixtures/`. Projects can run `diff.ps1` and `verify.ps1` in their own CI.
+`tests/run-tests.ps1` is the factory's own CI, run locally by the pre-commit hook and the `promote-stable.ps1` gate (there is no GitHub workflow): static checks, plus install, drift, upgrade, rollback, override, ambiguity, result-validation, state-routing (fake `gh`) and automation-sync (mock cockpit) scenarios against the fixture projects in `tests/fixtures/`. Projects can run `diff.ps1` and `verify.ps1` in their own CI.
