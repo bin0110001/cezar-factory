@@ -32,6 +32,8 @@ const STATE = 'automation-state.json';
 const RECEIPTS = 'automation-receipts.ndjson';
 const LOG = 'automation-log.ndjson';
 const POLL_LOCK = 'automation-poll.lock';
+/** Tokens of leases this process created; a lock naming our pid but an unknown token is a previous instance's. */
+const leaseTokensIssuedByThisProcess = new Set<string>();
 const MUTATION_LOCK = 'automation-mutation.lock';
 const GUARD_SUFFIX = '.guard';
 /** proper-lockfile enforces a 2s minimum; this bounds crash recovery without stealing live owners. */
@@ -342,7 +344,13 @@ export class AutomationStore {
       const existed = existsSync(path);
       const previous = existed ? readLeaseMetadata(path) : undefined;
       const ageMs = existed ? Math.max(0, this.now().getTime() - statSync(path).mtimeMs) : 0;
-      if (previous?.pid === process.pid || (previous?.pid && (this.options.processAlive ?? isProcessAlive)(previous.pid))) {
+      // A pid equal to ours proves nothing on its own: in a container the cockpit is always pid 1, so
+      // a lock left by an earlier container instance (also pid 1) would look held forever and jam the
+      // scheduler until someone deleted it by hand. Our own pid only counts when this process issued
+      // the lease; any other pid is probed as before.
+      const heldByThisProcess = previous?.pid === process.pid && previous.token !== undefined && leaseTokensIssuedByThisProcess.has(previous.token);
+      const heldByAnotherProcess = previous?.pid !== undefined && previous.pid !== process.pid && (this.options.processAlive ?? isProcessAlive)(previous.pid);
+      if (heldByThisProcess || heldByAnotherProcess) {
         throw new Error('lease is held by a live process');
       }
       if (existed && !previous?.pid && ageMs < staleAfterMs) {
@@ -358,6 +366,7 @@ export class AutomationStore {
       }
       this.options.beforeLeaseMetadataWrite?.(path);
       writeLeaseMetadataExclusive(path, JSON.stringify({ pid: process.pid, token, startedAt: this.now().toISOString() }));
+      leaseTokensIssuedByThisProcess.add(token);
       return new AutomationLease(path, token, releaseGuard, () => !compromised);
     } catch (error) {
       try { releaseGuard(); } catch { /* guard was already recovered */ }

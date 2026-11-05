@@ -134,6 +134,27 @@ describe('AutomationStore.acquireLease — a lock nobody is holding any more (#9
     lease?.release();
   });
 
+  // Regression: a container's cockpit is always pid 1, so the lock left by a previous container
+  // instance names the same pid as the new one. It looked held forever; every poll and manual run
+  // was refused ("automation polling lease is held by another process") until the file was removed.
+  it('reclaims a lock that names this pid but was issued by an earlier process instance', async () => {
+    const dir = await lockedDirectory(JSON.stringify({ pid: process.pid, token: 'issued-by-a-previous-container', startedAt: new Date().toISOString() }));
+    const store = AutomationStore.open(dir);
+    const lease = store.acquireLease();
+    expect(lease).toBeDefined();
+    expect(JSON.parse(readFileSync(join(dir, 'automation-poll.lock'), 'utf8')).token).not.toBe('issued-by-a-previous-container');
+    lease?.release();
+  });
+
+  it('still refuses a second lease while this process holds the first', async () => {
+    const dir = await directory();
+    const store = AutomationStore.open(dir);
+    const first = store.acquireLease();
+    expect(first).toBeDefined();
+    expect(AutomationStore.open(dir).acquireLease()).toBeUndefined();
+    first?.release();
+  });
+
   it('leaves a lock alone while its writer is still alive', async () => {
     const dir = await lockedDirectory(JSON.stringify({ pid: FOREIGN_PID, startedAt: new Date().toISOString() }));
     const probed: number[] = [];
