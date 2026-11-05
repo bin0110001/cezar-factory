@@ -100,6 +100,25 @@ validation:
     & git -C $project reset -q -- staged-check.txt
     Remove-Item (Join-Path $project 'staged-check.txt')
 
+    # A project that does not ignore .factory/ must still not treat runtime state as changed source.
+    $savedIgnore = Get-Content -Raw (Join-Path $project '.gitignore')
+    Set-Content (Join-Path $project '.gitignore') ''
+    & git -C $project add .gitignore
+    & git -C $project commit -qm unignore-factory
+    @{ environment = @{ baseCommit = ((& git -C $project rev-parse HEAD).Trim()) } } |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    Set-Content (Join-Path $project 'owned-check.txt') 'runtime state must be ignored'
+    $strayDir = Join-Path $project '.factory/artifacts/stray'
+    New-Item -ItemType Directory -Path $strayDir -Force | Out-Null
+    Set-Content (Join-Path $strayDir 'receipt.json') '{}'
+    $runtimeRun = Run-Stage changed
+    Check 'factory runtime state under .factory/ never selects the unmapped full regression' ($runtimeRun.Code -eq 0 -and $runtimeRun.Receipt.selectedChecks -notcontains 'unmapped-full-regression' -and -not @($runtimeRun.Receipt.changedPaths | Where-Object { $_ -like '.factory/*' }).Count)
+    & git -C $project checkout -q -- owned-check.txt
+    Remove-Item -Recurse -Force $strayDir
+    Set-Content (Join-Path $project '.gitignore') $savedIgnore
+    & git -C $project add .gitignore
+    & git -C $project commit -qm reignore-factory
+
     $sourceArtifactRoot = Join-Path $factory 'scripts/artifacts'
     $sourceArtifactsBefore = @()
     if (Test-Path -LiteralPath $sourceArtifactRoot) {
