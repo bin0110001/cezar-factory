@@ -95,9 +95,9 @@ switch ($Action) {
             & pwsh @args2
             if ($LASTEXITCODE -ne 0) { Fail 5 "promote-stable failed ($LASTEXITCODE); nothing was deployed" }
         }
-        $target = Get-TopologyValue 'BAZZITE_SSH_TARGET'
-        $dir = Get-TopologyValue 'BAZZITE_FACTORY_DIR'
-        if (-not $target -or -not $dir) { Fail 4 'BAZZITE_SSH_TARGET / BAZZITE_FACTORY_DIR missing from config/server-topology.env; promoted to stable, host not deployed (timer will pick it up within 5 minutes)' }
+        $target = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_SSH_TARGET')
+        $dir = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_FACTORY_DIR')
+        if (-not $target -or -not $dir) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET / FACTORY_CONTROL_PLANE_FACTORY_DIR missing from config/server-topology.env; promoted to stable, host not deployed (timer will pick it up within 5 minutes)' }
         if ($DryRun) { Write-Host "DRYRUN would run autodeploy on ${target}:${dir}"; break }
         if ($cfg.deploy.hostForce) {
             & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "cd '$dir' && scripts/deploy/factory-autodeploy.sh --force"
@@ -120,7 +120,7 @@ switch ($Action) {
         if ($used -ge $max) { Fail 3 "attempt budget exhausted ($used of $max) for issue #$Issue; a human must decide what to do next" }
         if (-not $Automation) { $Automation = $cfg.verify.defaultAutomation }
         if (-not $Automation) { Fail 2 '-Automation is required (no verify.defaultAutomation configured)' }
-        $list = @(Invoke-Api GET '/automations' $null)
+        $resp0 = Invoke-Api GET '/automations' $null; $list = @(if ($resp0.automations) { $resp0.automations } else { $resp0 })
         $match = $list | Where-Object { $_.id -eq $Automation -or $_.name -eq $Automation -or $_.name -eq "[factory] $Automation" } | Select-Object -First 1
         if (-not $match) { Fail 2 "automation '$Automation' not found in Cezar project" }
         if ($DryRun) { Write-Host "DRYRUN would queue '$($match.name)' (id $($match.id)); attempt $($used + 1) of $max"; break }

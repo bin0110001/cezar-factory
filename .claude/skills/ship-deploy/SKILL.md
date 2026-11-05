@@ -15,7 +15,7 @@ pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Deploy            # add
 ```
 
 It runs `scripts/release/promote-stable.ps1` (full suite, fast-forward only), then
-`factory-autodeploy.sh --force` on the host named by `BAZZITE_SSH_TARGET`/`BAZZITE_FACTORY_DIR` in
+`factory-autodeploy.sh --force` on the host named by `FACTORY_CONTROL_PLANE_SSH_TARGET`/`FACTORY_CONTROL_PLANE_FACTORY_DIR` in
 `config/server-topology.env`, then compares the host SHA with `origin/stable`. See `homelab-ssh` for access.
 
 Result: `SHIP_DEPLOYED sha=...` is success. Exit 4 means blocked (host not configured, or autodeploy exit
