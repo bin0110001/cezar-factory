@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "baseBranch": "dev",
+  "mergedPullRequests": 50,
+  "openPullRequests": 1,
+  "promoted": [],
+  "closed": [
+    {
+      "issue": 274,
+      "pr": 275
+    }
+  ],
+  "skipped": [],
+  "errors": []
+}
