@@ -36,34 +36,45 @@ async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
 
 const project = (factoryChannel?: 'dev' | 'stable') => [{ id: 'shop', root: 'C:\\shop', name: 'Shop', addedAt: '', lastOpenedAt: '', source: 'local' as const, ...(factoryChannel ? { factoryChannel } : {}) }];
 
+async function optionsFor(fixture: Awaited<ReturnType<typeof fixtureStore>>, channel: 'dev' | 'stable' = 'stable') {
+  const runtimeRoot = join(temp, 'runtimes', fixture.sha);
+  const exists = await readFile(join(runtimeRoot, 'scripts', 'factory-startup.ps1'), 'utf8').then(() => true, () => false);
+  if (!exists) {
+    await mkdir(join(runtimeRoot, 'scripts'), { recursive: true });
+    await writeFile(join(runtimeRoot, 'scripts', 'factory-startup.ps1'), '# pinned startup');
+  }
+  return {
+    env: { CEZ_FACTORY_RELEASE_STORE: fixture.store, FACTORY_RUNTIME_SOURCE_ROOT: join(temp, 'source'), CEZ_HOME: join(temp, 'cez-home') },
+    projects: project(channel),
+    runtimeMaterializer: async () => runtimeRoot,
+  };
+}
+
 describe('Factory release resolver', () => {
   it('selects the registry channel and returns its verified immutable SHA', async () => {
     const fixture = await fixtureStore('dev');
-    const result = await resolveFactoryRelease('shop', { env: { CEZ_FACTORY_RELEASE_STORE: fixture.store }, projects: project('dev') });
-    expect(result).toMatchObject({ projectId: 'shop', channel: 'dev', sourceSha: fixture.sha, manifestDigest: fixture.manifest.manifestDigest, releaseRoot: fixture.release, runtimeRoot: fixture.release });
+    const result = await resolveFactoryRelease('shop', await optionsFor(fixture, 'dev'));
+    expect(result).toMatchObject({ projectId: 'shop', channel: 'dev', sourceSha: fixture.sha, manifestDigest: fixture.manifest.manifestDigest, releaseRoot: fixture.release, runtimeRoot: join(temp, 'runtimes', fixture.sha) });
   });
 
   it('uses the mounted Factory source checkout for commands and fails early if its startup script is missing', async () => {
     const fixture = await fixtureStore('dev');
-    const source = join(temp, 'mounted-source');
-    await mkdir(join(source, 'scripts'), { recursive: true });
-    await writeFile(join(source, 'scripts', 'factory-startup.ps1'), '# startup');
-    const env = { CEZ_FACTORY_RELEASE_STORE: fixture.store, FACTORY_RUNTIME_SOURCE_ROOT: source };
-    const result = await resolveFactoryRelease('shop', { env, projects: project('dev') });
+    const options = await optionsFor(fixture, 'dev');
+    const result = await resolveFactoryRelease('shop', options);
     expect(result.releaseRoot).toBe(fixture.release);
-    expect(result.runtimeRoot).toBe(source);
+    expect(result.runtimeRoot).toBe(join(temp, 'runtimes', fixture.sha));
 
-    await rm(join(source, 'scripts', 'factory-startup.ps1'));
-    await expect(resolveFactoryRelease('shop', { env, projects: project('dev') })).rejects.toMatchObject({
-      code: 'runtime-source-unavailable',
+    await rm(join(result.runtimeRoot, 'scripts', 'factory-startup.ps1'));
+    await expect(resolveFactoryRelease('shop', options)).rejects.toMatchObject({
+      code: 'runtime-materialization-failed',
     });
   });
 
   it('keeps queued tasks pinned to their saved SHA after the channel pointer moves', async () => {
     const fixture = await fixtureStore('dev');
-    const original = await resolveFactoryRelease('shop', { env: { CEZ_FACTORY_RELEASE_STORE: fixture.store }, projects: project('dev') });
+    const original = await resolveFactoryRelease('shop', await optionsFor(fixture, 'dev'));
     await writeFile(join(fixture.store, 'channels', 'dev.json'), JSON.stringify({ schemaVersion: 'factory-release-channel-pointer/v1', channel: 'dev', currentSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', currentPath: join(fixture.store, 'releases', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), lastGoodSha: fixture.sha, lastGoodPath: fixture.release, updatedAt: '2026-10-23T12:05:00Z' }));
-    const resumed = await resolvePinnedFactoryRelease('shop', original, { env: { CEZ_FACTORY_RELEASE_STORE: fixture.store }, projects: project('stable') });
+    const resumed = await resolvePinnedFactoryRelease('shop', original, await optionsFor(fixture, 'stable'));
     expect(resumed.sourceSha).toBe(fixture.sha);
     expect(resumed.manifestDigest).toBe(original.manifestDigest);
   });
