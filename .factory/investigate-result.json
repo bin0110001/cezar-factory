@@ -1,0 +1,10 @@
+{
+  "issue": 99,
+  "failureClassification": "requirements",
+  "evidence": "Issue #99 requests a verification baseline model and outcome-classifying comparison engine. PR #85 (explainable verification selection) implements the comparison engine logic but is not merged to dev. Dependencies: #52 (finding ledger, PR #84 - OPEN) and #53 (impact selection, PR #85 - OPEN) are gated on #50 (isolated executor, PR #83 - MERGED). Worktree cez/34da269b lacks the comparison engine implementation, and the dependency chain has not been promoted to dev.",
+  "attemptsReviewed": "Two prior investigations implemented: c13fe2a classified as 'unknown' with low confidence due to missing evidence; 25cf5ae correctly classified as 'requirements' with high confidence by tracing the open dependency chain (83->84->85) and confirming the worktree does not include the merged comparison engine.",
+  "rootCauseHypothesis": "The issue is blocked because essential dependency PRs have not been merged to dev, leaving the worktree without the comparison engine implementation. PR #85 implements the selector/comparison engine but remains on its branch awaiting merge after #84 (finding ledger) and #83 (isolated executor).",
+  "confidence": "high",
+  "recommendedAction": "Merge the dependency chain (PR #83 already merged; promote #84 then #85 to dev) to unblock the worktree state. After dependencies land, proceed with issue #99 implementation.",
+  "automaticRetryAppropriate": false
+}
