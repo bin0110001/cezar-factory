@@ -43,6 +43,22 @@ describe('Factory release resolver', () => {
     expect(result).toMatchObject({ projectId: 'shop', channel: 'dev', sourceSha: fixture.sha, manifestDigest: fixture.manifest.manifestDigest, releaseRoot: fixture.release, runtimeRoot: fixture.release });
   });
 
+  it('uses the mounted Factory source checkout for commands and fails early if its startup script is missing', async () => {
+    const fixture = await fixtureStore('dev');
+    const source = join(temp, 'mounted-source');
+    await mkdir(join(source, 'scripts'), { recursive: true });
+    await writeFile(join(source, 'scripts', 'factory-startup.ps1'), '# startup');
+    const env = { CEZ_FACTORY_RELEASE_STORE: fixture.store, FACTORY_RUNTIME_SOURCE_ROOT: source };
+    const result = await resolveFactoryRelease('shop', { env, projects: project('dev') });
+    expect(result.releaseRoot).toBe(fixture.release);
+    expect(result.runtimeRoot).toBe(source);
+
+    await rm(join(source, 'scripts', 'factory-startup.ps1'));
+    await expect(resolveFactoryRelease('shop', { env, projects: project('dev') })).rejects.toMatchObject({
+      code: 'runtime-source-unavailable',
+    });
+  });
+
   it('keeps queued tasks pinned to their saved SHA after the channel pointer moves', async () => {
     const fixture = await fixtureStore('dev');
     const original = await resolveFactoryRelease('shop', { env: { CEZ_FACTORY_RELEASE_STORE: fixture.store }, projects: project('dev') });

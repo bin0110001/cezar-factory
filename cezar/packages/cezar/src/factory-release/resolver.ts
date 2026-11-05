@@ -41,6 +41,7 @@ export type FactoryReleaseResolutionCode =
   | 'manifest-digest-mismatch'
   | 'release-state-invalid'
   | 'artifact-invalid'
+  | 'runtime-source-unavailable'
   | 'incompatible-release'
   | 'verification-evidence-invalid';
 
@@ -79,7 +80,7 @@ function containedPath(root: string, relative: string): string {
   return path;
 }
 
-async function verifyRelease(storeRoot: string, projectId: string, channel: FactoryChannel, pinned?: { sourceSha: string; manifestDigest: string }): Promise<FactoryReleaseResolution> {
+async function verifyRelease(storeRoot: string, projectId: string, channel: FactoryChannel, pinned?: { sourceSha: string; manifestDigest: string }, runtimeSourceRoot?: string): Promise<FactoryReleaseResolution> {
   let canonicalStoreRoot: string;
   try { canonicalStoreRoot = await realpath(storeRoot); }
   catch {
@@ -162,13 +163,26 @@ async function verifyRelease(storeRoot: string, projectId: string, channel: Fact
   if (!evidenceRecord || typeof evidenceRecord !== 'object' || (evidenceRecord as Record<string, unknown>).status !== 'passed' || (evidenceRecord as Record<string, unknown>).commitSha !== sourceSha) {
     throw new FactoryReleaseResolutionError('verification-evidence-invalid', 'release evidence does not attest to the selected passing SHA');
   }
+  let runtimeRoot = releaseRoot;
+  if (runtimeSourceRoot?.trim()) {
+    runtimeRoot = resolve(runtimeSourceRoot);
+    try {
+      if (!(await stat(runtimeRoot)).isDirectory()) throw new Error('not a directory');
+      if (!(await stat(join(runtimeRoot, 'scripts', 'factory-startup.ps1'))).isFile()) throw new Error('startup script is missing');
+    } catch {
+      throw new FactoryReleaseResolutionError('runtime-source-unavailable', 'mounted Factory runtime source is unavailable or missing scripts/factory-startup.ps1');
+    }
+  }
   return {
     projectId,
     channel,
     sourceSha,
     manifestDigest: manifest.manifestDigest,
     releaseRoot,
-    runtimeRoot: releaseRoot,
+    // The immutable store retains the verified tarball and its evidence, not an
+    // unpacked checkout. Commands in Cezar's container need the mounted source
+    // checkout; releaseRoot contains metadata and artifact.tar only.
+    runtimeRoot,
     resolvedAt: new Date().toISOString(),
   };
 }
@@ -187,7 +201,7 @@ export async function resolveFactoryRelease(
   const configuredStore = env.CEZ_FACTORY_RELEASE_STORE;
   if (!configuredStore?.trim()) throw new FactoryReleaseResolutionError('release-store-not-configured', 'CEZ_FACTORY_RELEASE_STORE is not configured');
   const storeRoot = resolve(configuredStore);
-  return verifyRelease(storeRoot, projectId, channel);
+  return verifyRelease(storeRoot, projectId, channel, undefined, env.FACTORY_RUNTIME_SOURCE_ROOT);
 }
 
 /** Keep older installations on the shared mount until they opt into channel-backed releases. */
@@ -213,7 +227,7 @@ export async function resolvePinnedFactoryRelease(
   if (!projects.some((entry) => entry.id === projectId)) throw new FactoryReleaseResolutionError('unknown-project', `unknown project: ${projectId}`);
   if (pin.channel !== 'dev' && pin.channel !== 'stable') throw new FactoryReleaseResolutionError('invalid-channel', `unsupported Factory channel: ${String(pin.channel)}`);
   if (!env.CEZ_FACTORY_RELEASE_STORE?.trim()) throw new FactoryReleaseResolutionError('release-store-not-configured', 'CEZ_FACTORY_RELEASE_STORE is not configured for this pinned run');
-  return verifyRelease(resolve(env.CEZ_FACTORY_RELEASE_STORE), projectId, pin.channel, pin);
+  return verifyRelease(resolve(env.CEZ_FACTORY_RELEASE_STORE), projectId, pin.channel, pin, env.FACTORY_RUNTIME_SOURCE_ROOT);
 }
 
 export function runtimeEnvironmentForFactoryRelease(resolution: FactoryReleaseResolution): Record<string, string> {

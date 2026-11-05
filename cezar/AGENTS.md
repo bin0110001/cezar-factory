@@ -12,6 +12,7 @@ New state may be **written**, never **required**: `.ai/cezar/`, `~/.cache/cez/`,
 
 Practical rules:
 
+- **Local interactive development follows the owner's one-checkout rule.** Work in the existing checkout when the owner directs a local change. Do not create or switch to another worktree, temporary clone, or task branch unless the owner explicitly asks. Preserve the current checkout and report a branch/worktree mismatch instead of moving the work. This does not change Cezar's per-task worktree behavior when Cezar is running workflows for users.
 - When a feature seems to need configuration, the design is wrong. Discover it, or default it.
 - Features that widen exposure or cost (network, other processes) are opt-in behind a `CEZ_*` flag, off by default — the zero-config default is also the safe default.
 - Owner-approved exception (2026-09-12): task dispatch (`cez task create`, spec `.ai/specs/2026-09-10-dispatch.md`) is default-on; `CEZ_DISPATCH=0` turns it off. Its brakes live in the engine — four children in flight, a child's budget carved out of its parent's — and with dispatch off the agent fanned out through its own sub-agents instead, unbudgeted and invisible (live run 3f7eaf02, 4.3M tokens).

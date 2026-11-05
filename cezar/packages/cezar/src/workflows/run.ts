@@ -1304,6 +1304,10 @@ export class RunManager {
   private factoryReleaseRoot(runId: string): string | undefined {
     const pin = this.store.getRun(runId)?.factoryRelease ?? this.store.getRun(runId)?.workflowDef?.factoryRelease;
     if (!pin) return undefined;
+    // The release store contains the verified archive and metadata. Workflow
+    // commands execute in the container and need its mounted source path.
+    const runtimeSourceRoot = process.env.FACTORY_RUNTIME_SOURCE_ROOT;
+    if (runtimeSourceRoot?.trim()) return resolve(runtimeSourceRoot);
     const store = process.env.CEZ_FACTORY_RELEASE_STORE;
     if (!store) throw new Error('pinned Factory release store is not configured');
     return join(resolve(store), 'releases', pin.sourceSha);
@@ -1329,9 +1333,7 @@ export class RunManager {
     const store = process.env.CEZ_FACTORY_RELEASE_STORE;
     const sourceRoot = process.env.FACTORY_RUNTIME_SOURCE_ROOT;
     if (!store || !sourceRoot) throw new Error('Factory release reference storage is not configured');
-    const runtimeRoot = this.factoryReleaseRoot(runId);
-    if (!runtimeRoot) throw new Error('pinned Factory release is unavailable');
-    const script = join(runtimeRoot, 'scripts', 'release', 'factory_release_controller.py');
+    const script = join(resolve(sourceRoot), 'scripts', 'release', 'factory_release_controller.py');
     const referenceId = `${this.projectId}:${runId}`;
     const args = [script, action, '--repo', sourceRoot, '--store', store, '--channel', pin.channel,
       '--sha', pin.sourceSha, '--reference-kind', 'run', '--reference-id', referenceId];

@@ -21,9 +21,14 @@ SQLite-backed; Git remains authoritative for branches, commits, and worktrees.
    that checkout without accessing the host-local workspace registry and without
    claiming or adopting an issue workspace. Inspect the branch and worktree first,
    preserve existing edits and untracked files, and stage only files belonging to
-   the requested change. Do not use this exception on the Cezar runner or when the
-   execution context is unclear; those sessions must use the registry-backed
-   claim/adopt flow below. Never infer Factory ownership from a marker alone.
+   the requested change. Local interactive development uses one existing checkout:
+   do not create or switch to another Git worktree, temporary clone, or task branch
+   unless the user directly asks for one. If the requested task does not fit the
+   current checkout, preserve it and report the mismatch instead of moving the work
+   elsewhere. Do not clean up Cezar automation worktrees as part of local development.
+   Do not use this exception on the Cezar runner or when the execution context is
+   unclear; those sessions must use the registry-backed claim/adopt flow below.
+   Never infer Factory ownership from a marker alone.
 4. Use the issue already selected in the task context. Do not search GitHub for
    replacement work. If no issue was supplied, ask the user which issue this work
    belongs to before creating an issue claim.
