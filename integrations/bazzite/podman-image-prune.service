@@ -1,0 +1,7 @@
+[Unit]
+Description=Remove untagged Podman images older than three days
+
+[Service]
+Type=oneshot
+# Untagged (dangling) images only. Never touches running containers, tagged images, or volumes.
+ExecStart=/usr/bin/podman image prune --force --filter until=72h
