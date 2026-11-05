@@ -21,15 +21,20 @@ SQLite-backed; Git remains authoritative for branches, commits, and worktrees.
    that checkout without accessing the host-local workspace registry and without
    claiming or adopting an issue workspace. Inspect the branch and worktree first,
    preserve existing edits and untracked files, and stage only files belonging to
-   the requested change. Do not use this exception on the Cezar runner or when the
-   execution context is unclear; those sessions must use the registry-backed
-   claim/adopt flow below. Never infer Factory ownership from a marker alone.
+   the requested change. Local interactive development uses one existing checkout:
+   do not create or switch to another Git worktree, temporary clone, or task branch
+   unless the user directly asks for one. If the requested task does not fit the
+   current checkout, preserve it and report the mismatch instead of moving the work
+   elsewhere. Do not clean up Cezar automation worktrees as part of local development.
+   Do not use this exception on the Cezar runner or when the execution context is
+   unclear; those sessions must use the registry-backed claim/adopt flow below.
+   Never infer Factory ownership from a marker alone.
    If `cez workspace context` cannot run because the `cez` CLI is unavailable,
    this same exception may be used only when the session is clearly a local
    interactive Windows dev window, the user explicitly directed work in this
    repository, and `FACTORY_MANAGED=1` is absent. Inspect the current branch and
-   worktree, preserve unrelated changes, and use an isolated worktree when the
-   issue workflow requires one. If any part of that local context is unclear,
+   worktree, preserve unrelated changes, and continue in the existing checkout.
+   If any part of that local context is unclear,
    or `FACTORY_MANAGED=1` is present, stop rather than assuming the session is
    unmanaged; do not use this fallback on the Cezar runner.
 4. Use the issue already selected in the task context. Do not search GitHub for

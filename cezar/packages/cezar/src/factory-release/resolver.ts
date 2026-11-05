@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 import {
   computeFactoryManifestDigest,
   factoryReleaseChannelPointerSchema,
@@ -8,6 +10,9 @@ import {
   parseFactoryReleaseState,
 } from '@open-mercato/cezar-contract';
 import { loadWorkspaceConfig } from '../workspace/config.ts';
+import { cezarHomeDir } from '../paths.ts';
+
+const execFileAsync = promisify(execFile);
 
 export type FactoryChannel = 'dev' | 'stable';
 export interface FactoryReleaseResolution {
@@ -41,6 +46,8 @@ export type FactoryReleaseResolutionCode =
   | 'manifest-digest-mismatch'
   | 'release-state-invalid'
   | 'artifact-invalid'
+  | 'runtime-source-unavailable'
+  | 'runtime-materialization-failed'
   | 'incompatible-release'
   | 'verification-evidence-invalid';
 
@@ -66,6 +73,65 @@ async function readJson(path: string, missingCode: FactoryReleaseResolutionCode)
   }
 }
 
+export function factoryRuntimeRootForSha(sha: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(cezarHomeDir(env), 'factory-runtime', sha);
+}
+
+export type RuntimeMaterializer = (args: { storeRoot: string; sourceRoot: string; sha: string; manifestDigest: string; env: NodeJS.ProcessEnv }) => Promise<string>;
+
+async function materializeRuntime({ storeRoot, sourceRoot, sha, manifestDigest, env }: Parameters<RuntimeMaterializer>[0]): Promise<string> {
+  if (!sourceRoot.trim()) throw new FactoryReleaseResolutionError('runtime-source-unavailable', 'FACTORY_RUNTIME_SOURCE_ROOT is not configured');
+  const runtimeRoot = factoryRuntimeRootForSha(sha, env);
+  const markerPath = join(runtimeRoot, '.factory-runtime.json');
+  try {
+    const marker = JSON.parse(await readFile(markerPath, 'utf8')) as Record<string, unknown>;
+    if (marker.sourceSha === sha && marker.manifestDigest === manifestDigest
+      && (await stat(join(runtimeRoot, 'scripts', 'factory-startup.ps1'))).isFile()) return runtimeRoot;
+    throw new Error('cached runtime marker does not match the selected release');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new FactoryReleaseResolutionError('runtime-materialization-failed', `cached Factory runtime is invalid: ${String(error)}`);
+    }
+  }
+
+  const parent = dirname(runtimeRoot);
+  await mkdir(parent, { recursive: true });
+  const temporaryRoot = await mkdtemp(join(parent, `.${sha}.`));
+  const destination = join(temporaryRoot, 'tree');
+  const script = [
+    'import json, pathlib, sys',
+    'repo, store, sha, digest, destination = sys.argv[1:]',
+    'sys.path.insert(0, repo)',
+    'from scripts.release.factory_release_controller import ReleaseController, extract_archive',
+    'controller = object.__new__(ReleaseController)',
+    'controller.releases = pathlib.Path(store) / "releases"',
+    'release = controller.releases / sha',
+    'manifest = controller.verify_release(release, expected_sha=sha)',
+    'if manifest["manifestDigest"] != digest: raise RuntimeError("pinned release manifest changed")',
+    'entries = extract_archive(release / "artifact.tar", pathlib.Path(destination), "release/")',
+    'if entries != manifest["files"]: raise RuntimeError("archive entries differ from the verified manifest")',
+    'startup = pathlib.Path(destination) / "scripts" / "factory-startup.ps1"',
+    'if not startup.is_file(): raise RuntimeError("Factory artifact has no scripts/factory-startup.ps1")',
+    '(pathlib.Path(destination) / ".factory-runtime.json").write_text(json.dumps({"sourceSha": sha, "manifestDigest": digest}), encoding="utf-8")',
+  ].join('; ');
+  try {
+    const python = env.CEZ_FACTORY_CONTROLLER_PYTHON || 'python3';
+    await execFileAsync(python, ['-c', script, resolve(sourceRoot), storeRoot, sha, manifestDigest, destination], {
+      encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 2 * 1024 * 1024,
+    });
+    try { await rename(destination, runtimeRoot); }
+    catch (error) {
+      // Another Cezar process may have materialized the same immutable SHA first.
+      if (!(await stat(markerPath).then(() => true, () => false))) throw error;
+    }
+    return runtimeRoot;
+  } catch (error) {
+    throw new FactoryReleaseResolutionError('runtime-materialization-failed', `could not materialize pinned Factory runtime: ${String(error)}`);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 function containedPath(root: string, relative: string): string {
   if (!relative || relative.includes('\\') || isAbsolute(relative) || relative.split('/').some((part) => !part || part === '.' || part === '..')) {
     throw new FactoryReleaseResolutionError('manifest-invalid', 'manifest contains an unsafe relative path');
@@ -79,7 +145,7 @@ function containedPath(root: string, relative: string): string {
   return path;
 }
 
-async function verifyRelease(storeRoot: string, projectId: string, channel: FactoryChannel, pinned?: { sourceSha: string; manifestDigest: string }): Promise<FactoryReleaseResolution> {
+async function verifyRelease(storeRoot: string, projectId: string, channel: FactoryChannel, pinned?: { sourceSha: string; manifestDigest: string }, runtimeSourceRoot?: string, env: NodeJS.ProcessEnv = process.env, materializer: RuntimeMaterializer = materializeRuntime): Promise<FactoryReleaseResolution> {
   let canonicalStoreRoot: string;
   try { canonicalStoreRoot = await realpath(storeRoot); }
   catch {
@@ -162,13 +228,21 @@ async function verifyRelease(storeRoot: string, projectId: string, channel: Fact
   if (!evidenceRecord || typeof evidenceRecord !== 'object' || (evidenceRecord as Record<string, unknown>).status !== 'passed' || (evidenceRecord as Record<string, unknown>).commitSha !== sourceSha) {
     throw new FactoryReleaseResolutionError('verification-evidence-invalid', 'release evidence does not attest to the selected passing SHA');
   }
+  const runtimeRoot = await materializer({ storeRoot, sourceRoot: runtimeSourceRoot ?? '', sha: sourceSha, manifestDigest: manifest.manifestDigest, env });
+  try {
+    if (!(await stat(join(runtimeRoot, 'scripts', 'factory-startup.ps1'))).isFile()) throw new Error('startup script is missing');
+  } catch {
+    throw new FactoryReleaseResolutionError('runtime-materialization-failed', 'materialized Factory runtime is missing scripts/factory-startup.ps1');
+  }
   return {
     projectId,
     channel,
     sourceSha,
     manifestDigest: manifest.manifestDigest,
     releaseRoot,
-    runtimeRoot: releaseRoot,
+    // Keep the verified archive/evidence separate from the materialized runtime
+    // so every workflow, skill, and command reads the same pinned SHA.
+    runtimeRoot,
     resolvedAt: new Date().toISOString(),
   };
 }
@@ -176,7 +250,7 @@ async function verifyRelease(storeRoot: string, projectId: string, channel: Fact
 /** Resolve the channel from the Cezar workspace registry and pin its immutable artifact. */
 export async function resolveFactoryRelease(
   projectId: string,
-  options: { env?: NodeJS.ProcessEnv; projects?: Awaited<ReturnType<typeof loadWorkspaceConfig>>['projects'] } = {},
+  options: { env?: NodeJS.ProcessEnv; projects?: Awaited<ReturnType<typeof loadWorkspaceConfig>>['projects']; runtimeMaterializer?: RuntimeMaterializer } = {},
 ): Promise<FactoryReleaseResolution> {
   const env = options.env ?? process.env;
   const projects = options.projects ?? (await loadWorkspaceConfig()).projects;
@@ -187,7 +261,7 @@ export async function resolveFactoryRelease(
   const configuredStore = env.CEZ_FACTORY_RELEASE_STORE;
   if (!configuredStore?.trim()) throw new FactoryReleaseResolutionError('release-store-not-configured', 'CEZ_FACTORY_RELEASE_STORE is not configured');
   const storeRoot = resolve(configuredStore);
-  return verifyRelease(storeRoot, projectId, channel);
+  return verifyRelease(storeRoot, projectId, channel, undefined, env.FACTORY_RUNTIME_SOURCE_ROOT, env, options.runtimeMaterializer);
 }
 
 /** Keep older installations on the shared mount until they opt into channel-backed releases. */
@@ -206,14 +280,14 @@ export async function resolveConfiguredFactoryRelease(
 export async function resolvePinnedFactoryRelease(
   projectId: string,
   pin: { channel: FactoryChannel; sourceSha: string; manifestDigest: string },
-  options: { env?: NodeJS.ProcessEnv; projects?: Awaited<ReturnType<typeof loadWorkspaceConfig>>['projects'] } = {},
+  options: { env?: NodeJS.ProcessEnv; projects?: Awaited<ReturnType<typeof loadWorkspaceConfig>>['projects']; runtimeMaterializer?: RuntimeMaterializer } = {},
 ): Promise<FactoryReleaseResolution> {
   const env = options.env ?? process.env;
   const projects = options.projects ?? (await loadWorkspaceConfig()).projects;
   if (!projects.some((entry) => entry.id === projectId)) throw new FactoryReleaseResolutionError('unknown-project', `unknown project: ${projectId}`);
   if (pin.channel !== 'dev' && pin.channel !== 'stable') throw new FactoryReleaseResolutionError('invalid-channel', `unsupported Factory channel: ${String(pin.channel)}`);
   if (!env.CEZ_FACTORY_RELEASE_STORE?.trim()) throw new FactoryReleaseResolutionError('release-store-not-configured', 'CEZ_FACTORY_RELEASE_STORE is not configured for this pinned run');
-  return verifyRelease(resolve(env.CEZ_FACTORY_RELEASE_STORE), projectId, pin.channel, pin);
+  return verifyRelease(resolve(env.CEZ_FACTORY_RELEASE_STORE), projectId, pin.channel, pin, env.FACTORY_RUNTIME_SOURCE_ROOT, env, options.runtimeMaterializer);
 }
 
 export function runtimeEnvironmentForFactoryRelease(resolution: FactoryReleaseResolution): Record<string, string> {

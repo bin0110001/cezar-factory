@@ -30,14 +30,36 @@ function Run([string]$Script, [hashtable]$Args2) {
 }
 
 function Copy-Factory([string]$From, [string]$To) {
-    New-Item -ItemType Directory $To | Out-Null
-    Get-ChildItem $From -Force | Where-Object { $_.Name -notin '.git', 'tests', 'cezar', 'node_modules', '.factory' } | Copy-Item -Destination $To -Recurse
+    $sourceRoot = (Resolve-Path -LiteralPath $From).Path
+    New-Item -ItemType Directory -Force $To | Out-Null
+    $excludedDirectories = @('.git', 'tests', 'cezar', 'node_modules', '.factory')
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($sourceRoot)
+    while ($pending.Count) {
+        $directory = $pending.Pop()
+        foreach ($entry in Get-ChildItem -LiteralPath $directory -Force) {
+            if ($entry.PSIsContainer) {
+                if ($entry.Name -in $excludedDirectories) { continue }
+                $relative = [IO.Path]::GetRelativePath($sourceRoot, $entry.FullName)
+                $destination = Join-Path $To $relative
+                New-Item -ItemType Directory -Force -Path $destination | Out-Null
+                $pending.Push($entry.FullName)
+                continue
+            }
+            if ($entry.Name -match '^\.env(?:\..+)?$') { continue }
+            $relative = [IO.Path]::GetRelativePath($sourceRoot, $entry.FullName)
+            $destination = Join-Path $To $relative
+            $parent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Copy-Item -LiteralPath $entry.FullName -Destination $destination -Force
+        }
+    }
 }
 
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
 'routing/default.yaml', 'integrations/deployment/README.md', 'integrations/bazzite/compose.yaml',
@@ -96,6 +118,7 @@ Assert 'backlog audit documents read-only collector and deterministic preparatio
 Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
 Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
 Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
 Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
@@ -119,15 +142,18 @@ $validationLibrary = Get-Content -Raw (Join-Path $factory 'scripts/lib.ps1')
 $routeState = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
 Assert 'isolated-worktree workflows use the registered Factory runtime' ($planWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $investigateWorkflow -match '\$FACTORY_RUNTIME_ROOT/scripts/(hindsight/recall|validate-result|route-state)' -and $planWorkflow -notmatch '\.ai/factory/scripts' -and $investigateWorkflow -notmatch '\.ai/factory/scripts')
 Assert 'external workspace skill uses the shared CLI and yields to a verified Factory execution' ($lifecycleSkill -match 'cez workspace context' -and $lifecycleSkill -match 'managed: true' -and $lifecycleSkill -match 'cez workspace adopt' -and $lifecycleSkill -notmatch '(?i)(pwsh|powershell).*\.ps1')
+Assert 'local interactive development reuses the existing checkout unless the owner explicitly requests another' ($lifecycleSkill -match 'one existing checkout' -and $lifecycleSkill -match 'do not create or switch' -and $lifecycleSkill -match 'unless the user directly asks' -and $lifecycleSkill -match 'Do not clean up Cezar automation worktrees')
 Assert 'Codex and Claude hook fragments connect session start/stop to verified workspace context' ($codexLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $codexLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.SessionStart.hooks.command -like 'cez workspace hook-context*' -and $claudeLifecycleHooks.hooks.Stop.hooks.command -like 'cez workspace hook-context*')
 Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 $testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
-$ciWorkflow = Get-Content -Raw (Join-Path $factory '.github/workflows/ci.yml')
+$localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
+Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
+Assert 'local pre-commit hook clears Git repository environment before isolated fixture tests' ($localPreCommitHook -match 'git rev-parse --local-env-vars' -and $localPreCommitHook -match 'unset "\$git_env"')
+Assert 'no GitHub Actions workflow runs repository scripts' (@(Get-ChildItem (Join-Path $factory '.github/workflows') -Filter *.yml -ErrorAction SilentlyContinue).Count -eq 0 -and @(Get-ChildItem (Join-Path $factory '.github/workflows') -Filter *.yaml -ErrorAction SilentlyContinue).Count -eq 0)
 Assert 'Cezar owners run changed tests or related tests without package-wide Vitest' ($cezarTestOwners.Count -eq 3 -and @($cezarTestOwners | Where-Object { $_.command -notmatch 'vitest run \$tests' -or $_.command -notmatch 'vitest related --run \$sources' -or $_.command -match 'vitest run;|vitest run\s*;' }).Count -eq 0)
 Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))
-Assert 'CI installs Cezar dependencies only when a Cezar package changed' ($ciWorkflow -match 'Detect changed Cezar packages' -and $ciWorkflow -match "steps\.cezar-scope\.outputs\.changed == 'true'" -and $ciWorkflow -notmatch 'Verification contract tests and typechecks|npm run typecheck -w @open-mercato/cezar')
 Assert 'Factory validation captures bounded command output on timeout' ($validationLibrary -match 'Preserve the bounded diagnostic output on timeouts' -and $validationLibrary -match 'Configured validation\.\$Stage exceeded')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
@@ -418,7 +444,7 @@ Assert 'release contracts: active and expired task pins satisfy lease shape' ((T
 Assert 'release contracts: local promotion evidence fixture satisfies its versioned schema' (Test-Json -Json $healthyPromotion -SchemaFile (Join-Path $releaseSchemas 'promotion-record.schema.json'))
 $unsafeManifest = (Get-Content -Raw (Join-Path $releaseFixtures 'manifest-valid.json') | ConvertFrom-Json -AsHashtable); $unsafeManifest.files[0].path = '../VERSION'
 Assert 'release contracts: path traversal is rejected' (-not (Test-Json -Json ($unsafeManifest | ConvertTo-Json -Depth 20) -SchemaFile (Join-Path $releaseSchemas 'manifest.schema.json') -ErrorAction SilentlyContinue))
-foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' })) {
+foreach ($path in @(& git -C $factory ls-files -- '*.yaml' '*.yml' | Where-Object { $_ -notmatch '(^|/)(tests|node_modules)/' -and (Test-Path (Join-Path $factory $_)) })) {
     $file = Join-Path $factory $path
     $t = Get-Content -Raw $file
     Assert "yaml sane $path" (-not $t.Contains("`t") -and $t.Trim().Length -gt 0)
@@ -689,6 +715,7 @@ try {
         # Upgrade to a synthetic 9.9.9: change a policy, add a policy, drop another (obsolete).
         $f2 = Join-Path $tmp "factory-9.9.9-$($fx.Name)"
         Copy-Factory $factory $f2
+        Assert 'fixture factory copy excludes environment files' (@(Get-ChildItem -LiteralPath $f2 -File -Force -Recurse | Where-Object { $_.Name -match '^\.env(?:\..+)?$' }).Count -eq 0)
         Set-Content (Join-Path $f2 'VERSION') '9.9.9'
         Add-Content (Join-Path $f2 'skills/factory-review/SKILL.md') "`nUpgrade note."
         Write-Utf8 (Join-Path $f2 'policies/new-policy.md') "# New policy`n"
@@ -1105,6 +1132,11 @@ try {
     $staleApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $auditProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
     Assert 'backlog audit consumer refuses changed live labels' ($staleApply.Code -ne 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -contains 'factory:auditing')
     $state = Get-Gh; $state.labels = @($state.labels | Where-Object { $_ -ne 'factory:ready' }); $auditIssue = @($state.issues | Where-Object { $_.number -eq 5 })[0]; $auditIssue.labels = @($auditIssue.labels | Where-Object { $_ -ne 'factory:ready' }); $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $wrongKeyProposalPath = Join-Path $tmp 'backlog-label-audit-wrong-key.json'
+    @{ considered = @(5); changed = @(@{ number = 5; added = @('factory:new', 'type:maintenance', 'risk:medium'); reason = 'well-formed classification with wrong issue key' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $wrongKeyProposalPath
+    $wrongKeyApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $wrongKeyProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }
+    $candidateIssueState = @((Get-Gh).issues | Where-Object { $_.number -eq 5 })[0]
+    Assert 'backlog audit consumer rejects number-keyed outcomes before mutation' ($wrongKeyApply.Code -ne 0 -and $candidateIssueState.labels -contains 'factory:auditing' -and $candidateIssueState.labels -notcontains 'factory:new')
     $badProposalPath = Join-Path $tmp 'backlog-label-audit-invalid.json'
     @{ considered = @(5); changed = @(@{ issue = 5; added = @('factory:new', 'type:maintenance', 'risk:medium', 'factory:done'); reason = 'invalid multiple states' }); skipped = @() } | ConvertTo-Json -Depth 6 | Set-Content $badProposalPath
     $invalidApply = Run 'apply-backlog-label-audit.ps1' @{ InputPath = $auditInput; PreparationPath = $auditPreparationPath; ProposalPath = $badProposalPath; OutputPath = $auditApplicationPath; GhCommand = $gh }

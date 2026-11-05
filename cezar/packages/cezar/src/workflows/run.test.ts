@@ -2016,6 +2016,21 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
     expect(notes.some((m) => m.includes('question overridden by the auto-continue nudge'))).toBe(true);
   }, 40_000);
 
+  it('keeps the agent wall-clock deadline on an autonomous final step', async () => {
+    const startSession = vi.spyOn(ClaudeCliRunner.prototype, 'startSession');
+    const record = manager.startRun(SINGLE_STEP, {
+      task: 'mock:done finish the investigation',
+      worktree: false,
+      autonomous: true,
+    });
+    currentId = record.id;
+    await waitFor(record.id, (r) => r?.status === 'done');
+
+    const runner = startSession.mock.contexts[0] as unknown as { timeoutMs: number };
+    expect(runner.timeoutMs).toBe(30 * 60_000);
+    startSession.mockRestore();
+  }, 30_000);
+
   it('an autonomous run parks on an intermediate ask it is nudged past and repeats', async () => {
     const record = manager.startRun(BLOCKING_CHECK, {
       task: 'mock:autonomous mock:ask-repeat choose a path',

@@ -116,7 +116,7 @@ import {
   type WorkflowStepDef,
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
-import { resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
+import { factoryRuntimeRootForSha, resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 import { executeVerification } from '../verification/executor.ts';
 import { listProjects } from '../workspace/projects.ts';
 
@@ -1304,9 +1304,7 @@ export class RunManager {
   private factoryReleaseRoot(runId: string): string | undefined {
     const pin = this.store.getRun(runId)?.factoryRelease ?? this.store.getRun(runId)?.workflowDef?.factoryRelease;
     if (!pin) return undefined;
-    const store = process.env.CEZ_FACTORY_RELEASE_STORE;
-    if (!store) throw new Error('pinned Factory release store is not configured');
-    return join(resolve(store), 'releases', pin.sourceSha);
+    return factoryRuntimeRootForSha(pin.sourceSha);
   }
 
   private factoryReleaseEnv(runId: string): Record<string, string> {
@@ -4490,9 +4488,14 @@ export class RunManager {
       emit({ type: 'step-start', stepId: step.id, name: step.name ?? step.id, kind, iteration });
 
       if (kind === 'agent') {
-        // The last agent step of the workflow is interactive: after its turn
-        // the session stays open for follow-ups until finish/idle/cancel.
-        const interactive = i === lastAgentIdx && i === workflow.steps.length - 1;
+        // The last agent step of a user-started workflow is interactive: after
+        // its turn the session stays open for follow-ups until finish/idle/cancel.
+        // Autonomous runs have no user to follow up, so keep the runner's wall
+        // clock deadline even when this is the final step. Otherwise an
+        // automation that keeps producing output without completing can occupy
+        // a run slot forever.
+        const interactive =
+          input.autonomous !== true && i === lastAgentIdx && i === workflow.steps.length - 1;
         const failure = await this.runAgentStep(
           runId,
           state,

@@ -100,6 +100,13 @@ validation:
     & git -C $project reset -q -- staged-check.txt
     Remove-Item (Join-Path $project 'staged-check.txt')
 
+    $sourceArtifactRoot = Join-Path $factory 'scripts/artifacts'
+    $sourceArtifactsBefore = @()
+    if (Test-Path -LiteralPath $sourceArtifactRoot) {
+        $sourceArtifactsBefore = @(Get-ChildItem -LiteralPath $sourceArtifactRoot -File -Recurse | ForEach-Object {
+            "$([IO.Path]::GetRelativePath($sourceArtifactRoot, $_.FullName))|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)"
+        } | Sort-Object)
+    }
     $priorValidationRoot = $env:FACTORY_VALIDATION_ROOT
     $env:FACTORY_VALIDATION_ROOT = $factory
     try { $otherWorktreeRun = Run-Stage full }
@@ -110,7 +117,13 @@ validation:
     Check 'nested suite may validate a different worktree' ($otherWorktreeRun.Code -eq 0 -and $otherWorktreeRun.Receipt.status -eq 'passed')
     $full = Receipt full
     Check 'receipt validates against versioned schema' (Test-Json -Json ($full | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/validation-receipt.schema.json'))
-    Check 'artifacts stay in the worktree' ((Test-Path (Join-Path $project '.factory/artifacts/validation/full')) -and -not (Test-Path (Join-Path $factory 'scripts/artifacts')))
+    $sourceArtifactsAfter = @()
+    if (Test-Path -LiteralPath $sourceArtifactRoot) {
+        $sourceArtifactsAfter = @(Get-ChildItem -LiteralPath $sourceArtifactRoot -File -Recurse | ForEach-Object {
+            "$([IO.Path]::GetRelativePath($sourceArtifactRoot, $_.FullName))|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)"
+        } | Sort-Object)
+    }
+    Check 'artifacts stay in the worktree without altering preexisting source artifacts' ((Test-Path (Join-Path $project '.factory/artifacts/validation/full')) -and ($sourceArtifactsBefore -join "`n") -eq ($sourceArtifactsAfter -join "`n"))
 
     foreach ($projectType in @('powershell', 'dotnet', 'js-ts', 'godot')) {
         $original = Get-Content -Raw $configPath

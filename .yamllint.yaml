@@ -1,0 +1,12 @@
+extends: relaxed
+
+rules:
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  key-duplicates: enable
+  new-line-at-end-of-file: enable
+  trailing-spaces: enable
+  line-length:
+    max: 600
+    level: warning
