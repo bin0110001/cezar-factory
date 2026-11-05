@@ -66,13 +66,20 @@ that mode it must stop on failed validation, missing target configuration,
 dirty or mismatched remote checkouts, or missing review gates rather than
 overwriting state. These production gates do not block ordinary Dev-mode work.
 
-Factory content reaches Cezar through the shared mount (`docs/shared-factory.md`): after a change
-is merged to `dev`, it is available to the development channel. Run
-`scripts/release/promote-stable.ps1` only during a Production Run; it runs the
-full test suite and only then fast-forwards `origin/stable`. The Bazzite host's
-`factory-autodeploy` timer fast-forwards the mounted checkout to `stable` and
-reconciles automations. Never promote or deploy an untested commit, and never
-edit the Bazzite checkout by hand.
+Promotion is automatic and has one owner: the Bazzite host's `factory-local-promotion` timer
+(`docs/promotion-pipeline.md`). After a change merges to `dev` it validates the exact SHA with the
+full local suite, activates the `dev` channel, runs canary jobs against it, and only then
+fast-forwards `origin/stable` and deploys it; a failed canary rolls `dev` back, quarantines the SHA,
+opens an issue, and counts toward a circuit breaker. Do not run promotion by hand, set a channel
+pointer, or wait on a promotion: merge to `dev` with a recorded self-review and read the result
+with `.claude/ship/ship-loop.ps1 -Action Deploy` (a thin client) or `factory_local_scheduler.py status`.
+The posture is data in `config/promotion-policy.json`: `autonomous` (self-review plus passing
+validation is enough) is the default, and `controlled` adds an independent approval, a soak
+period, and explicit approval before `stable` moves. A **Production Run** selects `controlled`;
+it is a config change, not a different process. `scripts/release/promote-stable.ps1` remains as
+the break-glass manual path for a Production Run or a dead promoter; it runs the full suite and
+only then fast-forwards `origin/stable`. The `factory-autodeploy` timer reconciles the host to
+`stable`. Never promote or deploy an untested commit, and never edit the Bazzite checkout by hand.
 
 The legacy per-project release pipeline is remote-only Cezar synchronization: read
 `apiUrl` and `projectId` from `config/factory-projects.json` and synchronize

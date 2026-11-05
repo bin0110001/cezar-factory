@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.65] - 2026-11-05
+
+- Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each
+  merged `dev` SHA with the full suite in the Cezar container, activates `dev`, runs canary automations,
+  rolls back and quarantines on failure, then fast-forwards `stable` through the GitHub refs API and deploys
+  it. Failures open one fingerprinted issue each and feed a circuit breaker. Autonomous and controlled
+  postures are data in `config/promotion-policy.json`. Activation reads wait for a restarting Cezar, runtime
+  restarts wait for an idle Cezar, and changed-file validation ignores `.factory/` runtime state.
+
 ## [0.3.64] - 2026-11-04
 
 - Add a latest-failure repair workflow with deterministic known-operational-error

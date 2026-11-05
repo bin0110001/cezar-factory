@@ -24,10 +24,12 @@ not committed to the Factory repository.
 
 ## Local dev promotion scheduler
 
-`factory_local_scheduler.py` polls `origin/dev` and checks that the exact
-candidate SHA belongs to a merged PR targeting `dev` with an approved review.
-It requires the host's existing authenticated `gh` CLI; it never logs in or
-starts GitHub Actions. Checks run serially in a detached worktree at that SHA,
+`factory_local_scheduler.py` is the promoter described in `docs/promotion-pipeline.md`: after
+dev activation it also runs canaries, rolls back on failure, and fast-forwards and deploys
+`stable`. It polls `origin/dev` and checks that the exact candidate SHA belongs to a merged PR
+targeting `dev` that satisfies the policy's review rule (an approved review, or in the autonomous
+posture a recorded self-review). It reaches the authenticated `gh` through the policy's
+`ghCommand` (`podman exec cezar gh` on the host); it never logs in or starts GitHub Actions. Checks run serially in a detached worktree at that SHA,
 with each check selected from the changed paths and every matching required
 check enforced. The example config runs the automation catalog validator for
 catalog changes and the full release suite for every candidate. Configured
@@ -51,15 +53,12 @@ is nonblocking only when every candidate fingerprint already appears in the
 baseline failure set; a new fingerprint, missing baseline, or unparseable
 failure remains blocking. Release-wide checks should not opt into this rule.
 
-Create the host-local scheduler config from
-`config/local-release-scheduler.json.example`, review the commands and resource
-limits, and make sure `config/factory-projects.json` explicitly lists only the
-projects that have selected `dev`. Install the service and timer alongside the
-stable controller units:
+The committed `config/promotion-policy.json` is the scheduler configuration (the autonomous
+posture; `config/local-release-scheduler.json.example` shows a controlled one). Make sure
+`config/factory-projects.json` explicitly lists only the projects that have selected `dev`, then
+install the service and timer alongside the stable controller units:
 
 ```bash
-cp ~/cezar-factory/config/local-release-scheduler.json.example \
-  ~/cezar-factory/config/local-release-scheduler.json
 install -m 0644 ~/cezar-factory/integrations/bazzite/factory-local-promotion.service ~/.config/systemd/user/
 install -m 0644 ~/cezar-factory/integrations/bazzite/factory-local-promotion.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
@@ -69,8 +68,8 @@ systemctl --user enable --now factory-local-promotion.timer
 The oneshot unit caps CPU at two cores, memory at 8 GiB, and concurrency at one;
 automatic checks cannot request GPU slots. Inspect runs with
 `journalctl --user -u factory-local-promotion.service` and the promotion
-records. Do not enable the timer until branch review protection, the local
-`gh` credential, scheduler config, and explicit dev target registry are ready.
+records. Do not enable the timer until the Cezar container's `gh` credential, the policy, and
+the explicit dev target registry are ready.
 
 ## Store layout
 

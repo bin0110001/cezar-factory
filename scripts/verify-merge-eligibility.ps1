@@ -87,7 +87,8 @@ try {
         $checkRules = @($rules | Where-Object { $_.type -eq 'required_status_checks' })
         $requiredChecks = @($checkRules | ForEach-Object { @($_.parameters.required_status_checks | ForEach-Object { [string]$_.context }) } | Where-Object { $_ } | Sort-Object -Unique)
         $decision.requiredChecks = $requiredChecks
-        if (-not $requiredChecks.Count) { Add-Blocker 'effective rules do not require named status checks' }
+        # There is no hosted CI: validation evidence is the head-bound local receipts checked below. Named GitHub
+        # checks are still enforced if a repository happens to configure them, but their absence is not a blocker.
         foreach ($required in $requiredChecks) {
             $matches = @($pr.statusCheckRollup | Where-Object { $_.name -eq $required -or $_.context -eq $required })
             if (-not $matches.Count -or @($matches | Where-Object { $_.conclusion -eq 'SUCCESS' -or $_.state -eq 'SUCCESS' }).Count -ne $matches.Count) {

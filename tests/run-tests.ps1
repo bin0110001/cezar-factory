@@ -101,7 +101,8 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
-'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer'
+'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
+'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
@@ -1277,9 +1278,20 @@ Assert 'autodeploy repairs only root Git metadata after verifying mounted files 
 $localPromotion = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_local_scheduler.py')
 $localPromotionExample = Get-Content -Raw (Join-Path $factory 'config/local-release-scheduler.json.example')
 $promotionUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/factory-local-promotion.service')
-Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' ($localPromotion -match 'reviewDecision' -and $localPromotion -match 'APPROVED' -and $localPromotion -notmatch 'gh run|workflow_dispatch|actions/')
+$promotionModule = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_promotion.py')
+Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' ($promotionModule -match 'reviewDecision' -and $promotionModule -match 'APPROVED' -and $localPromotion -match 'review_decision' -and $localPromotion -notmatch 'gh run|workflow_dispatch|actions/' -and $promotionModule -notmatch 'gh run|workflow_dispatch|actions/')
 Assert 'local promotion is single-flight and hardware bounded' ($promotionUnit -match 'CPUQuota=200%' -and $promotionUnit -match 'MemoryMax=8G' -and $promotionUnit -match 'FACTORY_GPU_SLOTS=0' -and $promotionUnit -match 'branch dev')
 Assert 'local promotion service uses exact-SHA scheduler' ($promotionUnit -match 'factory_local_scheduler.py run')
+$promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
+Assert 'promotion policy defaults to the autonomous posture and defines a controlled one as data' ($promotionPolicy.promotion.mode -eq 'autonomous' -and $promotionPolicy.promotion.modes.controlled.stable -eq 'approval' -and $promotionPolicy.promotion.modes.autonomous.stable -eq 'auto')
+Assert 'promotion policy gates stable on canaries and a circuit breaker, and moves stable only through the fast-forward refs API' (@($promotionPolicy.promotion.canaries.items).Count -ge 2 -and $promotionPolicy.promotion.breaker.maxConsecutiveFailures -ge 1 -and $promotionModule -match 'force=false' -and $promotionModule -match 'git/refs/heads')
+Assert 'promotion policy runs the full suite as a required check through the container' (@($promotionPolicy.checks | Where-Object { $_.id -eq 'full-suite' -and $_.required -and ($_.command -join ' ') -match 'validate-in-container\.sh' }).Count -eq 1)
+Assert 'promotion service reads the committed policy and the promoter may use podman exec' ($promotionUnit -match 'promotion-policy\.json' -and $promotionUnit -notmatch '(?m)^NoNewPrivileges=true')
+$validateInContainer = Get-Content -Raw (Join-Path $factory 'scripts/release/validate-in-container.sh')
+Assert 'container validation runs the suite in a throwaway worktree of the exact SHA and cleans it up' ($validateInContainer -match 'worktree add' -and $validateInContainer -match 'tests/run-tests\.ps1' -and $validateInContainer -match 'worktree remove' -and $validateInContainer -match 'FACTORY_CANDIDATE_SHA')
+Assert 'runtime restarts wait for an idle Cezar, defer with exit 25, and cannot starve' ($cezarDeploy -match 'wait_for_idle' -and $cezarDeploy -match 'exit 25' -and $cezarDeploy -match 'MAX_DEFER' -and $autodeploy -match 'runtime_rc.*25|== 25')
+$activationSource = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_activation.py')
+Assert 'activation retries reads while a restarting Cezar becomes ready instead of failing at a fixed timeout' ($activationSource -match 'ready_seconds' -and $activationSource -match '_transient')
 Assert 'local dev promotion example does not run the full suite on every commit' ($localPromotionExample -notmatch 'tests/run-tests\.ps1|release-wide-suite')
 
 $sg = Join-Path $tmp 'shared'

@@ -5,8 +5,8 @@ Local operator tool for the fix -> push -> deploy -> verify loop. Used by the sh
 .DESCRIPTION
 Actions:
   Config  Print the resolved project settings and Cezar API scope.
-  Deploy  Promote the current commit to origin/stable (tests gate it), force the Bazzite autodeploy,
-          and confirm the host checkout is on the promoted SHA.
+  Deploy  Nudge the host promoter and watch the merged dev head through validation, dev activation,
+          canaries, stable, and the stable deploy. Never promotes by hand.
   Verify  Re-run the Factory automation that exercised the issue (budgeted by maxDeployAttempts).
   Status  Report the state of a run (optionally -Wait until it finishes).
 Settings come from .claude/ship/ship-loop.json (add a project entry to extend); Cezar API location
@@ -89,27 +89,33 @@ switch ($Action) {
     }
 
     'Deploy' {
-        $promote = Join-Path $root 'scripts/release/promote-stable.ps1'
-        if ($cfg.deploy.promoteStable) {
-            $args2 = @('-NoProfile', '-File', $promote); if ($DryRun) { $args2 += '-DryRun' }
-            & pwsh @args2
-            if ($LASTEXITCODE -ne 0) { Fail 5 "promote-stable failed ($LASTEXITCODE); nothing was deployed" }
-        }
+        # A thin client: promotion belongs to the host promoter (docs/promotion-pipeline.md). Nothing here moves a
+        # channel pointer or origin/stable; it nudges the promoter and reports the state of the dev head.
         $target = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_SSH_TARGET')
         $dir = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_FACTORY_DIR')
-        if (-not $target -or -not $dir) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET / FACTORY_CONTROL_PLANE_FACTORY_DIR missing from config/server-topology.env; promoted to stable, host not deployed (timer will pick it up within 5 minutes)' }
-        if ($DryRun) { Write-Host "DRYRUN would run autodeploy on ${target}:${dir}"; break }
-        if ($cfg.deploy.hostForce) {
-            & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "cd '$dir' && scripts/deploy/factory-autodeploy.sh --force"
-            $code = $LASTEXITCODE
-            if ($code -in 20, 21, 22) { Fail 4 "autodeploy BLOCKED (exit ${code}: 20 dirty checkout, 21 diverged, 22 container/host mismatch); host untouched" }
-            if ($code -ne 0) { Fail 5 "autodeploy failed (exit $code)" }
-        }
-        & git -C $root fetch origin stable --quiet
-        $want = (& git -C $root rev-parse origin/stable).Trim()
-        $have = (& ssh -o BatchMode=yes $target "git -C '$dir' rev-parse HEAD").Trim()
-        if ($have -ne $want) { Fail 5 "host checkout is at $have but stable is $want" }
-        Write-Host "SHIP_DEPLOYED sha=$want host=${target}"
+        if (-not $target -or -not $dir) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET / FACTORY_CONTROL_PLANE_FACTORY_DIR missing from config/server-topology.env' }
+        & git -C $root fetch origin dev --quiet
+        $head = (& git -C $root rev-parse origin/dev).Trim()
+        & git -C $root merge-base --is-ancestor HEAD $head
+        if ($LASTEXITCODE -ne 0) { Fail 2 "local HEAD is not on origin/dev ($($head.Substring(0, 9))); merge the fix to dev first, the promoter only promotes merged work" }
+        if ($DryRun) { Write-Host "DRYRUN would nudge the promoter on ${target} and wait for $($head.Substring(0, 9)) to reach stage stable-deployed"; break }
+        & ssh -o BatchMode=yes -o ConnectTimeout=10 $target 'systemctl --user start --no-block factory-local-promotion.service'
+        $deadline = [DateTime]::UtcNow.AddMinutes([int]$cfg.deploy.timeoutMinutes)
+        $last = ''
+        do {
+            $json = & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "cd '$dir' && python3 scripts/release/factory_local_scheduler.py status --sha $head" 2>$null
+            $state = try { $json | ConvertFrom-Json } catch { $null }
+            if ($state) {
+                $line = "status=$($state.status) stage=$($state.stage) breakerOpen=$($state.breakerOpen)"
+                if ($line -ne $last) { Write-Host "SHIP_PROGRESS $line"; $last = $line }
+                if ($state.stage -eq 'stable-deployed') { Write-Host "SHIP_DEPLOYED sha=$head host=${target}"; exit 0 }
+                if ($state.status -eq 'failed') { Fail 5 "promotion of $($head.Substring(0, 9)) failed: $($state.reason). The previous release stays active; fix on dev, the next merge is promoted automatically." }
+                if ($state.status -eq 'blocked') { Fail 4 "promotion of $($head.Substring(0, 9)) is blocked: $($state.reason)" }
+                if ($state.breakerOpen) { Fail 4 'the promotion circuit breaker is open after repeated failures; see the [promotion] issues, then factory_local_scheduler.py reset-breaker' }
+            }
+            Start-Sleep -Seconds ([int]$cfg.deploy.pollSeconds)
+        } while ([DateTime]::UtcNow -lt $deadline)
+        Fail 6 "promotion of $($head.Substring(0, 9)) is still in progress after $($cfg.deploy.timeoutMinutes) minutes ($last); re-run Deploy to keep watching"
     }
 
     'Verify' {

@@ -9,7 +9,7 @@
     "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
     "branch": { "type": "string", "minLength": 1, "maxLength": 128 },
     "status": { "enum": ["healthy", "failed"] },
-    "candidateState": { "enum": ["unvalidated", "validated", "staged", "active"] },
+    "candidateState": { "enum": ["unvalidated", "validated", "staged", "active", "rolled-back"] },
     "startedAt": { "type": "string", "format": "date-time" },
     "finishedAt": { "type": "string", "format": "date-time" },
     "changedPaths": { "type": "array", "maxItems": 10000, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
@@ -40,6 +40,25 @@
         { "type": "object", "required": ["status"], "properties": { "status": { "type": "string" }, "activationId": { "type": ["string", "null"] }, "targetCount": { "type": "integer", "minimum": 0 } }, "additionalProperties": false }
       ]
     },
+    "canaries": {
+      "type": "array", "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["id", "automation", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "automation": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "status": { "enum": ["passed", "failed"] },
+          "runId": { "type": "string" },
+          "runStatus": { "type": "string" },
+          "reason": { "type": "string", "maxLength": 1000 },
+          "startedAt": { "type": "string" },
+          "finishedAt": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rollback": { "type": "string", "maxLength": 1000 },
     "artifactDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "manifestDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "reason": { "type": ["string", "null"], "maxLength": 2000 },

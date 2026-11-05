@@ -130,7 +130,19 @@ podman exec "$CONTAINER" bash "$RUNTIME_ROOT/scripts/deploy/reconcile-container-
 # The Cezar server is a local image built from this checkout, not the remote
 # image used by the generic Compose template. The deployment script is
 # idempotent and rebuilds only when cezar/ changed since the image's revision.
+# Exit 25 means a restart was deferred because Cezar is busy: not a failure, the next tick (or promoter pass) retries.
+set +e
 "$FACTORY_DIR/scripts/deploy/deploy-cezar-runtime.sh" "$source_sha"
+runtime_rc=$?
+set -e
+if [[ "$runtime_rc" == 25 ]]; then
+  write_receipt "$STATE_DIR/last-attempt.json" deferred "Cezar runtime restart deferred while runs are active"
+  trap - EXIT
+  log "DEFERRED: runtime restart waits for an idle Cezar; stable channel not activated yet"
+  exit 0
+elif [[ "$runtime_rc" != 0 ]]; then
+  exit "$runtime_rc"
+fi
 
 container_sha="$(podman exec "$CONTAINER" git -C "$RUNTIME_ROOT" rev-parse HEAD)"
 container_version="$(podman exec "$CONTAINER" sh -c "tr -d '\r\\n' < '$RUNTIME_ROOT/VERSION'")"
