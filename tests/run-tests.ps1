@@ -95,7 +95,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
-'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
+'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
@@ -134,6 +134,7 @@ $claudeLifecycleHooks = Get-Content -Raw (Join-Path $factory 'integrations/agent
 $closePrScript = Get-Content -Raw (Join-Path $factory 'scripts/ensure-pr-closes-issue.ps1')
 $implementSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-implement/SKILL.md')
 $ensureImplementationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensure-implementation-result.ps1')
+$ensureInvestigationResult = Get-Content -Raw (Join-Path $factory 'scripts/ensure-investigation-result.ps1')
 $investigateSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-investigate/SKILL.md')
 $prepareScript = Get-Content -Raw (Join-Path $factory 'scripts/prepare-implementation.ps1')
 $startupScript = Get-Content -Raw (Join-Path $factory 'scripts/factory-startup.ps1')
@@ -155,6 +156,7 @@ Assert 'Cezar owners run changed tests or related tests without package-wide Vit
 Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))
 Assert 'Factory validation captures bounded command output on timeout' ($validationLibrary -match 'Preserve the bounded diagnostic output on timeouts' -and $validationLibrary -match 'Configured validation\.\$Stage exceeded')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
+Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
@@ -847,6 +849,11 @@ try {
     $selectorRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; OutputPath = $selectorOutput }
     $selectedIntake = Get-Content -Raw $selectorOutput | ConvertFrom-Json
     Assert 'intake selector skips epics, tracking parents, and ambiguous taxonomy' ($selectorRun.Code -eq 0 -and $selectedIntake.issue -eq 3)
+    $selectorScheduledOutput = Join-Path $tmp 'intake-scheduled-selection.json'
+    $selectorScheduledTask = "Run the scheduled intake workflow. The workflow's registered selector chooses at most one oldest eligible existing issue labeled factory:new. If it reports no eligible issue, report that no work was available and stop."
+    $selectorScheduledRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = $selectorScheduledTask; OutputPath = $selectorScheduledOutput }
+    $selectedScheduledIntake = Get-Content -Raw $selectorScheduledOutput | ConvertFrom-Json
+    Assert 'scheduled intake treats generic task context as a request for the oldest eligible issue' ($selectorScheduledRun.Code -eq 0 -and $selectedScheduledIntake.issue -eq 3 -and $selectedScheduledIntake.terminalReason -eq 'selected-oldest-eligible-issue')
     $selectorTargetOutput = Join-Path $tmp 'intake-target-selection.json'
     $selectorTargetRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #5 (new eligible work) at https://github.com/x/y/issues/5'; OutputPath = $selectorTargetOutput }
     $selectedTargetIntake = Get-Content -Raw $selectorTargetOutput | ConvertFrom-Json
@@ -855,6 +862,9 @@ try {
     $selectorIneligibleRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #1 (tracking epic) at https://github.com/x/y/issues/1'; OutputPath = $selectorIneligibleOutput }
     $selectedIneligibleIntake = Get-Content -Raw $selectorIneligibleOutput | ConvertFrom-Json
     Assert 'event intake does not substitute another issue when its trigger is ineligible' ($selectorIneligibleRun.Code -eq 0 -and $null -eq $selectedIneligibleIntake.issue)
+    $selectorMalformedOutput = Join-Path $tmp 'intake-malformed-event.json'
+    $selectorMalformedRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue event without an identifier'; OutputPath = $selectorMalformedOutput }
+    Assert 'event intake fails closed when its trigger identifier is missing' ($selectorMalformedRun.Code -ne 0 -and -not (Test-Path $selectorMalformedOutput))
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')
@@ -955,6 +965,18 @@ try {
     $inv = @{ issue = 7; failureClassification = 'flaky-test'; evidence = 'e'; attemptsReviewed = 'a'; rootCauseHypothesis = 'h'; confidence = 'high'; recommendedAction = 'retry'; automaticRetryAppropriate = $true }
     Assert 'validate: good investigation passes' ((Test-Validate 'investigation' $inv) -eq 0)
     Assert 'validate: unknown classification fails' ((Test-Validate 'investigation' (With $inv @{ failureClassification = 'gremlins' })) -ne 0)
+
+    $investigationHandoffRoot = Join-Path $tmp 'investigation-handoff'
+    New-Item -ItemType Directory -Force $investigationHandoffRoot | Out-Null
+    Push-Location $investigationHandoffRoot
+    try {
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        Assert 'investigation handoff: first missing result requests the configured retry' ($handoff.Code -eq 1 -and -not (Test-Path '.factory/investigate-result.json'))
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        $preserved = Get-Content -Raw '.factory/investigate-result.json' | ConvertFrom-Json
+        Assert 'investigation handoff: repeated absence creates a valid conservative result' ($handoff.Code -eq 0 -and $preserved.issue -eq 7 -and $preserved.failureClassification -eq 'unknown' -and $preserved.confidence -eq 'low' -and -not $preserved.automaticRetryAppropriate)
+        Assert 'investigation handoff: retry marker is removed after fallback creation' (-not (Test-Path '.factory/investigate-result.json.validation-attempt.json'))
+    } finally { Pop-Location }
 
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')

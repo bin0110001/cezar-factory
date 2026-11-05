@@ -134,6 +134,7 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
   const nodes = new Map<string, DependencyGraphNode>();
   const edges = new Map<string, DependencyGraphEdge>();
   const issueIds = new Map<string, string>();
+  const idAliases = new Map<string, string>();
   let dependencyTruncated = false;
   let watermark: string | undefined;
 
@@ -151,7 +152,10 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
     const latest = existingIssue && existingIssue.updatedAt > issue.updatedAt
       ? existingIssue
       : previousIssue && previousIssue.updatedAt > issue.updatedAt ? previousIssue : undefined;
-    if (previous && previous.id !== id) nodes.delete(previous.id);
+    if (previous && previous.id !== id) {
+      nodes.delete(previous.id);
+      idAliases.set(previous.id, id);
+    }
     const mergedLabels = [...new Set([...(existing && 'labels' in existing ? existing.labels : previous && 'labels' in previous ? previous.labels : []), ...labels])];
     issueIds.set(issueKey, id);
     nodes.set(id, {
@@ -217,10 +221,26 @@ export function mapGithubGraphPage(raw: unknown, expected: GithubRepositoryRef, 
     }
   }
 
+  const canonicalId = (id: string): string => {
+    const visited = new Set<string>();
+    while (idAliases.has(id) && !visited.has(id)) {
+      visited.add(id);
+      id = idAliases.get(id)!;
+    }
+    return id;
+  };
+  const canonicalEdges = new Map<string, DependencyGraphEdge>();
+  for (const edge of edges.values()) {
+    const from = canonicalId(edge.from);
+    const to = canonicalId(edge.to);
+    const id = stableDependencyEdgeId(from, to, edge.kind);
+    canonicalEdges.set(id, { ...edge, id, from, to });
+  }
+
   const rootDates = repository.issues.nodes.map((issue) => issue.updatedAt).sort();
   return {
     nodes: [...nodes.values()],
-    edges: [...edges.values()],
+    edges: [...canonicalEdges.values()],
     repository: repositoryKey,
     repoUrl: repository.url,
     ...(watermark ? { watermark } : {}),
