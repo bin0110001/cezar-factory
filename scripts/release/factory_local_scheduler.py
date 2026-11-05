@@ -679,7 +679,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("command", choices=("run", "status", "approve", "drift", "reset-breaker"))
     p.add_argument("--sha", default=None)
     p.add_argument("--repo", default=os.environ.get("FACTORY_CONTROLLER_REPO", "~/cezar-factory"))
-    p.add_argument("--store", default=os.environ.get("FACTORY_RELEASE_STORE", "~/.local/share/cezar-factory/release-store"))
+    p.add_argument("--store", default=os.environ.get("FACTORY_PROMOTION_STORE", "~/.local/share/cezar-factory"), help="scheduler state root; the release store lives in <store>/release-store")
     p.add_argument("--config", default="")
     p.add_argument("--registry", default="")
     p.add_argument("--remote", default="origin")

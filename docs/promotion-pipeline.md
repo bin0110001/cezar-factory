@@ -53,7 +53,7 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
    `FACTORY_DEPLOY_MAX_DEFER_SECONDS` (default 2 hours) it restarts anyway so a busy queue cannot starve a
    deploy. The candidate is done when the `stable` pointer reaches its SHA.
 
-Every candidate writes an immutable record under `release-store/promotion-records/` with the checks,
+Every candidate writes an immutable record under `~/.local/share/cezar-factory/promotion-records/` with the checks,
 canary results, rollback outcome, and a digest (`schemas/factory-release/promotion-record.schema.json`).
 
 ## Self-improvement, with brakes
@@ -100,7 +100,8 @@ journalctl --user -u factory-local-promotion.service
 ```
 
 All commands take the same `--repo`, `--store`, `--config`, and `--registry` as the service unit; the
-defaults match the host layout. Install the units with the commands in
+defaults match the host layout. `--store` is the scheduler state root (`~/.local/share/cezar-factory`); the
+release store the controller uses is `<store>/release-store`, so never pass the release store itself. Install the units with the commands in
 `docs/factory-release-controller.md`.
 
 ## Limits
