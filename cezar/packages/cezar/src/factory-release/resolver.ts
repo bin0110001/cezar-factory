@@ -113,7 +113,7 @@ async function materializeRuntime({ storeRoot, sourceRoot, sha, manifestDigest, 
     'startup = pathlib.Path(destination) / "scripts" / "factory-startup.ps1"',
     'if not startup.is_file(): raise RuntimeError("Factory artifact has no scripts/factory-startup.ps1")',
     '(pathlib.Path(destination) / ".factory-runtime.json").write_text(json.dumps({"sourceSha": sha, "manifestDigest": digest}), encoding="utf-8")',
-  ].join('; ');
+  ].join('\n'); // newlines, not '; ': one-line `if ...: raise` is a SyntaxError after a semicolon
   try {
     const python = env.CEZ_FACTORY_CONTROLLER_PYTHON || 'python3';
     await execFileAsync(python, ['-c', script, resolve(sourceRoot), storeRoot, sha, manifestDigest, destination], {
