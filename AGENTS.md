@@ -2,9 +2,13 @@
 
 For every change that modifies a Factory-managed asset (including `scripts/`,
 `skills/`, `workflows/`, `policies/`, `templates/`, `automations/`, or Factory
-versioning), validate the change and then use the `factory-release` skill to
-push the new Factory version to all explicitly configured projects. Do not
-silently leave a source-only Factory update.
+versioning), work in Dev mode by default: validate the change, commit it, and
+push it through a reviewed PR to `dev`. Do not run production synchronization,
+stable promotion, or Bazzite deployment unless the user explicitly requests a
+**Production Run** or explicitly asks for a live production deployment. Dev
+troubleshooting must continue when production-only target configuration or
+host parity is unavailable; report production release as pending only when
+relevant.
 
 Workflows own scripts. Every Factory script runs from a `command:` step in
 `workflows/*.yaml`; skills and workflow `prompt:` text must never instruct the
@@ -45,19 +49,20 @@ system contract. Resolve routine ambiguity with the safest reversible
 assumption and record it. User review is post-delivery feedback; if the user
 later finds a defect, they will file a follow-up issue.
 
-When an update is finished, invoke the `factory-finish-release` skill. It
-orchestrates validation, configured-target synchronization, Bazzite checkout
-and Cezar runtime parity checks, and the reviewed `dev` PR auto-merge handoff.
-It must stop on failed validation, missing target configuration, dirty or
-mismatched remote checkouts, or missing review gates rather than overwriting
-state. A release stop applies only to that change; continue other eligible
-issues in an active backlog-completion task.
+Invoke `factory-finish-release` only for a **Production Run** or an explicit
+request to deploy live. It orchestrates configured-target synchronization,
+Bazzite checkout and Cezar runtime parity checks, and production promotion. In
+that mode it must stop on failed validation, missing target configuration,
+dirty or mismatched remote checkouts, or missing review gates rather than
+overwriting state. These production gates do not block ordinary Dev-mode work.
 
 Factory content reaches Cezar through the shared mount (`docs/shared-factory.md`): after a change
-is merged, run `scripts/release/promote-stable.ps1` (it runs the full test suite and only then
-fast-forwards `origin/stable`); the Bazzite host's `factory-autodeploy` timer fast-forwards the
-mounted checkout to `stable` and reconciles automations. Never promote or deploy an untested
-commit, and never edit the Bazzite checkout by hand.
+is merged to `dev`, it is available to the development channel. Run
+`scripts/release/promote-stable.ps1` only during a Production Run; it runs the
+full test suite and only then fast-forwards `origin/stable`. The Bazzite host's
+`factory-autodeploy` timer fast-forwards the mounted checkout to `stable` and
+reconciles automations. Never promote or deploy an untested commit, and never
+edit the Bazzite checkout by hand.
 
 The legacy per-project release pipeline is remote-only Cezar synchronization: read
 `apiUrl` and `projectId` from `config/factory-projects.json` and synchronize
@@ -80,10 +85,12 @@ on the Windows host. If the checkout is only on Bazzite, record its remote
 checkout and service-config paths in the deployment inventory/operations notes
 and use the host deployment flow instead.
 
-Targets must be listed in the host-local `config/factory-projects.json` file or
-explicitly supplied by the user. Do not scan drives for targets or deploy to an
-unlisted project. If no target registry exists, create no external changes;
-report that the release is ready but needs target configuration.
+For a Production Run, targets must be listed in the host-local
+`config/factory-projects.json` file or explicitly supplied by the user. Do not
+scan drives for targets or deploy to an unlisted project. If no target registry
+exists, make no production changes and report that the release is ready but
+needs target configuration. This does not prevent Dev-mode commits, PRs, or
+development-channel updates.
 
 After an update passes validation, the implementation PR must target `dev` and
 request GitHub auto-merge. This applies to every approved risk level. High risk

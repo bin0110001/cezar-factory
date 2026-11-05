@@ -5,9 +5,10 @@ description: Finish a Factory-managed update by validating it, synchronizing eve
 
 # Factory finish and release
 
-Use this skill whenever a completed change modifies Factory-managed assets such
-as `scripts/`, `skills/`, `workflows/`, `policies/`, `templates/`,
-`automations/`, Factory versioning, or the Bazzite deployment definitions.
+Use this skill only for a **Production Run** or an explicit request to deploy
+live. Ordinary troubleshooting and development uses Dev mode and proceeds to a
+reviewed PR targeting `dev`; production target, stable-promotion, and Bazzite
+parity gates must not interrupt that work.
 
 The goal is a verified end state, not merely a source-tree change:
 
@@ -57,3 +58,5 @@ applicable checks pass or a concrete external blocker is reported.
   `config/factory-projects.json` as a Windows `projectPath`.
 - Do not treat an empty issue queue, a matching version string, or a successful
   automation API response as proof that the runtime is synchronized.
+- Do not invoke this production release flow merely because a Factory-managed
+  file changed; the user must request a Production Run or live deployment.

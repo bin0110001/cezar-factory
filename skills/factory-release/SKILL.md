@@ -5,8 +5,14 @@ description: Validate and force-synchronize Factory-managed assets to every expl
 
 # Factory release
 
-Use this skill after any change under `scripts/`, `skills/`, `workflows/`,
+Use this skill only during a **Production Run** or when the user explicitly
+asks to deploy live, after a change under `scripts/`, `skills/`, `workflows/`,
 `policies/`, `templates/`, `automations/`, or Factory versioning.
+
+Ordinary troubleshooting and development uses Dev mode. Validate and push code
+to `dev` through the normal reviewed PR flow; do not promote `stable` or touch
+production targets as a side effect. Missing production target configuration
+or a production host mismatch must not stop Dev-mode work.
 
 ## Invariants
 
