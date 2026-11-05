@@ -151,7 +151,8 @@ function Get-ChangedValidationSelection([string]$Root, $Config) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate staged changed files.' }
     $paths += @(& git -C $Root ls-files --others --exclude-standard 2>$null)
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate untracked changed files.' }
-    $paths = @($paths | ForEach-Object { ([string]$_).Trim().Replace('\', '/') } | Where-Object { $_ } | Sort-Object -Unique)
+    # .factory/ is Factory runtime state (receipts, logs, results), never source; counting it forced a full regression.
+    $paths = @($paths | ForEach-Object { ([string]$_).Trim().Replace('\', '/') } | Where-Object { $_ -and $_ -notmatch '^\.factory/' } | Sort-Object -Unique)
     if (-not $paths.Count) { throw 'No changed files were found for targeted validation; refusing to report a pass.' }
     $selected = [System.Collections.Generic.List[object]]::new()
     $covered = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
