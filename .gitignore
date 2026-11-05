@@ -12,6 +12,8 @@ tests/fixtures/*/artifacts/
 *.bak
 .DS_Store
 Thumbs.db
+__pycache__/
+*.py[cod]
 
 # Local script output
 scripts/artifacts/
