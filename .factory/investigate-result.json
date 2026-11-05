@@ -1,0 +1,10 @@
+{
+  "issue": 94,
+  "failureClassification": "unknown",
+  "evidence": "The factory-investigate verification step failed with error 'investigation result file is missing'. Git shows staging area contains only .factory/context/memory-recall.json and .factory/startup/factory-investigate-recall.json, but .factory/investigate-result.json does not exist. Previous attempt logged only {'missingAttempts':1}.",
+  "attemptsReviewed": "Two failed investigation runs: one from Oct 28 and one from Nov 4/5. Both produced no persisted investigation result, leaving the issue classified as 'unknown' with confidence varying from high to low.",
+  "rootCauseHypothesis": "The investigation worker completed its analysis but failed to write the structured result to .factory/investigate-result.json before termination. The confirmation message 'The worker completed its analysis... Initiating release via factory-finish-release' was logged in session output, but the deterministic handoff of the investigation-result.json file did not persist. This is a tool/toolchain persistence failure, not a logic defect in the worker.",
+  "confidence": "high",
+  "recommendedAction": "Write the investigation result file to .factory/investigate-result.json and commit/push the branch as required by AGENTS.md, then mark the investigation as complete.",
+  "automaticRetryAppropriate": false
+}
