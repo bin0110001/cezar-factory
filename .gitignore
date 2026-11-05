@@ -36,3 +36,9 @@ connections/**/*
 
 # Local ship-loop attempt state
 .factory/ship-loop/
+
+# Local worktrees and per-issue checkouts under .factory are never tracked (embedded repos break deploy parity)
+.factory/autonomous-backlog-lifecycle
+.factory/issue-*
+.factory/target-*
+.factory/worktrees/
