@@ -33,3 +33,6 @@ integrations/bazzite/prometheus-model-targets.generated.json
 
 
 connections/**/*
+
+# Local ship-loop attempt state
+.factory/ship-loop/

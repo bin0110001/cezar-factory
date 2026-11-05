@@ -155,6 +155,14 @@ $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'document
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
 Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
 Assert 'local pre-commit hook clears Git repository environment before isolated fixture tests' ($localPreCommitHook -match 'git rev-parse --local-env-vars' -and $localPreCommitHook -match 'unset "\$git_env"')
+$hostedCiMentions = @()
+foreach ($f in @('AGENTS.md', 'docs/local-validation.md') + @(Get-ChildItem (Join-Path $factory 'skills') -Recurse -Filter SKILL.md | ForEach-Object { $_.FullName.Substring($factory.Length + 1) }) + @(Get-ChildItem (Join-Path $factory '.claude/skills') -Recurse -Filter SKILL.md -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Substring($factory.Length + 1) })) {
+    foreach ($line in Get-Content (Join-Path $factory $f)) {
+        if ($line -match 'gh (pr checks|run (watch|view|list|rerun))' -and $line -notmatch '(?i)\b(never|not|no|do not|must not)\b') { $hostedCiMentions += "${f}: $($line.Trim())" }
+    }
+}
+Assert "instructions never direct anyone to GitHub Actions or status checks ($($hostedCiMentions -join ' | '))" ($hostedCiMentions.Count -eq 0)
+Assert 'AGENTS.md states that all validation runs on our own compute with no hosted CI' ((Get-Content -Raw (Join-Path $factory 'AGENTS.md')) -match 'nothing runs on GitHub' -and (Get-Content -Raw (Join-Path $factory 'docs/local-validation.md')) -match 'all validation runs on our own compute')
 Assert 'no GitHub Actions workflow runs repository scripts' (@(Get-ChildItem (Join-Path $factory '.github/workflows') -Filter *.yml -ErrorAction SilentlyContinue).Count -eq 0 -and @(Get-ChildItem (Join-Path $factory '.github/workflows') -Filter *.yaml -ErrorAction SilentlyContinue).Count -eq 0)
 Assert 'Cezar owners run changed tests or related tests without package-wide Vitest' ($cezarTestOwners.Count -eq 3 -and @($cezarTestOwners | Where-Object { $_.command -notmatch 'vitest run \$tests' -or $_.command -notmatch 'vitest related --run \$sources' -or $_.command -match 'vitest run;|vitest run\s*;' }).Count -eq 0)
 Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))

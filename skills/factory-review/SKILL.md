@@ -93,7 +93,8 @@ Prefer a different agent/context from implementation.
 Include the exact PR URL, `reviewedHeadSha`, and `reviewerIdentity` in every
 result. Approved work at every risk level is eligible for the bounded
 auto-merge path only after live head, validation receipts, effective GitHub
-rules, status checks, approval, and review-thread state pass.
+rules, approval, and review-thread state pass. Validation evidence is the local
+receipts only; GitHub Actions and status checks are not used and are never waited on.
 Risk level alone never requires user plan approval. Independent review remains
 required; ask the user only when an unresolved major architectural decision
 materially changes compatibility, ownership, or the system contract.

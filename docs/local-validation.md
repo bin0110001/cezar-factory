@@ -2,7 +2,11 @@
 
 Run the Factory test suite and YAML lint locally before committing. The pre-commit
 hook runs both checks and blocks the commit when either fails. GitHub Actions does
-not run this repository's test or lint scripts.
+not run this repository's test or lint scripts, and nothing in this repository may
+depend on a GitHub workflow or status check: all validation runs on our own compute
+(local hooks, `scripts/factory/test-changed.ps1`, `promote-stable.ps1`, and the
+release scheduler's detached worktree). Local receipts are the validation evidence;
+do not wait for, poll, or cite GitHub checks.
 
 ## One-time setup
 
