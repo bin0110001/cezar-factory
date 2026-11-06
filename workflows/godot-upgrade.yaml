@@ -3,8 +3,12 @@ description: Adopt a newly released stable Godot in one project - pin it on a br
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-godot-upgrade -Step check -RequireGh -RequiredScripts godot-upgrade.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-godot-upgrade -Step check -RequireGh -RequiredScripts godot-upgrade.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
+  - id: model-check
+    name: Fail fast when the model host cannot generate
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/probe-model-endpoint.ps1
+    timeoutSeconds: 300
   - id: check
     name: Look for a newer stable Godot release
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/godot-upgrade.ps1 -Step check

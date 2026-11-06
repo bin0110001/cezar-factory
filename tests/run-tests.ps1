@@ -100,7 +100,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
-'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
+'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
@@ -334,7 +334,7 @@ foreach ($workflowName in @('intake', 'plan', 'investigate')) {
     $workflowText = Get-Content -Raw (Join-Path $factory "workflows/$workflowName.yaml")
     Assert "$workflowName startup lists every called script" (@(Missing-StartupScripts $workflowText).Count -eq 0)
 }
-$investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')) -replace ',route-state\.ps1(?=\r?\n)', ''
+$investigateWithoutRouter = (Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')) -replace ',route-state\.ps1(?=[,\r\n])', ''
 Assert 'startup manifest check detects a missing route script' (@(Missing-StartupScripts $investigateWithoutRouter) -contains 'route-state.ps1')
 Assert 'plan startup includes its routing helper' ((Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')) -match 'RequiredScripts[^\r\n]*route-state\.ps1')
 Assert 'implement and fix-review move the issue to working from a workflow step' ((Get-Content -Raw (Join-Path $factory 'workflows/fix-review.yaml')) -match 'id: start' -and $routeState -match '\[string\]\$Task')
@@ -1482,5 +1482,18 @@ Assert 'health report summarizes artifacts and tolerates missing inputs' ($LASTE
 $healthWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 Assert 'health workflow runs no agent and its startup preflights every script it runs' ($healthWorkflow -notmatch '(?m)^\s+(skill|prompt):' -and @('audit-factory-failures','publish-failure-audit','collect-backlog-snapshot','reconcile-backlog','write-health-report' | Where-Object { $healthWorkflow -notmatch "-RequiredScripts [^\r\n]*$_\.ps1" }).Count -eq 0)
 Assert 'retired failure-audit, backlog-reconciliation, and dead skills are gone' (-not (Test-Path (Join-Path $factory 'workflows/failure-audit.yaml')) -and -not (Test-Path (Join-Path $factory 'workflows/backlog-reconciliation.yaml')) -and -not (Test-Path (Join-Path $factory 'skills/factory-failure-audit')) -and -not (Test-Path (Join-Path $factory 'skills/factory-intake')) -and -not (Test-Path (Join-Path $factory 'skills/factory-implement-prepare')))
+Write-Host '== model endpoint preflight =='
+$probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
+Write-Host $probeOutput
+Assert 'model probe fails fast on a host that is up but not generating, retries transients, and never leaks the key' ($LASTEXITCODE -eq 0)
+$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'maintenance', 'environment-analysis', 'godot-upgrade')
+$unprobed = @($agentWorkflows | Where-Object {
+    $wf = Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")
+    # The probe must run after startup and before the first agent step, and startup must preflight the script.
+    $probeAt = $wf.IndexOf('probe-model-endpoint.ps1', $wf.IndexOf('id: model-check'))
+    $agentAt = [regex]::Match($wf, '(?m)^\s+(skill|prompt):').Index
+    ($wf -notmatch 'id: model-check') -or ($wf -notmatch '-RequiredScripts [^\r\n]*probe-model-endpoint\.ps1') -or $probeAt -lt 0 -or $probeAt -gt $agentAt
+})
+Assert "every agent workflow probes the model endpoint before its first agent step ($($unprobed -join ', '))" ($unprobed.Count -eq 0)
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

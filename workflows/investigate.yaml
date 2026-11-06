@@ -3,8 +3,12 @@ description: Classify repeated failures, retry or re-plan automatically, and req
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,ensure-investigation-result.ps1,validate-result.ps1,route-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-investigate -Step recall -RequireGh -RequiredScripts check-already-resolved.ps1,hindsight/recall.ps1,ensure-investigation-result.ps1,validate-result.ps1,route-state.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
+  - id: model-check
+    name: Fail fast when the model host cannot generate
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/probe-model-endpoint.ps1
+    timeoutSeconds: 300
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
