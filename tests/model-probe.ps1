@@ -14,7 +14,13 @@ function Get-FreePort {
     $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); $p
 }
 function Start-Fake([string]$Mode, [int]$Port, [int]$Delay = 2) {
-    $proc = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-File', $server, '-Port', $Port, '-Mode', $Mode, '-DelaySeconds', $Delay)
+    # ProcessStartInfo, not Start-Process: -WindowStyle does not exist on Linux PowerShell, and the promoter
+    # runs this suite inside the Linux Cezar container.
+    $psi = [System.Diagnostics.ProcessStartInfo]::new('pwsh')
+    foreach ($a in @('-NoProfile', '-File', $server, '-Port', "$Port", '-Mode', $Mode, '-DelaySeconds', "$Delay")) { $psi.ArgumentList.Add($a) }
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
     for ($i = 0; $i -lt 100; $i++) {
         try { $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', $Port); $c.Dispose(); return $proc } catch { Start-Sleep -Milliseconds 100 }
     }
