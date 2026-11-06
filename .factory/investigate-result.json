@@ -1,0 +1,10 @@
+{
+  "issue": 90,
+  "failureClassification": "unknown",
+  "evidence": "The investigation step completed, but its required result artifact was still missing after the workflow retry.",
+  "attemptsReviewed": "The investigator was retried once after the missing artifact was detected; no structured investigation evidence was available to review.",
+  "rootCauseHypothesis": "Unknown: the investigation worker did not persist the required result artifact.",
+  "confidence": "low",
+  "recommendedAction": "Return the issue to planning automatically and require a validated handoff from the next worker. Inspect this run if the missing artifact recurs.",
+  "automaticRetryAppropriate": false
+}
