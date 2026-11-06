@@ -384,8 +384,8 @@ class LocalPromotionScheduler:
         return CanaryRunner(targets[project]["apiUrl"], project, request=self.canary_request, sleep=self.sleep,
                             ready_seconds=self.policy["canaryReadySeconds"])
 
-    def _run_canaries(self, paths: list[str]) -> list[dict[str, Any]]:
-        selected = select_canaries(self.policy, paths) if self.policy else []
+    def _run_canaries(self, paths: list[str], *, everything: bool = False) -> list[dict[str, Any]]:
+        selected = (list(self.policy["canaries"]) if everything else select_canaries(self.policy, paths)) if self.policy else []
         if not selected:
             return []
         runner = self._canary_runner()
@@ -611,28 +611,35 @@ class LocalPromotionScheduler:
         previous_dev = None
         failure_kind = None
         try:
-            paths = self._changed_paths(sha)
-            record["changedPaths"] = paths
-            selected = self._selected_checks(paths)
-            subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "--detach", str(worktree), sha], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=True)
-            failure_kind = "validation"
-            for check in selected:
-                result = self._run_check(check, worktree, sha)
-                checks.append(result)
-                if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
-                    raise SchedulerError(f"required check {result['id']} failed with exit code {result['exitCode']}")
-            record["candidateState"] = "validated"
-            failure_kind = "activation"
-            staged = self.controller.stage_sha(sha)
-            record["candidateState"] = "staged"
-            record["artifactDigest"] = staged["artifactDigest"]
-            record["manifestDigest"] = staged["manifestDigest"]
-            previous_dev = self._active_sha()
-            activation = self.coordinator.activate(sha)
-            record["activation"] = {"status": activation["status"], "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
-            record["candidateState"] = "active"
+            adopted = self._active_sha() == sha
+            if adopted:
+                # dev already serves this exact SHA (an operator bootstrap or an earlier pass): there is nothing to
+                # validate, stage, or activate. The evidence gate has passed; it still earns its canaries and stable.
+                record["activation"] = {"status": "adopted", "activationId": None, "targetCount": 0}
+                record["candidateState"] = "active"
+            else:
+                paths = self._changed_paths(sha)
+                record["changedPaths"] = paths
+                selected = self._selected_checks(paths)
+                subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "--detach", str(worktree), sha], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=True)
+                failure_kind = "validation"
+                for check in selected:
+                    result = self._run_check(check, worktree, sha)
+                    checks.append(result)
+                    if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
+                        raise SchedulerError(f"required check {result['id']} failed with exit code {result['exitCode']}")
+                record["candidateState"] = "validated"
+                failure_kind = "activation"
+                staged = self.controller.stage_sha(sha)
+                record["candidateState"] = "staged"
+                record["artifactDigest"] = staged["artifactDigest"]
+                record["manifestDigest"] = staged["manifestDigest"]
+                previous_dev = self._active_sha()
+                activation = self.coordinator.activate(sha)
+                record["activation"] = {"status": activation["status"], "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
+                record["candidateState"] = "active"
             failure_kind = "canary"
-            canaries = self._run_canaries(paths)
+            canaries = self._run_canaries(paths, everything=adopted)
             if canaries:
                 record["canaries"] = canaries
             bad = next((c for c in canaries if c["status"] != "passed"), None)

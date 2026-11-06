@@ -148,6 +148,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(again["status"], "unchanged")
         self.assertEqual(len(self.gh.patched), 1)
 
+    def test_a_candidate_dev_already_serves_is_adopted_then_canaried_and_promoted(self):
+        scheduler = self.build(set_dev_pointer=False)
+        pointer = scheduler.controller.channels / "dev.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text(json.dumps({"schemaVersion": "factory-release-channel-pointer/v1", "channel": "dev", "currentSha": self.sha}), encoding="utf-8")
+        result = scheduler.run_once()
+        self.assertEqual(result["status"], "healthy")
+        self.assertEqual(result["activation"]["status"], "adopted")
+        self.assertEqual(self.activations, [])  # nothing to stage or activate
+        self.assertEqual(self.cezar.runs, 1)  # every canary still runs against what dev serves
+        self.assertEqual(result["promotion"]["status"], "promoted")
+        self.assertEqual(len(self.gh.patched), 1)
+
     # -- canary failure rolls back, quarantines, opens one issue, never reaches stable ---------------
     def test_failed_canary_rolls_dev_back_files_an_issue_and_never_reaches_stable(self):
         scheduler = self.build(cezar=FakeCezar("failed"))
