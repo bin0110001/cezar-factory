@@ -114,6 +114,14 @@ validation:
     $runtimeRun = Run-Stage changed
     Check 'factory runtime state under .factory/ never selects the unmapped full regression' ($runtimeRun.Code -eq 0 -and $runtimeRun.Receipt.selectedChecks -notcontains 'unmapped-full-regression' -and -not @($runtimeRun.Receipt.changedPaths | Where-Object { $_ -like '.factory/*' }).Count)
     & git -C $project checkout -q -- owned-check.txt
+
+    # A run that changed nothing must fail closed and say why, using the implementation handoff.
+    $handoffPath = Join-Path $project '.factory/implement-result.json'
+    $savedHandoff = if (Test-Path $handoffPath) { Get-Content -Raw $handoffPath } else { $null }
+    @{ issue = 55; status = 'failure'; summary = 'worker made no edits' } | ConvertTo-Json | Set-Content $handoffPath
+    $emptyRun = Run-Stage changed
+    Check 'a run with no changed files fails closed and cites the implementation handoff' ($emptyRun.Code -ne 0 -and $emptyRun.Receipt.message -match 'refusing to report a pass' -and $emptyRun.Receipt.message -match "status 'failure': worker made no edits")
+    if ($null -ne $savedHandoff) { Set-Content $handoffPath $savedHandoff } else { Remove-Item -Force $handoffPath }
     Remove-Item -Recurse -Force $strayDir
     Set-Content (Join-Path $project '.gitignore') $savedIgnore
     & git -C $project add .gitignore

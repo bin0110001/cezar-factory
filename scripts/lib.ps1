@@ -153,7 +153,17 @@ function Get-ChangedValidationSelection([string]$Root, $Config) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate untracked changed files.' }
     # .factory/ is Factory runtime state (receipts, logs, results), never source; counting it forced a full regression.
     $paths = @($paths | ForEach-Object { ([string]$_).Trim().Replace('\', '/') } | Where-Object { $_ -and $_ -notmatch '^\.factory/' } | Sort-Object -Unique)
-    if (-not $paths.Count) { throw 'No changed files were found for targeted validation; refusing to report a pass.' }
+    if (-not $paths.Count) {
+        $why = ''
+        $handoff = Join-Path $Root '.factory/implement-result.json'
+        if (Test-Path -LiteralPath $handoff -PathType Leaf) {
+            try {
+                $r = Get-Content -Raw -LiteralPath $handoff | ConvertFrom-Json
+                if ($r.status) { $why = " The implementation handoff reports status '$($r.status)': $($r.summary)" }
+            } catch { }
+        }
+        throw "No changed files were found for targeted validation; refusing to report a pass.$why"
+    }
     $selected = [System.Collections.Generic.List[object]]::new()
     $covered = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($check in $map.checks) {
