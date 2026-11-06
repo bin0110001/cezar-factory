@@ -1,0 +1,10 @@
+{
+  "issue": 66,
+  "failureClassification": "implementation",
+  "evidence": "The implementation exists in main/dev (commits #291-#293) with self-driving promotion pipeline, local validation enforcement, and CI removal. However, the scheduler is configured on Bazzite and requires host-local factory state to be populated for the timer to run. The repository code is ready but the operational environment (Bazzite scheduler registration and factory-local-promotion service) is not configured, causing the production run to fail.",
+  "attemptsReviewed": "Multiple investigate cycles showing inconsistent classifications (requirements, environment, unknown). The code implementation has been merged to dev (#291-#293, #299-#300) and CI workflows removed. The remaining gap is operational configuration on the Bazzite host.",
+  "rootCauseHypothesis": "The Factory 먼Scheduler on Bazzite is not properly configured or registered. The host-local factory state (origin/stable sync, local-release-scheduler.json, factory-local-promotion.service timer) is not active, causing the live scheduler to fail when polling for reviews and candidates.",
+  "confidence": "high",
+  "recommendedAction": "Configure the Bazzite host scheduler: verify factory-local-promotion.timer is enabled and running, ensure config/local-release-scheduler.json points to a valid dev target on the host, and confirm origin/stable is in sync. Then re-trigger the production run.",
+  "automaticRetryAppropriate": false
+}
