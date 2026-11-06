@@ -26,10 +26,13 @@ Result codes (failureClass is always 'environment'; none of these are defects in
   MODEL_GENERATION_TIMEOUT  the one-token generation did not finish in time
   MODEL_GENERATION_ERROR    the generation returned an error or an empty body
 
-Endpoint, key and model come from parameters, else the environment:
-  URL    FACTORY_MODEL_PROBE_URL, then LITELLM_URL (+/v1), then FACTORY_VLLM_BASE_URL
-  KEY    FACTORY_MODEL_PROBE_KEY, then LITELLM_MASTER_KEY, then VLLM_API_KEY
-  MODEL  FACTORY_MODEL_PROBE_MODEL, else 'factory-code' when listed, else the first listed model
+Endpoint, key and model come from parameters, else the environment, else the Codex provider config the agents
+themselves use ($CODEX_HOME/config.toml, default ~/.codex): its model_provider's base_url, its auth command when
+that command is `cat <file>` (no other command is ever executed), and its model. Reading the agents' own config
+means the preflight tests the real path (host.containers.internal:4001 in the Cezar container) with no setup.
+  URL    FACTORY_MODEL_PROBE_URL, then the Codex provider base_url, then LITELLM_URL (+/v1), then FACTORY_VLLM_BASE_URL
+  KEY    FACTORY_MODEL_PROBE_KEY, then the Codex provider key file, then LITELLM_MASTER_KEY, then VLLM_API_KEY
+  MODEL  FACTORY_MODEL_PROBE_MODEL (strict), else the Codex model or 'factory-code' when listed, else the first listed
 FACTORY_MODEL_PROBE_WARN_ONLY=1 behaves like -WarnOnly (record the failure, exit 0) so the preflight can be rolled out
 on a host without risking every workflow.
 The key is sent only as a bearer header and is never written to the receipt or to output.
@@ -66,19 +69,69 @@ function Normalize-BaseUrl([string]$Url) {
     $u
 }
 
+# The gateway the agents are actually configured to use, read from Codex's own config. Best effort: any problem
+# (no file, no provider, unreadable key file) yields $null or a partial result and the probe falls through to
+# the environment. Only `command = "cat"` is honored for the key; nothing from the file is ever executed.
+function Get-CodexGatewayConfig {
+    try {
+        $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex' }
+        $path = Join-Path $codexHome 'config.toml'
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        $text = Get-Content -LiteralPath $path -Raw
+        # Top-level keys only: everything before the first [table].
+        $top = ($text -split '(?m)^\s*\[', 2)[0]
+        $provider = [regex]::Match($top, '(?m)^\s*model_provider\s*=\s*"([^"]+)"')
+        if (-not $provider.Success) { return $null }
+        $name = [regex]::Escape($provider.Groups[1].Value)
+        $section = [regex]::Match($text, "(?ms)^\[model_providers\.$name\]\s*\r?\n(.*?)(?=^\s*\[|\z)")
+        $base = [regex]::Match($section.Groups[1].Value, '(?m)^\s*base_url\s*=\s*"([^"]+)"')
+        if (-not $section.Success -or -not $base.Success) { return $null }
+        $result = [ordered]@{ url = $base.Groups[1].Value; key = $null; model = $null; source = $path }
+        $modelMatch = [regex]::Match($top, '(?m)^\s*model\s*=\s*"([^"]+)"')
+        if ($modelMatch.Success) { $result.model = $modelMatch.Groups[1].Value }
+        $auth = [regex]::Match($text, "(?ms)^\[model_providers\.$name\.auth\]\s*\r?\n(.*?)(?=^\s*\[|\z)")
+        if ($auth.Success) {
+            $cmd = [regex]::Match($auth.Groups[1].Value, '(?m)^\s*command\s*=\s*"([^"]+)"')
+            $arg = [regex]::Match($auth.Groups[1].Value, '(?m)^\s*args\s*=\s*\[\s*"([^"]+)"\s*\]')
+            if ($cmd.Success -and $cmd.Groups[1].Value -eq 'cat' -and $arg.Success -and (Test-Path -LiteralPath $arg.Groups[1].Value -PathType Leaf)) {
+                $result.key = (Get-Content -LiteralPath $arg.Groups[1].Value -Raw).Trim()
+            }
+        }
+        [pscustomobject]$result
+    } catch { $null }
+}
+
 # --- configuration (every unset input degrades to "skipped", never to a crash) -------------------------
 $urlSource = 'parameter'
+$modelIsStrict = $true
+$codex = $null
 if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-    $hit = First-Set @('FACTORY_MODEL_PROBE_URL', 'LITELLM_URL', 'FACTORY_VLLM_BASE_URL')
-    if ($hit) { $BaseUrl = $hit.value; $urlSource = $hit.name }
+    $hit = First-Set @('FACTORY_MODEL_PROBE_URL')
+    if ($hit) {
+        $BaseUrl = $hit.value; $urlSource = $hit.name
+    } else {
+        $codex = Get-CodexGatewayConfig
+        if ($codex) {
+            $BaseUrl = $codex.url; $urlSource = "codex-config:$($codex.source)"
+        } else {
+            $hit = First-Set @('LITELLM_URL', 'FACTORY_VLLM_BASE_URL')
+            if ($hit) { $BaseUrl = $hit.value; $urlSource = $hit.name }
+        }
+    }
 }
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-    $hit = First-Set @('FACTORY_MODEL_PROBE_KEY', 'LITELLM_MASTER_KEY', 'VLLM_API_KEY')
+    $hit = First-Set @('FACTORY_MODEL_PROBE_KEY')
     if ($hit) { $ApiKey = $hit.value }
+    elseif ($codex -and $codex.key) { $ApiKey = $codex.key }
+    else {
+        $hit = First-Set @('LITELLM_MASTER_KEY', 'VLLM_API_KEY')
+        if ($hit) { $ApiKey = $hit.value }
+    }
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     $hit = First-Set @('FACTORY_MODEL_PROBE_MODEL')
     if ($hit) { $Model = $hit.value }
+    elseif ($codex -and $codex.model) { $Model = $codex.model; $modelIsStrict = $false }
 }
 
 if (-not $WarnOnly -and $env:FACTORY_MODEL_PROBE_WARN_ONLY -in '1', 'true') { $WarnOnly = [switch]::new($true) }
@@ -219,6 +272,7 @@ function Invoke-Attempt([int]$Number) {
         $a.retryable = $true; return [pscustomobject]$a
     }
     $chosen = $Model
+    if ($chosen -and -not $modelIsStrict -and $chosen -notin $ids) { $chosen = $null }
     if ($chosen) {
         if ($chosen -notin $ids) {
             $a.code = 'MODEL_NOT_SERVED'

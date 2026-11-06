@@ -29,6 +29,7 @@ function Start-Fake([string]$Mode, [int]$Port, [int]$Delay = 2) {
 }
 # Runs the probe in a child pwsh so `exit` and the environment are isolated; returns exit code and receipt.
 function Run-Probe([hashtable]$Params, [hashtable]$Env = @{}) {
+    $Env = Merge @{ CODEX_HOME = (Join-Path $temp 'no-codex') } $Env
     $out = Join-Path $temp ("receipt-{0}.json" -f [guid]::NewGuid().ToString('N').Substring(0, 6))
     $argList = @('-NoProfile', '-File', $probe, '-OutputPath', $out)
     foreach ($k in $Params.Keys) {
@@ -75,6 +76,47 @@ try {
         Check 'a model that is not served fails as MODEL_NOT_SERVED' ($missing.exit -eq 1 -and $missing.receipt.code -eq 'MODEL_NOT_SERVED')
         $noKey = Run-Probe (Merge $fast @{ BaseUrl = $url })
         Check 'a missing credential fails as MODEL_AUTH without retrying' ($noKey.exit -eq 1 -and $noKey.receipt.code -eq 'MODEL_AUTH' -and @($noKey.receipt.attempts).Count -eq 1)
+
+        # --- discovery from the Codex provider config the agents themselves use --------------------------------
+        $codexHome = Join-Path $temp 'codex'
+        New-Item -ItemType Directory -Force -Path $codexHome | Out-Null
+        $keyFile = (Join-Path $temp 'gateway-key') -replace '\\', '/'
+        Set-Content -LiteralPath $keyFile -Value 'sk-test-key' -NoNewline
+        function Write-CodexConfig([string]$BaseUrl, [string]$AuthCommand = 'cat', [string]$AuthArg = $keyFile, [string]$ModelName = 'factory-code') {
+            @"
+model = "$ModelName"
+model_provider = "gw"
+suppress_unstable_features_warning = true
+
+[model_providers.gw]
+name = "Test gateway"
+base_url = "$BaseUrl"
+wire_api = "responses"
+
+[model_providers.gw.auth]
+command = "$AuthCommand"
+args = ["$AuthArg"]
+
+[projects."/somewhere"]
+trust_level = "trusted"
+"@ | Set-Content -LiteralPath (Join-Path $codexHome 'config.toml')
+        }
+        Write-CodexConfig $url
+        $disc = Run-Probe $fast @{ CODEX_HOME = $codexHome }
+        Check 'endpoint, key and model are discovered from the Codex provider config' ($disc.exit -eq 0 -and $disc.receipt.endpointSource -like 'codex-config:*' -and $disc.receipt.model -eq 'factory-code' -and $disc.raw -notmatch 'sk-test-key')
+        Write-CodexConfig $url -ModelName 'gone-model'
+        $pref = Run-Probe $fast @{ CODEX_HOME = $codexHome }
+        Check 'a discovered model that is not served falls back to a served one instead of failing' ($pref.exit -eq 0 -and $pref.receipt.model -eq 'factory-code')
+        $marker = (Join-Path $temp 'executed-marker') -replace '\\', '/'
+        Write-CodexConfig $url -AuthCommand 'touch' -AuthArg $marker
+        $inert = Run-Probe $fast @{ CODEX_HOME = $codexHome }
+        Check 'an auth command other than cat is never executed (and so yields no key)' (-not (Test-Path $marker) -and $inert.exit -eq 1 -and $inert.receipt.code -eq 'MODEL_AUTH')
+        Write-CodexConfig 'http://127.0.0.1:9/v1'
+        $override = Run-Probe $fast @{ CODEX_HOME = $codexHome; FACTORY_MODEL_PROBE_URL = $url; FACTORY_MODEL_PROBE_KEY = 'sk-test-key' }
+        Check 'an explicit FACTORY_MODEL_PROBE_URL wins over the Codex config' ($override.exit -eq 0 -and $override.receipt.endpointSource -eq 'FACTORY_MODEL_PROBE_URL')
+        Set-Content -LiteralPath (Join-Path $codexHome 'config.toml') -Value "model_provider = `"gw`"`nthis is = not [valid toml"
+        $broken = Run-Probe $fast @{ CODEX_HOME = $codexHome }
+        Check 'an unusable Codex config is ignored, not fatal' ($broken.exit -eq 0 -and $broken.receipt.status -eq 'skipped')
     }
 
     With-Fake 'slow' {
