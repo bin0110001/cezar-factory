@@ -12,9 +12,10 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["127.0.0.1:9090"]
-  - job_name: cezar
-    static_configs:
-      - targets: ["127.0.0.1:4321"]
+  # No `cezar` job: Cezar has no Prometheus endpoint. Its /metrics path is swallowed by the cockpit's catch-all
+  # route and returns the HTML shell with HTTP 200, so a scrape "succeeds" at the HTTP level and fails to parse,
+  # leaving `up` at 0 and FactoryServiceDown firing forever. Its liveness is /api/v1/health (JSON), which would
+  # need a blackbox exporter to scrape.
   - job_name: hindsight
     static_configs:
       - targets: ["127.0.0.1:8888"]
