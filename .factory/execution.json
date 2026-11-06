@@ -3,10 +3,10 @@
     "provider": "openhands",
     "agent": "codex",
     "status": "selected",
-    "issue": 111,
+    "issue": 90,
     "metadata": {
       "project": "14e351d3-220b-4994-bd51-e8eb1ee293a8",
-      "workflow": "factory-start",
+      "workflow": "factory-investigate",
       "github_issue": 111,
       "worker": "codex",
       "provider": "openhands",

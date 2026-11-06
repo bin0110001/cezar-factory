@@ -1,0 +1,10 @@
+{
+  "issue": 90,
+  "failureClassification": "implementation",
+  "evidence": "Multiple investigation runs executed but failed to complete properly. Previous runs classified as 'unknown' or 'environment' with low-medium confidence due to insufficient initial evidence. The issue is a valid feature request to implement provider telemetry adapters and manual quota overrides for capacity management, not a bug or operational failure. GitHub shows the issue is active with no implementation in the current branch.",
+  "attemptsReviewed": "At least 3 investigation runs executed. The most recent classified as 'environment' with medium confidence, hypothesizing the investigation failed to write the result file. Earlier runs classified as 'unknown' with low confidence due to inability to establish the nature of the issue. Hindsight recall successfully returned 3 memory entries from project-neonpath and factory banks, confirming the system queried correctly.",
+  "rootCauseHypothesis": "The investigation workflow executed but did not complete the entire task. The work requires implementation effort: research documentation, adapter interface design, and implementation of capacity telemetry adapters. No code exists for this feature in the repository. Multiple attempts to classify the issue as a failure were incorrect - this is a new feature request awaiting initial implementation, not a regression or environment failure.",
+  "confidence": "high",
+  "recommendedAction": "Proceed with implementation. Start by researching supported Codex/Claude telemetry mechanisms and documenting terms and limitations. Then define the adapter interface and implement the feature iteratively. Add fixtures and contract tests as the feature is built. Route back to factory:ready when PR to dev opens.",
+  "automaticRetryAppropriate": true
+}
