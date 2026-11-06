@@ -63,3 +63,31 @@ groups:
         annotations:
           summary: "Model host answers but exports no vLLM metrics"
           description: "The model-host target is scraped successfully but vllm:* series are absent; the generation alerts above cannot fire."
+  - name: factory-liveness
+    rules:
+      # Cezar and LiteLLM export no `up`-style signal of their own that means "working": Cezar has no metrics
+      # endpoint, and LiteLLM's /metrics needs a credential. The blackbox probes check the real health responses.
+      - alert: FactoryEndpointDown
+        expr: probe_success{job=~"liveness-.*"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Factory service failed its liveness probe"
+          description: "{{ $labels.service }} ({{ $labels.instance }}) has failed its health check for three minutes. A Cezar deploy restarts it briefly; longer than that is an outage."
+      - alert: FactoryEndpointSlow
+        expr: probe_duration_seconds{job=~"liveness-.*"} > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Factory service health check is slow"
+          description: "{{ $labels.service }} has taken over five seconds to answer its health check for ten minutes."
+      - alert: FactoryLivenessProbeMissing
+        expr: absent(probe_success{job="liveness-cezar"}) or absent(probe_success{job="liveness-litellm"})
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Liveness probes are not reporting"
+          description: "No probe_success series for Cezar or LiteLLM; the blackbox exporter is down or unreachable, so the endpoint alerts cannot fire."
