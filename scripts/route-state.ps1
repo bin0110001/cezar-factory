@@ -85,7 +85,15 @@ function Set-State([string]$Target) {
     $ghArgs = @('issue', 'edit', $Issue)
     if ($current -notcontains $Target) { $ghArgs += '--add-label', $Target }
     if ($remove.Count) { $ghArgs += '--remove-label', ($remove -join ',') }
-    if ($ghArgs.Count -gt 3) { Invoke-Gh @ghArgs | Out-Null }
+    if ($ghArgs.Count -gt 3) {
+        try { Invoke-Gh @ghArgs | Out-Null }
+        catch {
+            # `gh issue edit` can apply the labels and still exit non-zero (e.g. a trailing
+            # projects error). Trust the observable outcome: exactly the target state label.
+            $after = @((Invoke-Gh issue view $Issue --json labels | ConvertFrom-Json).labels | ForEach-Object { $_.name } | Where-Object { $stateLabels -contains $_ })
+            if (-not ($after.Count -eq 1 -and $after[0] -eq $Target)) { throw }
+        }
+    }
 }
 function Set-Complexity([string]$Target) {
     if ($complexityLabels -notcontains $Target) { Fail "unknown complexity label '$Target'" }
@@ -268,14 +276,22 @@ switch ($Event) {
         Add-Comment ($body + "`n`n<!-- factory:review-round -->"); Set-State 'factory:changes-requested'; Done 'factory:changes-requested'
     }
     'investigate-result' {
+        # Idempotent re-entry: a previous attempt may have posted its comment and moved the
+        # label before failing. Re-running must not be refused for that reason.
+        $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes((Get-Content -Raw $Path)))).Replace('-', '').Substring(0, 16).ToLower()
+        $marker = "<!-- factory:investigate-result:$hash -->"
+        $postStates = 'factory:needs-plan', 'factory:needs-help', 'factory:ready'
+        if (@($comments | Where-Object { $_ -like "*$marker*" }).Count -and ($current | Where-Object { $postStates -contains $_ })) {
+            Done @($current)[0] 'investigation result already routed'
+        }
         Assert-Source 'factory:investigate', 'factory:working'
         $retries = @($comments | Where-Object { $_ -match '<!-- factory:investigate-retry -->' }).Count
         $summary = "**Classification:** $($result.failureClassification) (confidence: $($result.confidence))"
         if ($result.automaticRetryAppropriate -eq $true -and $result.confidence -ne 'low' -and $retries -lt $maxInvestigateRetries) {
-            Add-Comment "## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`nRetrying implementation.`n`n<!-- factory:investigate-retry -->"
+            Add-Comment "## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`nRetrying implementation.`n`n<!-- factory:investigate-retry -->`n$marker"
             Set-State 'factory:ready'; Done 'factory:ready' 'retry'
         }
-        Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)")
+        Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`n$marker")
         if ($result.failureClassification -eq 'architecture') {
             Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'

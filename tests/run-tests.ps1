@@ -1062,6 +1062,8 @@ try {
     Assert 'route: investigate retry -> ready' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:ready')
     Set-Gh @('factory:investigate') @('<!-- factory:investigate-retry -->')
     Assert 'route: second investigation re-plans automatically' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
+    $before = @((Get-Gh).comments).Count
+    Assert 'route: investigate re-run after a partial failure is idempotent' ((Invoke-Route 'investigate-result' $inv) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and @((Get-Gh).comments).Count -eq $before)
     Set-Gh @('factory:investigate')
     Assert 'route: low-confidence investigation re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ confidence = 'low' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:investigate')
