@@ -4,12 +4,7 @@
   "mergedPullRequests": 50,
   "openPullRequests": 1,
   "promoted": [],
-  "closed": [
-    {
-      "issue": 274,
-      "pr": 275
-    }
-  ],
+  "closed": [],
   "skipped": [],
   "errors": []
 }

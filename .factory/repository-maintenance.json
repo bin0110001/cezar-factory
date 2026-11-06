@@ -1,16 +1,9 @@
 {
-  "generatedAt": "2026-11-05T00:28:26.6013873+00:00",
-  "workingCutoff": "2026-11-04T00:28:22.6578868+00:00",
-  "staleCutoff": "2026-09-06T00:28:22.6603898+00:00",
-  "considered": 96,
-  "movedToInvestigate": [
-    {
-      "issue": 55,
-      "action": "investigated",
-      "reason": "failed-run",
-      "updatedAt": "11/04/2026 21:42:57"
-    }
-  ],
+  "generatedAt": "2026-11-06T06:08:44.7377874+00:00",
+  "workingCutoff": "2026-11-05T06:08:43.3608167+00:00",
+  "staleCutoff": "2026-09-07T06:08:43.3634481+00:00",
+  "considered": 98,
+  "movedToInvestigate": [],
   "limitations": [],
   "staleIssues": [],
   "staleSummary": null,
