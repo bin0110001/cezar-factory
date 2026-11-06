@@ -1,0 +1,10 @@
+{
+  "issue": 101,
+  "failureClassification": "implementation",
+  "evidence": "Attempt 7ab27868d768 (factory-implement task 99f219d9) introduced a bug where Invoke-FactoryValidation crashed reading $result.pr under StrictMode when results omitted the optional pr field.",
+  "attemptsReviewed": "One implementation attempt referenced in the commit e2573ec (Fix validation crash when result file lacks optional fields). This fix corrected the error by using PSObject.Properties instead of direct property access for optional fields.",
+  "rootCauseHypothesis": "The implementation change used direct property access ($result.pr) under StrictMode, but failure results written by ensure-implementation-result.ps1 omit the pr field.",
+  "confidence": "high",
+  "recommendedAction": "The fix has already been implemented in commit e2573ec. Revert the incorrect changes from 7ab27868d768 and apply the corrected fix that validates for property existence before reading optional fields.",
+  "automaticRetryAppropriate": false
+}

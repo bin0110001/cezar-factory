@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "code": "READY",
+  "workflow": "factory-investigate",
+  "step": "recall",
+  "preparedAt": "2026-11-06T09:17:42.8248942Z",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/1037e532-8662-49e7-a9a9-97652ccb4875",
+  "repositoryRoot": "/projects/cezar-factory/.ai/cezar/worktrees/1037e532-8662-49e7-a9a9-97652ccb4875",
+  "gitBranch": "cez/1037e532",
+  "factoryRuntimeRoot": "/home/cezar/.cezar/factory-runtime/3e2970df817b4590e6b487bf8973eaa7cf3a068a",
+  "requiredScripts": [
+    "check-already-resolved.ps1",
+    "hindsight/recall.ps1",
+    "ensure-investigation-result.ps1",
+    "validate-result.ps1",
+    "route-state.ps1"
+  ],
+  "tools": {
+    "pwsh": true,
+    "git": true,
+    "gh": true
+  }
+}
