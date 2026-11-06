@@ -75,6 +75,16 @@ MODEL_TARGET_FILE="$STACK_DIR/prometheus-model-targets.generated.json"
 printf '[\n  {"targets": ["%s"], "labels": {"role": "model-host"}}\n]\n' \
   "$FACTORY_VLLM_METRICS_TARGET" > "$MODEL_TARGET_FILE"
 
+# The model-host proxy demands a bearer token on /metrics too. Prometheus refuses to load a config whose
+# credentials_file is missing, so always render the file: a wrong or placeholder token only makes the scrape
+# a 401 (visible as ModelHostMetricsUnavailable), whereas a missing file would take Prometheus down.
+# The file is world-readable because the Prometheus container runs as an unprivileged user; the value is the
+# LAN-only vLLM proxy key, not a credential for anything external.
+VLLM_TOKEN_FILE="$STACK_DIR/prometheus-vllm-token.generated"
+vllm_scrape_key="$(grep -E '^VLLM_API_KEY=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+printf '%s' "${vllm_scrape_key:-unset}" > "$VLLM_TOKEN_FILE"
+chmod 0644 "$VLLM_TOKEN_FILE"
+
 VLLM_BASE_URL="$FACTORY_VLLM_BASE_URL"
 NO_PROXY="${NO_PROXY:-${FACTORY_VLLM_METRICS_TARGET%%:*},127.0.0.1,localhost}"
 export VLLM_BASE_URL NO_PROXY

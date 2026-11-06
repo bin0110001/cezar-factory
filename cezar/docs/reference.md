@@ -308,6 +308,7 @@ Useful environment variables:
 | `CEZ_AUTOSAVE=1` | Re-enable the periodic (90 s) autosave commit in task worktrees. Off by default (#471) — turn-end and pre-PR flushes always run, so branches still end complete. Every autosave names its trigger in the commit subject (`cezar autosave (periodic)` vs `(turn end)` / `(run finalize)` / `(pre-PR)`), so the flushes you keep are distinguishable from the timer you disabled. |
 | `CEZ_CLAUDE_BIN=/path/to/claude` | Override which `claude` binary is used. Rarely needed: when it is unset, cezar takes `claude` from PATH, and failing that looks where Claude Code's own installers put it — `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin` — so an install the launching shell never added to PATH is still found. |
 | `CEZ_CODEX_BIN=/path/to/codex` | Override which `codex` binary is used. |
+| `CEZ_CODEX_IDLE_TIMEOUT_MS=900000` | Stall bound for Codex runs (default 15 minutes; `0` disables). A live turn that writes nothing for this long while waiting on the model is killed with a stall diagnosis rather than waiting out the 30-minute wall clock. Silence during a running tool call, a pending question, or between turns is never counted. |
 | `CEZ_JUNIE_BIN=/path/to/junie` | Override which `junie` binary is used. |
 | `CEZ_OPENCODE_BIN=/path/to/opencode` | Override which `opencode` binary is used. |
 | `CEZ_CURSOR_AGENT_BIN=/path/to/agent` | Override which Cursor Agent CLI (`agent`) binary is used. |

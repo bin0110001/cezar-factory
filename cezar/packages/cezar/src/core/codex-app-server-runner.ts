@@ -41,6 +41,23 @@ export interface CodexRunnerOptions {
   bin?: string;
   /** Wall-clock timeout for a run (ms); per-spec `timeoutMs` still wins. */
   timeoutMs?: number;
+  /** Stall bound (ms): kill a run whose turn has produced no output for this long while it is waiting on
+   *  the MODEL. `0` disables it; the default is `CEZ_CODEX_IDLE_TIMEOUT_MS`, else 15 minutes. */
+  idleTimeoutMs?: number;
+}
+
+/** How long a live turn may stay silent while waiting on the model before the run is declared stalled.
+ *  A healthy model streams a delta every few seconds even at 0.3 tok/s, so 15 minutes of silence is a wedged
+ *  or thrashing host (2026-11-06: a swapping Mac mini). It sits below the 30-minute wall clock so the run
+ *  fails with a stall diagnosis instead of an opaque timeout, and well above any real generation gap. */
+export const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
+
+/** `CEZ_CODEX_IDLE_TIMEOUT_MS`: a non-negative integer, `0` to disable; anything else falls back to the default. */
+export function resolveIdleTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.CEZ_CODEX_IDLE_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_IDLE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_IDLE_TIMEOUT_MS;
 }
 
 /**
@@ -63,11 +80,13 @@ export class CodexAppServerRunner implements AgentRunner {
 
   private readonly bin: string;
   private readonly timeoutMs: number;
+  private readonly idleTimeoutMs: number;
   private lastSession: CodexSession | null = null;
 
   constructor(opts: CodexRunnerOptions = {}) {
     this.bin = resolveCodexExecutable(opts.bin);
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+    this.idleTimeoutMs = opts.idleTimeoutMs ?? resolveIdleTimeoutMs();
   }
 
   run(spec: AgentRunSpec, onEvent?: (event: AgentEvent) => void): Promise<AgentRunResult> {
@@ -83,7 +102,7 @@ export class CodexAppServerRunner implements AgentRunner {
     onEvent?: (event: AgentEvent) => void,
     opts: SessionOptions = {},
   ): AgentSession {
-    const session = new CodexSession(this.bin, this.timeoutMs, spec, onEvent, opts);
+    const session = new CodexSession(this.bin, this.timeoutMs, this.idleTimeoutMs, spec, onEvent, opts);
     this.lastSession = session;
     return session;
   }
@@ -136,6 +155,14 @@ class CodexSession implements AgentSession {
   private hardKillTimer: NodeJS.Timeout | undefined;
   private spawnFailed: Error | null = null;
   private timedOut = false;
+  /** Set when the stall bound (not the wall clock) ended the run: how long the turn had been silent. */
+  private stalledForMs: number | undefined;
+  /** When the app-server last wrote ANY line to stdout; the stall bound measures silence from here. */
+  private lastActivityAt = Date.now();
+  /** Tool-like items started and not yet completed (any thread). A tool can legitimately run silently for
+   *  as long as the wall clock allows — a 25-minute test run prints nothing — so while one is in flight
+   *  the stall bound is disarmed and only the wall clock applies. */
+  private readonly toolsInFlight = new Set<string>();
   /** Set the moment WE signal the child (EOF watchdog, cancel, kill switch).
    *  codex handles the signal and exits 143, so without this the runner reads
    *  its own teardown as a codex failure (#703). */
@@ -152,6 +179,7 @@ class CodexSession implements AgentSession {
   constructor(
     private readonly bin: string,
     timeoutMs: number,
+    private readonly idleTimeoutMs: number,
     private readonly spec: AgentRunSpec,
     private readonly onEvent: ((event: AgentEvent) => void) | undefined,
     private readonly opts: SessionOptions,
@@ -175,20 +203,38 @@ class CodexSession implements AgentSession {
     const limitMs = spec.timeoutMs ?? timeoutMs;
     let killTimer: NodeJS.Timeout | undefined;
     let deadline: NodeJS.Timeout | undefined;
+    let idleCheck: NodeJS.Timeout | undefined;
+    // The one teardown both bounds use, so a stall is killed exactly the way a timeout is.
+    const expire = (): void => {
+      if (this.timedOut) return;
+      this.timedOut = true;
+      this.interrupt();
+      this.child.stdout.destroy();
+      killTimer = setTimeout(() => {
+        if (!this.hasExited()) {
+          this.terminatedByCezar = true;
+          this.child.kill('SIGKILL');
+        }
+      }, KILL_GRACE_MS);
+      killTimer.unref?.();
+    };
     if (limitMs > 0) {
-      deadline = setTimeout(() => {
-        this.timedOut = true;
-        this.interrupt();
-        this.child.stdout.destroy();
-        killTimer = setTimeout(() => {
-          if (!this.hasExited()) {
-            this.terminatedByCezar = true;
-            this.child.kill('SIGKILL');
-          }
-        }, KILL_GRACE_MS);
-        killTimer.unref?.();
-      }, limitMs);
+      deadline = setTimeout(expire, limitMs);
       deadline.unref?.();
+    }
+    // Stall bound: only while a turn is live, the model (not a tool or a person) is who we are waiting on,
+    // and nothing has been written for `idleTimeoutMs`. Between turns, during a tool call, or while a
+    // question waits for the user, silence is expected and only the wall clock applies.
+    if (this.idleTimeoutMs > 0) {
+      const tickMs = Math.min(30_000, Math.max(5, Math.floor(this.idleTimeoutMs / 4)));
+      idleCheck = setInterval(() => {
+        if (this.timedOut || !this.waitingOnModel()) return;
+        const quietMs = Date.now() - this.lastActivityAt;
+        if (quietMs < this.idleTimeoutMs) return;
+        this.stalledForMs = quietMs;
+        expire();
+      }, tickMs);
+      idleCheck.unref?.();
     }
 
     // Handshake → thread → first turn. Kicked off concurrently with the read
@@ -201,6 +247,7 @@ class CodexSession implements AgentSession {
         const readLoop = async () => {
           for await (const line of readNdjson(this.child.stdout)) {
             if (this.timedOut) break;
+            this.lastActivityAt = Date.now();
             let msg: CodexAppServerMessage;
             try {
               msg = JSON.parse(line) as CodexAppServerMessage;
@@ -231,6 +278,7 @@ class CodexSession implements AgentSession {
         }
       } finally {
         if (deadline) clearTimeout(deadline);
+        if (idleCheck) clearInterval(idleCheck);
         if (killTimer) clearTimeout(killTimer);
         if (this.autoEndTimer) clearTimeout(this.autoEndTimer);
         this.stdinOpen = false;
@@ -257,7 +305,13 @@ class CodexSession implements AgentSession {
 
       if (this.timedOut) {
         const mins = Math.round((limitMs / 60_000) * 10) / 10;
-        this.emit({ type: 'error', message: `codex app-server timed out after ${mins}m and was killed` });
+        // Keep "timed out" in both messages: existing failure classification keys on it. The stall wording
+        // names the real cause (the model host stopped producing output) so the run is not read as "too slow".
+        const message =
+          this.stalledForMs !== undefined
+            ? `codex app-server timed out: no output for ${Math.round((this.stalledForMs / 60_000) * 10) / 10}m while waiting on the model (stalled; model host unresponsive) and was killed`
+            : `codex app-server timed out after ${mins}m and was killed`;
+        this.emit({ type: 'error', message });
         this.emit({ type: 'done' });
         return base;
       }
@@ -467,6 +521,12 @@ class CodexSession implements AgentSession {
     this.activeTurnId = turnIdOf(res) ?? this.activeTurnId;
   }
 
+  /** Is the session in the one state where silence means a stalled model: a turn is live, no tool is
+   *  running, and no question is waiting on a person? */
+  private waitingOnModel(): boolean {
+    return this.activeTurnId !== undefined && this.toolsInFlight.size === 0 && !this.pendingUserInput;
+  }
+
   private dispatch(msg: CodexAppServerMessage): void {
     if (this.rpc.dispatchResponse(msg)) return;
     if (msg.method === 'item/tool/requestUserInput' && (typeof msg.id === 'number' || typeof msg.id === 'string')) {
@@ -534,6 +594,7 @@ class CodexSession implements AgentSession {
         // Only tool-like items become tool events; message/reasoning stream as text.
         if (type && !NON_TOOL_ITEMS.has(type)) {
           const id = stringField(item, 'id') ?? `item-${this.rpc.allocateId()}`;
+          this.toolsInFlight.add(id);
           this.toolCalls.push({ id, name: type, input: item });
           this.emit({ type: 'tool-call', id, tool: type, input: item });
         }
@@ -560,6 +621,7 @@ class CodexSession implements AgentSession {
           // present (also covers turns that send no deltas), else the deltas.
           this.textCoalescer.complete(id || undefined, typeof item.text === 'string' ? item.text : undefined);
         } else if (type && !NON_TOOL_ITEMS.has(type) && id) {
+          this.toolsInFlight.delete(id);
           this.emit({
             type: 'tool-result',
             toolCallId: id,
@@ -582,6 +644,8 @@ class CodexSession implements AgentSession {
         if (this.isForeignThreadTurn(params)) break; // don't end the parent turn on a child turn (#600)
         this.pendingUserInput = undefined;
         this.activeTurnId = undefined;
+        // An interrupted or failed tool never sees item/completed; do not let it disarm the next turn.
+        this.toolsInFlight.clear();
         // An interrupted/failed item never sees item/completed — surface its
         // partial prose before the turn boundary (run.ts reads markers there).
         this.textCoalescer.flush();

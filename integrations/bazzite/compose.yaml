@@ -121,6 +121,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro
       - ./prometheus-model-targets.generated.json:/etc/prometheus/model-targets.json:ro
+      - ./prometheus-vllm-token.generated:/etc/prometheus/vllm-token:ro
       - prometheus-data:/prometheus
     restart: unless-stopped
     ports:
