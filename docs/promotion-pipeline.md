@@ -43,7 +43,9 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
    reconciles automations, and verifies each registered project. Reads wait up to 90 seconds for a
    restarting Cezar instead of failing at a fixed timeout.
 4. **Canaries.** Each canary selected by the changed paths queues a schedule automation in Cezar against
-   the new release and waits for it to finish. Any failure restores the previous `dev` release,
+   the new release and waits for it to finish. Cezar runs one job at a time, so a canary can queue behind real
+   work: only its running time counts against `timeoutSeconds`, and the wait in the queue has its own
+   `queueTimeoutSeconds` (default 2 hours). Any failure restores the previous `dev` release,
    quarantines the SHA, and stops the candidate.
 5. **Stable.** After the soak period (and approval, in controlled mode) `origin/stable` is
    fast-forwarded with the GitHub refs API (`force=false`, so ancestry is enforced by GitHub).
