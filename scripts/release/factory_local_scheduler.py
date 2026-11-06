@@ -449,6 +449,10 @@ class LocalPromotionScheduler:
         if not command:
             return True, "no deploy command configured"
         env = {**self._safe_environment(), "FACTORY_DEPLOY_IDLE_WAIT_SECONDS": str(self.policy["deployIdleWaitSeconds"])}
+        if os.name == "posix":
+            # The promoter's unit runs with UMask=0077. The deploy checks files out into the tree the Cezar container
+            # mounts read-only as a different user, so it must create them world-readable like the autodeploy timer does.
+            command = ["sh", "-c", 'umask 022 && exec "$@"', "sh", *command]
         try:
             result = subprocess.run(command, cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=3600, check=False, env=env)
         except subprocess.TimeoutExpired:

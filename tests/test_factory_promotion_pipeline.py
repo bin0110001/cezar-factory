@@ -249,6 +249,22 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len([i for i in self.gh.issues if "stable-deploy" in i]), 1)
         self.assertEqual(len(self.gh.patched), 1)  # the ref moved once; only the deploy is retried
 
+    @unittest.skipUnless(os.name == "posix", "umask is POSIX-only")
+    def test_stable_deploy_runs_with_a_world_readable_umask_even_under_a_restrictive_promoter(self):
+        marker = pathlib.Path(self.tmp.name) / "deploy-umask"
+        pointer = str(self.store / "release-store" / "channels" / "stable.json")
+        code = (f"import json,os,pathlib;m=os.umask(0);os.umask(m);pathlib.Path(r'{marker}').write_text(oct(m));"
+                f"p=pathlib.Path(r'{pointer}');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({{'currentSha':'{self.sha}'}}))")
+        scheduler = self.build()
+        scheduler.policy["deployCommand"] = [sys.executable, "-c", code]
+        previous = os.umask(0o077)  # what the promoter's systemd unit sets
+        try:
+            result = scheduler.run_once()
+        finally:
+            os.umask(previous)
+        self.assertEqual(result["promotion"]["status"], "promoted")
+        self.assertEqual(marker.read_text(), "0o22")
+
     def test_failing_deploy_command_is_retried_not_forgotten(self):
         scheduler = self.build(deploy="fails")
         self.assertEqual(scheduler.run_once()["promotion"]["status"], "deploy-pending")
