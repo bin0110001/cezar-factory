@@ -45,12 +45,13 @@ COUNT_RUNS
 # next tick retry; after MAX_DEFER seconds of continuous deferral restart anyway so a busy queue cannot starve a deploy.
 wait_for_idle() {
   local waited=0 busy now since
-  mkdir -p "$STATE_DIR"
+  # An unwritable state dir only disables the starvation timer; it must never abort a deploy.
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
   while :; do
     busy="$(active_runs)"
     if [[ "$busy" == 0 ]]; then rm -f "$DEFER_FILE"; return 0; fi
     now="$(date +%s)"
-    [[ -f "$DEFER_FILE" ]] || echo "$now" > "$DEFER_FILE"
+    [[ -f "$DEFER_FILE" ]] || echo "$now" > "$DEFER_FILE" 2>/dev/null || true
     since="$(cat "$DEFER_FILE" 2>/dev/null || echo "$now")"
     if (( now - since >= MAX_DEFER )); then
       log "idle wait exceeded ${MAX_DEFER}s; restarting despite $busy active run(s)"

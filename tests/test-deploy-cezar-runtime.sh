@@ -9,6 +9,8 @@ trap 'rm -rf "$TMP"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 mkdir -p "$TMP/repo/scripts/deploy" "$TMP/repo/cezar" "$TMP/bin" "$TMP/state"
+# Hermetic: never depend on a writable $HOME (the Cezar container that validates candidates has none).
+export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/autodeploy-state"
 cp "$ROOT/scripts/deploy/deploy-cezar-runtime.sh" "$TMP/repo/scripts/deploy/"
 printf 'FROM scratch\n' > "$TMP/repo/cezar/Dockerfile"
 git -C "$TMP/repo" init -b stable >/dev/null
@@ -140,6 +142,7 @@ git -C "$TMP/repo" commit -m 'change Cezar source for idle gate' >/dev/null
 IDLE_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
 restarts_before="$(cat "$TMP/state/restarts")"
 export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/idle-state"
+mkdir -p "$TMP/idle-state"
 set +e
 FACTORY_ACTIVE_RUNS_COMMAND='echo 2' FACTORY_DEPLOY_IDLE_WAIT_SECONDS=0 bash "$SCRIPT" "$IDLE_SHA" > "$TMP/deferred.log" 2>&1
 code=$?
@@ -163,6 +166,16 @@ restarts_before="$(cat "$TMP/state/restarts")"
 FACTORY_ACTIVE_RUNS_COMMAND='echo 5' FACTORY_DEPLOY_MAX_DEFER_SECONDS=7200 bash "$SCRIPT" "$STARVED_SHA" > "$TMP/starved.log" 2>&1 || fail 'starvation guard did not let the deploy through'
 grep -q 'restarting despite' "$TMP/starved.log" || fail 'starvation guard did not log why it restarted a busy Cezar'
 [[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'starvation guard did not restart'
-unset FACTORY_AUTODEPLOY_STATE_DIR
+export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/autodeploy-state"
+
+# An unwritable state directory only disables the starvation timer; the deploy itself must still go through.
+printf 'RUN unwritable-state\n' >> "$TMP/repo/cezar/Dockerfile"
+git -C "$TMP/repo" add cezar/Dockerfile
+git -C "$TMP/repo" commit -m 'change Cezar source for unwritable state dir' >/dev/null
+UNWRITABLE_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
+touch "$TMP/not-a-dir"
+restarts_before="$(cat "$TMP/state/restarts")"
+FACTORY_AUTODEPLOY_STATE_DIR="$TMP/not-a-dir/state" FACTORY_ACTIVE_RUNS_COMMAND='echo 0' bash "$SCRIPT" "$UNWRITABLE_SHA" > "$TMP/unwritable.log" 2>&1 || fail 'an unwritable state directory aborted the deploy'
+[[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'an unwritable state directory prevented the restart'
 
 echo 'Cezar runtime deployment tests passed.'
