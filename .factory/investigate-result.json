@@ -1,0 +1,10 @@
+{
+  "issue": 90,
+  "failureClassification": "implementation",
+  "evidence": "Multiple investigation runs executed via factory-investigate skill. Issue is a valid feature request for provider telemetry adapters and manual quota overrides. GitHub shows issue is active with labels: type:maintenance, risk:medium, factory:investigate, complexity:medium. No implementation code exists in repository for provider telemetry adapters, capacity snapshots, or manual quota overrides. Hindsight recall successfully returned 3 memory entries from project-neonpath and factory banks, confirming system queried correctly.",
+  "attemptsReviewed": "At least 3 investigation runs executed. The most recent classified as 'environment' with medium confidence, hypothesizing investigation failed to write result file. Earlier runs classified as 'unknown' with low confidence due to inability to establish the nature of the issue. Commit 4450def4 correctly reclassified as 'implementation' with high confidence, recognizing this is new feature development requiring adapter interface implementation, research, and test fixtures.",
+  "rootCauseHypothesis": "The work is a feature request that requires initial implementation from scratch. The adapter interface needs to be defined and implemented (snapshot, timestamp, window, confidence, source, reset, error fields). Best-effort telemetry adapters need to be added for supported providers (Anthropic/Claude, OpenAI/Codex). Manual quota override system needs implementation for local rate-limit tracking. A proper implementation plan should address the six work items in the issue with deliverables: documentation, adapter stub, interface implementation, and basic fixtures.",
+  "confidence": "high",
+  "recommendedAction": "Implement the provider telemetry adapter feature iteratively. Start by documenting available Codex/Claude CLI telemetry mechanisms, then define the adapter interface, then implement stub adapters for common providers. Add basic fixtures and contract tests. Route back to factory:ready when a PR to dev opens.",
+  "automaticRetryAppropriate": true
+}
