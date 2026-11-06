@@ -26,6 +26,7 @@ REVIEW_KINDS = ("self-review", "approval")
 STABLE_KINDS = ("auto", "approval")
 DEFAULT_SELF_REVIEW = r"(?im)^\s{0,3}#{1,6}\s*self[- ]review\b"
 TERMINAL_RUN = {"done": "passed", "failed": "failed", "cancelled": "failed"}
+WAITING_RUN = {"queued", "pending", "waiting"}
 
 
 class PolicyError(RuntimeError):
@@ -91,6 +92,7 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
         items.append({
             "id": item["id"], "automation": item["automation"], "when": when,
             "timeoutSeconds": _int(item.get("timeoutSeconds"), "canary timeoutSeconds", 30, 4 * 3600, 1800),
+            "queueTimeoutSeconds": _int(item.get("queueTimeoutSeconds"), "canary queueTimeoutSeconds", 60, 24 * 3600, 7200),
         })
 
     stable = raw.get("stable", {}) or {}
@@ -252,7 +254,10 @@ class CanaryRunner:
                 result["reason"] = "Cezar did not return a run id"
                 return result
             result["runId"] = run_id
-            deadline = self.clock() + canary["timeoutSeconds"]
+            # Cezar runs one job at a time, so a canary can wait behind real work. Judge it on how long it RUNS;
+            # the time spent queued has its own, larger allowance.
+            queue_deadline = self.clock() + canary["queueTimeoutSeconds"]
+            deadline = None
             while True:
                 run = self._retry("GET", f"/runs/{urllib.parse.quote(run_id, safe='')}")
                 state = TERMINAL_RUN.get(run.get("status"))
@@ -262,9 +267,16 @@ class CanaryRunner:
                         failed = [s for s in run.get("steps", []) if s.get("status") == "failed"]
                         result["reason"] = "; ".join(f"step {s.get('id')}: {s.get('error', 'failed')}" for s in failed)[:500] or f"run {run.get('status')}"
                     return result
-                if self.clock() >= deadline:
-                    result["reason"] = f"timed out after {canary['timeoutSeconds']}s in status {run.get('status')}"
-                    return result
+                if run.get("status") in WAITING_RUN:
+                    if self.clock() >= queue_deadline:
+                        result["reason"] = f"still {run.get('status')} after {canary['queueTimeoutSeconds']}s; Cezar never started it"
+                        return result
+                else:
+                    if deadline is None:
+                        deadline = self.clock() + canary["timeoutSeconds"]
+                    if self.clock() >= deadline:
+                        result["reason"] = f"timed out after {canary['timeoutSeconds']}s running (status {run.get('status')})"
+                        return result
                 self.sleep(self.poll_seconds)
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError, KeyError) as exc:
             result["reason"] = f"Cezar API unavailable: {exc}"[:500]

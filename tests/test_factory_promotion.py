@@ -145,33 +145,50 @@ class CanaryTests(unittest.TestCase):
         return CanaryRunner("http://cezar", "proj", request=api, sleep=sleep, clock=clock, ready_seconds=60, poll_seconds=10, **kw)
 
     def test_passes_when_the_run_finishes_done(self):
-        result = self.runner(FakeApi(["running", "done"])).run({"id": "health", "automation": "health", "timeoutSeconds": 300})
+        result = self.runner(FakeApi(["running", "done"])).run({"id": "health", "automation": "health", "timeoutSeconds": 300, "queueTimeoutSeconds": 600})
         self.assertEqual((result["status"], result["runId"]), ("passed", "r1"))
 
     def test_failed_run_reports_the_failing_step(self):
-        result = self.runner(FakeApi(["failed"])).run({"id": "health", "automation": "health", "timeoutSeconds": 300})
+        result = self.runner(FakeApi(["failed"])).run({"id": "health", "automation": "health", "timeoutSeconds": 300, "queueTimeoutSeconds": 600})
         self.assertEqual(result["status"], "failed")
         self.assertIn("step repair: boom", result["reason"])
 
     def test_times_out_instead_of_waiting_forever(self):
-        result = self.runner(FakeApi(["running"])).run({"id": "health", "automation": "health", "timeoutSeconds": 60})
+        result = self.runner(FakeApi(["running"])).run({"id": "health", "automation": "health", "timeoutSeconds": 60, "queueTimeoutSeconds": 600})
         self.assertEqual(result["status"], "failed")
         self.assertIn("timed out", result["reason"])
+
+    def test_time_spent_queued_does_not_count_against_the_run_budget(self):
+        # five polls queued (50s) then running, then done, with only a 30s run budget: it passes.
+        api = FakeApi(["queued"] * 5 + ["running", "done"])
+        result = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 600})
+        self.assertEqual(result["status"], "passed")
+
+    def test_a_run_that_never_leaves_the_queue_fails_with_a_queue_reason(self):
+        result = self.runner(FakeApi(["queued"])).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 60})
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("never started", result["reason"])
+
+    def test_a_started_run_that_hangs_still_fails_on_the_run_budget(self):
+        api = FakeApi(["queued", "queued", "running"])
+        result = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 600})
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("running", result["reason"])
 
     def test_waits_through_a_cezar_restart_before_giving_up(self):
         api = FakeApi(["done"])
         api.fail_first = 3
-        self.assertEqual(self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 300})["status"], "passed")
+        self.assertEqual(self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 300, "queueTimeoutSeconds": 600})["status"], "passed")
 
     def test_an_unreachable_cezar_fails_the_canary_cleanly(self):
         api = FakeApi(["done"])
         api.fail_first = 10_000
-        result = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 300})
+        result = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 300, "queueTimeoutSeconds": 600})
         self.assertEqual(result["status"], "failed")
         self.assertIn("unavailable", result["reason"])
 
     def test_unknown_automation_fails(self):
-        result = self.runner(FakeApi(["done"], automations=[])).run({"id": "h", "automation": "nope", "timeoutSeconds": 300})
+        result = self.runner(FakeApi(["done"], automations=[])).run({"id": "h", "automation": "nope", "timeoutSeconds": 300, "queueTimeoutSeconds": 600})
         self.assertEqual(result["status"], "failed")
         self.assertIn("not found", result["reason"])
 
