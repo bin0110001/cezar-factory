@@ -1,0 +1,10 @@
+{
+  "issue": 94,
+  "failureClassification": "implementation",
+  "evidence": "Multiple investigation worker attempts completed analysis but failed to persist .factory/investigate-result.json; ensure-investigation-result.ps1 generated default 'unknown/low-confidence' after first retry due to missing artifact.",
+  "attemptsReviewed": "Worker completed gathering issue data but persisted no structured handoff; repeated retries ran without finding any prior attempts to review (no .factory/investigate-result.json.)",
+  "rootCauseHypothesis": "Implementation bug: the investigator completes its work but fails to write the required .factory/investigate-result.json artifact, triggering ensure-investigation-result.ps1 to generate a conservative 'unknown/low-confidence' placeholder.",
+  "confidence": "medium",
+  "recommendedAction": "Fix the investigator to persist its findings. Then rerun investigation to collect routing decision patterns.",
+  "automaticRetryAppropriate": false
+}
