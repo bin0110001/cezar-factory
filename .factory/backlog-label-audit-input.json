@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-11-06T11:00:47.5110484+00:00",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/c2f6ec70-3b51-4a60-9287-6afa541db8af",
+  "outputPath": "/projects/cezar-factory/.ai/cezar/worktrees/c2f6ec70-3b51-4a60-9287-6afa541db8af/.factory/backlog-label-audit-input.json",
+  "limit": 3,
+  "candidates": [],
+  "resolved": [],
+  "staged": [],
+  "classificationMetrics": {
+    "eligibleIssues": 0,
+    "deterministicRuleHits": 0,
+    "ambiguousIssues": 0,
+    "ambiguousIssuesSelectedForReview": 0,
+    "ruleHits": {
+      "legacy_blocked_marker": 0,
+      "legacy_decomposition_marker": 0,
+      "legacy_type_marker": 0
+    }
+  },
+  "unreviewedAmbiguousCount": 0,
+  "terminalReason": "no-unmarked-open-issues"
+}

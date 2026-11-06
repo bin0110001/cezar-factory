@@ -1,0 +1,1 @@
+{"version": 1, "checks": {"parse": {"runner":"command","executable":"node","args":[],"timeoutSeconds":0}}, "suites": {"quick":["parse"]}}

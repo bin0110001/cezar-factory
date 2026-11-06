@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 function Read-RequiredValue {
     param([string]$Prompt, [string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) {
-        $Value = Read-Host $Prompt
+        $Value = Read-Host $Prompt # hang-lint: allow interactive-prompt - operator-run helper; unattended callers pass the value
     }
     if ([string]::IsNullOrWhiteSpace($Value)) {
         throw "A value is required for: $Prompt"
@@ -52,7 +52,7 @@ function Invoke-SshCapture {
     }
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
-    $process.WaitForExit()
+    $process.WaitForExit() # hang-lint: allow unbounded-wait - ssh runs with BatchMode=yes and ConnectTimeout=10; ReadToEnd above already waited for EOF
     if ($process.ExitCode -ne 0) {
         $detail = if ($stderr.Trim()) { $stderr.Trim() } else { 'No SSH diagnostic was returned.' }
         throw "SSH request failed: $detail"

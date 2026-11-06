@@ -42,8 +42,7 @@ source: skills/factory-fix/SKILL.md
 
 ### 5. Re-run Validation
 
-- Execute the project's `test-changed.ps1` script to validate the fixes.
-- If full validation is required, run `test-full.ps1` or `verify.ps1`.
+- Run the project's own test commands while fixing. The workflow runs `test-changed.ps1` after you finish; do not run Factory scripts yourself.
 - Ensure all tests pass before returning to review.
 
 ### 6. Return to Review
@@ -63,14 +62,28 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ```json
 {
-  "status": "success | failure",
-  "summary": "Description of fixes applied",
-  "filesChanged": ["path/to/file1"],
-  "testsRun": ["test name"],
-  "testResult": "passed | failed",
-  "acceptanceCriteriaStatus": "All criteria met | Partially met",
-  "knownConcerns": "Any remaining concerns",
-  "followUpSuggestions": "Recommended follow-up work",
-  "durableKnowledgeCandidates": "Reusable knowledge discovered"
+  "issue": 272,
+  "status": "success",
+  "summary": "Fixed the blocking review finding.",
+  "filesChanged": ["src/example.ps1"],
+  "testsRun": ["focused regression test"],
+  "testResult": "passed",
+  "acceptanceCriteriaStatus": "All criteria met",
+  "documentationUpdated": false,
+  "knownConcerns": "",
+  "followUpSuggestions": "",
+  "durableKnowledgeCandidates": "",
+  "pr": "https://github.com/example/project/pull/12"
 }
 ```
+
+The example shows a successful fix. Use `status: failure` and describe the
+blocker when the review finding cannot be resolved; a successful result needs
+the existing PR URL. Set `documentationUpdated` to `false` after confirming
+that no documentation change is needed.
+
+## Already-resolved issues
+
+The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
+writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
+resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.

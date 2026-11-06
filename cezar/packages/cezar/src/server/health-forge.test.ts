@@ -185,6 +185,20 @@ describe('GET /api/v1/health — forge + capabilities', () => {
     expect(body.repoRoot).not.toBe(repoRoot);
   });
 
+  it('hosted health redacts checkout paths and credentials from the CORS-open repo remote', async () => {
+    process.env.CEZ_REMOTE = '1';
+    initRepo('https://x-access-token:super-secret@github.com/acme/demo.git?token=also-secret#fragment');
+
+    const body = await health();
+    const repo = body.repo as { root: string; remote?: string };
+
+    expect(repo.root).toBe(basename(repoRoot));
+    expect(repo.remote).toBe('https://github.com/acme/demo.git');
+    expect(JSON.stringify(body)).not.toContain('super-secret');
+    expect(JSON.stringify(body)).not.toContain('also-secret');
+    expect(JSON.stringify(body)).not.toContain(repoRoot);
+  });
+
   it('hosted mode via a non-loopback bind host also trims repoRoot (#431)', async () => {
     const body = await health({ bindHost: '0.0.0.0' });
     expect(body.repoRoot).toBe(basename(repoRoot));

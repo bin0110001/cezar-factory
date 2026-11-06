@@ -14,6 +14,8 @@ param(
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 
 $schemaFile = @{ intake = 'intake-result.schema.json'; plan = 'plan.schema.json'; implementation = 'implementation-result.schema.json'; review = 'review-result.schema.json'; investigation = 'investigation-result.schema.json' }[$Kind]
 $errors = [System.Collections.Generic.List[string]]::new()
@@ -47,6 +49,37 @@ foreach ($name in $schema.properties.Keys) {
 }
 
 function Blank($v) { $null -eq $v -or ($v -is [string] -and ($v.Trim() -eq '' -or $v.Trim() -match '^(none|n/a|-)\.?$')) }
+
+# Version 1 of the agent-result vocabulary. Unknown descriptive values remain
+# readable in failure results, but never qualify a success result.
+function Normalized-Outcome($value) {
+    $text = ([string]$value).Trim().ToLowerInvariant()
+    switch -Regex ($text) {
+        '^(pass|passed|success|succeeded)$' { return 'passed' }
+        '^(fail|failed|failure|error)$' { return 'failed' }
+        '^(skip|skipped|not-run|not run)$' { return 'skipped' }
+        default { return 'unknown' }
+    }
+}
+
+function Acceptance-Met($value) {
+    ([string]$value).Trim() -match '^(?i:met|all criteria met|all acceptance criteria met)$'
+}
+
+function Qualified-PrUrl($value) {
+    ([string]$value).Trim() -match '^https://github\.com/[^/\s?#]+/[^/\s?#]+/pull/[1-9][0-9]*(?:/)?$'
+}
+
+function Substantive-List($values) {
+    $items = @($values)
+    if ($items.Count -eq 0) { return $false }
+    foreach ($item in $items) {
+        if ((Blank $item) -or ([string]$item).Trim() -match '^(?i:placeholder|todo|tbd|test name or identifier|path/to/.*)$') {
+            return $false
+        }
+    }
+    return $true
+}
 
 if (-not $errors.Count) {
     switch ($Kind) {
@@ -86,15 +119,19 @@ if (-not $errors.Count) {
         }
         'implementation' {
             if ($result.status -eq 'success') {
-                if (Blank $result.testResult) { $errors.Add('status is success but testResult is empty') }
-                if (-not $result.ContainsKey('pr') -or (Blank $result.pr)) { $errors.Add('status is success but pr (PR URL) is missing') }
-                if (@($result.filesChanged).Count -eq 0) { $errors.Add('status is success but filesChanged is empty') }
-                if (Blank $result.acceptanceCriteriaStatus) { $errors.Add('status is success but acceptanceCriteriaStatus is empty') }
+                if ((Normalized-Outcome $result.testResult) -ne 'passed') { $errors.Add('status is success but testResult is not passed') }
+                if (-not (Substantive-List $result.testsRun)) { $errors.Add('status is success but testsRun has no substantive test names') }
+                if (-not (Substantive-List $result.filesChanged)) { $errors.Add('status is success but filesChanged has no substantive paths') }
+                if (-not (Acceptance-Met $result.acceptanceCriteriaStatus)) { $errors.Add('status is success but acceptanceCriteriaStatus is not met') }
+                if (-not $result.ContainsKey('pr') -or -not (Qualified-PrUrl $result.pr)) { $errors.Add('status is success but pr is not a qualified GitHub pull URL') }
             }
         }
         'review' {
             if ($result.approvalChangeRequestStatus -eq 'change-request' -and (Blank $result.blockingFindings)) { $errors.Add('change-request requires blockingFindings') }
             if ($result.approvalChangeRequestStatus -eq 'approval' -and -not (Blank $result.blockingFindings)) { $errors.Add('approval must not carry blockingFindings') }
+            if (-not (Qualified-PrUrl $result.pr)) { $errors.Add('review result requires a qualified GitHub PR URL') }
+            if ([string]$result.reviewedHeadSha -notmatch '^[0-9a-fA-F]{40}$') { $errors.Add('reviewedHeadSha must be the 40-character PR head SHA') }
+            if (Blank $result.reviewerIdentity) { $errors.Add('reviewerIdentity must identify the independent reviewer') }
         }
         'investigation' {
             $allowed = 'implementation', 'test', 'flaky-test', 'environment', 'dependency', 'merge-conflict', 'requirements', 'architecture', 'unknown'

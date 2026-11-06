@@ -4,6 +4,21 @@ This document describes the optional local project integration layer. The
 default Factory release path synchronizes automations directly to Cezar and
 does not require this checkout layout.
 
+## Explicit targets and deployment boundary
+
+Release and synchronization commands resolve targets from the host-local
+`config/factory-projects.json` registry or from explicit path parameters that
+the command supports, such as `-RegistryPath` or `-ProjectPath`. They do not
+search drives or infer projects from nearby checkouts. If the selected registry
+is missing or empty and no supported explicit target was supplied, the command
+returns a `Needs target configuration` error before changing a project or
+contacting Cezar.
+
+`scripts/verify.ps1` checks only the project path passed to it (or the current
+directory) and does not deploy. `tests/run-tests.ps1` uses local fixtures and
+dry runs; it must not invoke a live Bazzite or other deployment. Live Bazzite
+changes use the supported deployment flow and the explicit server inventory.
+
 ## Project Structure
 
 Projects that need Factory workflows, skills, policies, scripts, or pinned
@@ -40,7 +55,7 @@ project/
 Projects using the local fallback must maintain a factory configuration in
 `.ai/factory/factory.config.yaml`:
 
-`yaml
+```yaml
 factory:
   source: cezar-factory     # Factory repository source
   version: 0.2.0            # Pinned factory version
@@ -62,6 +77,7 @@ skills:
 features:
   knowledge_extraction: false
   maintenance: false
+  backlog_reconciliation: false
 
 project:
   type: your-project-type   # e.g., godot, dotnet, web
@@ -70,7 +86,34 @@ validation:
   changed: ./scripts/factory/test-changed.ps1
   full: ./scripts/factory/test-full.ps1
   verify: ./scripts/factory/verify.ps1
-`
+```
+
+The three `validation` values are explicit **project-owned commands**. The
+Factory workflow runs each from the current project's Git worktree root. For
+example, a .NET project can set `full: "dotnet test MySolution.sln"`, a JS
+project can use `full: "npm test"`, and a Godot project can call its own
+headless test script. A PowerShell adapter can use `pwsh ./scripts/factory/test-full.ps1`.
+Each command runs once; the Factory wrapper does not discover source files or
+guess a package runner. Quote paths with spaces in the command value.
+Targeted validation has a 20-minute deadline. Full and verify each have a
+two-hour deadline so projects with a genuine long-running suite can run it;
+the wrapper terminates an overlong child and records the applicable
+`timeoutSeconds` in its receipt. A suite that needs longer than two hours is
+an explicit release blocker, not a reason to substitute a smaller test set.
+
+Before moving an installed or shared-mount project to this Factory version,
+check that its `.ai/factory/factory.config.yaml` points to real project-owned
+changed, full, and verify commands. A missing config or command fails with a
+local receipt. Set `changed: "skip"` only if targeted testing is genuinely
+unsupported; `full` and `verify` are required and cannot be skipped. A
+command that points back at a Factory validation wrapper is rejected.
+
+Each attempt stores bounded stdout, stderr, and a versioned receipt beneath
+the worktree's `.factory/artifacts/validation/<stage>/<attempt>/`. The receipt
+records the repository, issue, PR, head commit, command, timeout, exit code, outcome,
+and whether the worktree was clean. Workflow review requires both full and
+verify stages. The current-head merge gate is tracked in #27; an agent result
+or an old receipt does not by itself authorize merging.
 
 ## Issue repository routing
 
@@ -129,7 +172,7 @@ Policies are plain factory files, so a policy override is a file override:
 | Risk classification and human gates | `overrides/policies/risk.yaml` |
 | Definition of Ready / Done, escalation format | `overrides/policies/*.md` |
 | Label set | `overrides/policies/labels.yaml` (`route-state.ps1` reads the factory-state list) |
-| Enabled features | `features:` in `factory.config.yaml` (project-owned; `maintenance`, `knowledge_extraction`) |
+| Enabled features | `features:` in `factory.config.yaml` (project-owned; `maintenance`, `knowledge_extraction`, `backlog_reconciliation`) |
 | Validation commands | `validation:` in `factory.config.yaml` |
 
 Workflow `onFail.max` retry counts live in the workflow files; change them with a workflow override.

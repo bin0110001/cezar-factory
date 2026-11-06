@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "gpt-6.1-sol",
+  "timeoutSeconds": 900,
+  "projects": {
+    "cezar-factory": {
+      "repository": "bin0110001/cezar-factory",
+      "baseBranch": "dev",
+      "channel": "dev",
+      "validation": [["pwsh", "-NoProfile", "-File", "tests/run-tests.ps1"]],
+      "deployment": {
+        "kind": "factory",
+        "repo": "/projects/cezar-factory",
+        "store": "/var/lib/cezar-factory/release-store",
+        "registry": "/projects/cezar-factory/config/factory-projects.json"
+      }
+    }
+  }
+}

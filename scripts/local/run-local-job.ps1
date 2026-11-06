@@ -38,7 +38,7 @@ $body = @{
 } | ConvertTo-Json -Depth 10
 $headers = @{ 'Content-Type' = 'application/json' }
 if ($ApiKey) { $headers.Authorization = "Bearer $ApiKey" }
-$response = Invoke-RestMethod -Method Post -Uri $ApiUrl -Headers $headers -Body $body
+$response = Invoke-RestMethod -Method Post -Uri $ApiUrl -Headers $headers -Body $body -TimeoutSec 600
 $content = $response.choices[0].message.content
 $result = [ordered]@{
     status = 'success'

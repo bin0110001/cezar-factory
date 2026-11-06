@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { runnerSchema } from './health.ts';
+import { factoryReleaseProvenanceSchema } from './releases.ts';
 
 /**
  * The WORKFLOWS family: the chain catalog, the save/parse routes, and the planner.
@@ -33,6 +34,11 @@ export const workflowStepDefSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Run a named suite from the project's versioned verification manifest. */
+    verificationSuite: z.string().trim().min(1).max(128).optional(),
+    /** Command steps only: kill the command and fail the step after this many seconds (default 900).
+     *  A hung command otherwise blocks the run forever. Set it to the step's real worst case. */
+    timeoutSeconds: z.number().int().min(1).max(3600).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -42,8 +48,8 @@ export const workflowStepDefSchema = z
       })
       .optional(),
   })
-  .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
-    message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
+    message: 'a step is either an agent step, a command check, or a verification suite',
   });
 export type WorkflowStepDef = z.infer<typeof workflowStepDefSchema>;
 
@@ -55,6 +61,8 @@ export const workflowDefSchema = z.object({
   source: z.enum(['built-in', 'file']),
   /** Absent on built-ins — which is exactly what makes them undeletable. */
   path: z.string().optional(),
+  /** Version of shared Factory content selected when this task was created. */
+  factoryRelease: factoryReleaseProvenanceSchema.optional(),
 });
 export type WorkflowDef = z.infer<typeof workflowDefSchema>;
 

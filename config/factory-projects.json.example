@@ -2,6 +2,7 @@
   {
     "apiUrl": "http://127.0.0.1:3000",
     "projectId": "example-project",
-    "projectPath": "D:\\Projects\\example-project"
+    "projectPath": "D:\\Projects\\example-project",
+    "projectType": "godot"
   }
 ]

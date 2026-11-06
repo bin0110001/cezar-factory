@@ -1,0 +1,19 @@
+[Unit]
+Description=Promote the latest merged Factory dev SHA: validate, activate dev, canary, then promote stable
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+# podman exec (validation, gh) needs the rootless setuid helpers, so NoNewPrivileges/PrivateDevices/PrivateTmp are
+# deliberately not set. The suite itself runs in the Cezar container, not under these limits.
+CPUQuota=200%
+MemoryMax=8G
+TasksMax=256
+Nice=10
+IOSchedulingClass=idle
+Environment=FACTORY_WORKER_CONCURRENCY=1
+Environment=FACTORY_GPU_SLOTS=0
+ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/factory_local_scheduler.py run --repo %h/cezar-factory --store %h/.local/share/cezar-factory --config %h/cezar-factory/config/promotion-policy.json --registry %h/cezar-factory/config/factory-projects.json --remote origin --branch dev
+TimeoutStartSec=8h

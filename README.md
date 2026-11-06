@@ -80,3 +80,12 @@ Current factory version: 0.3.2 (see VERSION file)
 ## License
 
 MIT
+For transient PowerShell child-process startup failures, run the bounded test
+wrapper instead of retrying the full command manually:
+
+```powershell
+pwsh -NoProfile -File .\tests\run-tests-retry.ps1
+```
+
+The wrapper retries launch exceptions only; deterministic test failures return
+immediately with their original exit code.

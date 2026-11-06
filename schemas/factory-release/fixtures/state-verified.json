@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "factory-release-state/v1",
+  "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+  "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "state": "verified",
+  "verification": {
+    "resultVersion": 1,
+    "status": "passed",
+    "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "evidenceRef": "verification/0123456789abcdef0123456789abcdef01234567.json"
+  },
+  "updatedAt": "2026-10-23T18:03:00Z"
+}

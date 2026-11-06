@@ -1,0 +1,8 @@
+{
+  "targetBranch": "dev",
+  "validation": [
+    ["npm", "--prefix", "cezar", "ci"],
+    ["npm", "--prefix", "cezar", "run", "typecheck", "-w", "@open-mercato/cezar"],
+    ["npm", "--prefix", "cezar", "test", "-w", "@open-mercato/cezar", "--", "--maxWorkers=1", "src/workspace/lifecycle.test.ts"]
+  ]
+}

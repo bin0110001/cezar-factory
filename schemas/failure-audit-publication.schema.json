@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FailureAuditPublicationV1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["failed", "pending", "published", "existing", "skipped", "needs-review"] },
+    "projectId": { "type": ["string", "null"] },
+    "factoryRepo": { "type": "string", "minLength": 3 },
+    "fingerprint": { "type": ["string", "null"] },
+    "issueNumber": { "type": ["integer", "null"] },
+    "issueUrl": { "type": ["string", "null"] },
+    "issueCreated": { "type": "boolean" },
+    "action": { "enum": ["created", "appended", "adopted", "existing", "needs-review", "skipped", "failed"] },
+    "evidenceRuns": { "type": "array", "items": { "type": "string" } },
+    "legacyCandidates": { "type": "array", "items": { "type": "string" } },
+    "message": { "type": ["string", "null"] }
+  },
+  "required": ["schemaVersion", "status", "projectId", "factoryRepo", "fingerprint", "issueNumber", "issueUrl", "issueCreated", "action", "evidenceRuns", "legacyCandidates", "message"]
+}

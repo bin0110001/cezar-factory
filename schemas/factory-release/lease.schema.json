@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryReleaseLeaseV1",
+  "description": "Task pin to one immutable source SHA. A live task retains its artifact until the controller reconciles the lease.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "factory-release-lease/v1" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "channel": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "state": { "type": "string", "enum": ["active", "released", "expired", "reconciled"] },
+    "acquiredAt": { "type": "string", "format": "date-time" },
+    "heartbeatAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "releasedAt": { "type": "string", "format": "date-time" },
+    "reconciledAt": { "type": "string", "format": "date-time" }
+  },
+  "required": ["schemaVersion", "runId", "projectId", "channel", "sourceSha", "state", "acquiredAt", "heartbeatAt", "expiresAt"],
+  "allOf": [
+    { "if": { "properties": { "state": { "const": "released" } }, "required": ["state"] }, "then": { "required": ["releasedAt"] } },
+    { "if": { "properties": { "state": { "const": "reconciled" } }, "required": ["state"] }, "then": { "required": ["reconciledAt"] } }
+  ]
+}

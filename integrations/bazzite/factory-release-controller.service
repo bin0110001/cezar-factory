@@ -1,0 +1,12 @@
+[Unit]
+Description=Stage and safely activate a verified Factory release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/factory_activation.py activate --repo %h/cezar-factory --store %h/.local/share/cezar-factory/release-store --registry %h/cezar-factory/config/factory-projects.json --channel stable
+TimeoutStartSec=20min

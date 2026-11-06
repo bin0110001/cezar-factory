@@ -52,6 +52,30 @@ RUN apt-get update \
  && chmod +x /opt/microsoft/powershell/7/pwsh \
  && ln -s /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
 
+# Godot: headless imports/tests/exports for Godot projects.
+# GODOT_BIN is a selector (godot-select.sh) that runs the version a project pins in its
+# `.godot-version` file, installing it on demand into GODOT_VERSIONS_DIR. That directory is a
+# persistent volume (see compose.yaml), so adopting a new Godot release is a PR to the project
+# that bumps its pin: no image rebuild or container restart. GODOT_VERSION/GODOT_CHANNEL below
+# only choose the baseline that is pre-installed and used by projects with no pin.
+ARG GODOT_VERSION=4.7
+ARG GODOT_CHANNEL=stable
+ENV GODOT_VERSIONS_DIR=/opt/godot-versions \
+    GODOT_DEFAULT_VERSION=${GODOT_VERSION}-${GODOT_CHANNEL} \
+    GODOT_BIN=/usr/local/bin/godot
+COPY godot-install.sh /usr/local/bin/godot-install
+COPY godot-select.sh /usr/local/bin/godot
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends unzip libfontconfig1 libx11-6 libxcursor1 \
+      libxext6 libxi6 libxinerama1 libxrandr2 libxrender1 libgl1 libudev1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && chmod +x /usr/local/bin/godot-install /usr/local/bin/godot \
+ && bin="$(godot-install "$GODOT_DEFAULT_VERSION")" \
+ && ! ldd "$bin" | grep "not found" \
+ && godot --version \
+ && chmod -R a+rX "$GODOT_VERSIONS_DIR" \
+ && chown -R 1001:1001 "$GODOT_VERSIONS_DIR"
+
 COPY --from=build /out/*.tgz /tmp/cezar.tgz
 RUN npm install -g /tmp/cezar.tgz && rm /tmp/cezar.tgz
 
@@ -68,6 +92,15 @@ ENV HOME=/home/cezar \
 WORKDIR /workspace
 # Trust bind-mounted repos whose owner differs from the container uid.
 RUN git config --global --add safe.directory '*'
+# HTTPS pushes authenticate through the persistent `gh` login (cezar-gh-config volume) instead of
+# prompting for a username. Without this helper `git push` dies with "could not read Username".
+# Written directly rather than via `gh auth setup-git`, which refuses to run before a login exists.
+RUN git config --global credential.https://github.com.helper '' \
+ && git config --global --add credential.https://github.com.helper '!gh auth git-credential' \
+ && git config --global credential.https://gist.github.com.helper '' \
+ && git config --global --add credential.https://gist.github.com.helper '!gh auth git-credential'
+# Fail fast instead of hanging on a prompt nobody can answer inside an agent run.
+ENV GIT_TERMINAL_PROMPT=0
 
 EXPOSE 4321
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

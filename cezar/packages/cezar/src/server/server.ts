@@ -1,13 +1,24 @@
+import { execFile as backlogExecFileCb } from 'node:child_process';
+import { promisify as backlogPromisify } from 'node:util';
+import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
+import { syncOpenIssues } from './backlog/github-sync.ts';
+import { BACKLOG_SYNC_INTERVAL_MS, backlogSyncEnabled, runBacklogSyncOnce } from './backlog/sync-timer.ts';
+import { applyBacklogEdit, backlogEditSchema, backlogOverview, backlogRecommendation } from './backlog/api.ts';
 import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
+  githubRepositoryKeySchema, type GithubRepositoryKey,
+  dependencyDecisionResearchDispatchResponseSchema,
+  dependencyGraphHistoricalTrendsSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
+import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
+import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AutomationStore } from '../automations/store.ts';
 import { AutomationCoordinator } from '../automations/coordinator.ts';
 import { GithubPoller } from '../automations/github-poller.ts';
@@ -31,7 +42,7 @@ import { trackerTriggerSchema, trackerAutomationOptionsSchema, trackerAutomation
 import type { IncomingMessage } from 'node:http';
 import { access, constants as fsConstants, mkdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import type { Next } from 'hono';
@@ -207,6 +218,19 @@ import { isLoopbackHostHeader, normalizeHostname, resolveCapabilities } from './
 import { createSocketHub, type SocketHub, type WsUpgradeVerdict } from './ws.ts';
 import { browseDirectory, isInsideBrowseRoot, isLexicallyInsideBrowseRoot, resolveBrowseRoot } from './fs-browse.ts';
 import { parseRemote, resolveForge, type ForgeAvailability } from './forge/index.ts';
+import { DependencyGraphService } from './dependency-graph/service.ts';
+import { discoverDecisionCandidates } from './dependency-graph/discovery.ts';
+import { planCycleRepairs } from './dependency-graph/repair-planner.ts';
+import { removedCycleEdges, validateCycleRepair } from './dependency-graph/cycle-repair-policy.ts';
+import { GithubDependencyWriteError } from './dependency-graph/github-source.ts';
+import { admitWithRefresh } from './dependency-graph/admission.ts';
+import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts';
+import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
+import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
+import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
+import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
+import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
+import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
 import { ensureLaunchKey } from './launch-key.ts';
 import { openInTerminal } from './open-in-terminal.ts';
@@ -325,6 +349,8 @@ export interface ServerDeps {
   hostSampler?: HostSampler;
   /** Re-arm the workspace automation timer after definition mutations. */
   automationsChanged?: () => void;
+  /** Explicit project-local full-suite scheduling and on-demand execution. */
+  fullRegressionScheduler?: FullRegressionScheduler;
 }
 
 // ---- project-scoped routing (multi-project spec, step 2.2) -----------------
@@ -332,6 +358,11 @@ export interface ServerDeps {
 /** Hono env for the mirrored project-route table: the scope resolver puts the
  *  request's `ProjectContext` on the context, handlers read `c.get('project')`. */
 type ProjectApiEnv = { Variables: { project: ProjectContext } };
+
+function publicDependencyNode<T extends object>(node: T): Omit<T, 'bodyText'> {
+  const { bodyText: _bodyText, ...publicNode } = node as T & { bodyText?: unknown };
+  return publicNode as Omit<T, 'bodyText'>;
+}
 
 /** `projectId` gate at the route boundary (spec "Project identity"): the slug
  *  shape or the reserved `default` alias — validated BEFORE touching any map
@@ -1142,6 +1173,23 @@ async function probeWritableDir(dir: string, create: boolean): Promise<string | 
 // this function, and `AppType` (src/server/app-type.ts) is `ReturnType<typeof createApp>`.
 // Annotating it `Hono` here would erase every route from the type and leave the typed client
 // with nothing to offer. See the `routed` assembly at the end of the function.
+/** Remove URL userinfo and query/fragment material from the CORS-open health payload. */
+function sanitizePublicRemote(remote: string): string {
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) return remote;
+  try {
+    const url = new URL(remote);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return remote
+      .replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1')
+      .replace(/[?#].*$/, '');
+  }
+}
+
 export function createApp(deps: ServerDeps) {
   const { version, update, bindHost, bootProjectId } = deps;
   // Boot singletons keep DELIBERATELY distinct names (`boot*`): every
@@ -1150,6 +1198,20 @@ export function createApp(deps: ServerDeps) {
   // handler body would silently pin it to the boot project, which the rename
   // turns into a compile error instead.
   const bootRoot = deps.repoRoot;
+  const dependencyGraphServices = new Map<string, DependencyGraphService>();
+  const dependencyGraphService = (root: string) => {
+    let service = dependencyGraphServices.get(root);
+    if (!service) {
+      service = new DependencyGraphService(root);
+      dependencyGraphServices.set(root, service);
+      deps.onDispose?.(() => { service?.close(); dependencyGraphServices.delete(root); });
+    }
+    return service;
+  };
+  const checkDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate, options?: { refresh?: boolean }) => {
+    const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
+    return admitWithRefresh(dependencyGraphService(root), repository, candidate.number, options);
+  };
   const bootDataDir = join(bootRoot, '.ai/cezar');
   const modelCatalog = deps.modelCatalog ?? new RunnerModelCatalog({
     adapters: {
@@ -1310,7 +1372,7 @@ export function createApp(deps: ServerDeps) {
   const trackerWatches = new TrackerWatches(trackers, deps.socketHub);
   const capabilities = () => resolveCapabilities(process.env, bindHost);
   const singleProjectRefusal = (
-    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing',
+    action: 'adding projects' | 'editing projects' | 'removing projects' | 'folder browsing' | 'scheduling full regression',
   ) => ({ error: `single-project mode is enabled; ${action} is disabled` });
   // Inbox live updates (spec 007). Opt-in (#471): no capability, no watcher —
   // and since step 2.3 the per-dataDir watch is created lazily by the first
@@ -1591,8 +1653,7 @@ export function createApp(deps: ServerDeps) {
   // ---- meta ----------------------------------------------------------------
   // CORS — deliberately for /api/health ONLY (spec 011): the bookmarklets
   // fetch it cross-origin from github.com to discover which local ports run a
-  // cockpit and which repo each serves. Health exposes no secrets beyond the
-  // repo path/remote; every other endpoint stays same-origin.
+  // cockpit and which repo each serves. Every other endpoint stays same-origin.
   const healthCors = async (c: Context, next: Next): Promise<Response | void> => {
     c.header('access-control-allow-origin', '*');
     if (c.req.method === 'OPTIONS') {
@@ -1623,6 +1684,13 @@ export function createApp(deps: ServerDeps) {
     // externally-depended-on JSON in the app (BACKWARD_COMPATIBILITY.md §2).
     const forge = resolveForge(repo);
     const caps = capabilities();
+    const healthRepo = !repo || caps.localHandoff
+      ? repo
+      : {
+          ...repo,
+          root: basename(repo.root),
+          ...(repo.remote ? { remote: sanitizePublicRemote(repo.remote) } : {}),
+        };
     return {
       version,
       // Spread rather than `latestVersion: update?.latest`: an `undefined` VALUE is dropped by
@@ -1639,7 +1707,7 @@ export function createApp(deps: ServerDeps) {
       // no longer an absolute path. Deliberate — a hosted cockpit's paths are on
       // a machine the reader does not have anyway. See §2's `repoRoot` note.
       repoRoot: caps.localHandoff ? bootRoot : basename(bootRoot),
-      repo,
+      repo: healthRepo,
       checks,
       defaultRunner: config.defaultRunner,
       // Non-blocking: cached availability or null-until-warm — health must never pay a `gh`
@@ -2661,7 +2729,7 @@ export function createApp(deps: ServerDeps) {
       const parsed = { data: c.req.valid('json') };
       // `default` is the boot alias the cockpit is allowed to use everywhere else.
       const id = raw === 'default' ? await resolveBootProject() : raw;
-      const { maxParallel, tags } = parsed.data;
+      const { maxParallel, tags, factoryChannel, fullRegressionPolicy } = parsed.data;
 
       // Read-first (mirroring DELETE, server.ts:1252-1258): a well-formed but
       // unknown id must 404 WITHOUT rewriting the config — otherwise it would both
@@ -2698,6 +2766,14 @@ export function createApp(deps: ServerDeps) {
             if (normalized === undefined) delete entry.tags;
             else entry.tags = normalized;
           }
+          if (factoryChannel !== undefined) {
+            if (factoryChannel === null) delete entry.factoryChannel;
+            else entry.factoryChannel = factoryChannel;
+          }
+          if (fullRegressionPolicy !== undefined) {
+            if (fullRegressionPolicy === null) delete entry.fullRegressionPolicy;
+            else entry.fullRegressionPolicy = fullRegressionPolicy;
+          }
           updated = entry;
         });
       } catch (err) {
@@ -2714,7 +2790,19 @@ export function createApp(deps: ServerDeps) {
       const body: UpdateProjectResponse = {
         project: { ...updated, ...(await probeProjectStatus(updated.root)) },
       };
+      void deps.fullRegressionScheduler?.tick();
       return c.json(body);
+    })
+
+    .post('/projects/:projectId/verification/full-regression', async (c) => {
+      if (capabilities().singleProject) return c.json(singleProjectRefusal('scheduling full regression'), 409);
+      const raw = c.req.param('projectId');
+      if (!projectIdSchema.safeParse(raw).success) return c.json({ error: `unknown project: ${raw}` }, 404);
+      if (!deps.fullRegressionScheduler) return c.json({ error: 'full regression scheduler is unavailable' }, 503);
+      const result = await deps.fullRegressionScheduler.runNow(raw === 'default' ? await resolveBootProject() : raw);
+      if (result.status === 'not-configured') return c.json({ error: result.reason }, 404);
+      if (result.status === 'limited') return c.json({ error: result.reason, ...(result.retryAt ? { retryAt: result.retryAt } : {}) }, 429);
+      return c.json(result, 202);
     })
 
     .post('/projects/checkout', jsonZodValidator(() => checkoutSchema, { message: 'url must be a GitHub repository' }), async (c) => {
@@ -2788,7 +2876,7 @@ export function createApp(deps: ServerDeps) {
     // dialog hands back absolute paths, but a hand-written body (curl, a
     // future CLI) spells home the way a shell does.
     const requested = expandTilde(spelled);
-    if (!requested.startsWith('/')) {
+    if (!isAbsolute(requested)) {
       return {
         status: 400,
         body: { error: `not a folder: ${spelled} is not an absolute path` },
@@ -3118,7 +3206,7 @@ export function createApp(deps: ServerDeps) {
         // exist; checkout roots use `mkdir -p`. Both get a real write probe.
         // Any failure → 400 and NO change persisted.
         const expanded = expandTilde(configuredRoot);
-        if (!expanded.startsWith('/')) {
+        if (!isAbsolute(expanded)) {
           return c.json({ error: `not writable: ${configuredRoot} is not an absolute path` }, 400);
         }
         if (!create) {
@@ -3292,12 +3380,16 @@ export function createApp(deps: ServerDeps) {
   // ---- chained family: skills (project-scoped) ----
   const skillsRoutes = new Hono<ProjectApiEnv>()
     .get('/skills', queryZodValidator(waitQuery), async (c) => {
-      const repoRoot = c.get('project').root;
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       // The default read stays fast and starts the team load in the background.
       // The cockpit follows it with `wait=1`, off the render path, so a cold
       // cache converges without polling or a manual reload (spec 005 / #555).
       if (c.req.valid('query').wait === '1') await waitForTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     })
 
     // The opt-in catalog for the "Import skills" panel: every skill a default
@@ -3327,9 +3419,13 @@ export function createApp(deps: ServerDeps) {
     // then return the merged catalog. Degrades quietly — offline just means the
     // team entries stay as they were (or absent).
     .post('/skills/refresh', async (c) => {
-      const { root: repoRoot } = c.get('project');
+      const project = c.get('project');
+      const repoRoot = project.root;
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       await refreshTeamSkills(repoRoot);
-      return c.json(await discoverSkills(repoRoot));
+      return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     });
 
   // ---- chained family: GUI prefs / ui-state (project-scoped) ----
@@ -3360,7 +3456,26 @@ export function createApp(deps: ServerDeps) {
   // table and the versioned `v1` one — see `healthRoutes` for why the chain
   // shape (not the statement shape) is what carries the types.
   const workflowsRoutes = new Hono<ProjectApiEnv>()
-    .get('/workflows', async (c) => c.json(await loadWorkflows(c.get('project').root)))
+    .get('/factory-release', async (c) => {
+      const project = c.get('project');
+      try {
+        const release = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(release
+          ? { status: 'resolved', projectId: project.id, channel: release.channel, sourceSha: release.sourceSha, manifestDigest: release.manifestDigest }
+          : { status: 'legacy', projectId: project.id, channel: 'stable' });
+      } catch (error) {
+        return c.json({ status: 'error', projectId: project.id, error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
+    .get('/workflows', async (c) => {
+      const project = c.get('project');
+      try {
+        const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
+        return c.json(await loadWorkflows(project.root, { factoryRelease }));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 503);
+      }
+    })
 
     // Save an approved plan as a reusable chain (spec 008): YAML in
     // `.ai/cezar/workflows/<slug>.yaml` — from then on it's in the dropdown
@@ -3850,8 +3965,10 @@ export function createApp(deps: ServerDeps) {
             timeZone: localTimeZone(),
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
+            admit: candidate => checkDependencyAdmission(project.root, candidate),
+            ...backlogAdmitFragment(remote.owner, remote.repo, project.root),
             launch: parsed.data.mode === 'execute'
-              ? (definition, candidate, receiptId) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, dispatchEnabled: capabilities().dispatch })
+              ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkDependencyAdmission(project.root, candidate, { refresh: false }), dispatchEnabled: capabilities().dispatch })
               : undefined,
             onChange: (automationId, revision) => emitAutomationChange(project, automationId, revision),
           });
@@ -3885,6 +4002,43 @@ export function createApp(deps: ServerDeps) {
       const project = c.get('project');
       const records = project.automationStore.logs(c.req.valid('query'));
       return c.json({ records, runs: logRunsOf(project.store, records) });
+    })
+
+    .post('/dependency-graph/admission-override', jsonZodValidator(z.object({
+      automationId: z.string().min(1).max(200),
+      eventId: z.string().min(1).max(1_000),
+      expectedGraphRevision: z.number().int().nonnegative(),
+      rationale: z.string().trim().min(8).max(1_000),
+    })), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'admission overrides are available only from the local operator surface' }, 403);
+      const project = c.get('project');
+      const input = c.req.valid('json');
+      const definition = project.automationStore.get(input.automationId);
+      if (!definition || !isGithubAutomation(definition)) return c.json({ error: 'GitHub automation not found' }, 404);
+      const receipt = project.automationStore.latestReceipt(input.automationId, input.eventId);
+      if (!receipt || receipt.status !== 'deferred' || !receipt.candidate?.event.startsWith('issue.')) return c.json({ error: 'deferred issue event not found' }, 404);
+      let repository: GithubRepositoryKey;
+      try { repository = githubRepositoryKeySchema.parse(receipt.candidate.repo) as GithubRepositoryKey; }
+      catch { return c.json({ error: 'event repository is invalid' }, 400); }
+      const graph = dependencyGraphService(project.root).read(repository);
+      if (graph.revision !== input.expectedGraphRevision) return c.json({ error: `dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${graph.revision}` }, 409);
+      const mutation = project.automationStore.acquireMutationLease();
+      if (!mutation) return c.json({ error: 'automation state is busy; retry the override' }, 409);
+      try {
+        const reserved = project.automationStore.reserveDeferred(receipt.receiptId);
+        if (!reserved) return c.json({ error: 'deferred issue event was already handled' }, 409);
+        const override = { actor: 'local-operator', reason: input.rationale, graphRevision: graph.revision };
+        project.automationStore.appendLog({ automationId: definition.id, revision: definition.revision, event: receipt.candidate.event, githubNumber: receipt.candidate.number, result: 'admission-override', reason: `Local operator approved admission at graph revision ${graph.revision}: ${input.rationale}`, receiptId: receipt.receiptId });
+        try {
+          const run = await launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate: receipt.candidate, receiptId: receipt.receiptId, admissionOverride: override, dispatchEnabled: capabilities().dispatch });
+          project.automationStore.appendReceipt({ ...reserved, status: 'launched', runId: run.runId, updatedAt: new Date().toISOString() });
+          project.automationStore.appendLog({ automationId: definition.id, revision: definition.revision, event: receipt.candidate.event, githubNumber: receipt.candidate.number, result: 'launched', reason: 'Launched under the audited local operator admission override.', receiptId: receipt.receiptId, runId: run.runId });
+          return c.json({ runId: run.runId, receiptId: receipt.receiptId, graphRevision: graph.revision }, 202);
+        } catch (error) {
+          project.automationStore.appendReceipt({ ...reserved, status: 'launch-error', error: error instanceof Error ? error.message : String(error), updatedAt: new Date().toISOString() });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'run launch failed' }, 409);
+        }
+      } finally { mutation.release(); }
     })
 
     .post('/automation-log/:receiptId/retry', async (c) => {
@@ -4108,11 +4262,15 @@ export function createApp(deps: ServerDeps) {
     })
 
     .post('/runs', jsonZodValidator(startRunSchema), async (c) => {
-      const { root: repoRoot, dataDir, manager } = c.get('project');
+      const project = c.get('project');
+      const { root: repoRoot, dataDir, manager } = project;
       const parsed = { data: c.req.valid('json') };
       if (agentModelsLocked(repoRoot) && parsed.data.model?.trim()) {
         return c.json({ error: AGENT_MODELS_LOCKED_ERROR }, 409);
       }
+      let factoryRelease;
+      try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       let workflow: WorkflowDef | undefined;
       if (parsed.data.steps) {
         // Inline chain (spec 008): an approved plan runs as an ad-hoc workflow.
@@ -4122,9 +4280,10 @@ export function createApp(deps: ServerDeps) {
           name: '(planned)',
           source: 'built-in',
           steps: parsed.data.steps,
+          ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
         };
       } else {
-        const { workflows } = await loadWorkflows(repoRoot);
+        const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
         workflow = workflows.find((w) => w.name === parsed.data.workflow);
         if (!workflow) return c.json({ error: `unknown workflow: ${parsed.data.workflow}` }, 404);
       }
@@ -5217,7 +5376,11 @@ export function createApp(deps: ServerDeps) {
       todoMustExist,
       jsonZodValidator(startTodoSchema, { absent: undefined, malformed: null }),
       async (c) => {
-        const { root: repoRoot, dataDir, manager } = c.get('project');
+        const project = c.get('project');
+        const { root: repoRoot, dataDir, manager } = project;
+        let factoryRelease;
+        try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
         const id = c.req.param('id');
         const todo = c.get('todo');
         const parsed = { data: c.req.valid('json') };
@@ -5231,7 +5394,7 @@ export function createApp(deps: ServerDeps) {
 
         let workflow: WorkflowDef | undefined;
         if (todo.suggestedSkill) {
-          const skills = await discoverSkills(repoRoot);
+          const skills = await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot });
           if (skills.some((s) => s.name === todo.suggestedSkill)) {
             workflow = {
               name: '(inbox)',
@@ -5245,11 +5408,12 @@ export function createApp(deps: ServerDeps) {
                   prompt: '{{task}}',
                 },
               ],
+              ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
             };
           }
         }
         if (!workflow) {
-          const { workflows } = await loadWorkflows(repoRoot);
+          const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
           workflow = workflows.find((w) => w.name === 'quick-task') ?? QUICK_TASK_WORKFLOW;
         }
 
@@ -5689,6 +5853,526 @@ export function createApp(deps: ServerDeps) {
         return c.json(await fetchGithub(repoRoot, query.refresh === '1', Number.isFinite(limit) ? limit : 30));
       },
     )
+    .get('/dependency-graph', queryZodValidator(z.object({
+      limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0),
+      revision: z.coerce.number().int().nonnegative().optional(),
+      kind: z.enum(['issue', 'epic', 'decision', 'milestone', 'external-blocker']).optional(),
+      state: z.string().trim().min(1).max(128).optional(), search: z.string().trim().max(200).optional(), repository: z.string().trim().min(3).max(256).optional(),
+      readiness: z.enum(['ready', 'blocked', 'unknown']).optional(),
+    })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const { limit, offset, revision, kind, state, search, repository: repositoryFilter, readiness: readinessFilter } = c.req.valid('query');
+        const snapshot = revision === undefined ? service.read(repository) : service.readAt(repository, revision);
+        let filteredNodes = snapshot.nodes;
+        if (kind) filteredNodes = filteredNodes.filter((node) => node.kind === kind);
+        if (state) filteredNodes = filteredNodes.filter((node) => node.state === state);
+        if (repositoryFilter) filteredNodes = filteredNodes.filter((node) => node.repository.toLocaleLowerCase() === repositoryFilter.toLocaleLowerCase());
+        if (search) {
+          const needle = search.toLocaleLowerCase();
+          filteredNodes = filteredNodes.filter((node) => node.title.toLocaleLowerCase().includes(needle) || node.id.toLocaleLowerCase().includes(needle) || ('number' in node && String(node.number) === search));
+        }
+        if (readinessFilter) {
+          const eligibleIds = new Set(filteredNodes.filter((node) => node.kind === 'issue' || node.kind === 'epic').map((node) => node.id));
+          const readinessResults = revision === undefined
+            ? service.analysis(repository).readiness
+            : readiness(snapshot);
+          const selected = new Set(readinessResults.filter((item) => eligibleIds.has(item.nodeId) && item.readiness === readinessFilter).map((item) => item.nodeId));
+          filteredNodes = filteredNodes.filter((node) => selected.has(node.id));
+        }
+        const pageNodes = filteredNodes.slice(offset, offset + limit);
+        const nodes = pageNodes.map(publicDependencyNode);
+        const ids = new Set(nodes.map((node) => node.id));
+        const edges = snapshot.edges.filter((edge) => ids.has(edge.from) || ids.has(edge.to)).slice(0, 1_000);
+        const pageIds = new Set(pageNodes.map((node) => node.id));
+        return c.json({ ...snapshot, nodes, edges, decisions: snapshot.decisions.filter((decision) => pageIds.has(decision.id)), page: { limit, offset, totalNodes: filteredNodes.length, hasMore: offset + nodes.length < filteredNodes.length } });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/node', queryZodValidator(z.object({ id: dependencyNodeIdSchema, limit: z.coerce.number().int().min(1).max(200).default(50) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const { id, limit } = c.req.valid('query');
+        const node = snapshot.nodes.find((item) => item.id === id);
+        if (!node) return c.json({ error: 'dependency node not found' }, 404);
+        const neighbors = snapshot.edges.filter((edge) => edge.from === id || edge.to === id).slice(0, limit);
+        return c.json({ revision: snapshot.revision, source: snapshot.source, node: publicDependencyNode(node), edges: neighbors, impact: downstreamImpact(snapshot, id, limit) });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/neighborhood', queryZodValidator(z.object({
+      id: dependencyNodeIdSchema,
+      direction: z.enum(['upstream', 'downstream', 'both']).default('both'),
+      depth: z.coerce.number().int().min(1).max(5).default(2),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+      kind: z.enum(['BLOCKS', 'PART_OF', 'RELATED_TO', 'INFORMS', 'SUPERSEDES', 'CONFLICTS']).optional(),
+    })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const query = c.req.valid('query');
+        const result = dependencyNeighborhood(service.read(repository), query.id, {
+          direction: query.direction, depth: query.depth, limit: query.limit, ...(query.kind ? { kinds: [query.kind] } : {}),
+        });
+        return result ? c.json({ ...result, nodes: result.nodes.map(publicDependencyNode) }) : c.json({ error: 'dependency node not found' }, 404);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency neighborhood unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/readiness', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const snapshot = analysis.snapshot;
+        const { limit, offset } = c.req.valid('query');
+        const selected = snapshot.nodes.slice(offset, offset + limit).map((node) => node.id);
+        const selectedIds = new Set(selected);
+        return c.json({ revision: snapshot.revision, source: snapshot.source, results: analysis.readiness.filter((result) => selectedIds.has(result.nodeId)), total: snapshot.nodes.length, limit, offset });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph unavailable' }, 503);
+      }
+    })
+    .get('/backlog', async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const repository = `${remote.owner}/${remote.repo}`;
+      return c.json(backlogOverview({ store: await sharedBacklogStore(), repository, obligations: await sharedObligationStore() }));
+    })
+    .get('/backlog/recommendation', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(25).default(5) })), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      return c.json(backlogRecommendation({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, limit: c.req.valid('query').limit }));
+    })
+    .post('/backlog/sync', async (c) => {
+      const root = c.get('project').root;
+      const remote = parseRemote((await getRepoInfo(root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const gh = async (args: string[]) => { const { stdout } = await backlogPromisify(backlogExecFileCb)('gh', args, { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true }); return stdout.trim(); };
+      const results = await syncOpenIssues({ store: await sharedBacklogStore(), repository: `${remote.owner}/${remote.repo}`, gh });
+      const counts: Record<string, number> = {};
+      for (const r of results) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      return c.json({ counts, results: results.filter((r) => r.status !== 'in-sync').slice(0, 200) });
+    })
+    .post('/backlog/:number', jsonZodValidator(backlogEditSchema), async (c) => {
+      const remote = parseRemote((await getRepoInfo(c.get('project').root))?.remote ?? '');
+      if (!remote || remote.host !== 'github.com') return c.json({ error: 'No GitHub remote is configured' }, 404);
+      const number = Number(c.req.param('number'));
+      if (!Number.isInteger(number) || number < 1) return c.json({ error: 'invalid issue number' }, 400);
+      const result = applyBacklogEdit(await sharedBacklogStore(), `${remote.owner}/${remote.repo}`, number, c.req.valid('json'), 'human:local');
+      return result.ok ? c.json({ record: result.record }) : c.json({ error: result.message, code: result.code }, result.status);
+    })
+    .get('/dependency-graph/cycles', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const { snapshot, cycles } = analysis;
+        const { limit } = c.req.valid('query');
+        return c.json({ revision: snapshot.revision, source: snapshot.source, cycles: cycles.slice(0, limit), total: cycles.length, truncated: cycles.length > limit });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle analysis unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/repair-candidates', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(planCycleRepairs(service.read(repository), c.req.valid('query').limit));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'repair planning failed' }, 503);
+      }
+    })
+    .post('/dependency-graph/cycle-plans/dispatch', jsonZodValidator(dependencyCyclePlanDispatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle planning runs can be started only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const project = c.get('project');
+        const service = dependencyGraphService(project.root);
+        const repository = await service.repositoryKey();
+        return c.json(await dispatchCycleReplan({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, candidateId: input.candidateId }), 202);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle planning dispatch failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/reject', jsonZodValidator(dependencyCycleRepairRejectSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair review is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const candidate = planCycleRepairs(snapshot, 50).candidates.find((item) => item.id === input.candidateId);
+        if (!candidate) return c.json({ error: 'cycle repair candidate is stale or no longer exists' }, 409);
+        await service.recordAuditEvent(repository, input.expectedGraphRevision, 'cycle-repair-rejected', candidate.id, { rationale: input.rationale, fingerprint: candidate.fingerprint });
+        return c.json(dependencyCycleRepairRejectResponseSchema.parse({ rejected: true, candidateId: candidate.id, graphRevision: snapshot.revision }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rejection failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/apply', jsonZodValidator(dependencyCycleRepairApplySchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair application is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      const repairId = randomUUID();
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        const { candidate } = validateCycleRepair(snapshot, input);
+        const edges = removedCycleEdges(snapshot, input);
+        const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
+        const issuePair = (edge: DependencyGraphEdge) => {
+          const blocker = nodes.get(edge.from);
+          const blocked = nodes.get(edge.to);
+          if (!blocker || !blocked || (blocker.kind !== 'issue' && blocker.kind !== 'epic') || (blocked.kind !== 'issue' && blocked.kind !== 'epic')
+            || blocker.repository !== repository || blocked.repository !== repository) {
+            throw new Error('cycle repairs can change only same-repository GitHub issue dependencies');
+          }
+          return { blockingNumber: blocker.number, blockedNumber: blocked.number };
+        };
+        const pairs = edges.map((edge) => ({ edge, ...issuePair(edge) }));
+        await service.recordAuditEvent(repository, snapshot.revision, 'cycle-repair-approved', candidate.id, {
+          repairId, graphRevision: snapshot.revision, fingerprint: candidate.fingerprint, rationale: input.rationale, edges,
+        });
+        const applied: typeof pairs = [];
+        try {
+          for (const pair of pairs) {
+            try {
+              const result = await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'remove');
+              if (!result.changed) throw new Error(`cycle repair precondition changed for edge ${pair.edge.id}`);
+              applied.push(pair);
+            } catch (error) {
+              if (error instanceof GithubDependencyWriteError && error.mutationMayHaveApplied) applied.push(pair);
+              throw error;
+            }
+          }
+          const sync = await service.sync();
+          const current = service.read(repository);
+          if (sync.status !== 'fresh' || planCycleRepairs(current, 50).candidates.some((item) => item.fingerprint === candidate.fingerprint)) {
+            throw new Error('GitHub sync did not verify removal of the target blocking cycle');
+          }
+          await service.recordAuditEvent(repository, current.revision, 'cycle-repair-applied', candidate.id, {
+            repairId, fingerprint: candidate.fingerprint, removedEdgeIds: edges.map((edge) => edge.id), rationale: input.rationale,
+          });
+          return c.json(dependencyCycleRepairResultSchema.parse({ status: 'applied', repairId, repository, candidateId: candidate.id, removedEdgeIds: edges.map((edge) => edge.id), restoredEdgeIds: [], graphRevision: current.revision }), 200);
+        } catch (error) {
+          const compensationErrors: string[] = [];
+          for (const pair of applied.reverse()) {
+            try {
+              await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'add');
+            } catch (restoreError) {
+              compensationErrors.push(restoreError instanceof Error ? restoreError.message.slice(0, 500) : 'unknown restore failure');
+            }
+          }
+          if (applied.length) {
+            try {
+              await service.sync();
+            } catch (syncError) {
+              compensationErrors.push(`sync after compensation failed: ${syncError instanceof Error ? syncError.message.slice(0, 400) : 'unknown sync failure'}`);
+            }
+          }
+          const current = service.read(repository);
+          await service.recordAuditEvent(repository, current.revision, compensationErrors.length ? 'cycle-repair-partial-rollback' : 'cycle-repair-compensated', candidate.id, {
+            repairId, fingerprint: candidate.fingerprint, removedEdgeIds: applied.map((pair) => pair.edge.id), compensationErrors,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'cycle repair failed',
+          });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair failed', repairId, rolledBack: compensationErrors.length === 0, compensationErrors }, compensationErrors.length ? 503 : 409);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair validation failed';
+        return c.json({ error: message }, /revision conflict|stale|no longer exists/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/cycle-repairs/rollback', jsonZodValidator(dependencyCycleRepairRollbackSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'cycle repair rollback is available only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const snapshot = service.read(repository);
+        if (snapshot.source.status !== 'fresh') return c.json({ error: 'cycle repair rollback requires a fresh GitHub graph' }, 409);
+        if (snapshot.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${snapshot.revision}`);
+        const events = await service.readEvents(200);
+        const approval = events.find((event) => event.kind === 'cycle-repair-approved' && (event.payload as { repairId?: unknown }).repairId === input.repairId);
+        if (!approval) return c.json({ error: 'cycle repair approval record not found' }, 404);
+        if (events.some((event) => ['cycle-repair-rolled-back', 'cycle-repair-partial-rollback'].includes(event.kind) && (event.payload as { repairId?: unknown }).repairId === input.repairId)) {
+          return c.json({ error: 'cycle repair has already been rolled back or requires recovery' }, 409);
+        }
+        const rawEdges = (approval.payload as { edges?: unknown }).edges;
+        if (!Array.isArray(rawEdges) || rawEdges.length < 1 || rawEdges.length > 20) return c.json({ error: 'cycle repair audit record is invalid' }, 409);
+        const edges = rawEdges.map((value) => dependencyGraphEdgeSchema.parse(value));
+        const currentIds = new Set(snapshot.edges.map((edge) => edge.id));
+        const missingEdges = edges.filter((edge) => !currentIds.has(edge.id));
+        if (!missingEdges.length) return c.json({ error: 'the repair dependencies are already present; rollback has no changes to restore' }, 409);
+        const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
+        const pairs = missingEdges.map((edge) => {
+          const blocker = nodes.get(edge.from);
+          const blocked = nodes.get(edge.to);
+          if (!blocker || !blocked || (blocker.kind !== 'issue' && blocker.kind !== 'epic') || (blocked.kind !== 'issue' && blocked.kind !== 'epic')
+            || blocker.repository !== repository || blocked.repository !== repository) throw new Error('rollback supports only same-repository GitHub issue dependencies');
+          return { edge, blockingNumber: blocker.number, blockedNumber: blocked.number };
+        });
+        await service.recordAuditEvent(repository, snapshot.revision, 'cycle-repair-rollback-approved', approval.entityId, {
+          repairId: input.repairId, expectedGraphRevision: snapshot.revision, rationale: input.rationale, restoredEdgeIds: missingEdges.map((edge) => edge.id),
+        });
+        const restored: typeof pairs = [];
+        try {
+          for (const pair of pairs) {
+            try {
+              const result = await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'add');
+              if (!result.changed) throw new Error(`rollback precondition changed for edge ${pair.edge.id}`);
+              restored.push(pair);
+            } catch (error) {
+              if (error instanceof GithubDependencyWriteError && error.mutationMayHaveApplied) restored.push(pair);
+              throw error;
+            }
+          }
+          const sync = await service.sync();
+          const current = service.read(repository);
+          if (sync.status !== 'fresh' || edges.some((edge) => !current.edges.some((item) => item.id === edge.id))) {
+            throw new Error('GitHub sync did not verify the restored dependencies');
+          }
+          await service.recordAuditEvent(repository, current.revision, 'cycle-repair-rolled-back', approval.entityId, {
+            repairId: input.repairId, restoredEdgeIds: missingEdges.map((edge) => edge.id), rationale: input.rationale,
+          });
+          return c.json(dependencyCycleRepairResultSchema.parse({ status: 'rolled-back', repairId: input.repairId, repository, candidateId: approval.entityId, removedEdgeIds: [], restoredEdgeIds: edges.map((edge) => edge.id), graphRevision: current.revision }));
+        } catch (error) {
+          const compensationErrors: string[] = [];
+          for (const pair of restored.reverse()) {
+            try {
+              await service.setBlocker(pair.blockedNumber, pair.blockingNumber, 'remove');
+            } catch (compensationError) {
+              compensationErrors.push(compensationError instanceof Error ? compensationError.message.slice(0, 500) : 'unknown compensation failure');
+            }
+          }
+          if (restored.length) {
+            try {
+              await service.sync();
+            } catch (syncError) {
+              compensationErrors.push(`sync after compensation failed: ${syncError instanceof Error ? syncError.message.slice(0, 400) : 'unknown sync failure'}`);
+            }
+          }
+          const current = service.read(repository);
+          await service.recordAuditEvent(repository, current.revision, compensationErrors.length ? 'cycle-repair-partial-rollback' : 'cycle-repair-rollback-failed', approval.entityId, {
+            repairId: input.repairId, restoredEdgeIds: restored.map((edge) => edge.edge.id), compensationErrors,
+            error: error instanceof Error ? error.message.slice(0, 500) : 'cycle repair rollback failed',
+          });
+          return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rollback failed', compensationErrors }, compensationErrors.length ? 503 : 409);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'cycle repair rollback failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/decision-research/dispatch', jsonZodValidator(dependencyDecisionResearchDispatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision research runs can be started only from the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const project = c.get('project');
+        const service = dependencyGraphService(project.root);
+        const repository = await service.repositoryKey();
+        const response = dependencyDecisionResearchDispatchResponseSchema.parse(await dispatchDecisionResearch({ service, manager: project.manager, repository, expectedGraphRevision: input.expectedGraphRevision, decisionId: input.decisionId }));
+        return response.status === 'started' ? c.json(response, 202) : c.json(response, 200);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision research dispatch failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .get('/dependency-graph/decision-ranking', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(service.decisionRanking(repository, c.req.valid('query').limit));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'decision ranking unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/discovery-candidates', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), scanLimit: z.coerce.number().int().min(1).max(2_000).default(2_000) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(discoverDecisionCandidates(service.read(repository), c.req.valid('query')));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'decision discovery unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/health', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(service.analysis(repository).health);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency health unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/events', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), before: z.coerce.number().int().positive().optional() })), async (c) => {
+      try {
+        const { limit, before } = c.req.valid('query');
+        const events = await dependencyGraphService(c.get('project').root).readEvents(limit, before);
+        return c.json({ events, limit, nextCursor: events.at(-1)?.cursor ?? null, hasMore: events.length === limit });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency history unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/history/trends', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        return c.json(dependencyGraphHistoricalTrendsSchema.parse(service.historicalTrends(repository)));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency graph history unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/diagnostics/export', async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const analysis = service.analysis(repository);
+        const candidates = discoverDecisionCandidates(analysis.snapshot, { limit: 50, scanLimit: 2_000 });
+        return c.json({
+          schemaVersion: 1,
+          repository,
+          revision: analysis.snapshot.revision,
+          source: analysis.snapshot.source,
+          health: analysis.health,
+          decisionRanking: service.decisionRanking(repository, 50),
+          cycles: analysis.cycles.slice(0, 50).map((cycle) => ({ nodeIds: cycle.nodeIds, witnessNodeIds: cycle.witnessNodeIds, edges: cycle.witnessEdges })),
+          discoveryCandidates: candidates.candidates.map(({ evidence, ...candidate }) => ({
+            ...candidate, evidence: evidence.map(({ nodeId, url }) => ({ nodeId, url })),
+          })),
+          trends: service.historicalTrends(repository),
+          redaction: { issueBodiesIncluded: false, evidenceExcerptsIncluded: false },
+        });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency diagnostics export unavailable' }, 503);
+      }
+    })
+    .get('/dependency-graph/snapshot-diff', queryZodValidator(z.object({ from: z.coerce.number().int().nonnegative(), to: z.coerce.number().int().positive(), limit: z.coerce.number().int().min(1).max(500).default(200) })), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const { from, to, limit } = c.req.valid('query');
+        return c.json(diffDependencySnapshots(service.readAt(repository, from), service.readAt(repository, to), limit));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'snapshot diff unavailable';
+        return c.json({ error: message }, /increasing|requires/.test(message) ? 400 : 404);
+      }
+    })
+    .post('/dependency-graph/sync', async (c) => {
+      try { return c.json(await dependencyGraphService(c.get('project').root).sync()); }
+      catch (error) { return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency sync unavailable' }, 503); }
+    })
+    .post('/dependency-graph/simulate', jsonZodValidator(dependencySimulationInputSchema), async (c) => {
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const input = c.req.valid('json');
+        // expectedRevision pins the immutable snapshot, so concurrent live syncs cannot
+        // change the scenario or turn a historical what-if into a current graph write.
+        return c.json(simulateDependencyGraph(service.readAt(repository, input.expectedRevision), input));
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'simulation failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : /not found|invalid|cannot assert|duplicate/.test(message) ? 400 : 503);
+      }
+    })
+    .post('/dependency-graph/decisions', jsonZodValidator(dependencyDecisionWriteSchema), async (c) => {
+      const input = c.req.valid('json');
+      if (input.state !== 'proposed') return c.json({ error: 'Decision writes must remain proposals; state changes require a separate authorized action.' }, 403);
+      if (input.requiredAuthorization !== 'agent-proposal' && !capabilities().localHandoff) return c.json({ error: 'Only the local operator can create decisions requiring elevated authorization.' }, 403);
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const current = service.read(repository);
+        const prior = current.decisions.find((item) => item.id === input.id);
+        if (prior && !['proposed', 'reopened'].includes(prior.state)) return c.json({ error: 'Only proposed or reopened decisions can be edited.' }, 409);
+        if (prior && prior.requiredAuthorization !== 'agent-proposal' && !capabilities().localHandoff) return c.json({ error: 'This decision can only be edited by the local operator.' }, 403);
+        const at = new Date().toISOString();
+        const decision = {
+          id: input.id, repository, question: input.question, options: input.options,
+          rationale: input.rationale, evidence: input.evidence, reversible: input.reversible,
+          ...(input.owner ? { owner: input.owner } : {}), requiredAuthorization: input.requiredAuthorization,
+          state: 'proposed' as const, affectedNodeIds: input.affectedNodeIds,
+          ...(input.supersedes ? { supersedes: input.supersedes } : {}),
+          createdBy: prior?.createdBy ?? (capabilities().localHandoff ? 'local-operator' : 'local-agent'),
+          createdAt: prior?.createdAt ?? at, updatedAt: at, revision: prior?.revision ?? 0,
+        };
+        if (!hasValidDependencyNodeIdentity({ kind: 'decision', id: input.id, repository, title: input.question, state: 'proposed', requiredAuthorization: 'agent-proposal', revision: 0, updatedAt: at })) {
+          return c.json({ error: 'decision id does not match this repository' }, 400);
+        }
+        const revision = await service.writeDecision(decision, input.expectedGraphRevision);
+        return c.json({ revision, decision }, prior ? 200 : 201);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision write failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : 503);
+      }
+    })
+    .post('/dependency-graph/decision-transition', jsonZodValidator(dependencyDecisionTransitionSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision approvals are available only from the local operator surface' }, 403);
+      try { return c.json(await dependencyGraphService(c.get('project').root).transitionDecision(
+        c.req.valid('json').decisionId, c.req.valid('json').to, c.req.valid('json').expectedGraphRevision, c.req.valid('json').resolution,
+      )); }
+      catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision transition failed';
+        const status = /revision conflict/.test(message) ? 409 : /not found/.test(message) ? 404 : /read-only/.test(message) ? 403 : 400;
+        return c.json({ error: message }, status);
+      }
+    })
+    .post('/dependency-graph/decision-metadata', jsonZodValidator(dependencyDecisionMetadataPatchSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision metadata corrections are available only on the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const current = service.read(repository);
+        if (current.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${current.revision}`);
+        const decision = current.decisions.find((item) => item.id === input.decisionId);
+        if (!decision) return c.json({ error: 'decision not found' }, 404);
+        if (decision.revision !== input.expectedDecisionRevision) throw new Error(`decision revision conflict: expected ${input.expectedDecisionRevision}, found ${decision.revision}`);
+        const sha = createHash('sha256').update(JSON.stringify(decision)).digest('hex');
+        if (sha !== input.expectedDecisionSha.toLowerCase()) throw new Error('decision content fingerprint conflict');
+        if (decision.requiredAuthorization !== 'policy-approved-low-risk' || !['proposed', 'reopened'].includes(decision.state)) {
+          return c.json({ error: 'only proposed low-risk decisions may receive automatic metadata corrections' }, 403);
+        }
+        const updated = { ...decision,
+          ...(input.owner !== undefined ? (input.owner === null ? { owner: undefined } : { owner: input.owner }) : {}),
+          ...(input.evidence !== undefined ? { evidence: input.evidence } : {}),
+          updatedAt: new Date().toISOString(),
+        };
+        const revision = await service.writeDecision(updated, input.expectedGraphRevision, 'policy-approved-low-risk', { rationale: input.rationale });
+        return c.json({ revision, decision: { ...updated, revision: decision.revision + 1 } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision metadata correction failed';
+        return c.json({ error: message }, /revision conflict|fingerprint conflict/.test(message) ? 409 : 400);
+      }
+    })
+    .post('/dependency-graph/decision-metadata/rollback', jsonZodValidator(dependencyDecisionMetadataRollbackSchema), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'decision metadata rollback is available only on the local operator surface' }, 403);
+      const input = c.req.valid('json');
+      try {
+        const service = dependencyGraphService(c.get('project').root);
+        const repository = await service.repositoryKey();
+        const currentSnapshot = service.read(repository);
+        if (currentSnapshot.revision !== input.expectedGraphRevision) throw new Error(`dependency graph revision conflict: expected ${input.expectedGraphRevision}, found ${currentSnapshot.revision}`);
+        const current = currentSnapshot.decisions.find((item) => item.id === input.decisionId);
+        const previous = service.readAt(repository, input.targetRevision).decisions.find((item) => item.id === input.decisionId);
+        if (!current || !previous) return c.json({ error: 'decision version not found' }, 404);
+        if (current.requiredAuthorization !== 'policy-approved-low-risk' || previous.requiredAuthorization !== current.requiredAuthorization) return c.json({ error: 'only low-risk metadata corrections can be rolled back automatically' }, 403);
+        const stable = (record: typeof current) => JSON.stringify({ ...record, owner: undefined, evidence: undefined, revision: 0, updatedAt: '' });
+        if (stable(current) !== stable(previous)) return c.json({ error: 'rollback target contains structural or lifecycle changes requiring human review' }, 409);
+        const revision = await service.writeDecision(previous, input.expectedGraphRevision, 'local-operator-rollback', { rationale: `Rollback of metadata correction to graph revision ${input.targetRevision}.` });
+        return c.json({ revision, restored: { ...previous, revision: current.revision + 1 } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1_000) : 'decision metadata rollback failed';
+        return c.json({ error: message }, /revision conflict/.test(message) ? 409 : /not found/.test(message) ? 404 : 400);
+      }
+    })
 
     .get('/github/comments/:kind/:number', queryZodValidator(refreshQuery), async (c) => {
       const { root: repoRoot } = c.get('project');
@@ -6442,7 +7126,12 @@ export function createApp(deps: ServerDeps) {
     .route('/', fsBrowseRoutes)
     .route('/', automationChecksRoutes)
     .route('/', runsIndexRoutes)
-    .route('/', dashboardRoutes(dashboard, () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }), () => capabilities().automations))
+    .route('/', dashboardRoutes(
+      dashboard,
+      () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }),
+      () => capabilities().automations,
+      () => capabilities().localHandoff,
+    ))
     .route('/', workspaceEventsRoutes);
 
   // ---- mount ---------------------------------------------------------------
@@ -6495,6 +7184,13 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     semaphore: deps.semaphore,
     automationStore: (projectId, root) => automationCoordinator.store(projectId, root)!,
   });
+  const fullRegressionScheduler = deps.fullRegressionScheduler ?? new FullRegressionScheduler({
+    listProjects,
+    context: async (projectId) => projectId === (deps.bootProjectId ?? 'default')
+      ? { root: deps.repoRoot, manager: deps.manager, store: deps.store }
+      : await sharedContexts.context(projectId),
+    warn: (message) => process.stderr.write(`${message}\n`),
+  });
   // #801: GitHub automations are opt-in. Off, the flag must remove the BEHAVIOR and not merely
   // the UI — no scheduler, no GitHub polling, no launched runs — so every entry point into the
   // workspace scheduler below is gated on it. Read per call rather than captured, for the same
@@ -6506,6 +7202,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     ...deps,
     onDispose: (cleanup) => { appCleanups.push(cleanup); deps.onDispose?.(cleanup); },
     contexts: sharedContexts,
+    fullRegressionScheduler,
     automationStore: bootAutomationStore,
     workspaceEvents,
     skillsUpdate,
@@ -6527,6 +7224,20 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // Every registered project gets a handle (spec 2026-09-14): `github` only when the remote is
   // on github.com — a project without one still fires its scheduled automations.
   const automationProjects = new Map<string, { root: string; github?: { owner: string; repo: string } }>();
+  const schedulerGraphServices = new Map<string, DependencyGraphService>();
+  const graphServiceForScheduler = (root: string) => {
+    let service = schedulerGraphServices.get(root);
+    if (!service) {
+      service = new DependencyGraphService(root);
+      schedulerGraphServices.set(root, service);
+      deps.onDispose?.(() => { service?.close(); schedulerGraphServices.delete(root); });
+    }
+    return service;
+  };
+  const checkScheduledDependencyAdmission = (root: string, candidate: import('../automations/github-poller.ts').GithubCandidate, options?: { refresh?: boolean }) => {
+    const repository = githubRepositoryKeySchema.parse(candidate.repo) as GithubRepositoryKey;
+    return admitWithRefresh(graphServiceForScheduler(root), repository, candidate.number, options);
+  };
   // A second instance from the one the HTTP routes use (out of scope here, built inside the app
   // function) — cheap: `createTrackerService` performs no I/O at construction, only a small
   // per-connection provider cache that duplicating costs nothing correctness-wise.
@@ -6535,6 +7246,64 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     const parsed = parseRemote((await getRepoInfo(root))?.remote ?? '');
     automationProjects.set(id, { root, ...(parsed?.host === 'github.com' ? { github: { owner: parsed.owner, repo: parsed.repo } } : {}) });
   };
+  let dependencyDiscoveryBusy = false;
+  const runDependencyDiscovery = async (): Promise<void> => {
+    if (dependencyDiscoveryBusy || !resolveCapabilities(process.env, deps.bindHost).localHandoff) return;
+    dependencyDiscoveryBusy = true;
+    try {
+      for (const [projectId, project] of automationProjects.entries()) {
+        if (!project.github) continue;
+        const service = graphServiceForScheduler(project.root);
+        const sync = await service.sync();
+        if (sync.status === 'fresh') {
+          await scanAndProposeDecisions(service);
+          const snapshot = service.read(await service.repositoryKey());
+          if (snapshot.source.status === 'fresh') {
+            const bootId = deps.bootProjectId ?? 'default';
+            const context = projectId === bootId || project.root === deps.repoRoot
+              ? { manager: deps.manager }
+              : await sharedContexts.context(projectId);
+            const researchTargets = [...snapshot.decisions]
+              .filter((decision) => decision.createdBy === 'dependency-discovery-scanner' && decision.affectedNodeIds.length >= 3 && ['proposed', 'reopened'].includes(decision.state))
+              .sort((a, b) => b.affectedNodeIds.length - a.affectedNodeIds.length || a.id.localeCompare(b.id));
+            for (const decision of researchTargets) {
+              const research = await dispatchDecisionResearch({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, decisionId: decision.id });
+              if (research.status === 'started' || research.status === 'unavailable') break;
+            }
+            for (const candidate of planCycleRepairs(snapshot, 10).candidates) {
+              const dispatch = await dispatchCycleReplan({ service, manager: context.manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, candidateId: candidate.id });
+              if (dispatch.status === 'started') break;
+            }
+          }
+        }
+      }
+    } catch {
+      // A failed background discovery scan leaves the durable graph and proposals untouched;
+      // the next bounded interval retries from the last successful watermark.
+    } finally { dependencyDiscoveryBusy = false; }
+  };
+  // Keep the projection fresh independently of discovery (which needs localHandoff and runs every
+  // six hours): scheduler admission fails closed on a stale graph, so a missing sync would
+  // otherwise defer every issue event. Read-only against GitHub and single-flight per project.
+  const runDependencySync = async (): Promise<void> => {
+    for (const project of automationProjects.values()) {
+      if (!project.github) continue;
+      try { await graphServiceForScheduler(project.root).refreshIfNeeded({ maxAgeMs: 5 * 60_000 }); } catch { /* admission retries on demand and reports the reason */ }
+    }
+  };
+  const backlogSyncRun = (): void => { void runBacklogSyncOnce([...automationProjects.values()].map((p) => ({ root: p.root, github: p.github })), { log: (m) => console.info(m) }).catch(() => undefined); };
+  const backlogSyncStartup = backlogSyncEnabled() ? setTimeout(backlogSyncRun, 30_000) : undefined;
+  const backlogSyncInterval = backlogSyncEnabled() ? setInterval(backlogSyncRun, BACKLOG_SYNC_INTERVAL_MS) : undefined;
+  backlogSyncStartup?.unref?.();
+  backlogSyncInterval?.unref?.();
+  const dependencySyncStartup = setTimeout(() => { void runDependencySync(); }, 10_000);
+  const dependencySyncInterval = setInterval(() => { void runDependencySync(); }, 10 * 60_000);
+  dependencySyncStartup.unref?.();
+  dependencySyncInterval.unref?.();
+  const dependencyDiscoveryStartup = setTimeout(() => { void runDependencyDiscovery(); }, 15 * 60_000);
+  const dependencyDiscoveryInterval = setInterval(() => { void runDependencyDiscovery(); }, 6 * 60 * 60_000);
+  dependencyDiscoveryStartup.unref?.();
+  dependencyDiscoveryInterval.unref?.();
   const automationScheduler = new WorkspaceAutomationScheduler({
     coordinator: automationCoordinator,
     handle: (projectId, store): ProjectAutomationHandle | undefined => {
@@ -6552,6 +7321,8 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         store,
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
+        admit: candidate => checkScheduledDependencyAdmission(project.root, candidate),
+        ...(project.github ? backlogAdmitFragment(project.github.owner, project.github.repo, project.root) : {}),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,
         // by `getDriver()` — a project with none simply fails that call and the scheduler backs off.
@@ -6561,9 +7332,9 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         },
         onChange: (automationId, revision) =>
           workspaceEvents.emit('automation-change', { project: projectId, automationId, revision }),
-        launch: async (definition, candidate, receiptId) => {
+        launch: async (definition, candidate, receiptId, admission) => {
           const context = await contextOf();
-          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, dispatchEnabled });
+          return launchAutomationRun({ root: context.root, manager: context.manager, store: context.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkScheduledDependencyAdmission(context.root, candidate, { refresh: false }), dispatchEnabled });
         },
         launchSchedule: async (definition, occurrence, receiptId) => {
           const context = await contextOf();
@@ -6580,6 +7351,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // stated here rather than inherited from that detail: a definition saved while the flag is off
   // must not even ask the coordinator to refresh.
   rescheduleAutomations = () => {
+    void fullRegressionScheduler.tick();
     if (!automationsEnabled()) return;
     void automationScheduler.reschedule();
   };
@@ -6605,6 +7377,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       const all = projects.some((project) => project.root === deps.repoRoot)
         ? projects : [{ id: deps.bootProjectId ?? 'default', root: deps.repoRoot, status: 'ok' as const }, ...projects];
       coordinator.start(all);
+      void fullRegressionScheduler.start();
       // #801: with automations off there is nothing to warm — no remote to resolve, no receipts
       // to reconcile, and above all no scheduler to start. The skills-update coordinator above is
       // a separate feature and starts either way.
@@ -6620,7 +7393,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
       })).then(() => automationScheduler.start()).catch(() => undefined);
     }).catch(() => undefined);
   });
-  server.once('close', () => { for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); });
+  server.once('close', () => { if (backlogSyncStartup) clearTimeout(backlogSyncStartup); if (backlogSyncInterval) clearInterval(backlogSyncInterval); clearTimeout(dependencySyncStartup); clearInterval(dependencySyncInterval); clearTimeout(dependencyDiscoveryStartup); clearInterval(dependencyDiscoveryInterval); for (const cleanup of appCleanups) cleanup(); unsubscribe(); coordinator.stop(); automationScheduler.stop(); fullRegressionScheduler.stop(); });
   socketHub.attach(server, (req) => verifyWsUpgrade(req, deps.bindHost));
   return server;
 }

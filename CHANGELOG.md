@@ -1,5 +1,208 @@
 # Changelog
 
+## [0.3.65] - 2026-11-05
+
+- Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each
+  merged `dev` SHA with the full suite in the Cezar container, activates `dev`, runs canary automations,
+  rolls back and quarantines on failure, then fast-forwards `stable` through the GitHub refs API and deploys
+  it. Failures open one fingerprinted issue each and feed a circuit breaker. Autonomous and controlled
+  postures are data in `config/promotion-policy.json`. Activation reads wait for a restarting Cezar, runtime
+  restarts wait for an idle Cezar, and changed-file validation ignores `.factory/` runtime state.
+
+## [0.3.64] - 2026-11-04
+
+- Add a latest-failure repair workflow with deterministic known-operational-error
+  exits, durable fingerprint and PR history, one hosted repair attempt, reviewed
+  delivery, and explicit non-stable deployment configuration. Stable is excluded.
+
+## [0.3.63] - 2026-11-04
+
+- Preserve a missing investigation result as an explicit unknown, low-confidence
+  handoff after one retry, allowing the issue to return to planning instead of
+  failing the workflow on a missing artifact.
+
+## [0.3.62] - 2026-11-03
+
+- Add conflict-aware scheduling guidance (epic #192): the `factory-plan` skill now
+  produces a Change Impact Manifest and `factory-workspace` documents the
+  `cez workspace impact-predict|impact|impact-snapshot` verbs. Scheduler behavior
+  is unchanged unless `CEZAR_BACKLOG_SCHEDULING` is set.
+
+## [0.3.61] - 2026-11-02
+
+- Make missing Factory target configuration explicit and verify that
+  verification and test entry points cannot invoke live deployment tools.
+
+## [0.3.60] - 2026-11-01
+
+- Consolidate maintenance automations: add the daily read-only `factory-health`
+  workflow (`[factory] health`) that runs the failure audit and the dry-run
+  backlog reconciliation and writes a deterministic `.factory/health-report.json`
+  with no agent session. It replaces `failure-audit` and `backlog-reconciliation`;
+  those names remain accepted aliases in project configs, and `sync-automations`
+  pauses/prunes their old automations.
+- Classify collected failures deterministically (`factory-defect`, `environment`,
+  `project-defect`, `unknown`) and publish only Factory defects as Factory issues.
+- Retire the unused `factory-failure-audit`, `factory-intake`, and
+  `factory-implement-prepare` skills (still accepted in existing configs).
+- Make `factory-environment-analysis` explicitly on-demand and host-side.
+## [0.3.58] - 2026-10-27
+
+- Make the maintenance backlog-label audit deterministic: workflow command steps
+  collect, validate, and prepare the audit, and the agent plus proposal step is
+  skipped via typed no-work when no ambiguous candidates remain.
+## [0.3.59] - 2026-10-30
+
+- Automatically reconcile ready workspace claims after their exact reviewed PR
+  merges, retain integrated claims while GitHub issue status updates are offline,
+  preserve Factory-owned workflow phases outside lifecycle participation, and
+  close retained adopted-workspace claims without deleting developer files;
+  cap repeated post-merge validation retries and surface exhausted claims.
+
+## [0.3.58] - 2026-10-29
+
+- Add an offline-first SQLite workspace lifecycle CLI with transactional issue
+  claims, verified Factory execution context, lease fencing, safe adoption,
+  validation handoff, recovery, and cleanup safeguards.
+- Integrate Factory and external-agent hooks with serialized integration and
+  verified post-merge validation, bounded conflict repair/escalation, dashboard
+  recovery actions and local lifecycle metrics.
+- Add an asynchronous Langfuse OTLP outbox and an operator-approved Hindsight
+  lesson queue with retry tracking.
+
+## [0.3.57] - 2026-10-27
+
+- Publish bounded Factory failure evidence to one canonical issue per project
+  and normalized signature, with idempotent evidence appends, fail-closed
+  deduplication, human review for ambiguous legacy issues, and a versioned
+  publication receipt.
+
+## [0.3.56] - 2026-10-18
+
+- Retry shared Factory parity and automation reconciliation on every timer tick,
+  verify host/container source and content identity, and record atomic success
+  and failure receipts.
+
+## [0.3.53] - 2026-10-18
+
+- Gate Factory auto-merge on current-head review, clean workflow validation
+  receipts, effective GitHub rules, successful required checks, and resolved
+  review threads; only mark issues done after GitHub reports the PR merged.
+
+## [0.3.50] - 2026-10-18
+
+- Continue eligible backlog issues without per-issue scheduling or user review
+  gates; reserve user input for major architectural decisions and automatically
+  queue decomposed child issues.
+
+## [0.3.48] - 2026-10-16
+
+- Bounded and redacted local failure collection, removed bulk run enumeration
+  and collector-side publication/restarts, and recorded explicit coverage
+  limitations in a versioned artifact.
+
+## [0.3.47] - 2026-10-16
+
+- Replaced heuristic Factory test discovery with configured project validation
+  adapters, bounded worktree-local receipts, and required full/verify workflow
+  stages. Added the Factory source checkout's own explicit validation adapter
+  configuration.
+
+## [0.3.46] - 2026-10-16
+
+- Reject contradictory implementation success results and define versioned,
+  head-bound workflow validation receipts separately from agent handoffs.
+
+## [0.3.45] - 2026-10-16
+
+- Made plan, implementation, fix, review, and investigation result examples
+  valid against their schemas; kept Factory script execution in workflow
+  commands and completed startup script preflight lists.
+
+## [0.3.44] - 2026-10-11
+
+- Added expiring, Cezar-aware recovery for abandoned `factory:auditing`
+  reservations, with durable reservation markers, recovery evidence, and
+  regression coverage.
+
+## [0.3.43] - 2026-10-11
+
+- Added a workflow-owned post-implementation guard that ensures successful PRs
+  contain a GitHub closing reference for their Factory issue.
+
+## [0.3.42] - 2026-10-09
+
+- One place to update: Cezar now loads Factory workflows and skills directly from the mounted
+  Factory checkout (`CEZ_SHARED_WORKFLOWS_DIRS` / `CEZ_SHARED_SKILL_DIRS`; project files still win
+  by name). `scripts/release/promote-stable.ps1` moves `origin/stable` only after the full test
+  suite passes, and `scripts/deploy/factory-autodeploy.sh` (systemd timer) fast-forwards the
+  Bazzite checkout to it and reconciles automations. `scripts/migrate-to-shared.ps1` removes a
+  project's installed copy. See `docs/shared-factory.md`.
+- Fixed the test suite hanging (`reconcile-backlog.ps1` assigned the automatic `$input` variable)
+  and the fixtures copying the vendored `cezar/` tree.
+
+## [0.3.41] - 2026-10-09
+
+- `GODOT_BIN` in the Cezar image is now a per-project version selector backed by a persistent
+  `godot-versions` volume; Godot versions install on demand (checksum-verified), so adopting a
+  new release needs no image rebuild or container restart. See `docs/godot-upgrades.md`.
+- Added the `factory-godot-upgrade` workflow, skill, and daily `[factory] godot-upgrade`
+  automation: detect a new stable Godot, pin it on a branch, run the project's Godot tests,
+  let the agent fix regressions, and open an auto-merge PR. Enabled with `features.godot_upgrade`
+  or, for remote-only targets, `"projectType": "godot"` in the target registry.
+
+## [0.3.40] - 2026-10-09
+
+- Release synchronization now emits JSON-line status records and persists them
+  under `.factory/release-reports/`. A blocked normal managed update is marked
+  `forceRefreshRequired`, with the exact recovery command, instead of looking
+  like an ambiguous failed push.
+
+## [0.3.39] - 2026-10-09
+
+- Startup now accepts the comma-delimited `RequiredScripts` form emitted by
+  Cezar workflow commands, validates each script separately, and records the
+  normalized list in its receipt. This prevents a valid maintenance runtime
+  from failing preflight as though three script names were one file.
+
+## [0.3.38] - 2026-10-09
+
+- Added an explicit `-ForceManagedRefresh` release path for a project whose
+  installed Factory manifest has drifted beyond the normal safe updater. It
+  archives the current Factory layer, replaces only Factory-owned files, then
+  reinstalls and verifies the pinned source. This is an operator-authorized
+  recovery mode; normal releases still refuse ambiguous or modified files.
+
+## [0.3.37] - 2026-10-08
+
+- Restored `factory-implement-prepare` as a no-op compatibility skill so
+  projects pinned before 0.3.36 can synchronize their Factory installation.
+  Preparation is owned by the `implement` workflow; the compatibility skill
+  must not run Factory scripts or be added to new project configurations.
+
+## [0.3.36] - 2026-10-08
+
+- Workflows now own every script. `implement` and `fix-review` run
+  `prepare-implementation.ps1` and `route-state.ps1 -Event start` as command
+  steps (new `-Task "{{task}}"` parameter parses the issue number); the model
+  is no longer told to run Factory scripts. The `factory-implement-prepare`
+  skill is removed.
+- Maintenance no longer selects or routes intake issues; it runs only the
+  label audit, stale-workable refresh, and repository sweep. Intake remains the
+  `[factory] intake` automation.
+- `review` now uses `$FACTORY_RUNTIME_ROOT` scripts and startup checks like the
+  other workflows. Skills and AGENTS.md state that agents queue an automation
+  and stop rather than inspecting or recreating its work.
+- `tests/run-tests.ps1` fails when a skill or workflow prompt tells the model
+  to run a Factory script.
+
+## [0.3.35]
+
+- Made scheduled maintenance deterministic: scripts now perform repository
+  lifecycle hygiene and stale-issue summaries, numeric runner arguments are
+  removed, and the model is limited to the existing capped ambiguous-label
+  review.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -8,10 +211,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Combined backlog-label normalization, stale-workable refresh, existing-issue
+  intake, and the repository maintenance sweep into one bounded hourly
+  maintenance workflow and automation.
 - Added an implementation preparation step that fetches the selected issue
   through authenticated `gh`, captures applicable instructions and repository
   tooling, and hands the agent a worktree-local context artifact before code
   changes begin.
+- Added a shared startup preflight to every Factory workflow. It validates the
+  registered runtime, required tools, and workflow-specific scripts before the
+  first agent or command step and records a bounded worktree-local receipt.
+
+## [0.3.34]
+
+### Added
+- Added a shared startup preflight to every Factory workflow. It validates the
+  registered runtime, required tools, and workflow-specific scripts before the
+  first agent or command step and records a bounded worktree-local receipt.
 
 ## [0.3.33]
 

@@ -57,6 +57,7 @@ import {
   getTrackerItems,
   getUiState,
   getWorkflows,
+  getFactoryRelease,
   getWorkspaceConfig,
   getWorkspaceUiState,
   getSkillsUpdate,
@@ -83,6 +84,7 @@ import {
   selectAgentProfile,
   updateAgentProfile,
   updateProject,
+  runFullRegression,
   sendMessage,
   sendProjectRunMessage,
   putAgentConfigFile,
@@ -185,6 +187,9 @@ export const queryKeys = {
   },
   get workflows() {
     return [queryScope(), 'workflows'] as const
+  },
+  get factoryRelease() {
+    return [queryScope(), 'factory-release'] as const
   },
   get skills() {
     return [queryScope(), 'skills'] as const
@@ -653,7 +658,23 @@ export function useUpdateProject() {
             },
       )
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.projects }),
+    onSettled: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.projects }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.factoryRelease }),
+    ]),
+  })
+}
+
+export function useRunFullRegression() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectId: string) => runFullRegression(projectId),
+    retry: false,
+    onSuccess: (_result, projectId) => {
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.projects })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.runsIndex })
+    },
   })
 }
 
@@ -670,6 +691,14 @@ function applyProjectPatch(
   const tags = 'tags' in patch && patch.tags !== undefined ? patch.tags : project.tags
   const normalized = tags === null || tags === undefined ? [] : normalizeTagsForDisplay(tags)
   if (normalized.length > 0) next.tags = normalized
+  if ('factoryChannel' in patch) {
+    if (patch.factoryChannel === null) delete next.factoryChannel
+    else if (patch.factoryChannel !== undefined) next.factoryChannel = patch.factoryChannel
+  }
+  if ('fullRegressionPolicy' in patch) {
+    if (patch.fullRegressionPolicy === null) delete next.fullRegressionPolicy
+    else if (patch.fullRegressionPolicy !== undefined) next.fullRegressionPolicy = patch.fullRegressionPolicy
+  }
   return next
 }
 
@@ -1175,6 +1204,13 @@ export function useWorkflows() {
   return useQuery({
     queryKey: queryKeys.workflows,
     queryFn: ({ signal }) => getWorkflows({ signal }),
+  })
+}
+
+export function useFactoryRelease() {
+  return useQuery({
+    queryKey: queryKeys.factoryRelease,
+    queryFn: ({ signal }) => getFactoryRelease({ signal }),
   })
 }
 

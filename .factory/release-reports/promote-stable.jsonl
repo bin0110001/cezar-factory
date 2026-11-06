@@ -1,0 +1,1 @@
+{"timestamp":"2026-11-05T14:07:03.7941940Z","status":"refused","sha":"2c1f52143e1131c780ba748ee40d89e6936892a9","branch":"stable","detail":"Working tree has uncommitted tracked changes; commit them so the tested tree is the promoted commit."}

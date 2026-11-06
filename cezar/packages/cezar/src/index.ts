@@ -39,9 +39,11 @@ import { writeLaunchers } from './self-update/launcher.ts';
 import { initWorkspace } from './workspace/boot.ts';
 import { loadWorkspaceConfig } from './workspace/config.ts';
 import { runProjectsCommand } from './workspace/projects-cli.ts';
+import { runWorkspaceCommand } from './workspace/lifecycle-cli.ts';
 import { WorkspaceSemaphore } from './workspace/semaphore.ts';
 import { runTaskCommand } from './dispatch/task-cli.ts';
 import { runAutomationCommand } from './automations/automation-cli.ts';
+import { resolveConfiguredFactoryRelease } from './factory-release/resolver.ts';
 
 import { runTrackerConnectionsCommand } from './server/tracker/connections-cli.ts';
 
@@ -51,6 +53,7 @@ Usage:
   cezar                     start the cockpit (server + GUI) for the current repo
   cezar run "<task>"        run a task headless in the terminal
   cezar task <create|report|list>  dispatch or report from inside a running task (CEZ_DISPATCH=0 turns it off)
+  cezar workspace <command>      claim, adopt, validate, inspect, recover and prune issue workspaces
   cezar automation <add|create|check|run|list|…>  create and manage automations (GitHub polls, schedules) on a running cockpit
   cezar init                scaffold .ai/cezar/ (example workflow + skill)
   cezar projects            list the projects this cockpit serves
@@ -112,6 +115,12 @@ async function main(): Promise<void> {
   // `cez automation …` (spec 2026-09-13-automations-from-prompt): same shape, same reason.
   if (process.argv[2] === 'automation') {
     process.exitCode = await runAutomationCommand(process.argv.slice(3));
+    return;
+  }
+  // Local, offline-first lifecycle controls share the same verified registry
+  // whether the caller is an agent, operator, or a Factory adapter.
+  if (process.argv[2] === 'workspace') {
+    process.exitCode = await runWorkspaceCommand(process.argv.slice(3), { cwd: resolve(process.env.CEZ_REPO ?? process.cwd()) });
     return;
   }
   const { values, positionals } = parseArgs({
@@ -456,7 +465,14 @@ async function runCommand(
     return;
   }
   await initWorkspace(repoRoot);
-  const { workflows, issues } = await loadWorkflows(repoRoot);
+  const workspace = await loadWorkspaceConfig();
+  const normalizedRoot = resolve(repoRoot).toLocaleLowerCase();
+  const project = workspace.projects.find((entry) => resolve(entry.root).toLocaleLowerCase() === normalizedRoot);
+  if (process.env.CEZ_FACTORY_RELEASE_STORE?.trim() && !project) {
+    throw new Error(`cannot resolve a Factory channel for unregistered project root: ${repoRoot}`);
+  }
+  const factoryRelease = project ? await resolveConfiguredFactoryRelease(project.id) : undefined;
+  const { workflows, issues } = await loadWorkflows(repoRoot, { factoryRelease });
   for (const issue of issues) console.error(`! skipped ${issue.path}: ${issue.message}`);
   const name = workflowName ?? 'quick-task';
   const workflow = workflows.find((w) => w.name === name);
@@ -496,7 +512,7 @@ async function runCommand(
   // 2.5) — one refreshed semaphore, even with just one manager in play.
   const semaphore = new WorkspaceSemaphore();
   await semaphore.refresh();
-  const manager = new RunManager(store, repoRoot, { semaphore });
+  const manager = new RunManager(store, repoRoot, { semaphore, projectId: project?.id });
 
   store.on('event', ({ event }) => {
     switch (event.type) {

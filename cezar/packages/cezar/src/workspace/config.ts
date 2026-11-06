@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { z } from 'zod';
 // Contract VALUES, like `workspaceUiStateSchema` in workspace/migrations.ts: the tag bounds this
 // file must not `.catch` away are the same constants the PATCH route validates against, so they
 // are imported rather than repeated.
-import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH } from '@open-mercato/cezar-contract';
+import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, fullRegressionPolicySchema } from '@open-mercato/cezar-contract';
 import { PROVIDER_IDS, type ProviderId } from '../core/provider-auth.ts';
 import { assertCezarHomeWriteIsSandboxed, workspaceConfigPath } from '../paths.ts';
 
@@ -45,12 +45,16 @@ const workspaceProjectSchema = z
     id: z.string().regex(PROJECT_ID_RE),
     /** Absolute, realpath-normalized repo root (normalization is the writer's
      *  job — `registerProject` in step 1.3; the schema only demands absolute). */
-    root: z.string().min(1).max(4096).refine((p) => p.startsWith('/'), 'root must be absolute'),
+    root: z.string().min(1).max(4096).refine(isAbsolute, 'root must be absolute'),
     /** Display name (basename by default). `''` = caller derives a fallback. */
     name: z.string().max(200).catch(''),
     addedAt: z.string().max(64).catch(''),
     lastOpenedAt: z.string().max(64).catch(''),
     source: z.enum(['local', 'checkout']).catch('local'),
+    /** Factory channel for new tasks; old registry rows follow stable by default. */
+    factoryChannel: z.enum(['dev', 'stable']).optional(),
+    /** Invalid/missing policies degrade to absent, which is on-demand only. */
+    fullRegressionPolicy: fullRegressionPolicySchema.optional().catch(undefined),
     /** Per-project cap on concurrently running tasks. Absent = inherit the
      *  workspace `resources.maxParallel`. Bounded like the workspace cap; a bad
      *  value degrades to "inherit" (`.catch(undefined)`) rather than a hard

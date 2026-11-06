@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BoundedFailureAuditV1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["ready", "limited"] },
+    "projectId": { "type": "string", "minLength": 1 },
+    "windowStartUtc": { "type": "string", "minLength": 1 },
+    "windowHours": { "type": "integer", "minimum": 1, "maximum": 168 },
+    "runsInspected": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "candidatesScanned": { "type": "integer", "minimum": 0 },
+    "failures": { "type": "array", "maxItems": 8 },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "budgets": { "type": "object" },
+    "issueCreated": { "type": "boolean" },
+    "restarted": { "type": "boolean" }
+  },
+  "required": ["schemaVersion", "status", "projectId", "windowStartUtc", "windowHours", "runsInspected", "candidatesScanned", "failures", "limitations", "budgets", "issueCreated", "restarted"]
+}

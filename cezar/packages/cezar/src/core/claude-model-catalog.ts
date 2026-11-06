@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { z } from 'zod';
 import { buildChildEnv } from './agent-env.ts';
+import { nodeScriptCommand } from './disclaim-spawn.ts';
 import { readNdjson } from './ndjson.ts';
 import { resolveClaudeExecutable } from './claude-cli-runner.ts';
 import type { ModelOption } from './runner-model-catalog.ts';
@@ -81,7 +82,8 @@ const DISCOVERY_ARGS = [
 ];
 
 function spawnClaudeProbe(bin: string, cwd: string): ChildProcessWithoutNullStreams {
-  return nodeSpawn(bin, DISCOVERY_ARGS, {
+  const [file, args] = nodeScriptCommand(bin, DISCOVERY_ARGS);
+  return nodeSpawn(file, args, {
     cwd,
     env: buildChildEnv({ backend: 'claude' }),
     stdio: ['pipe', 'pipe', 'pipe'],

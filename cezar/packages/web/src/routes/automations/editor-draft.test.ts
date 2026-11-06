@@ -256,3 +256,22 @@ describe('tracker event draft', () => {
     expect(draft.trackerTrigger).toBeUndefined()
   })
 })
+
+describe('issue intake settings', () => {
+  it('omits the intake keys while they are off and serializes them once set', () => {
+    const draft = { ...newDraft(), kind: 'github' as const, name: 'Intake', events: ['issue.labeled' as const] }
+    const off = toBody({ ...draft, filters: { ...draft.filters, changedLabels: 'factory:new' } })
+    expect(off.filters).not.toHaveProperty('maxAdmissionsPerCycle')
+    expect(off.filters).not.toHaveProperty('fullReconcileHours')
+    expect(off.filters).not.toHaveProperty('initialSync')
+    const on = toBody({ ...draft, filters: { ...draft.filters, changedLabels: 'factory:new', maxAdmissionsPerCycle: 3, fullReconcileHours: 24, pollJitterSeconds: 30, initialSync: 'eligible' } })
+    expect(on.filters).toMatchObject({ maxAdmissionsPerCycle: 3, fullReconcileHours: 24, pollJitterSeconds: 30, initialSync: 'eligible' })
+  })
+
+  it('round-trips the intake settings through a stored definition', () => {
+    const draft = { ...newDraft(), kind: 'github' as const, name: 'Intake', events: ['issue.labeled' as const] }
+    const body = toBody({ ...draft, filters: { ...draft.filters, changedLabels: 'x', maxAdmissionsPerCycle: 5, fullReconcileHours: 12 } })
+    const back = fromDefinition({ id: 'a', revision: 1, enabled: true, ...body } as never)
+    expect(back.filters).toMatchObject({ maxAdmissionsPerCycle: 5, fullReconcileHours: 12, pollJitterSeconds: 0, initialSync: 'new_only' })
+  })
+})

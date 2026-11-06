@@ -11,6 +11,7 @@ import { Link } from '@/lib/project-router'
 import { PageState, type AutomationsView } from './automations-route'
 import { AutomationsTable } from './automations-table'
 import { DayView } from './day-view'
+import { IntakeOverview } from './intake-health'
 import { NextRunsRail, nextRuns } from './next-runs-rail'
 import { StatsStrip } from './stats-strip'
 import type { AutomationActions } from './use-automations'
@@ -119,6 +120,7 @@ export function AutomationsList({
             railOpen={railOpen}
             onOpenRail={() => setRailOpen(true)}
           />
+          <IntakeOverview automations={data.automations} timeZone={data.timeZone} now={now} />
           <AutomationsTable data={data} actions={actions} now={now} />
           <NextRunsRail
             open={railOpen}

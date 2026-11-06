@@ -5,7 +5,8 @@ import type {
   RunStatus,
 } from '@open-mercato/cezar-api-client'
 import { groupTitle, runTitle, type ListView } from '@/lib/task-groups'
-import { isAwaitingAnswer } from '@/lib/attention'
+import { ATTENTION_RANK, deriveAttention, isAwaitingAnswer } from '@/lib/attention'
+import type { TaskColumnId } from './task-columns'
 
 /**
  * The pure half of the Tasks table (the `/` overview): search, the header's archive count, the
@@ -104,6 +105,77 @@ export function filterRuns(runs: readonly RunRecord[], query: string): RunRecord
       text.toLowerCase().includes(needle),
     ),
   )
+}
+
+export type TaskSortState = { column: TaskColumnId; direction: 'asc' | 'desc' }
+
+/** Most recent actual execution, including resumed steps. Never-run tasks have no timestamp. */
+export function lastExecutionAt(run: Pick<RunRecord, 'startedAt' | 'steps'>): number | null {
+  const values = [run.startedAt, ...run.steps.map((step) => step.startedAt)]
+    .map((value) => value ? Date.parse(value) : Number.NaN)
+    .filter(Number.isFinite)
+  return values.length ? Math.max(...values) : null
+}
+
+export function runDurationMs(run: Pick<RunRecord, 'startedAt' | 'finishedAt'>, now = Date.now()): number | null {
+  const started = run.startedAt ? Date.parse(run.startedAt) : Number.NaN
+  if (!Number.isFinite(started)) return null
+  const finished = run.finishedAt ? Date.parse(run.finishedAt) : now
+  return Number.isFinite(finished) ? Math.max(0, finished - started) : null
+}
+
+export function formatRunDuration(duration: number): string {
+  const seconds = Math.floor(duration / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  return `${days}d ${hours % 24}h`
+}
+
+export function nextRunAt(run: Pick<RunRecord, 'autoResumeAt' | 'monitoringWakeAt'>): number | null {
+  const value = run.monitoringWakeAt ?? run.autoResumeAt
+  const parsed = value ? Date.parse(value) : Number.NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function taskModelLabel(run: Pick<RunRecord, 'runner' | 'model' | 'modelIdentity' | 'agentProfile'>): string {
+  return [run.runner, run.modelIdentity ?? run.model, run.agentProfile].filter(Boolean).join(' · ')
+}
+
+/** Sort the flat Tasks table after filtering; null values remain last in either direction. */
+export function sortTaskTable(runs: readonly RunRecord[], sort: TaskSortState, now = Date.now()): RunRecord[] {
+  const direction = sort.direction === 'asc' ? 1 : -1
+  const value = (run: RunRecord): string | number | null => {
+    switch (sort.column) {
+      case 'status': return run.status
+      case 'task': return run.titleSummary ?? run.title
+      case 'priority': return ATTENTION_RANK[deriveAttention(run).bucket]
+      case 'workflow': return workflowLabel(run)
+      case 'branch': return run.branch ?? null
+      case 'diff': return run.diffStat ? run.diffStat.adds + run.diffStat.dels : null
+      case 'reference': return taskReference(run)?.number ?? null
+      case 'tokens': return run.tokensUsed
+      case 'cost': return run.costUsd ?? null
+      case 'duration': return runDurationMs(run, now)
+      case 'nextRun': return nextRunAt(run)
+      case 'model': return taskModelLabel(run) || null
+      case 'cpu': return null
+      case 'memory': return run.peakRssBytes ?? null
+      case 'started': return lastExecutionAt(run)
+    }
+  }
+  return [...runs].sort((a, b) => {
+    const left = value(a), right = value(b)
+    if (left === null) return right === null ? a.id.localeCompare(b.id) : 1
+    if (right === null) return -1
+    const compared = typeof left === 'number' && typeof right === 'number'
+      ? left - right
+      : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' })
+    return compared === 0 ? a.id.localeCompare(b.id) : compared * direction
+  })
 }
 
 /** How many active runs "Archive finished" would sweep. The button only exists when this is

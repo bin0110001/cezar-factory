@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for a newly merged Factory dev SHA every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+Persistent=true
+Unit=factory-local-promotion.service
+
+[Install]
+WantedBy=timers.target

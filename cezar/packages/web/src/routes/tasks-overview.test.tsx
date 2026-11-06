@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -104,8 +104,8 @@ describe('TasksOverview — the table', () => {
       'true',
     )
     expect(document.querySelector('col[data-column-id="branch"]')?.getAttribute('style')).toContain('42px')
-    expect(document.querySelector('th[data-column-id="status"] button')).toBeNull()
-    expect(document.querySelector('th[data-column-id="task"] button')).toBeNull()
+    expect(within(document.querySelector('th[data-column-id="status"]') as HTMLElement).getByRole('button', { name: 'Sort by Status' })).toBeTruthy()
+    expect(within(document.querySelector('th[data-column-id="task"]') as HTMLElement).getByRole('button', { name: 'Sort by Task' })).toBeTruthy()
     expect(document.querySelector('[data-slot="tasks-table"] table')?.className).not.toContain('min-w-[1040px]')
   })
 
@@ -123,18 +123,34 @@ describe('TasksOverview — the table', () => {
     expect(onToggleColumn).not.toHaveBeenCalled()
   })
 
-  it('renders one row per run, in the sidebar order (needs-you first, then recency)', () => {
+  it('defaults to latest execution, with never-run tasks last, without changing sidebar order', () => {
     renderOverview({
       runs: [
-        run({ id: 'done1', title: 'Old done', createdAt: ago(3 * 3_600_000) }),
-        run({ id: 'rev1', title: 'Needs review', status: 'review' }),
+        run({ id: 'done1', title: 'Old done', createdAt: ago(3 * 3_600_000), startedAt: ago(60 * 60_000) }),
+        run({ id: 'rev1', title: 'Needs review', status: 'review', startedAt: ago(2 * 60_000) }),
         run({ id: 'run1', title: 'Running now', status: 'running' }),
       ],
     })
     const ids = [...document.querySelectorAll('[data-slot="task-table-row"]')].map((el) =>
       el.getAttribute('data-run-id')
     )
-    expect(ids).toEqual(['rev1', 'run1', 'done1'])
+    expect(ids).toEqual(['rev1', 'done1', 'run1'])
+    const heading = document.querySelector('th[data-column-id="started"]')
+    expect(heading?.getAttribute('aria-sort')).toBe('descending')
+  })
+
+  it('reverses the active sort when its header is clicked', () => {
+    function ControlledOverview() {
+      const [sort, setSort] = useState<ComponentProps<typeof TasksOverview>['sort']>({ column: 'task', direction: 'asc' })
+      return <TasksOverview runs={[run({ id: 'b', title: 'Beta' }), run({ id: 'a', title: 'Alpha' })]} view="active" onViewChange={vi.fn()} onArchiveFinished={vi.fn()} onMarkAllRead={vi.fn()} onRename={vi.fn()} sort={sort} onSortChange={setSort} />
+    }
+    render(<MemoryRouter><ControlledOverview /></MemoryRouter>)
+    const taskHeading = document.querySelector('th[data-column-id="task"]') as HTMLElement
+    const button = within(taskHeading).getByRole('button', { name: 'Sort by Task' })
+    fireEvent.click(button)
+    expect(taskHeading.getAttribute('aria-sort')).toBe('descending')
+    fireEvent.click(within(taskHeading).getByRole('button', { name: 'Sort by Task' }))
+    expect(taskHeading.getAttribute('aria-sort')).toBe('ascending')
   })
 
   it('says the run status through the attention pill', () => {
@@ -213,24 +229,28 @@ describe('TasksOverview — the table', () => {
       ],
     })
 
-    // Status | Task | Workflow | Branch | ± | PR | IN/OUT | Cost | CPU | Mem | Started
+    // Status | Task | Priority | Workflow | Branch | ± | PR | IN/OUT | Cost | Duration | Next | Model | CPU | Mem | Last run
     expect(cellsOf('full')).toEqual([
       'needs review',
       'Structured changes endpoint',
+      'P3',
       'feat',
       'cez/8f31ab02',
       '+128 −14', // the ± column (R2 #389) — adds and dels, the mockup's pair
       '#402',
       '184.7k / 2.4k',
       '$0.31',
+      '12m',
+      '—',
+      '—',
       '—', // no live sample, CPU has no persisted peak
       '—',
       '12m',
     ])
     // No branch, no PR, no diff recorded, no cost yet — dashes, not zeros (a pre-R2 record has
-    // no diffStat, and `+0 −0` would claim a measurement that never happened). Started falls
-    // back to createdAt.
-    expect(cellsOf('bare')).toEqual(['needs you', 'Bare minimum', 'default', '—', '—', '—', '— / —', '—', '—', '—', '26m'])
+    // no diffStat, and `+0 −0` would claim a measurement that never happened). Last run stays
+    // empty because createdAt does not mean the task executed.
+    expect(cellsOf('bare')).toEqual(['needs you', 'Bare minimum', 'P3', 'default', '—', '—', '—', '— / —', '—', '—', '—', '—', '—', '—', '—'])
     // The pair is two colored halves, not one string — green adds, red dels (design tokens).
     const diff = tableRow('full')?.querySelector('[data-slot="diff-stat"]')
     expect(diff?.querySelector('.text-success')?.textContent).toBe('+128')
@@ -276,21 +296,25 @@ describe('TasksOverview — the table', () => {
     const headers = [...document.querySelectorAll('[data-slot="tasks-table"] th')].map(
       (cell) => cell.textContent,
     )
-    expect(headers).toEqual(['Status', 'Task', 'Workflow', 'Branch', '±', 'Ref', 'CPU', 'Mem', 'Started'])
+    expect(headers.map((text) => text.replace('↓', ''))).toEqual(['Status', 'Task', 'Priority', 'Workflow', 'Branch', '±', 'Ref', 'Duration', 'Next run', 'Model / account', 'CPU', 'Mem', 'Last run'])
     expect(cellsOf('hidden')).toEqual([
       'done',
       'Hidden metrics',
+      'P6',
       'default',
       '—',
       '—',
       '—',
       '—',
       '—',
-      '1m',
+      '—',
+      '—',
+      '—',
+      '—',
     ])
 
     const queued = tableRow('queued-hidden') as HTMLElement
-    expect(queued.querySelectorAll('td')).toHaveLength(8)
+    expect(queued.querySelectorAll('td')).toHaveLength(12)
     expect(queued.querySelector('[data-slot="queue-note"]')?.getAttribute('colspan')).toBe('2')
     expect(queued.textContent).not.toContain('12.0k')
     expect(queued.textContent).not.toContain('$0.02')
@@ -332,7 +356,8 @@ describe('TasksOverview — the table', () => {
     expect(screen.getByRole('button', { name: 'Expand Workflow column', pressed: false })).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Fold Branch column', pressed: true })).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Fold CPU column', pressed: true })).not.toBeNull()
-    expect(document.querySelectorAll('[data-slot="tasks-table"] thead button')).toHaveLength(9)
+    expect(document.querySelectorAll('[data-slot="tasks-table"] thead button')).toHaveLength(26)
+    expect(within(document.querySelector('th[data-column-id="cpu"]') as HTMLElement).queryByRole('button', { name: 'Sort by CPU' })).toBeNull()
     expect(document.querySelector('th[data-column-id="status"]')?.textContent).toBe('Status')
     expect(document.querySelector('th[data-column-id="task"]')?.textContent).toBe('Task')
   })
@@ -574,7 +599,7 @@ describe('TasksOverview — inline rename from the table (spec step 15)', () => 
 })
 
 describe('TasksOverview — pinned tasks (#935)', () => {
-  it('sorts pinned rows to the top, whatever their status says', () => {
+  it('uses the explicit table sort even when a task is pinned', () => {
     const onTogglePin = vi.fn()
     renderOverview({
       runs: [
@@ -587,7 +612,7 @@ describe('TasksOverview — pinned tasks (#935)', () => {
     const order = [...document.querySelectorAll('[data-slot="task-table-row"]')].map((el) =>
       el.getAttribute('data-run-id'),
     )
-    expect(order).toEqual(['kept', 'waiting', 'running'])
+    expect(order).toEqual(['kept', 'running', 'waiting'])
   })
 
   it('toggles from the row and from the card, reporting the state asked for', () => {

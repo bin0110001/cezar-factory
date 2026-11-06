@@ -1,0 +1,19 @@
+name: factory-repair-latest-failure
+description: Select the latest failed run, skip known operational failures without LLM calls, and apply one hosted repair with durable history and reviewed non-stable delivery.
+steps:
+  - id: startup
+    name: Check the repair controller runtime
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-repair-latest-failure -Step select -RequiredScripts repair-latest-failure.py
+    timeoutSeconds: 60
+  # The controller is deliberately a command, not an unconditional agent step.
+  # It returns immediately for known failures, duplicates and missing configuration.
+  # Hosted Codex is launched only after that gate, with its provider explicitly
+  # overridden so the task's default local gateway cannot receive the request.
+  - id: repair
+    name: Gate, repair, validate and publish one latest failure
+    command: python3 $FACTORY_RUNTIME_ROOT/scripts/repair-latest-failure.py run
+    timeoutSeconds: 3600
+  - id: deploy
+    name: Reconcile merged repairs to configured non-stable channels
+    command: python3 $FACTORY_RUNTIME_ROOT/scripts/repair-latest-failure.py deploy
+    timeoutSeconds: 1800

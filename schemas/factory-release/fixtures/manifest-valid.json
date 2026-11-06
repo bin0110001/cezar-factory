@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "factory-release-manifest/v1",
+  "source": {
+    "repository": "bin0110001/cezar-factory",
+    "sha": "0123456789abcdef0123456789abcdef01234567",
+    "gitObjectFormat": "sha1",
+    "ref": "refs/heads/dev"
+  },
+  "artifact": {
+    "format": "tar",
+    "byteSize": 26,
+    "sha256": "sha256:de6bfa727d05b7af80a23428f8e3f0cb021b16655655bbdc99e582fe43fc6905"
+  },
+  "files": [
+    {
+      "path": "VERSION",
+      "byteSize": 7,
+      "sha256": "sha256:86e1bb1acd10e065a8ae1de4fc92f1fd247e0352c0634c0829abbe66b8f76b27"
+    },
+    {
+      "path": "workflows/factory-startup.yaml",
+      "byteSize": 14,
+      "sha256": "sha256:0af6a6b64794de7e02c5e17c7d532d8fa22b7e5fce51b803a46439e6637cb269"
+    }
+  ],
+  "build": {
+    "id": "local-fixture-build-1",
+    "builder": "factory-controller",
+    "builderVersion": "1.0.0",
+    "workflow": "factory-release",
+    "startedAt": "2026-10-23T18:00:00Z",
+    "completedAt": "2026-10-23T18:02:00Z"
+  },
+  "compatibility": {
+    "cezarApi": ">=1.0.0 <2.0.0",
+    "requiredCapabilities": [
+      "shared-factory-runtime-v1"
+    ]
+  },
+  "verification": {
+    "resultVersion": 1,
+    "status": "passed",
+    "digest": "sha256:84c8997098ac0a468bda3130cf843e68912bd3675750a98b11781a9f6aea6ae7",
+    "evidenceRef": "verification/0123456789abcdef0123456789abcdef01234567.json"
+  },
+  "manifestDigest": "sha256:75ed5e8522b268773d553ecf803bc3c24e8cf75eeb6ef845fb55b13fed0ef598"
+}
