@@ -3,8 +3,12 @@ description: Address actionable review findings, re-validate, and return the iss
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
+  - id: model-check
+    name: Fail fast when the model host cannot generate
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/probe-model-endpoint.ps1
+    timeoutSeconds: 300
   - id: resolved
     name: Finish early when the issue is already resolved
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"

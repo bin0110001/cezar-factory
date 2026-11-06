@@ -3,8 +3,12 @@ description: On-demand, host-side only (no automation, not installed into projec
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequiredScripts collect-environment-state.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-environment-analysis -Step collect -RequiredScripts collect-environment-state.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
+  - id: model-check
+    name: Fail fast when the model host cannot generate
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/probe-model-endpoint.ps1
+    timeoutSeconds: 300
   - id: collect
     name: Export current environment state
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-environment-state.ps1 -OutputDirectory .factory/environment-analysis
