@@ -1275,6 +1275,16 @@ $cezarDeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-cezar
 Assert 'autodeploy rebuilds changed Cezar source and verifies the managed service and Factory API' ($autodeploy -match 'deploy-cezar-runtime\.sh' -and $cezarDeploy -match 'git .*diff --quiet.*-- cezar/' -and $cezarDeploy -match 'systemctl --user restart' -and $cezarDeploy -match 'CEZAR_RELEASE_URL')
 $gitMetadataSync = Get-Content -Raw (Join-Path $factory 'scripts/deploy/reconcile-container-git-metadata.sh')
 Assert 'autodeploy repairs only root Git metadata after verifying mounted files and preserves linked worktrees' ($autodeploy -match 'reconcile-container-git-metadata\.sh' -and $gitMetadataSync -match 'git .*ls-tree -r -z' -and $gitMetadataSync -match 'git .*read-tree' -and $gitMetadataSync -match 'update-ref refs/heads/stable' -and $gitMetadataSync -match 'task worktrees')
+# The deploy shell tests exercise real control flow (idle gate, deferral, recovery). They were once left out of the
+# suite and drifted into failure unnoticed, so run them whenever a POSIX bash (not WSL's launcher) is available.
+$shellTestBash = Get-Command bash -ErrorAction SilentlyContinue
+if ($shellTestBash -and $shellTestBash.Source -notmatch 'System32') {
+    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh') {
+        $shellOutput = & $shellTestBash.Source (Join-Path $factory "tests/$shellTest") 2>&1
+        Assert "deploy shell test passes: $shellTest" ($LASTEXITCODE -eq 0)
+        if ($LASTEXITCODE -ne 0) { $shellOutput | Select-Object -Last 8 | ForEach-Object { Write-Host "    $_" } }
+    }
+}
 $localPromotion = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_local_scheduler.py')
 $localPromotionExample = Get-Content -Raw (Join-Path $factory 'config/local-release-scheduler.json.example')
 $promotionUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/factory-local-promotion.service')
