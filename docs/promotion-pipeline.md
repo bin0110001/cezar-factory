@@ -106,8 +106,14 @@ release store the controller uses is `<store>/release-store`, so never pass the 
 
 ## Limits
 
-- Canaries prove the release loads, schedules, and runs `health` and `maintenance`. They do not yet run an
-  implement or review workflow against a fixture issue; add one as a canary when a fixture exists.
+- Canaries prove the release loads, schedules, and runs `health` and `maintenance`. They do not run an
+  implement or review workflow: those are driven by GitHub issue and PR events, so a faithful canary needs a
+  dedicated fixture issue and a sandbox repository, otherwise every promotion would create real labels and PRs.
+  The implement stage's own code paths (startup preflight, changed-file selection, result validation) are
+  covered by the full suite that gates every candidate, including `tests/validation-adapters.ps1`. Add a
+  workflow canary when a sandbox project exists; the policy accepts it as one more `canaries.items` entry.
+- The deploy shell tests (`tests/test-*.sh`) run inside `tests/run-tests.ps1` whenever a POSIX `bash` is on the
+  path, which includes the Cezar container that validates each candidate.
 - Validation runs inside the live Cezar container, so a heavy suite competes with running jobs. The
   container worktree lives under `/projects/.promotion` and is removed after each run.
 - `stable` is a git branch, so a person with push access can still move it. The drift check reports it;

@@ -20,6 +20,7 @@ cp "$ROOT/scripts/deploy/lib-topology.sh" "$TMP/seed/scripts/deploy/"
 cat > "$TMP/seed/scripts/deploy/deploy-cezar-runtime.sh" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' "$1" >> "$FAKE_DEPLOY_LOG"
+exit "${FAKE_DEPLOY_EXIT:-0}"
 EOF
 chmod +x "$TMP/seed/scripts/deploy/deploy-cezar-runtime.sh"
 printf '0.1.0\n' > "$TMP/seed/VERSION"
@@ -211,10 +212,10 @@ assert_text "$TMP/state/last-success.json" '"error": ""'
 validate_receipt "$TMP/state/last-success.json"
 initial_sha="$(receipt_field "$TMP/state/last-success.json" sourceSha)"
 [[ -n "$initial_sha" ]] || fail 'success receipt has no source SHA'
-[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 1 ]] || fail 'autodeploy did not invoke the Cezar runtime deployment check'
+[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 2 ]] || fail 'autodeploy did not invoke the Cezar runtime deployment check'
 assert_text "$TMP/state/last-success.json" "\"containerSha\": \"$initial_sha\""
-[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 1 ]] || fail 'autodeploy did not invoke the safe container Git-metadata reconciliation'
-[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 1 ]] || fail 'initial healthy tick did not sync exactly once'
+[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 2 ]] || fail 'autodeploy did not invoke the safe container Git-metadata reconciliation'
+[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 2 ]] || fail 'two healthy ticks (the second after the bytecode-cache check) did not sync once each'
 [[ ! -f "$FAKE_ACTIVATION_LOG" ]] || fail 'legacy deployment unexpectedly invoked channel activation'
 
 # Advance origin, then fail after checkout advancement. The next unchanged tick must retry.
@@ -234,15 +235,30 @@ run_auto 0
 assert_text "$TMP/state/last-success.json" '"status": "success"'
 [[ "$(receipt_field "$TMP/state/last-success.json" sourceSha)" == "$advanced_sha" ]] || fail 'retry receipt is not bound to the advanced SHA'
 run_auto 0
-[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 4 ]] || fail 'unchanged healthy tick did not reconcile again'
-[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not retry runtime verification'
-[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 4 ]] || fail 'unchanged healthy ticks did not verify container Git metadata'
+[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 5 ]] || fail 'unchanged healthy tick did not reconcile again'
+[[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 5 ]] || fail 'unchanged healthy ticks did not retry runtime verification'
+[[ "$(wc -l < "$FAKE_METADATA_LOG")" -eq 5 ]] || fail 'unchanged healthy ticks did not verify container Git metadata'
+
+# A runtime restart deferred because Cezar is busy (exit 25) is not a failure and must not activate or sync;
+# any other runtime failure still fails the tick.
+success_sha_before="$(receipt_field "$TMP/state/last-success.json" sourceSha)"
+sync_before="$(wc -l < "$FAKE_SYNC_LOG")"
+export FAKE_DEPLOY_EXIT=25
+run_auto 0
+assert_text "$TMP/state/last-attempt.json" '"status": "deferred"'
+[[ "$(wc -l < "$FAKE_SYNC_LOG")" == "$sync_before" ]] || fail 'a deferred runtime restart still synchronized automations'
+[[ "$(receipt_field "$TMP/state/last-success.json" sourceSha)" == "$success_sha_before" ]] || fail 'a deferred runtime restart replaced the last success receipt'
+export FAKE_DEPLOY_EXIT=3
+run_auto 3
+assert_text "$TMP/state/last-attempt.json" '"status": "failure"'
+unset FAKE_DEPLOY_EXIT
+run_auto 0
 
 # A configured channel store uses journaled activation. Missing pointers fail
 # closed and never fall back to legacy automation sync.
 export FAKE_CEZ_FACTORY_RELEASE_STORE=/var/lib/cezar-factory/release-store
 run_auto 24
-[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 4 ]] || fail 'missing channel pointer fell back to legacy synchronization'
+[[ "$(wc -l < "$FAKE_SYNC_LOG")" -eq 6 ]] || fail 'missing channel pointer fell back to legacy synchronization'
 export FAKE_CHANNEL_POINTER_PRESENT=1
 run_auto 0
 [[ "$(wc -l < "$FAKE_ACTIVATION_LOG")" -eq 1 ]] || fail 'configured verified channel did not invoke activation exactly once'
