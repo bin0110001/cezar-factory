@@ -1,39 +1,39 @@
 {
-  "generatedAt": "2026-11-05T00:28:22.2127027+00:00",
-  "cutoff": "2026-11-04T00:28:14.8249583+00:00",
+  "generatedAt": "2026-11-06T01:07:17.4704116+00:00",
+  "cutoff": "2026-11-05T01:07:09.6901548+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 96,
-  "eligible": 48,
+  "considered": 98,
+  "eligible": 52,
   "refreshed": [
     {
-      "issue": 66,
-      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
-      "state": "factory:investigate",
-      "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 291.5,
+      "issue": 55,
+      "title": "Add optional Hindsight incident memory and historical repair recall",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/55",
+      "state": "factory:needs-plan",
+      "createdAt": "10/23/2026 14:03:29",
+      "ageHours": 323.1,
       "labels": [
-        "type:maintenance",
         "risk:medium",
-        "factory:investigate",
+        "factory:needs-plan",
+        "type:feature",
         "complexity:medium"
       ],
       "action": "refreshed"
     },
     {
-      "issue": 69,
-      "title": "Migrate shadow copies safely and retire legacy push delivery",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/69",
-      "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 20:58:17",
-      "ageHours": 291.5,
+      "issue": 66,
+      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
+      "state": "factory:ready",
+      "createdAt": "10/23/2026 20:58:12",
+      "ageHours": 316.1,
       "labels": [
+        "type:maintenance",
         "risk:medium",
-        "factory:needs-plan",
-        "type:refactor",
-        "complexity:medium"
+        "factory:ready",
+        "complexity:small"
       ],
       "action": "refreshed"
     }
@@ -115,6 +115,11 @@
       "reason": "manual-or-terminal-state"
     },
     {
+      "issue": 100,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
       "issue": 93,
       "state": "factory:needs-plan",
       "reason": "audit-or-tracking-marker"
@@ -178,11 +183,6 @@
       "issue": 60,
       "state": null,
       "reason": "no-single-lifecycle-state"
-    },
-    {
-      "issue": 55,
-      "state": "factory:working",
-      "reason": "manual-or-terminal-state"
     },
     {
       "issue": 51,
