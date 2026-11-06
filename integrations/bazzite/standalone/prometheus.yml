@@ -19,6 +19,36 @@ scrape_configs:
   - job_name: hindsight
     static_configs:
       - targets: ["127.0.0.1:8888"]
+  # Liveness through the blackbox exporter: the exporter fetches each URL and reports probe_success / duration.
+  # `up` here only says the exporter answered; probe_success is the verdict on the service.
+  - job_name: liveness-cezar
+    metrics_path: /probe
+    params:
+      module: [cezar_health]
+    static_configs:
+      - targets: ["http://127.0.0.1:4321/api/v1/health"]
+        labels: { service: cezar }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+  - job_name: liveness-litellm
+    metrics_path: /probe
+    params:
+      module: [litellm_ready]
+    static_configs:
+      - targets: ["http://127.0.0.1:4001/health/readiness"]
+        labels: { service: litellm }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
   - job_name: model-host-vllm
     # The Mac proxy requires a bearer token on every path, /metrics included. The token and the target file are
     # rendered by the deploy script from VLLM_API_KEY and FACTORY_VLLM_METRICS_TARGET.

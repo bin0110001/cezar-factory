@@ -4,8 +4,8 @@
 # Restart=always brings it back after a crash. It does not depend on podman-restart.service.
 [Unit]
 Description=Factory Prometheus (service and model-host monitoring)
-After=network-online.target
-Wants=network-online.target
+After=network-online.target factory-blackbox.service
+Wants=network-online.target factory-blackbox.service
 
 [Container]
 ContainerName=factory-prometheus
