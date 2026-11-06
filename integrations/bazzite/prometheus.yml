@@ -21,6 +21,11 @@ scrape_configs:
     static_configs:
       - targets: ["litellm:4000"]
   - job_name: model-host-vllm
+    # The Mac proxy requires a bearer token on every path, /metrics included. The token file is rendered by
+    # scripts/deploy/deploy-bazzite.sh from VLLM_API_KEY; without it the scrape is a 401 and `up` stays 0.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/vllm-token
     file_sd_configs:
       - files: ["/etc/prometheus/model-targets.json"]
   - job_name: node-exporter

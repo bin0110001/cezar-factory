@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Features
+- A Codex run whose model host goes silent is now stopped after 15 minutes with a "no output while waiting on the model (stalled)" error, instead of sitting until the 30-minute wall clock and failing as an opaque timeout. The bound counts only silence while the model is who the turn is waiting on — never a running tool call, a pending question, or the gap between turns — and `CEZ_CODEX_IDLE_TIMEOUT_MS` tunes it (`0` turns it off).
 - The Tasks table defaults to latest execution and lets each sortable column change order; the choice is saved in local storage. Its selected sort controls table order while sidebar pin and status ordering stays intact.
 
 # 0.14.0 (2026-10-02)

@@ -1495,5 +1495,13 @@ $unprobed = @($agentWorkflows | Where-Object {
     ($wf -notmatch 'id: model-check') -or ($wf -notmatch '-RequiredScripts [^\r\n]*probe-model-endpoint\.ps1') -or $probeAt -lt 0 -or $probeAt -gt $agentAt
 })
 Assert "every agent workflow probes the model endpoint before its first agent step ($($unprobed -join ', '))" ($unprobed.Count -eq 0)
+$maintenanceText = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
+Assert 'maintenance runs its watchdog and housekeeping before the model probe, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: watchdog') -lt $maintenanceText.IndexOf('id: model-check') -and $maintenanceText.IndexOf('id: intake-route') -lt $maintenanceText.IndexOf('id: model-check'))
+$promScrape = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus.yml')
+$promAlerts = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus-alerts.yml')
+$promCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
+$deployBazzite = Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')
+Assert 'the authenticated vLLM scrape has its token mounted and rendered by the deploy, so Prometheus never loses a credentials file' ($promScrape -match 'credentials_file: /etc/prometheus/vllm-token' -and $promCompose -match 'prometheus-vllm-token\.generated:/etc/prometheus/vllm-token' -and $deployBazzite -match 'prometheus-vllm-token\.generated' -and $deployBazzite -match 'vllm_scrape_key:-unset')
+Assert 'model-host alerts cover running-but-not-generating, queue backlog, KV saturation, preemption, and missing metrics' (@('ModelHostNotGenerating', 'ModelHostQueueBacklog', 'ModelHostKvCacheSaturated', 'ModelHostPreempting', 'ModelHostMetricsMissing' | Where-Object { $promAlerts -notmatch "alert: $_" }).Count -eq 0 -and $promAlerts -match 'vllm:generation_tokens_total')
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
