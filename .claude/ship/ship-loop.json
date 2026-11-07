@@ -6,6 +6,7 @@
       "factoryProjectId": "cezar-factory",
       "baseBranch": "dev",
       "maxDeployAttempts": 3,
+      "maxRunAttempts": 10,
       "verifyTimeoutMinutes": 45,
       "verify": {
         "mode": "rerun-workflow",

@@ -659,6 +659,15 @@ class CodexSession implements AgentSession {
           const message = stringField(error ?? {}, 'message') ?? 'codex turn failed';
           this.emit({ type: 'error', message });
         }
+        // A turn that "completed" with status `failed` is a failure too: without this the run
+        // sees a clean, empty end_turn and the workflow retries the same dead session.
+        if (method === 'turn/completed' && !this.terminatedByCezar) {
+          const turn = isRecordLike(params.turn) ? params.turn : {};
+          if (turn.status === 'failed') {
+            const detail = stringField(isRecordLike(turn.error) ? turn.error : {}, 'message') ?? 'no detail from codex';
+            this.emit({ type: 'error', message: `codex: turn failed: ${detail}` });
+          }
+        }
         // The bare event when there is nothing extra to say, so every existing consumer
         // and every golden recording sees the exact frame it saw before (§7 additive).
         this.emit(compacted ? { type: 'turn-end', reason: 'context-compaction' } : { type: 'turn-end' });
@@ -810,4 +819,8 @@ function safeStringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

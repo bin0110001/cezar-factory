@@ -190,6 +190,11 @@ describe('a turn that ended at a context-compaction boundary (#955)', () => {
     ]);
   }, 15_000);
 
+  it('reports a turn/completed with status failed as an error, not a clean empty turn', async () => {
+    const events = await collect('mock:completed-failed do the work');
+    expect(events).toContainEqual({ type: 'error', message: 'codex: turn failed: model not available' });
+  }, 15_000);
+
   it('leaves an ordinary turn-end bare, so old consumers see no new field', async () => {
     const events = await collect('check the working tree');
     expect(events.filter((e) => e.type === 'turn-end')).toEqual([{ type: 'turn-end' }]);

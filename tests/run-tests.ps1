@@ -242,6 +242,12 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
     }
 }
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
+$shipLoop = Join-Path $factory '.claude/ship/ship-loop.ps1'
+$iterDry = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow health -Task 'smoke' -DryRun 2>&1 | Out-String)
+Assert 'ship-loop Run resolves a workflow by file name to its cezar name' ($LASTEXITCODE -eq 0 -and $iterDry -match 'run smoke --workflow factory-health')
+$null = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow no-such-workflow -Task 'x' -DryRun 2>&1 | Out-String)
+Assert 'ship-loop Run rejects an unknown workflow with exit 2' ($LASTEXITCODE -eq 2)
+Assert 'workflow-iterate skill documents the Run action' ((Get-Content -Raw (Join-Path $factory '.claude/skills/workflow-iterate/SKILL.md')) -match 'ship-loop\.ps1 -Action Run')
 # Copyable result examples must remain valid JSON and satisfy their declared
 # schema. A missing required field is a real contract failure, not just prose
 # drift; #33 will extend this to the full workflow command inventory.
