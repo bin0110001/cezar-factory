@@ -184,6 +184,31 @@ describe('RunManager agent-profile resolution', () => {
     if (retainedClaim) await removeWorktree(repoRoot, retainedClaim.workspacePath, retainedClaim.branch);
   }, 20_000);
 
+  it('takes over a Factory-owned claim whose run no longer exists, but never an external one', async () => {
+    execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: repoRoot, windowsHide: true });
+    writeFileSync(join(repoRoot, 'base.txt'), 'base\n');
+    execFileSync('git', ['add', 'base.txt'], { cwd: repoRoot, windowsHide: true });
+    execFileSync('git', ['-c', 'user.name=Lifecycle Test', '-c', 'user.email=lifecycle@example.test', 'commit', '-q', '-m', 'base'], { cwd: repoRoot, windowsHide: true });
+    // The run behind this claim is not in the store, as after retention pruned it or a cockpit rebuild.
+    const orphan = await claimWorkspace({ issue: '457', cwd: repoRoot, owner: 'factory:oldhost:pruned-run-id', base: 'dev' });
+    const workflow = {
+      name: 'factory-implement', source: 'built-in' as const,
+      steps: [{ id: 'work', name: 'Work', prompt: '{{task}}' }],
+    };
+    const run = manager.startRun(workflow, { task: 'Implement issue #457' });
+    store.updateRun(run.id, { issueNumber: 457 });
+    const deadline = Date.now() + 20_000;
+    let claim = (await lifecycleStatus({ cwd: repoRoot, issue: '457' }))[0];
+    while (claim?.executionId !== run.id) {
+      if (Date.now() > deadline) throw new Error(`orphaned Factory claim was not taken over: ${store.getRun(run.id)?.error ?? 'no error'}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      claim = (await lifecycleStatus({ cwd: repoRoot, issue: '457' }))[0];
+    }
+    expect(store.getRun(run.id)?.error ?? '').not.toContain('already has active execution');
+    await removeWorktree(repoRoot, orphan.workspacePath, orphan.branch).catch(() => undefined);
+    if (claim) await removeWorktree(repoRoot, claim.workspacePath, claim.branch).catch(() => undefined);
+  }, 30_000);
+
   it('redacts turn context before a late title update outlives secret cleanup', async () => {
     const run = newRun();
     const token = 'synthetic-private-value';

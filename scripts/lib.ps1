@@ -226,7 +226,9 @@ function Invoke-FactoryValidation {
         $head = @(& git -C $root rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) { throw 'Cannot resolve the current worktree HEAD.' }
         $receipt.headSha = ([string]$head[0]).Trim()
-        $dirty = @(& git -C $root status --porcelain 2>$null)
+        # `.factory/` is the workflow's own scratch (artifacts, results, startup records), some of it tracked and rewritten
+        # by every step; the receipt asserts the *work* tree is clean, as the lifecycle handoff does.
+        $dirty = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
         $receipt.worktreeClean = ($LASTEXITCODE -eq 0 -and $dirty.Count -eq 0)
         $remote = [string](@(& git -C $root config --get remote.origin.url 2>$null) | Select-Object -First 1)
         if ($remote -match '(?i)github\.com[:/](?<slug>[^/\s]+/[^/\s]+?)(?:\.git)?$') { $receipt.repository = $Matches.slug }
@@ -326,7 +328,8 @@ function Invoke-FactoryValidation {
         # A project runner can modify tracked files or create untracked files
         # after the initial snapshot. Keep the receipt clean only if both the
         # pre-run and post-run worktree are clean.
-        $postRunStatus = @(& git -C $root status --porcelain 2>$null)
+        # `.factory/` is the workflow's own scratch and is excluded here exactly as in the pre-run snapshot above.
+        $postRunStatus = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
         $postRunStatusOk = ($LASTEXITCODE -eq 0)
         $postRunHead = @(& git -C $root rev-parse HEAD 2>$null)
         $headUnchanged = ($LASTEXITCODE -eq 0 -and $postRunHead.Count -gt 0 -and
