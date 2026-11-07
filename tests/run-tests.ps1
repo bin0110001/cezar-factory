@@ -107,6 +107,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'review validates the reviewed PR head before the merge gate so receipts bind to it' ((Test-Path (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -and ((Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')) -match '(?s)id: validate-head.*validate-reviewed-head.ps1.*id: merge-eligibility'))
+Assert 'validate-reviewed-head labels the PR through the REST API, since gh pr edit fails on the Projects (classic) GraphQL error' ((Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -notmatch 'pr edit' -and (Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -match 'issues/$number/labels')
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json

@@ -46,8 +46,10 @@ if ($risk.Count -ne 1) {
     $issueLabels = @((Invoke-Gh issue view ([string]$review.issue) --json labels | ConvertFrom-Json).labels | ForEach-Object { [string]$_.name })
     $issueRisk = @($issueLabels | Where-Object { $_ -in 'risk:low', 'risk:medium', 'risk:high' })
     if ($issueRisk.Count -ne 1) { Out-Result 'error' "neither the PR nor issue #$($review.issue) has exactly one risk label, so the merge gate cannot be satisfied" 1 }
-    foreach ($stale in $risk) { Invoke-Gh pr edit $pr --remove-label $stale | Out-Null }
-    Invoke-Gh pr edit $pr --add-label $issueRisk[0] | Out-Null
+    # The gh CLI's PR-edit command fails on GraphQL "Projects (classic) is being deprecated"; a PR's labels are its issue's labels, so use REST.
+    $slug = ([regex]::Match($pr, '^https://github\.com/([^/\s]+/[^/\s]+)/pull/')).Groups[1].Value
+    foreach ($stale in $risk) { Invoke-Gh api -X DELETE "repos/$slug/issues/$number/labels/$([uri]::EscapeDataString($stale))" | Out-Null }
+    Invoke-Gh api -X POST "repos/$slug/issues/$number/labels" -f "labels[]=$($issueRisk[0])" | Out-Null
     $risk = $issueRisk
 }
 
