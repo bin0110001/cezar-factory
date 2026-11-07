@@ -10,7 +10,14 @@ import { materializeRuntimeScript, resolveFactoryRelease, resolvePinnedFactoryRe
 
 const sha256 = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 let temp = '';
-afterEach(async () => { if (temp) await rm(temp, { recursive: true, force: true }); temp = ''; });
+afterEach(async () => {
+  // The release controller makes release trees read-only; restore write access so cleanup can unlink them.
+  if (temp) {
+    spawnSync('chmod', ['-R', 'u+w', temp], { windowsHide: true });
+    await rm(temp, { recursive: true, force: true });
+  }
+  temp = '';
+});
 
 async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
   temp = await mkdtemp(join(tmpdir(), 'factory-release-resolver-'));
