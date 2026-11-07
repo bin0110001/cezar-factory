@@ -4,6 +4,10 @@ param([switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $scripts = Join-Path $factory 'scripts'
+# Hermetic: the review workflow runs this suite inside a Factory-managed run (validate-head), whose environment carries the
+# lifecycle identity. route-state then defers factory:done until workspace integration, which is correct in a managed run but
+# fails the unmanaged-route assertions. The managed behaviour is tested explicitly by setting the token itself.
+foreach ($identity in 'FACTORY_FENCING_TOKEN', 'FACTORY_MANAGED', 'FACTORY_OWNER_ID', 'FACTORY_RUN_ID', 'FACTORY_ISSUE', 'FACTORY_WORKSPACE') { Remove-Item "Env:$identity" -ErrorAction SilentlyContinue }
 . (Join-Path $scripts 'lib.ps1')
 
 $script:fail = 0
