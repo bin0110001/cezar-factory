@@ -225,6 +225,9 @@ switch ($Event) {
         Add-Comment $plan; Set-State 'factory:ready'; Done 'factory:ready'
     }
     'implement-result' {
+        # A workflow retry after a later step failed (preflight, handoff) re-runs this route step. The first
+        # call already moved the issue to review and posted the comment, so a repeat is a no-op, not a refusal.
+        if ($result.status -eq 'success' -and $current -contains 'factory:review') { Done 'factory:review' 'already routed to review by an earlier attempt' }
         Assert-Source 'factory:working'
         if ($result.status -ne 'success') {
             Write-ExecutionRecord 'failed' $result
