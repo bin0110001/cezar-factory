@@ -9,7 +9,7 @@ import type {
   ContentBlock,
   SessionOptions,
 } from './agent-runner.ts';
-import { isSignalTerminationExit, prependSystemPrompt, trackChildExit } from './agent-runner.ts';
+import { prependSystemPrompt, trackChildExit } from './agent-runner.ts';
 import {
   AUTO_END_DELAY_MS,
   DEFAULT_RUN_TIMEOUT_MS,
@@ -175,6 +175,8 @@ class CodexSession implements AgentSession {
    *  byte-identical); the channel is `opts.onUiEvent` (RunManager wiring
    *  lands in R2 step 2.1). */
   private uiState: CodexUiMapperState = createCodexUiState();
+  /** A completed turn with no user-visible output or tool activity is a silent backend failure. */
+  private turnHadActivity = false;
 
   constructor(
     private readonly bin: string,
@@ -316,12 +318,12 @@ class CodexSession implements AgentSession {
         return base;
       }
 
-      // Our own EOF watchdog / cancel signal coming back as 143/137 — the
-      // teardown cezar asked for, not a codex failure (#703).
-      if (this.terminatedByCezar && isSignalTerminationExit(exitCode)) {
+      // Any exit after Cezar explicitly stopped the session is teardown, even
+      // when the OS reports a clean or platform-specific exit code (#703).
+      if (this.terminatedByCezar) {
         this.emit({
           type: 'note',
-          message: `codex app-server did not exit on its own after close; terminated by cezar (code ${exitCode})`,
+          message: `codex app-server ended after cezar stopped it (code ${exitCode ?? 'unknown'})`,
         });
         this.emit({ type: 'done' });
         return base;
@@ -542,6 +544,7 @@ class CodexSession implements AgentSession {
       this.rpc.respond({ id: rpcId, error: { code: -32602, message: 'unsupported or malformed requestUserInput payload' } });
       return;
     }
+    this.turnHadActivity = true;
     if (this.pendingUserInput) this.rejectPendingUserInput('superseded by a newer requestUserInput');
     // A native ask IS the user owning the next action, whatever happened before it (#955).
     this.compactionEndedTurn = false;
@@ -580,12 +583,16 @@ class CodexSession implements AgentSession {
       case 'turn/started': {
         if (this.isForeignThreadTurn(params)) break; // sub-agent child thread — not our turn (#600)
         this.activeTurnId = turnIdOf(params) ?? this.activeTurnId;
+        this.turnHadActivity = false;
         this.compactionEndedTurn = false; // the boundary is turn-scoped (#955)
         break;
       }
       case 'item/agentMessage/delta': {
         const delta = typeof params.delta === 'string' ? params.delta : '';
-        if (delta) this.textCoalescer.append(stringField(params, 'itemId'), delta);
+        if (delta) {
+          this.turnHadActivity = true;
+          this.textCoalescer.append(stringField(params, 'itemId'), delta);
+        }
         break;
       }
       case 'item/started': {
@@ -593,6 +600,7 @@ class CodexSession implements AgentSession {
         const type = stringField(item, 'type');
         // Only tool-like items become tool events; message/reasoning stream as text.
         if (type && !NON_TOOL_ITEMS.has(type)) {
+          this.turnHadActivity = true;
           const id = stringField(item, 'id') ?? `item-${this.rpc.allocateId()}`;
           this.toolsInFlight.add(id);
           this.toolCalls.push({ id, name: type, input: item });
@@ -619,6 +627,7 @@ class CodexSession implements AgentSession {
         if (type === 'agentMessage') {
           // One v1 `text` per finished message — the snapshot's full text when
           // present (also covers turns that send no deltas), else the deltas.
+          if (typeof item.text === 'string' && item.text.length > 0) this.turnHadActivity = true;
           this.textCoalescer.complete(id || undefined, typeof item.text === 'string' ? item.text : undefined);
         } else if (type && !NON_TOOL_ITEMS.has(type) && id) {
           this.toolsInFlight.delete(id);
@@ -654,6 +663,7 @@ class CodexSession implements AgentSession {
         // stacking a "keep going" reason on top of it would be two verdicts for one turn.
         const compacted = method === 'turn/completed' && this.compactionEndedTurn;
         this.compactionEndedTurn = false;
+        const turn = isRecordLike(params.turn) ? params.turn : {};
         if (method === 'turn/failed' && !this.terminatedByCezar) {
           const error = params.error as Record<string, unknown> | undefined;
           const message = stringField(error ?? {}, 'message') ?? 'codex turn failed';
@@ -662,12 +672,14 @@ class CodexSession implements AgentSession {
         // A turn that "completed" with status `failed` is a failure too: without this the run
         // sees a clean, empty end_turn and the workflow retries the same dead session.
         if (method === 'turn/completed' && !this.terminatedByCezar) {
-          const turn = isRecordLike(params.turn) ? params.turn : {};
           if (turn.status === 'failed') {
             const detail = stringField(isRecordLike(turn.error) ? turn.error : {}, 'message') ?? 'no detail from codex';
             this.emit({ type: 'error', message: `codex: turn failed: ${detail}` });
+          } else if (!compacted && !this.turnHadActivity && turn.status !== 'interrupted') {
+            this.emit({ type: 'error', message: 'codex: turn completed without assistant output or tool activity' });
           }
         }
+        this.turnHadActivity = false;
         // The bare event when there is nothing extra to say, so every existing consumer
         // and every golden recording sees the exact frame it saw before (§7 additive).
         this.emit(compacted ? { type: 'turn-end', reason: 'context-compaction' } : { type: 'turn-end' });

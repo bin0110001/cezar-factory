@@ -38,8 +38,8 @@ function run(id: string, status: RunRecord['status']): RunRecord {
     steps: [],
   }
 }
-const AVAILABLE: StarCountPayload = { available: true, count: 1234, url: 'https://github.com/open-mercato/cezar' }
-const UNAVAILABLE: StarCountPayload = { available: false, url: 'https://github.com/open-mercato/cezar' }
+const AVAILABLE: StarCountPayload = { available: true, count: 1234, url: 'https://github.com/bin0110001/cezar-factory' }
+const UNAVAILABLE: StarCountPayload = { available: false, url: 'https://github.com/bin0110001/cezar-factory' }
 /** Two finished runs and one about to finish: the third success is the qualifying moment. */
 const SEED = [run('a', 'done'), run('b', 'review'), run('c', 'running')]
 const THIRD_DONE = [run('a', 'done'), run('b', 'review'), run('c', 'done')]
@@ -89,10 +89,10 @@ describe('StarPromo', () => {
     expect(dialog()).toBeNull() // never under a click in flight
     settle()
     expect(dialog()).not.toBeNull()
-    expect(screen.getByRole('heading', { name: 'Is cezar pulling its weight?' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Is Cezarium pulling its weight?' })).toBeTruthy()
     expect(screen.getByText(/1\.2k stars on GitHub/)).toBeTruthy()
-    expect(screen.getByRole('link', { name: /Star cezar on GitHub/ }).getAttribute('href')).toBe(
-      'https://github.com/open-mercato/cezar',
+    expect(screen.getByRole('link', { name: /Star Cezarium on GitHub/ }).getAttribute('href')).toBe(
+      'https://github.com/bin0110001/cezar-factory',
     )
     expect(record()).toMatchObject({ asks: 1 })
   })
@@ -203,7 +203,7 @@ describe('StarPromo', () => {
     touch()
     patch(THIRD_DONE)
     settle()
-    act(() => fireEvent.click(screen.getByRole('link', { name: /Star cezar on GitHub/ })))
+    act(() => fireEvent.click(screen.getByRole('link', { name: /Star Cezarium on GitHub/ })))
     expect(record()).toMatchObject({ outcome: 'starred' })
     expect(dialog()).toBeNull()
   })
@@ -216,7 +216,7 @@ describe('StarPromo', () => {
     touch()
     patch(THIRD_DONE)
     settle()
-    expect(screen.getByText('Your last 30 days with cezar')).toBeTruthy()
+    expect(screen.getByText('Your last 30 days with Cezarium')).toBeTruthy()
     expect(screen.getByText('23')).toBeTruthy()
     expect(screen.getByText('+966')).toBeTruthy()
   })

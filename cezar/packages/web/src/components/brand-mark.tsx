@@ -64,7 +64,7 @@ export function BrandLockup({ className }: { className?: string }) {
         className="leading-none font-semibold tracking-normal lowercase"
         style={{ fontFamily: 'var(--brand)', fontSize: BRAND_LOCKUP.name }}
       >
-        cezar
+        Cezarium
       </span>
     </span>
   )

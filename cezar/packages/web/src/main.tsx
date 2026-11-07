@@ -24,7 +24,7 @@ function resolveApiBase(): string {
 setApiBaseUrl(resolveApiBase())
 
 const container = document.getElementById('root')
-if (!container) throw new Error('cezar: #root container is missing from index.html')
+if (!container) throw new Error('Cezarium: #root container is missing from index.html')
 
 createRoot(container).render(
   <StrictMode>
