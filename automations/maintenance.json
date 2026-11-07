@@ -9,8 +9,8 @@
   "task": {
     "prompt": "Run the bounded Factory maintenance workflow for {{project}} at {{time}} on {{date}}. The workflow steps do all the work; do not inspect, select, or create issues or tasks yourself.",
     "workflow": "factory-maintenance",
-    "runner": "codex",
-    "model": "factory-gateway/factory-code",
+    "runner": "claude",
+    "model": "sonnet",
     "worktree": true,
     "autonomous": true
   }

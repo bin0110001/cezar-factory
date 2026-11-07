@@ -6,8 +6,8 @@
   "task": {
     "prompt": "Repair the latest failure for {{project}}. Workflow commands select, classify, validate and publish; no replacement tasks or manual discovery.",
     "workflow": "factory-repair-latest-failure",
-    "runner": "codex",
-    "model": "gpt-6.1-sol",
+    "runner": "claude",
+    "model": "sonnet",
     "worktree": true,
     "autonomous": true
   }
