@@ -1521,5 +1521,78 @@ $blackboxUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/stand
 Assert 'liveness probes check the response body, so the cockpit HTML-200 catch-all cannot read as healthy' ($blackboxCfg -match 'cezar_health' -and $blackboxCfg -match "fail_if_body_not_matches_regexp:\s+- '\^\\{`"version`":'" -and $blackboxCfg -match 'application/json' -and $blackboxCfg -match 'litellm_ready' -and $blackboxCfg -match 'readiness' -and $blackboxCfg -match 'db.*connected')
 Assert 'Prometheus probes Cezar and LiteLLM through the blackbox exporter and alerts on failure, slowness, and silence' ($standaloneProm -match 'job_name: liveness-cezar' -and $standaloneProm -match 'job_name: liveness-litellm' -and $standaloneProm -match '127\.0\.0\.1:9115' -and $standaloneProm -match 'api/v1/health' -and $standaloneProm -match 'health/readiness' -and @('FactoryEndpointDown', 'FactoryEndpointSlow', 'FactoryLivenessProbeMissing' | Where-Object { $promAlerts -notmatch "alert: $_" }).Count -eq 0)
 Assert 'the blackbox exporter is a boot-persistent loopback unit that Prometheus starts after, and the deploy validates it' ($blackboxUnit -match '(?m)^WantedBy=default\.target' -and $blackboxUnit -match '(?m)^Restart=always' -and $blackboxUnit -match 'web\.listen-address=127\.0\.0\.1:9115' -and $standaloneUnit -match 'After=[^\r\n]*factory-blackbox\.service' -and $standaloneDeploy -match 'config\.check' -and $standaloneDeploy -match 'probe_success')
+# ---- Reviewed baseline promotion and anti-weakening guard (hermetic: temp dirs only) ----
+Write-Host '== baseline promotion =='
+$bpRoot = Join-Path ([IO.Path]::GetTempPath()) "bp-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Force $bpRoot | Out-Null
+try {
+    $bpPolicy = Join-Path $bpRoot 'policy.json'
+    '{"version":1,"permittedApprovers":["alice"],"auditLog":"audit.jsonl","protectedPaths":["policy.json","audit.jsonl"],"baselinePaths":["baselines/*.json"],"mandatoryChecks":["tests"],"thresholdFloors":{"coverage":70}}' | Set-Content $bpPolicy
+    $bpCand = Join-Path $bpRoot 'cand.json'
+    '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}}}' | Set-Content $bpCand
+    $bpBase = Join-Path $bpRoot 'baseline.json'; '{"thresholds":{"coverage":80}}' | Set-Content $bpBase
+    $bpAudit = Join-Path $bpRoot 'audit.jsonl'
+    $baseDigest = (Get-FileHash $bpBase -Algorithm SHA256).Hash
+    function New-Review([string]$Name, $Data) { $p = Join-Path $bpRoot $Name; if ($null -ne $Data) { $Data | ConvertTo-Json | Set-Content $p }; $p }
+    function Promote($Rev) { Run 'promote-baseline.ps1' @{ Candidate = $bpCand; Baseline = $bpBase; Review = $Rev; Policy = $bpPolicy; AuditLog = $bpAudit } }
+    $good = @{ approver = 'alice'; changeAuthor = 'agent'; reviewRef = 'pr#1-review'; sourceRun = 'run-1' }
+    $rUnrev = Promote (Join-Path $bpRoot 'missing-review.json')
+    $rSelf = Promote (New-Review 'self.json' @{ approver = 'alice'; changeAuthor = 'Alice'; reviewRef = 'x'; sourceRun = 'r' })
+    $rUnperm = Promote (New-Review 'unperm.json' @{ approver = 'mallory'; changeAuthor = 'agent'; reviewRef = 'x'; sourceRun = 'r' })
+    $rNoRef = Promote (New-Review 'noref.json' @{ approver = 'alice'; changeAuthor = 'agent'; sourceRun = 'r' })
+    Assert 'unreviewed, self-approved, unpermitted and ref-less promotions are rejected' ($rUnrev.Code -eq 1 -and $rSelf.Code -eq 1 -and $rUnperm.Code -eq 1 -and $rNoRef.Code -eq 1)
+    Assert 'rejected promotions change neither baseline nor audit log' ((Get-FileHash $bpBase -Algorithm SHA256).Hash -eq $baseDigest -and -not (Test-Path $bpAudit))
+    $rOk = Promote (New-Review 'good.json' $good)
+    $auditLines = @(Get-Content $bpAudit)
+    $auditEntry = if ($auditLines.Count) { $auditLines[0] | ConvertFrom-Json } else { $null }
+    Assert 'reviewed promotion updates the baseline and writes exactly one audit entry' ($rOk.Code -eq 0 -and $auditLines.Count -eq 1 -and (Get-Content -Raw $bpBase) -eq (Get-Content -Raw $bpCand) -and $auditEntry.approver -eq 'alice' -and $auditEntry.reviewRef -eq 'pr#1-review' -and $auditEntry.sourceRun -eq 'run-1' -and $auditEntry.baselineBeforeDigest -eq $baseDigest.ToLower() -and $auditEntry.baselineAfterDigest -eq (Get-FileHash $bpCand -Algorithm SHA256).Hash.ToLower() -and $auditEntry.timestamp)
+
+    # Weakening guard over base/head directories.
+    function New-Tree([string]$Name) {
+        $d = Join-Path $bpRoot $Name; New-Item -ItemType Directory -Force (Join-Path $d 'baselines') | Out-Null
+        Copy-Item $bpPolicy (Join-Path $d 'policy.json'); '' | Set-Content (Join-Path $d 'audit.jsonl') -NoNewline
+        '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":[]}' | Set-Content (Join-Path $d 'rules.json')
+        '{"thresholds":{"coverage":80}}' | Set-Content (Join-Path $d 'baselines/main.json')
+        $d
+    }
+    function Guard($Head) { Run 'check-weakening.ps1' @{ BaseDir = $bpGuardBase; HeadDir = $Head; Policy = 'policy.json' } }
+    $bpGuardBase = New-Tree 'base'
+    $h0 = New-Tree 'h-same'; $g0 = Guard $h0
+    Assert 'guard passes an unchanged tree' ($g0.Code -eq 0)
+    $h1 = New-Tree 'h-lower'; '{"thresholds":{"coverage":50},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":[]}' | Set-Content (Join-Path $h1 'rules.json'); $g1 = Guard $h1
+    Assert 'guard fails a lowered threshold and names it' ($g1.Code -eq 1 -and $g1.Out -match 'rules\.json/thresholds/coverage: threshold lowered from 80 to 50')
+    $h2 = New-Tree 'h-rmcheck'; '{"thresholds":{"coverage":80},"checks":{},"suppressions":[]}' | Set-Content (Join-Path $h2 'rules.json'); $g2 = Guard $h2
+    Assert 'guard fails removal of a mandatory check' ($g2.Code -eq 1 -and $g2.Out -match 'tests: mandatory check removed')
+    $h2b = New-Tree 'h-downgrade'; '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"warn"}},"suppressions":[]}' | Set-Content (Join-Path $h2b 'rules.json'); $g2b = Guard $h2b
+    Assert 'guard fails a downgraded check level' ($g2b.Code -eq 1 -and $g2b.Out -match "downgraded from 'error' to 'warn'")
+    $h3 = New-Tree 'h-suppress'; '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":["tests/flaky"]}' | Set-Content (Join-Path $h3 'rules.json'); $g3 = Guard $h3
+    Assert 'guard fails an added suppression' ($g3.Code -eq 1 -and $g3.Out -match 'suppression added')
+    $h4 = New-Tree 'h-policy'; '{"version":1,"permittedApprovers":["agent"],"auditLog":"audit.jsonl","protectedPaths":[],"baselinePaths":[]}' | Set-Content (Join-Path $h4 'policy.json'); $g4 = Guard $h4
+    Assert 'guard fails an edit to a protected path (the policy itself)' ($g4.Code -eq 1 -and $g4.Out -match 'policy\.json: protected path edited')
+    $h5 = New-Tree 'h-baseline'; '{"thresholds":{"coverage":10}}' | Set-Content (Join-Path $h5 'baselines/main.json'); $g5 = Guard $h5
+    Assert 'guard fails a baseline edit without an authorized promotion' ($g5.Code -eq 1 -and $g5.Out -match 'baseline edited without an authorized promotion')
+    $h6 = New-Tree 'h-corrupt'; '{not json' | Set-Content (Join-Path $h6 'rules.json'); $g6 = Guard $h6
+    Assert 'guard fails closed on an unparseable changed file' ($g6.Code -eq 2)
+
+    # Authorized promotion: baseline plus matching audit entry (produced by the real promote script).
+    $h7 = New-Tree 'h-promoted'
+    $null = Run 'promote-baseline.ps1' @{ Candidate = $bpCand; Baseline = (Join-Path $h7 'baselines/main.json'); Review = (Join-Path $bpRoot 'good.json'); Policy = $bpPolicy; AuditLog = (Join-Path $h7 'audit.jsonl') }
+    $g7 = Guard $h7
+    Assert 'guard accepts a reviewed promotion (baseline change plus matching audit entry)' ($g7.Code -eq 0)
+    $h8 = New-Tree 'h-audit-rewrite'; Copy-Item (Join-Path $h7 'audit.jsonl') (Join-Path $h8 'audit.jsonl'); Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h8 'baselines/main.json')
+    $bpGuardBase = $h7
+    $h9 = New-Tree 'h-audit-tamper'; Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h9 'baselines/main.json')
+    ((Get-Content -Raw (Join-Path $h7 'audit.jsonl')) -replace 'alice', 'agent') | Set-Content (Join-Path $h9 'audit.jsonl') -NoNewline
+    $g9 = Guard $h9
+    Assert 'guard fails a rewritten audit entry' ($g9.Code -eq 1 -and $g9.Out -match 'removed or rewritten')
+    $h10 = New-Tree 'h-audit-empty'; Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h10 'baselines/main.json')
+    $g10 = Guard $h10
+    Assert 'guard fails removal of all audit entries' ($g10.Code -eq 1 -and $g10.Out -match 'removed or rewritten')
+}
+finally { Remove-Item -LiteralPath $bpRoot -Recurse -Force -ErrorAction SilentlyContinue }
+$implementText = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
+Assert 'implement workflow runs the weakening guard from a command step after its changes' ($implementText -match 'id: weakening-guard' -and $implementText -match 'check-weakening\.ps1' -and $implementText.IndexOf('id: weakening-guard') -gt $implementText.IndexOf('id: implement'))
+Assert 'baseline promotion assets exist' (@(@('policies/baseline-promotion.json', 'schemas/baseline-promotion.schema.json', 'schemas/promotion-audit-entry.schema.json', 'scripts/promote-baseline.ps1', 'scripts/check-weakening.ps1', 'docs/baseline-promotion.md') | Where-Object { -not (Test-Path (Join-Path $factory $_)) }).Count -eq 0)
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

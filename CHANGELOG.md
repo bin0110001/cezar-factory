@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.66] - 2026-11-07
+
+- Add reviewed baseline promotion (`scripts/promote-baseline.ps1`: permitted, non-author approver required,
+  atomic baseline update, one hash-chained audit entry) and an anti-weakening guard
+  (`scripts/check-weakening.ps1`, wired into the implement workflow) that rejects lowered thresholds,
+  removed or downgraded mandatory checks, added suppressions, audit rewrites and protected-path edits.
+  See `docs/baseline-promotion.md`.
+
 ## [0.3.65] - 2026-11-05
 
 - Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each
