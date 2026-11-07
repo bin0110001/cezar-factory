@@ -20,9 +20,8 @@ import { openCommandPalette } from '@/components/command-palette'
 import { GithubIcon } from '@/components/icons'
 import { commandShortcutHint } from '@/lib/use-command-shortcut'
 import { Link, stripProjectPrefix } from '@/lib/project-router'
-import { CEZAR_REPO_URL, formatStarCount } from '@/lib/star-promo'
+import { CEZAR_REPO_URL, CEZARIUM_BUILDS_URL, formatStarCount } from '@/lib/star-promo'
 import { BrandLockup } from '@/components/brand-mark'
-import { SelfUpdateDialog } from '@/components/self-update-dialog'
 import { StatusDot } from '@/components/status-dot'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -71,9 +70,6 @@ export type AppShellProps = {
   skillsUpdateAvailable?: boolean
   /** cezar version for the footer chip. Null until Step 3.1 reads it from `/api/health`. */
   version?: string | null
-  /** The npm registry's newer version, when the server's update check found one (#368). The
-   *  chip grows a pulsing pending dot + tooltip; absent or equal to `version`, it stays plain. */
-  latestVersion?: string | null
   /** cezar's own GitHub star count for the footer's ⭐ ask. `null` — offline, rate-limited, or
    *  promos silenced with `CEZ_NO_BANNER=1` — renders NO chip at all rather than an empty one:
    *  a button asking to be clicked while admitting it cannot count is worse than no button. */
@@ -178,7 +174,6 @@ export const AppShell = React.memo(function AppShell({
   unreadCount = null,
   skillsUpdateAvailable = false,
   version = null,
-  latestVersion = null,
   starCount = null,
   taskQuickList,
   hostWidget,
@@ -262,7 +257,6 @@ export const AppShell = React.memo(function AppShell({
     unreadCount,
     skillsUpdateAvailable,
     version,
-    latestVersion,
     starCount,
     taskQuickList,
     hostWidget,
@@ -292,9 +286,7 @@ export const AppShell = React.memo(function AppShell({
           data-tauri-drag-region=""
           className="fixed inset-x-0 top-0 z-[60] flex h-[28px] select-none items-center pl-[80px]"
         >
-          {version && latestVersion && latestVersion !== version ? (
-            <TitlebarUpdateButton latestVersion={latestVersion} />
-          ) : null}
+          {version ? <TitlebarBuildsLink /> : null}
         </div>
       ) : null}
       <Sidebar {...nav} width={sidebarWidth} onWidthChange={changeSidebarWidth} desktop={desktop} />
@@ -333,29 +325,20 @@ export const AppShell = React.memo(function AppShell({
 })
 
 /**
- * The title strip's "Update cezar" button (desktop shell only): shown whenever the channel the
- * cockpit follows has something newer than what is running, sitting right after the traffic
- * lights where the native title would be. With nothing running, one click starts the update and
- * the dialog shows the install log and the restart. With tasks in flight the dialog opens to its
- * warning instead and waits for "Update & restart": a restart interrupts them.
+ * The desktop title strip links to this fork's Cezarium build instructions.
  */
-function TitlebarUpdateButton({ latestVersion }: { latestVersion: string }) {
-  const [open, setOpen] = React.useState(false)
+function TitlebarBuildsLink() {
   return (
-    <>
-      <button
-        type="button"
-        data-slot="titlebar-update"
-        onClick={() => setOpen(true)}
-        title={`Update Cezarium to v${latestVersion} and restart`}
-        className="inline-flex h-[18px] items-center gap-1 rounded-full border border-primary/40 bg-primary/15 px-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-primary/30"
-      >
-        <StatusDot tone="pending" pulse className="size-[5px] shrink-0" />
-        Update Cezarium
-        <span className="font-mono font-medium text-muted-foreground">v{latestVersion}</span>
-      </button>
-      {open ? <SelfUpdateDialog open={open} onOpenChange={setOpen} autoApply={latestVersion} /> : null}
-    </>
+    <a
+      data-slot="titlebar-builds"
+      href={CEZARIUM_BUILDS_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="View Cezarium build instructions in our repository"
+      className="inline-flex h-[18px] items-center rounded-full border border-border bg-card/80 px-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+    >
+      Build Cezarium
+    </a>
   )
 }
 
@@ -378,7 +361,6 @@ type NavProps = {
   unreadCount: number | null
   skillsUpdateAvailable: boolean
   version: string | null
-  latestVersion: string | null
   starCount: number | null
   taskQuickList?: ReactNode
   hostWidget?: ReactNode
@@ -571,7 +553,6 @@ function SidebarContent({
   unreadCount,
   skillsUpdateAvailable,
   version,
-  latestVersion,
   starCount,
   taskQuickList,
   hostWidget,
@@ -754,7 +735,7 @@ function SidebarContent({
           <div data-slot="tools-menu" className="shrink-0">
             {toolsMenu}
           </div>
-          {version ? <VersionChip version={version} latestVersion={latestVersion} /> : null}
+          {version ? <VersionChip version={version} /> : null}
           {starCount === null ? null : <StarChip count={starCount} />}
           <GlobalSettingsLink onNavigate={onNavigate} className="ml-auto" />
           <ThemeToggle />
@@ -962,39 +943,21 @@ function CommandPaletteHint() {
 }
 
 /**
- * The footer's `v{version}` chip. When the server's npm-registry check found something newer
- * (`latestVersion`, #368), the chip grows a pulsing pending-tone dot and names the version in
- * its tooltip — an affordance, not an alert: updating is optional, so the chrome stays quiet.
- *
- * The chip is the controls row's ONE elastic item, and that is load-bearing. Every other control
- * there is `shrink-0` (the icon buttons inherit it from the button base class), so whatever a
- * version string costs beyond the column's width has to come out of somewhere — and while this
- * chip was `shrink-0` too, there was nowhere for it to come from: a nightly version (#876's
- * dist-tag, some 173px of it) shoved the gear and the theme toggle clean outside the sidebar
- * rather than clipping anything. Truncating from the tail keeps the half that carries meaning,
- * the semver, and the `title` keeps the whole string — which is why the tooltip is now there
- * even with no update to announce.
+ * The footer's version chip links to this fork's Cezarium build instructions.
  */
-function VersionChip({ version, latestVersion }: { version: string; latestVersion: string | null }) {
-  const updateAvailable = Boolean(latestVersion && latestVersion !== version)
-  // The chip opens the self-update dialog (PoC): channel, latest, and a version picker.
-  const [open, setOpen] = React.useState(false)
+function VersionChip({ version }: { version: string }) {
   return (
-    <>
-      <button
-        type="button"
-        data-slot="version-chip"
-        data-update-available={updateAvailable ? 'true' : undefined}
-        title={updateAvailable ? `v${version} — update available: v${latestVersion}` : `v${version}`}
-        aria-label={updateAvailable ? `Cezarium v${version}, update to v${latestVersion} available — open updater` : `Cezarium v${version} — open updater`}
-        onClick={() => setOpen(true)}
-        className="flex min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border px-1.5 py-px font-mono text-[10px] font-medium text-soft-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        {updateAvailable ? <StatusDot tone="pending" pulse className="size-[5px] shrink-0" /> : null}
-        <span className="truncate">v{version}</span>
-      </button>
-      {open ? <SelfUpdateDialog open={open} onOpenChange={setOpen} /> : null}
-    </>
+    <a
+      data-slot="version-chip"
+      href={CEZARIUM_BUILDS_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Cezarium v${version} — view our repository build instructions`}
+      aria-label={`Cezarium v${version} — view our repository builds`}
+      className="flex min-w-0 items-center gap-1 rounded-full border border-border px-1.5 py-px font-mono text-[10px] font-medium text-soft-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span className="truncate">v{version}</span>
+    </a>
   )
 }
 
