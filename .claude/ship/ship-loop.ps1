@@ -105,7 +105,15 @@ switch ($Action) {
         & git -C $root fetch origin dev --quiet
         $head = (& git -C $root rev-parse origin/dev).Trim()
         & git -C $root merge-base --is-ancestor HEAD $head
-        if ($LASTEXITCODE -ne 0) { Fail 2 "local HEAD is not on origin/dev ($($head.Substring(0, 9))); merge the fix to dev first, the promoter only promotes merged work" }
+        if ($LASTEXITCODE -ne 0) {
+            # A squash merge never makes the local commit an ancestor: accept it when every file the local work
+            # changed (relative to origin/dev's merge base) is byte-identical on origin/dev.
+            $base = (& git -C $root merge-base HEAD $head).Trim()
+            $files = @(& git -C $root diff --name-only $base HEAD)
+            $differs = if ($files.Count -gt 0) { & git -C $root diff --name-only HEAD $head -- @files } else { @() }
+            if ($files.Count -eq 0 -or @($differs).Count -gt 0) { Fail 2 "local HEAD is not on origin/dev ($($head.Substring(0, 9))); merge the fix to dev first, the promoter only promotes merged work" }
+            Write-Host "SHIP_PROGRESS local work is on origin/dev via a squash merge ($($head.Substring(0, 9)))"
+        }
         if ($DryRun) { Write-Host "DRYRUN would nudge the promoter on ${target} and wait for $($head.Substring(0, 9)) to reach stage stable-deployed"; break }
         & ssh -o BatchMode=yes -o ConnectTimeout=10 $target 'systemctl --user start --no-block factory-local-promotion.service'
         $deadline = [DateTime]::UtcNow.AddMinutes([int]$cfg.deploy.timeoutMinutes)
@@ -189,7 +197,6 @@ switch ($Action) {
         if (-not $hit) { Fail 2 "workflow '$Workflow' not found; available: $(($known | ForEach-Object { $_.name }) -join ', ')" }
         $Workflow = $hit.name
         $cli = Join-Path $root 'cezar/packages/cezar/dist/index.js'
-        if (-not (Test-Path $cli)) { Fail 4 'cezar is not built: run `npm run build` in cezar/packages/cezar first' }
         $targetDir = if ($Target) { (Resolve-Path $Target).Path } else { $root }
         $max = [int]$cfg.maxRunAttempts; if ($max -le 0) { $max = 10 }
         $key = "run-$($Workflow -replace '[^A-Za-z0-9._-]', '_')"
@@ -200,6 +207,7 @@ switch ($Action) {
         $cliArgs = @($cli, 'run', $Task, '--workflow', $Workflow)
         if ($Model) { $cliArgs += @('--model', $Model) }
         if ($DryRun) { Write-Host "DRYRUN would run: node $($cliArgs -join ' ') in $targetDir (attempt $($used + 1) of $max)"; break }
+        if (-not (Test-Path $cli)) { Fail 4 'cezar is not built: run `npm run build` in cezar/packages/cezar first' }
         $env:FACTORY_RUNTIME_ROOT = $root
         $env:CEZ_SHARED_WORKFLOWS_DIRS = Join-Path $root 'workflows'
         $env:CEZ_SHARED_SKILL_DIRS = Join-Path $root 'skills'
