@@ -100,7 +100,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
-'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
+'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
 'schemas/routing-event.schema.json', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md'
@@ -1050,11 +1050,12 @@ try {
     Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = '' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
     Assert 'route: approval without eligibility receipt cannot merge or mark done' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and -not (Get-Gh).prMerged)
+    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
+    Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue # hermetic: an ambient managed-run token defers factory:done
     $gatePath = Join-Path $tmp 'merge-eligibility.json'
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
-    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
     try {
         $env:FACTORY_FENCING_TOKEN = '12'
         Set-Gh @('factory:review', 'risk:low'); $managedState = Get-Gh; $managedState | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $managedState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
@@ -1490,6 +1491,10 @@ Assert 'health report summarizes artifacts and tolerates missing inputs' ($LASTE
 $healthWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 Assert 'health workflow runs no agent and its startup preflights every script it runs' ($healthWorkflow -notmatch '(?m)^\s+(skill|prompt):' -and @('audit-factory-failures','publish-failure-audit','collect-backlog-snapshot','reconcile-backlog','write-health-report' | Where-Object { $healthWorkflow -notmatch "-RequiredScripts [^\r\n]*$_\.ps1" }).Count -eq 0)
 Assert 'retired failure-audit, backlog-reconciliation, and dead skills are gone' (-not (Test-Path (Join-Path $factory 'workflows/failure-audit.yaml')) -and -not (Test-Path (Join-Path $factory 'workflows/backlog-reconciliation.yaml')) -and -not (Test-Path (Join-Path $factory 'skills/factory-failure-audit')) -and -not (Test-Path (Join-Path $factory 'skills/factory-intake')) -and -not (Test-Path (Join-Path $factory 'skills/factory-implement-prepare')))
+Write-Host '== verification query layer =='
+$vqOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-query.ps1') 2>&1 | Out-String
+Write-Host $vqOutput
+Assert 'verification query layer: pagination, redaction, ordering, oversized artifacts, byte-identical output and schema validation' ($LASTEXITCODE -eq 0)
 Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
