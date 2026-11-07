@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Add the routing event contract (#314, part of #94): `schemas/routing-event.schema.json`, an append-only JSONL
+  event store with strictly monotonic sequence, a pluggable emit function and an allow-list redaction layer
+  (`docs/routing-events.md`).
+
 ## [0.3.66] - 2026-11-07
 
 - Add reviewed baseline promotion (`scripts/promote-baseline.ps1`: permitted, non-author approver required,
@@ -7,6 +13,7 @@
   (`scripts/check-weakening.ps1`, wired into the implement workflow) that rejects lowered thresholds,
   removed or downgraded mandatory checks, added suppressions, audit rewrites and protected-path edits.
   See `docs/baseline-promotion.md`.
+
 
 ## [0.3.65] - 2026-11-05
 
