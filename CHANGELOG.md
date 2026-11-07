@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Add the routing event contract (#314, part of #94): `schemas/routing-event.schema.json`, an append-only JSONL
+  event store with strictly monotonic sequence, a pluggable emit function and an allow-list redaction layer
+  (`docs/routing-events.md`).
+
 ## [0.3.65] - 2026-11-05
 
 - Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each
