@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,15 @@ import { materializeRuntimeScript, resolveFactoryRelease, resolvePinnedFactoryRe
 
 const sha256 = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 let temp = '';
-afterEach(async () => { if (temp) await rm(temp, { recursive: true, force: true }); temp = ''; });
+async function makeWritable(dir: string): Promise<void> {
+  await chmod(dir, 0o755).catch(() => {});
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) await makeWritable(path);
+    else await chmod(path, 0o644).catch(() => {});
+  }
+}
+afterEach(async () => { if (temp) { await makeWritable(temp); await rm(temp, { recursive: true, force: true }); } temp = ''; });
 
 async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
   temp = await mkdtemp(join(tmpdir(), 'factory-release-resolver-'));
