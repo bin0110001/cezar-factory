@@ -328,7 +328,8 @@ function Invoke-FactoryValidation {
         # A project runner can modify tracked files or create untracked files
         # after the initial snapshot. Keep the receipt clean only if both the
         # pre-run and post-run worktree are clean.
-        $postRunStatus = @(& git -C $root status --porcelain 2>$null)
+        # `.factory/` is the workflow's own scratch and is excluded here exactly as in the pre-run snapshot above.
+        $postRunStatus = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
         $postRunStatusOk = ($LASTEXITCODE -eq 0)
         $postRunHead = @(& git -C $root rev-parse HEAD 2>$null)
         $headUnchanged = ($LASTEXITCODE -eq 0 -and $postRunHead.Count -gt 0 -and
