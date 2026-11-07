@@ -19,4 +19,32 @@ Check 'ties ordered by findingId' ($tie.entries[0].findingId -eq 'a')
 Check 'stable output' (($many | ForEach-Object { $_ } | ForEach-Object { $_ }) -and ((New-FailureSummary -Records $many | ConvertTo-Json -Depth 6) -eq (New-FailureSummary -Records $many | ConvertTo-Json -Depth 6)))
 $e = New-FailureSummary -Records @()
 Check 'empty input' ($e.entries.Count -eq 0 -and $e.totalOccurrences -eq 0 -and -not $e.truncated)
+# Runtime packaging: every script a runtime script dot-sources must itself be installed.
+. (Join-Path $PSScriptRoot '../scripts/lib.ps1')
+$missing = @()
+foreach ($rs in $script:RuntimeScripts) {
+    $f = Join-Path $PSScriptRoot "../scripts/$rs"
+    if (-not (Test-Path $f) -or $rs -notmatch '\.ps1$') { continue }
+    foreach ($m in [regex]::Matches((Get-Content -Raw $f), '(?m)^\s*\.\s+\(Join-Path \$PSScriptRoot \x27([^\x27]+\.ps1)\x27\)')) {
+        $dep = $m.Groups[1].Value
+        if ($dep -ne 'lib.ps1' -and $script:RuntimeScripts -notcontains $dep) { $missing += "$rs -> $dep" }
+    }
+}
+Check 'dot-sourced deps of runtime scripts are runtime scripts' ($missing.Count -eq 0)
+if ($missing) { Write-Host "    $($missing -join '; ')" }
+Check 'summarizer is a runtime script' ($script:RuntimeScripts -contains 'summarize-failures.ps1')
+# CLI wrapper: array, {records}, and single-object inputs.
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("fsum-" + [guid]::NewGuid().ToString('N')); New-Item -ItemType Directory $tmp | Out-Null
+$cli = Join-Path $PSScriptRoot '../scripts/summarize-failures.ps1'
+$rec = @{ findingId = 'F-x'; identifier = 'i'; message = 'm'; detailPath = 'p'; occurrence = 1 }
+$shapes = @{ array = @($rec, $rec) | ConvertTo-Json -AsArray; wrapped = @{ records = @($rec, $rec) } | ConvertTo-Json -Depth 4; single = $rec | ConvertTo-Json }
+$want = @{ array = 2; wrapped = 2; single = 1 }
+foreach ($k in $shapes.Keys) {
+    $in = Join-Path $tmp "$k.json"; $out = Join-Path $tmp "$k.out.json"
+    Set-Content $in $shapes[$k]
+    & pwsh -NoProfile -File $cli -InputPath $in -OutputPath $out | Out-Null
+    $r = Get-Content -Raw $out | ConvertFrom-Json
+    Check "cli $k input" ($LASTEXITCODE -eq 0 -and $r.totalOccurrences -eq $want[$k] -and @($r.entries).Count -eq 1)
+}
+Remove-Item -Recurse -Force $tmp
 if ($failures) { exit 1 }
