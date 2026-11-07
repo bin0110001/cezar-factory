@@ -65,14 +65,9 @@ function Bounded-Text([string]$path, [bool]$tail) {
         return @{ text = $value; truncated = $truncated; missing = $false }
     } finally { $stream.Dispose() }
 }
-function Redact([string]$value) {
-    $clean = $value -replace '(?i)\b(?:gh[psu]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b', '[REDACTED]'
-    $clean = $clean -replace '(?i)(Bearer\s+)\S+', '$1[REDACTED]'
-    $clean = $clean -replace '(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,]+', '$1=[REDACTED]'
-    $clean = ($clean -replace '\s+', ' ').Trim()
-    if ($clean.Length -gt 400) { return $clean.Substring(0, 400) + '…' }
-    return $clean
-}
+# Redaction is shared with scripts/failure-summary-lib.ps1 so the rules cannot drift.
+. (Join-Path $PSScriptRoot 'failure-summary-lib.ps1')
+function Redact([string]$value) { return Protect-FailureText $value 400 }
 function Fingerprint([string[]]$lines) {
     $normalized = ((@($lines) -join '|').ToLowerInvariant() -replace '\b[0-9a-f]{8}-[0-9a-f-]{27,}\b', '<id>' -replace '\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}[^\s|]*', '<time>' -replace '\b(run(?:id)?\s*[:=]\s*)[a-z0-9_-]+\b', '$1<run>')
     $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
