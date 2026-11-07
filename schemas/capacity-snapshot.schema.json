@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Capacity snapshot",
+  "description": "Minimal local schema; align with the subscription profile schema (#89) when it lands.",
+  "type": "object",
+  "required": ["provider", "window", "source", "confidence", "freshness", "timestamp", "resetAt", "error"],
+  "properties": {
+    "provider": {"type": "string"},
+    "window": {"enum": ["5h", "weekly"]},
+    "source": {"enum": ["native", "manual", "observed", "unsupported"]},
+    "confidence": {"enum": ["exact", "estimated", "unknown"]},
+    "freshness": {"enum": ["fresh", "stale", "expired", "unknown"]},
+    "timestamp": {"type": ["string", "null"]},
+    "remaining": {"type": ["number", "null"]},
+    "limit": {"type": ["number", "null"]},
+    "unit": {"type": ["string", "null"]},
+    "percentRemaining": {"type": ["number", "null"]},
+    "reserve": {"type": "number"},
+    "effectiveRemaining": {"type": ["number", "null"]},
+    "resetAt": {"type": ["string", "null"]},
+    "ttlSeconds": {"type": "integer"},
+    "retryAfterSeconds": {"type": ["number", "null"]},
+    "error": {"type": ["string", "null"]}
+  }
+}
