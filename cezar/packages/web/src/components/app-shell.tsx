@@ -307,7 +307,7 @@ export const AppShell = React.memo(function AppShell({
         {/* The Sheet root renders no DOM of its own. Keep only the mobile controls inside its
             context so a sidebar update cannot propagate through the routed view. */}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-          <MobileTopBar title={current?.label ?? 'cezar'} />
+          <MobileTopBar title={current?.label ?? 'Cezarium'} />
           {/* The drawer keeps its fixed 264px: it is a full-height overlay on a phone, where
               there is no second column to trade width with and no pointer to drag a border. */}
           <MobileNavDrawer {...nav} onNavigate={closeMenu} />
@@ -347,11 +347,11 @@ function TitlebarUpdateButton({ latestVersion }: { latestVersion: string }) {
         type="button"
         data-slot="titlebar-update"
         onClick={() => setOpen(true)}
-        title={`Update cezar to v${latestVersion} and restart`}
+        title={`Update Cezarium to v${latestVersion} and restart`}
         className="inline-flex h-[18px] items-center gap-1 rounded-full border border-primary/40 bg-primary/15 px-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-primary/30"
       >
         <StatusDot tone="pending" pulse className="size-[5px] shrink-0" />
-        Update cezar
+        Update Cezarium
         <span className="font-mono font-medium text-muted-foreground">v{latestVersion}</span>
       </button>
       {open ? <SelfUpdateDialog open={open} onOpenChange={setOpen} autoApply={latestVersion} /> : null}
@@ -986,7 +986,7 @@ function VersionChip({ version, latestVersion }: { version: string; latestVersio
         data-slot="version-chip"
         data-update-available={updateAvailable ? 'true' : undefined}
         title={updateAvailable ? `v${version} — update available: v${latestVersion}` : `v${version}`}
-        aria-label={updateAvailable ? `cezar v${version}, update to v${latestVersion} available — open updater` : `cezar v${version} — open updater`}
+        aria-label={updateAvailable ? `Cezarium v${version}, update to v${latestVersion} available — open updater` : `Cezarium v${version} — open updater`}
         onClick={() => setOpen(true)}
         className="flex min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border px-1.5 py-px font-mono text-[10px] font-medium text-soft-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
@@ -1022,8 +1022,8 @@ function StarChip({ count }: { count: number }) {
       href={CEZAR_REPO_URL}
       target="_blank"
       rel="noopener noreferrer"
-      title={`Star cezar on GitHub — ${count.toLocaleString()} stars`}
-      aria-label={`Star cezar on GitHub — ${count.toLocaleString()} stars`}
+      title={`Star Cezarium on GitHub — ${count.toLocaleString()} stars`}
+      aria-label={`Star Cezarium on GitHub — ${count.toLocaleString()} stars`}
       className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-px font-mono text-[10px] font-medium text-soft-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       <span aria-hidden="true">⭐</span>

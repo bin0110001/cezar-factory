@@ -229,7 +229,7 @@ describe('the General page', () => {
     const remove = await screen.findByRole('button', { name: /^Remove cezar from the workspace/ })
     expect(remove.hasAttribute('disabled')).toBe(true)
     expect(document.querySelector('[data-slot="project-general-remove-boot"]')?.textContent).toContain(
-      'cezar is serving this project',
+      'Cezarium is serving this project',
     )
   })
 
@@ -251,7 +251,7 @@ describe('the General page', () => {
 
     await waitFor(() => expect(general()).not.toBeNull())
     expect(document.querySelector('[data-slot="project-general-unregistered"]')?.textContent).toContain(
-      'served because cezar was started here',
+      'served because Cezarium was started here',
     )
     expect(document.querySelector('[data-action="project-general-remove"]')).toBeNull()
     expect(document.querySelector('[data-slot="project-max-parallel"]')).toBeNull()

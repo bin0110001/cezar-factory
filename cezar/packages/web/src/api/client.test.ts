@@ -660,7 +660,7 @@ describe('history responses are validated at the boundary (#827)', () => {
     const error = (await getRunHistory('run-1').catch((e: unknown) => e)) as ApiError
     expect(error).toBeInstanceOf(ApiError)
     expect(error.status).toBe(200)
-    expect(error.message).toBe('the cezar server answered /runs/run-1/history with an unexpected body')
+    expect(error.message).toBe('the Cezarium server answered /runs/run-1/history with an unexpected body')
   })
 
   it('rejects a 200 whose page carries a non-array `events`', async () => {
@@ -676,7 +676,7 @@ describe('history responses are validated at the boundary (#827)', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error.status).toBe(200)
     expect(error.message).toBe(
-      'the cezar server answered /runs/run-1/history-context with an unexpected body',
+      'the Cezarium server answered /runs/run-1/history-context with an unexpected body',
     )
   })
 

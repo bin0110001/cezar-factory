@@ -75,7 +75,7 @@ describe('AppShell', () => {
     expect(sidebar().querySelector('img[src="/icon.svg"]')).toBeNull()
 
     const name = lockup!.querySelector('[data-slot="brand-name"]') as HTMLElement | null
-    expect(name?.textContent).toBe('cezar')
+    expect(name?.textContent).toBe('Cezarium')
     expect(name!.style.fontSize).toBe('19px')
     expect(name!.style.fontFamily).toBe('var(--brand)')
     expect(name!.className).toContain('font-semibold')
@@ -376,7 +376,7 @@ describe('AppShell', () => {
 
       it('links to cezar, in a new tab, leaking neither opener nor referrer', () => {
         renderShell('/', { starCount: 42 })
-        expect(chip()?.getAttribute('href')).toBe('https://github.com/open-mercato/cezar')
+        expect(chip()?.getAttribute('href')).toBe('https://github.com/bin0110001/cezar-factory')
         expect(chip()?.getAttribute('target')).toBe('_blank')
         expect(chip()?.getAttribute('rel')).toContain('noopener')
         expect(chip()?.getAttribute('rel')).toContain('noreferrer')
@@ -387,7 +387,7 @@ describe('AppShell', () => {
         // The visible chip abbreviates for the 264px column; the accessible name must not —
         // "12.3k stars" is a worse answer to "how many" than the number itself.
         const label = chip()?.getAttribute('aria-label') ?? ''
-        expect(label).toMatch(/star cezar on github/i)
+        expect(label).toMatch(/star cezarium on github/i)
         // Formatted for the reader's own locale, so assert it the same way rather than pinning
         // `12,345` — that spelling is a property of the test machine, not of this component.
         expect(label).toContain(new Intl.NumberFormat().format(12_345))
