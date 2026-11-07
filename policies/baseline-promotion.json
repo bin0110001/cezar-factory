@@ -11,6 +11,7 @@
     "scripts/promote-baseline.ps1",
     "scripts/check-weakening.ps1",
     "schemas/baseline-promotion.schema.json",
-    "schemas/promotion-audit-entry.schema.json"
+    "schemas/promotion-audit-entry.schema.json",
+    "workflows/implement.yaml"
   ]
 }
