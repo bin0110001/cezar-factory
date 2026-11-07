@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.66] - 2026-11-07
+
+- Add optional Hindsight incident memory (`scripts/hindsight/incident.py`, `incident.ps1`): a bounded,
+  redacted, idempotent outbox for first-seen/resolved/reopened incident summaries and bank-scoped advisory
+  recall with provenance, confidence, verified/hypothesized and stale markers. Hindsight stays advisory and
+  never affects counts, status or gates; disabled/offline degrades to a warning.
+
 ## [0.3.65] - 2026-11-05
 
 - Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each
