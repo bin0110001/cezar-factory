@@ -1,0 +1,7 @@
+# Event retention policy
+#
+# event_retention_days: events whose timestamp is older than this many days are
+# removed by scripts/prune-events.ps1. Must be a positive integer; a missing,
+# zero, negative, or non-integer value is rejected and no events are touched.
+# Events with a missing or unparseable timestamp are always kept.
+event_retention_days: 30

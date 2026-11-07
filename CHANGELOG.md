@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Add an event retention policy (`policies/retention.yaml`, `event_retention_days`) and a prune step
+  (`scripts/prune-events.ps1`) that atomically removes JSONL events older than the window, keeps newer
+  and unparseable-timestamp events byte-for-byte, rejects invalid retention, and logs one JSON line.
+
 ## [0.3.65] - 2026-11-05
 
 - Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each

@@ -60,7 +60,7 @@ function Copy-Factory([string]$From, [string]$To) {
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
 $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
-'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
+'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
 'routing/default.yaml', 'integrations/deployment/README.md', 'integrations/bazzite/compose.yaml',
 'integrations/bazzite/vault-config/vault.hcl', 'docs/vault.md', 'scripts/deploy/deploy-vault-bazzite.sh', 'scripts/deploy/validate-vault-bazzite.sh',
@@ -1521,5 +1521,36 @@ $blackboxUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/stand
 Assert 'liveness probes check the response body, so the cockpit HTML-200 catch-all cannot read as healthy' ($blackboxCfg -match 'cezar_health' -and $blackboxCfg -match "fail_if_body_not_matches_regexp:\s+- '\^\\{`"version`":'" -and $blackboxCfg -match 'application/json' -and $blackboxCfg -match 'litellm_ready' -and $blackboxCfg -match 'readiness' -and $blackboxCfg -match 'db.*connected')
 Assert 'Prometheus probes Cezar and LiteLLM through the blackbox exporter and alerts on failure, slowness, and silence' ($standaloneProm -match 'job_name: liveness-cezar' -and $standaloneProm -match 'job_name: liveness-litellm' -and $standaloneProm -match '127\.0\.0\.1:9115' -and $standaloneProm -match 'api/v1/health' -and $standaloneProm -match 'health/readiness' -and @('FactoryEndpointDown', 'FactoryEndpointSlow', 'FactoryLivenessProbeMissing' | Where-Object { $promAlerts -notmatch "alert: $_" }).Count -eq 0)
 Assert 'the blackbox exporter is a boot-persistent loopback unit that Prometheus starts after, and the deploy validates it' ($blackboxUnit -match '(?m)^WantedBy=default\.target' -and $blackboxUnit -match '(?m)^Restart=always' -and $blackboxUnit -match 'web\.listen-address=127\.0\.0\.1:9115' -and $standaloneUnit -match 'After=[^\r\n]*factory-blackbox\.service' -and $standaloneDeploy -match 'config\.check' -and $standaloneDeploy -match 'probe_success')
+
+# ---- Event retention prune -------------------------------------------------
+Write-Host '== event retention =='
+$pruneDir = Join-Path ([IO.Path]::GetTempPath()) ("prune-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $pruneDir | Out-Null
+$pruneNow = '2026-06-30T00:00:00Z'
+$pruneOld = '{"id":1,"timestamp":"2026-01-01T00:00:00Z"}'
+$pruneNew = '{"id":2,"timestamp":"2026-06-29T00:00:00Z"}'
+$pruneBad = '{"id":3,"timestamp":"not-a-date"}'
+$pruneFile = Join-Path $pruneDir 'events.jsonl'
+[IO.File]::WriteAllText($pruneFile, "$pruneOld`n$pruneNew`n$pruneBad`n")
+$prunePolicy = Join-Path $pruneDir 'retention.yaml'
+[IO.File]::WriteAllText($prunePolicy, "event_retention_days: 30`n")
+$pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+$prLogs = @($pr.Out -split "`r?`n" | Where-Object { $_ -match '^\{.*\}$' })
+Assert 'prune removes only old events and keeps newer and unparseable ones byte-for-byte' ($pr.Code -eq 0 -and ([IO.File]::ReadAllText($pruneFile) -ceq "$pruneNew`n$pruneBad`n"))
+$prLog = if ($prLogs.Count -eq 1) { $prLogs[0] | ConvertFrom-Json } else { $null }
+Assert 'prune emits exactly one structured log line with retention, cutoff, removed, and kept' ($prLogs.Count -eq 1 -and $prLog.retention_days -eq 30 -and $prLog.removed -eq 1 -and $prLog.kept -eq 2 -and $prLog.cutoff)
+foreach ($badRetention in 'abc', '0', '-5', '1.5', '') {
+    [IO.File]::WriteAllText($prunePolicy, "event_retention_days: $badRetention`n")
+    [IO.File]::WriteAllText($pruneFile, "$pruneOld`n$pruneNew`n")
+    $pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+    Assert "invalid retention '$badRetention' is rejected without touching events" ($pr.Code -ne 0 -and $pr.Out -match 'event_retention_days' -and ([IO.File]::ReadAllText($pruneFile) -ceq "$pruneOld`n$pruneNew`n"))
+}
+[IO.File]::WriteAllText($prunePolicy, "# no setting`n")
+$pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+Assert 'missing retention is rejected' ($pr.Code -ne 0)
+$shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
+Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
+Remove-Item -Recurse -Force $pruneDir
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
