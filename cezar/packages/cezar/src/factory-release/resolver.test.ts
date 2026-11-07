@@ -10,7 +10,14 @@ import { materializeRuntimeScript, resolveFactoryRelease, resolvePinnedFactoryRe
 
 const sha256 = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 let temp = '';
-afterEach(async () => { if (temp) await rm(temp, { recursive: true, force: true }); temp = ''; });
+afterEach(async () => {
+  // The release controller makes release trees read-only; restore write access so cleanup can unlink them.
+  if (temp) {
+    spawnSync('chmod', ['-R', 'u+w', temp], { windowsHide: true });
+    await rm(temp, { recursive: true, force: true });
+  }
+  temp = '';
+});
 
 async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
   temp = await mkdtemp(join(tmpdir(), 'factory-release-resolver-'));
@@ -69,7 +76,7 @@ describe('pinned runtime materialization script', () => {
   it('is valid Python', () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; the materialization script cannot be checked').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = "", ...prefix] = python!;
     const result = spawnSync(command, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
@@ -87,7 +94,7 @@ describe('pinned runtime materialization script', () => {
   it('materializes a release built by the real controller', async () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; materialization cannot be exercised').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = "", ...prefix] = python!;
     const factoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
     temp = await mkdtemp(join(tmpdir(), 'factory-materialize-'));
     const repo = join(temp, 'repo');
