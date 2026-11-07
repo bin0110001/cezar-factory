@@ -69,7 +69,7 @@ describe('pinned runtime materialization script', () => {
   it('is valid Python', () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; the materialization script cannot be checked').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = '', ...prefix] = python!;
     const result = spawnSync(command, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
@@ -87,7 +87,7 @@ describe('pinned runtime materialization script', () => {
   it('materializes a release built by the real controller', async () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; materialization cannot be exercised').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = '', ...prefix] = python!;
     const factoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
     temp = await mkdtemp(join(tmpdir(), 'factory-materialize-'));
     const repo = join(temp, 'repo');

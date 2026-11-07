@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.66] - 2026-11-07
+
+- Add the performance-regression policy (`policies/performance.yaml`, schema, `docs/performance-regression.md`):
+  measured-completion spans, environment-fingerprinted baselines, median/p95/absolute budgets, and a
+  performance result recorded separately from the functional result (first slow attempt preserved).
+
 ## [0.3.65] - 2026-11-05
 
 - Add the self-driving promotion pipeline (`docs/promotion-pipeline.md`): one host promoter validates each

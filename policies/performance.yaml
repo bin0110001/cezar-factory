@@ -1,0 +1,18 @@
+# Performance-regression policy (issue #110). Validated by schemas/performance-policy.schema.json
+# and cezar/packages/cezar/src/verification/performance.ts. See docs/performance-regression.md.
+version: 1
+
+# A baseline is comparable only when ALL of these fingerprint fields match the current run.
+fingerprintFields:
+  - os
+  - arch
+  - cpuModel
+  - memoryClass
+  - runtime
+
+spans:
+  room-build:
+    absoluteMs: 10000
+    medianMs: 4000
+    p95Ms: 8000
+    minSamples: 5
