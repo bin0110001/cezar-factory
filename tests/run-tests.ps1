@@ -4,6 +4,10 @@ param([switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $scripts = Join-Path $factory 'scripts'
+# Hermetic: the review workflow runs this suite inside a Factory-managed run (validate-head), whose environment carries the
+# lifecycle identity. route-state then defers factory:done until workspace integration, which is correct in a managed run but
+# fails the unmanaged-route assertions. The managed behaviour is tested explicitly by setting the token itself.
+foreach ($identity in 'FACTORY_FENCING_TOKEN', 'FACTORY_MANAGED', 'FACTORY_OWNER_ID', 'FACTORY_RUN_ID', 'FACTORY_ISSUE', 'FACTORY_WORKSPACE') { Remove-Item "Env:$identity" -ErrorAction SilentlyContinue }
 . (Join-Path $scripts 'lib.ps1')
 
 $script:fail = 0
@@ -107,6 +111,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
 Assert 'review validates the reviewed PR head before the merge gate so receipts bind to it' ((Test-Path (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -and ((Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')) -match '(?s)id: validate-head.*validate-reviewed-head.ps1.*id: merge-eligibility'))
+Assert 'validate-reviewed-head labels the PR through the REST API, since gh pr edit fails on the Projects (classic) GraphQL error' ((Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -notmatch 'pr edit' -and (Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -like '*issues/$number/labels*')
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
@@ -677,6 +682,18 @@ try {
         $atCapOutput = Join-Path $tmp 'at-cap-backlog-snapshot.json'
         $atCapRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $atCapOutput }
         Assert 'backlog collector rejects potentially truncated GitHub snapshots' ($atCapRun.Code -ne 0 -and -not (Test-Path $atCapOutput))
+        # One or two truncated GitHub responses are retried; a persistent failure still fails the collector.
+        $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
+        $env:FAKE_BACKLOG_COUNTER = Join-Path $tmp 'backlog-gh-calls.txt'; Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
+        $env:FAKE_BACKLOG_FAIL_FIRST = '2'
+        $retryOutput = Join-Path $tmp 'retry-backlog-snapshot.json'
+        $retryRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $retryOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector retries a transient gh failure instead of failing the canary' ($retryRun.Code -eq 0 -and (Test-Path $retryOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue; $env:FAKE_BACKLOG_FAIL_FIRST = '9'
+        $stuckOutput = Join-Path $tmp 'stuck-backlog-snapshot.json'
+        $stuckRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $stuckOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector still fails after its bounded attempts' ($stuckRun.Code -ne 0 -and -not (Test-Path $stuckOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item Env:FAKE_BACKLOG_FAIL_FIRST, Env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
         $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
         $reconciled = Run 'reconcile-backlog.ps1' @{ InputPath = $backlogInput; OutputPath = $backlogOutput; BatchCap = 10; ProjectConcurrencyCap = 10; DryRun = $true }
         Assert 'backlog reconciler ignores released leases and excludes active leases' ($reconciled.Code -eq 0 -and (Test-Path $backlogOutput))
