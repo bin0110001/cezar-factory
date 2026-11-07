@@ -106,6 +106,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
+Assert 'review validates the reviewed PR head before the merge gate so receipts bind to it' ((Test-Path (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -and ((Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')) -match '(?s)id: validate-head.*validate-reviewed-head.ps1.*id: merge-eligibility'))
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
@@ -948,10 +949,10 @@ try {
         graphql = @{ data = @{ repository = @{ pullRequest = @{ reviewThreads = @{ nodes = @(@{ isResolved = $true }); pageInfo = @{ hasNextPage = $false } } } } } }
     }
     $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
-    function Test-Eligibility($Review, [string]$Name) {
+    function Test-Eligibility($Review, [string]$Name, [string]$Mode = 'approval') {
         $reviewFile = Join-Path $tmp "eligibility-$Name-review.json"; $outputFile = Join-Path $tmp "eligibility-$Name-output.json"
         $Review | ConvertTo-Json -Depth 5 | Set-Content $reviewFile
-        $null = & pwsh -NoProfile -File $eligibilityScript -ReviewPath $reviewFile -OutputPath $outputFile -GhCommand $gh -ReceiptRoot $eligibilityRoot 2>&1
+        $null = & pwsh -NoProfile -File $eligibilityScript -ReviewPath $reviewFile -OutputPath $outputFile -GhCommand $gh -ReceiptRoot $eligibilityRoot -ReviewMode $Mode 2>&1
         [pscustomobject]@{ Code = $LASTEXITCODE; Output = if (Test-Path $outputFile) { Get-Content -Raw $outputFile | ConvertFrom-Json } else { $null } }
     }
     $approvedReview = With $rev @{ approvalChangeRequestStatus = 'approval'; blockingFindings = '' }
@@ -979,6 +980,24 @@ try {
     $eligibilityState.prHeadSha = ('a' * 40); $eligibilityState.prDetails.headRefOid = ('a' * 40); $eligibilityState.rules = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
     $noRules = Test-Eligibility $approvedReview 'no-rules'
     Assert 'merge gate denies missing effective repository rules' ($noRules.Output.decision -ne 'allowed')
+    # Solo-maintainer posture (promotion review mode 'self-review'): no dev rules and no independent GitHub approval exist,
+    # so those two requirements give way to the exact-head review result and head-bound receipts, which stay mandatory.
+    $eligibilityState.prDetails.reviewDecision = ''; $eligibilityState.prDetails.reviews = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $soloStrict = Test-Eligibility $approvedReview 'solo-strict'
+    Assert 'merge gate stays strict by default: no rules and no independent approval deny' ($soloStrict.Output.decision -eq 'denied' -and $soloStrict.Output.reviewMode -eq 'approval')
+    $soloSelf = Test-Eligibility $approvedReview 'solo-self' 'self-review'
+    Assert 'self-review mode allows a solo repo with head-bound receipts but no dev rules or GitHub approval' ($soloSelf.Output.decision -eq 'allowed' -and $soloSelf.Output.reviewMode -eq 'self-review')
+    $soloWrongHead = Test-Eligibility (With $approvedReview @{ reviewedHeadSha = ('b' * 40) }) 'solo-wrong-head' 'self-review'
+    Assert 'self-review mode still denies a review bound to a stale head' ($soloWrongHead.Output.decision -eq 'denied' -and (@($soloWrongHead.Output.blockers) -match 'reviewed head'))
+    $eligibilityState.prDetails.labels = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $soloNoRisk = Test-Eligibility $approvedReview 'solo-no-risk' 'self-review'
+    Assert 'self-review mode still requires exactly one risk label' ($soloNoRisk.Output.decision -eq 'denied' -and (@($soloNoRisk.Output.blockers) -match 'risk label'))
+    $eligibilityState.prDetails.labels = @(@{ name = 'risk:medium' }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    Move-Item (Join-Path $eligibilityRoot 'verify/attempt/receipt.json') (Join-Path $eligibilityRoot 'verify/attempt/receipt.json.off')
+    $soloNoReceipt = Test-Eligibility $approvedReview 'solo-no-receipt' 'self-review'
+    Assert 'self-review mode still requires a head-bound verify receipt' ($soloNoReceipt.Output.decision -eq 'denied' -and (@($soloNoReceipt.Output.blockers) -match 'verify'))
+    Move-Item (Join-Path $eligibilityRoot 'verify/attempt/receipt.json.off') (Join-Path $eligibilityRoot 'verify/attempt/receipt.json')
+    $eligibilityState.prDetails.reviewDecision = 'APPROVED'; $eligibilityState.prDetails.reviews = @(@{ state = 'APPROVED'; commit = @{ oid = ('a' * 40) }; author = @{ login = 'independent-reviewer' } }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
     $eligibilityState.rules = @(
         @{ type = 'pull_request'; parameters = @{ required_approving_review_count = 1; dismiss_stale_reviews_on_push = $true; require_last_push_approval = $true } },
         @{ type = 'required_review_thread_resolution'; parameters = @{} },
@@ -1057,6 +1076,11 @@ try {
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
+    # Solo-maintainer posture: merge directly (dev has no rules, so --auto is rejected), pinned to the reviewed head.
+    $selfGate = Join-Path $tmp 'merge-eligibility-self.json'
+    @{ decision = 'allowed'; reviewMode = 'self-review'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $selfGate
+    Set-Gh @('factory:review', 'risk:low'); $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: self-review approval merges directly, pinned to the head, without --auto' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $selfGate) -eq 0 -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--squash') -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit') -and (@((Get-Gh).prMergeArgs) -notcontains '--auto'))
     $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
     try {
         $env:FACTORY_FENCING_TOKEN = '12'
