@@ -1052,7 +1052,10 @@ try {
     $gatePath = Join-Path $tmp 'merge-eligibility.json'
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $savedFence = $env:FACTORY_FENCING_TOKEN; Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue
+    try {
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
+    } finally { if ($null -ne $savedFence) { $env:FACTORY_FENCING_TOKEN = $savedFence } }
     $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
     try {
         $env:FACTORY_FENCING_TOKEN = '12'
