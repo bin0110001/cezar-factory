@@ -682,6 +682,18 @@ try {
         $atCapOutput = Join-Path $tmp 'at-cap-backlog-snapshot.json'
         $atCapRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $atCapOutput }
         Assert 'backlog collector rejects potentially truncated GitHub snapshots' ($atCapRun.Code -ne 0 -and -not (Test-Path $atCapOutput))
+        # One or two truncated GitHub responses are retried; a persistent failure still fails the collector.
+        $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
+        $env:FAKE_BACKLOG_COUNTER = Join-Path $tmp 'backlog-gh-calls.txt'; Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
+        $env:FAKE_BACKLOG_FAIL_FIRST = '2'
+        $retryOutput = Join-Path $tmp 'retry-backlog-snapshot.json'
+        $retryRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $retryOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector retries a transient gh failure instead of failing the canary' ($retryRun.Code -eq 0 -and (Test-Path $retryOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue; $env:FAKE_BACKLOG_FAIL_FIRST = '9'
+        $stuckOutput = Join-Path $tmp 'stuck-backlog-snapshot.json'
+        $stuckRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $stuckOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector still fails after its bounded attempts' ($stuckRun.Code -ne 0 -and -not (Test-Path $stuckOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item Env:FAKE_BACKLOG_FAIL_FIRST, Env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
         $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
         $reconciled = Run 'reconcile-backlog.ps1' @{ InputPath = $backlogInput; OutputPath = $backlogOutput; BatchCap = 10; ProjectConcurrencyCap = 10; DryRun = $true }
         Assert 'backlog reconciler ignores released leases and excludes active leases' ($reconciled.Code -eq 0 -and (Test-Path $backlogOutput))
