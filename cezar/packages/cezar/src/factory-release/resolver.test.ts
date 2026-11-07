@@ -70,7 +70,7 @@ describe('pinned runtime materialization script', () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; the materialization script cannot be checked').not.toBeNull();
     const [command, ...prefix] = python!;
-    const result = spawnSync(command, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
+    const result = spawnSync(command!, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
   });
@@ -105,7 +105,7 @@ describe('pinned runtime materialization script', () => {
     git('commit', '-q', '-m', 'release fixture');
     const sha = git('rev-parse', 'HEAD');
 
-    const build = spawnSync(command, [...prefix, '-c', [
+    const build = spawnSync(command!, [...prefix, '-c', [
       'import json, pathlib, sys',
       'sys.path.insert(0, sys.argv[1])',
       'from scripts.release.factory_release_controller import ReleaseController',
@@ -115,7 +115,7 @@ describe('pinned runtime materialization script', () => {
     expect(build.status, build.stderr).toBe(0);
     const { manifestDigest } = JSON.parse(build.stdout.trim().split('\n').pop()!) as { manifestDigest: string };
 
-    const run = spawnSync(command, [...prefix, '-c', materializeRuntimeScript(), factoryRoot, store, sha, manifestDigest, destination], { encoding: 'utf8', windowsHide: true });
+    const run = spawnSync(command!, [...prefix, '-c', materializeRuntimeScript(), factoryRoot, store, sha, manifestDigest, destination], { encoding: 'utf8', windowsHide: true });
     expect(run.stderr).toBe('');
     expect(run.status).toBe(0);
     expect(await readFile(join(destination, 'scripts', 'factory-startup.ps1'), 'utf8')).toBe('# startup');
