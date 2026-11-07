@@ -1481,6 +1481,11 @@ $failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-
 Write-Host $failureAuditOutput
 Assert 'failure collector obeys identity and read budgets' ($LASTEXITCODE -eq 0)
 
+Write-Host '== failure summary =='
+$failureSummaryOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-summary.ps1') 2>&1 | Out-String
+Write-Host $failureSummaryOutput
+Assert 'failure summary dedups, caps, redacts and orders deterministically' ($LASTEXITCODE -eq 0)
+
 Write-Host '== failure audit publication =='
 $publisherOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-publisher.ps1') 2>&1 | Out-String
 Write-Host $publisherOutput

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add concise deduplicated failure summaries for agents (#103): `scripts/summarize-failures.ps1` groups finding records by
+  finding ID with occurrence counts, identifiers and detail paths, redacts secrets and caps size with omitted counts.
 - Add the routing event contract (#314, part of #94): `schemas/routing-event.schema.json`, an append-only JSONL
   event store with strictly monotonic sequence, a pluggable emit function and an allow-list redaction layer
   (`docs/routing-events.md`).
