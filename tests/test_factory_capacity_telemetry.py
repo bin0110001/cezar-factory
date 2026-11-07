@@ -11,7 +11,7 @@ import sys
 sys.modules["capacity_telemetry"] = ct
 SPEC.loader.exec_module(ct)
 
-FIX = ROOT / "tests" / "fixtures" / "capacity"
+FIX = ROOT / "tests" / "capacity-fixtures"
 NOW = datetime(2026, 11, 7, 10, 30, tzinfo=timezone.utc)
 
 

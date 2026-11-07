@@ -10,7 +10,7 @@ schema to be aligned when it lands.
 | source | meaning | confidence |
 | --- | --- | --- |
 | `native` | provider-reported via a supported mechanism | `exact` only if the provider states it |
-| `manual` | operator override from config (`tests/fixtures/capacity/manual-valid.json` shape) | `estimated`, own timestamp/TTL |
+| `manual` | operator override from config (`tests/capacity-fixtures/manual-valid.json` shape) | `estimated`, own timestamp/TTL |
 | `observed` | rate-limit/cooldown seen at runtime (honours `retry-after`, exponential backoff) | `estimated` |
 | `unsupported` | nothing available | `unknown`, no remaining value |
 
