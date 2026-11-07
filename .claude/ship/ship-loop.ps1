@@ -9,6 +9,10 @@ Actions:
           canaries, stable, and the stable deploy. Never promotes by hand.
   Verify  Re-run the Factory automation that exercised the issue (budgeted by maxDeployAttempts).
   Status  Report the state of a run (optionally -Wait until it finishes).
+  Run     Run one Factory workflow headless from THIS checkout (-Workflow, -Task) with the repo's built
+          cezar CLI, so an agent can edit the workflow and run it again without deploying. Each call
+          restarts from the first step and is budgeted by maxRunAttempts. Prints ITER_* lines.
+          Exit 0 workflow done, 5 workflow failed, 3 budget spent.
 Settings come from .claude/ship/ship-loop.json (add a project entry to extend); Cezar API location
 comes from the host-local config/factory-projects.json (matching factoryProjectId) or CEZ_API_URL.
 Attempt history lives in .factory/ship-loop/<project>-<issue>.json.
@@ -17,7 +21,11 @@ target not configured), 5 verification failed, 6 still running (Status without -
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Config', 'Deploy', 'Verify', 'Status')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Config', 'Deploy', 'Verify', 'Status', 'Run')][string]$Action,
+    [string]$Workflow = '',
+    [string]$Task = '',
+    [string]$Target = '',
+    [string]$Model = '',
     [string]$Project = '',
     [int]$Issue = 0,
     [string]$Automation = '',
@@ -165,5 +173,53 @@ switch ($Action) {
         Write-Host "SHIP_STATUS $(($result | ConvertTo-Json -Compress))"
         if ($result.outcome -eq 'failed') { exit 5 }
         if ($result.outcome -eq 'running') { exit 6 }
+    }
+
+    'Run' {
+        # Headless local iteration: no Cezar server, no deploy. Workflows come from this checkout's workflows/
+        # (via CEZ_SHARED_WORKFLOWS_DIRS) and their command steps get FACTORY_RUNTIME_ROOT pointing here.
+        if (-not $Workflow) { Fail 2 '-Workflow is required' }
+        if (-not $Task) { Fail 2 '-Task is required (the text the workflow receives as {{task}})' }
+        # Accept the file name (health) or the workflow's own name (factory-health); cezar run wants the latter.
+        $known = foreach ($f in Get-ChildItem (Join-Path $root 'workflows') -Filter '*.yaml') {
+            $n = (Select-String -Path $f.FullName -Pattern '^name:\s*(\S+)' | Select-Object -First 1).Matches.Groups[1].Value
+            [pscustomobject]@{ file = $f.BaseName; name = $n }
+        }
+        $hit = @($known | Where-Object { $_.file -eq $Workflow -or $_.name -eq $Workflow }) | Select-Object -First 1
+        if (-not $hit) { Fail 2 "workflow '$Workflow' not found; available: $(($known | ForEach-Object { $_.name }) -join ', ')" }
+        $Workflow = $hit.name
+        $cli = Join-Path $root 'cezar/packages/cezar/dist/index.js'
+        if (-not (Test-Path $cli)) { Fail 4 'cezar is not built: run `npm run build` in cezar/packages/cezar first' }
+        $targetDir = if ($Target) { (Resolve-Path $Target).Path } else { $root }
+        $max = [int]$cfg.maxRunAttempts; if ($max -le 0) { $max = 10 }
+        $key = "run-$($Workflow -replace '[^A-Za-z0-9._-]', '_')"
+        $statePath = Join-Path $root ".factory/ship-loop/$Project-$key.json"
+        $state = if (Test-Path $statePath) { Get-Content -Raw $statePath | ConvertFrom-Json } else { [pscustomobject]@{ project = $Project; workflow = $Workflow; attempts = @() } }
+        $used = @($state.attempts).Count
+        if ($used -ge $max) { Fail 3 "run budget exhausted ($used of $max) for workflow '$Workflow'; delete $statePath to reset, or ask the user" }
+        $cliArgs = @($cli, 'run', $Task, '--workflow', $Workflow)
+        if ($Model) { $cliArgs += @('--model', $Model) }
+        if ($DryRun) { Write-Host "DRYRUN would run: node $($cliArgs -join ' ') in $targetDir (attempt $($used + 1) of $max)"; break }
+        $env:FACTORY_RUNTIME_ROOT = $root
+        $env:CEZ_SHARED_WORKFLOWS_DIRS = Join-Path $root 'workflows'
+        $env:CEZ_SHARED_SKILL_DIRS = Join-Path $root 'skills'
+        Remove-Item Env:CEZ_FACTORY_RELEASE_STORE -ErrorAction SilentlyContinue
+        $logDir = Join-Path $root '.factory/ship-loop/logs'
+        New-Item -ItemType Directory -Force $logDir | Out-Null
+        $log = Join-Path $logDir ("$key-$($used + 1)-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+        Write-Host "ITER_RUN workflow=$Workflow attempt=$($used + 1) of $max log=$log"
+        Push-Location $targetDir
+        try { & node @cliArgs *>&1 | Tee-Object -FilePath $log | Out-Host; $code = $LASTEXITCODE } finally { Pop-Location }
+        $lines = @(Get-Content $log -ErrorAction SilentlyContinue)
+        $lastStep = ($lines | Where-Object { $_ -match '^── step:' } | Select-Object -Last 1)
+        $outcome = if ($code -eq 0) { 'passed' } else { 'failed' }
+        $state.attempts = @($state.attempts) + [pscustomobject]@{ attempt = $used + 1; outcome = $outcome; exitCode = $code; log = $log; lastStep = $lastStep; at = (Get-Date).ToUniversalTime().ToString('o') }
+        New-Item -ItemType Directory -Force (Split-Path $statePath) | Out-Null
+        $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $statePath -Encoding utf8
+        if ($code -eq 0) { Write-Host "ITER_DONE workflow=$Workflow attempt=$($used + 1) log=$log"; break }
+        Write-Host "ITER_STEP_FAILED $lastStep"
+        foreach ($e in @($lines | Where-Object { $_ -match '^\s*✗' } | Select-Object -Last 3)) { Write-Host "ITER_ERROR $($e.Trim())" }
+        Write-Host "ITER_FAILED workflow=$Workflow attempt=$($used + 1) of $max log=$log"
+        exit 5
     }
 }
