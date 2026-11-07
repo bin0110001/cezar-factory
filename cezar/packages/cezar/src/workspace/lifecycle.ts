@@ -743,7 +743,11 @@ export async function workspaceOverlaps(options: { cwd?: string; home?: string }
   const changedByIssue = new Map<string, { paths: Set<string>; workspace: string }>();
   for (const record of records) {
     if (!['working', 'validating', 'ready', 'integrating', 'blocked', 'recoverable'].includes(record.state)) continue;
-    const paths = await changedPaths(record);
+    // Advisory only: a workspace whose directory is gone (a pruned or stale registry row) must not fail
+    // the caller. It broke every `cez workspace preflight` with `spawn git ENOENT` — git cannot start in a
+    // missing cwd — and so every implement run's preflight step.
+    const paths = await changedPaths(record).catch(() => undefined);
+    if (!paths) continue;
     changedByIssue.set(record.issue, {
       paths,
       workspace: record.workspacePath,
