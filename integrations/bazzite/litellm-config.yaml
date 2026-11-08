@@ -32,6 +32,7 @@ router_settings:
     - factory-code: [factory-small]
 
 litellm_settings:
+  drop_params: true
   callbacks: ["langfuse_otel"]
 
 general_settings:
