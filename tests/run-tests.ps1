@@ -428,6 +428,7 @@ $litellmConfig = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/lite
 Assert 'LiteLLM health-aware fallback is configured' ($litellmConfig -match 'enable_pre_call_checks:\s*true' -and $litellmConfig -match 'fallbacks:' -and $litellmConfig -match 'factory-code: \[factory-small\]')
 Assert 'LiteLLM uses Langfuse v4 OTEL callback' ($litellmConfig -match 'langfuse_otel' -and $bazziteEnv -match '(?m)^LANGFUSE_OTEL_HOST=')
 Assert 'LiteLLM logical models target live vLLM model' ($litellmConfig -match 'model: openai/qwen3\.5-9b')
+Assert 'LiteLLM normalizes Codex developer messages for Qwen chat templates' ([regex]::Matches($litellmConfig, 'supports_mid_conversation_system:\s*false').Count -eq 2)
 Assert 'LiteLLM live deployment evidence exists' (Test-Path (Join-Path $factory 'docs/litellm-live-evidence.md'))
 Assert 'LiteLLM bypasses proxy for private vLLM hop from topology' ((Get-Content -Raw (Join-Path $factory 'scripts/deploy/deploy-bazzite.sh')) -match 'FACTORY_VLLM_METRICS_TARGET.*127\.0\.0\.1,localhost' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'NO_PROXY: \$\{NO_PROXY\}')
 Assert 'Hindsight deployment uses pinned official image and bounded retain budget' ($bazziteEnv -match 'HINDSIGHT_IMAGE=ghcr\.io/vectorize-io/hindsight:0\.10\.0' -and $bazziteEnv -match '(?m)^HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS=12000')
