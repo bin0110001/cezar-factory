@@ -4,6 +4,10 @@ param([switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $scripts = Join-Path $factory 'scripts'
+# Hermetic: the review workflow runs this suite inside a Factory-managed run (validate-head), whose environment carries the
+# lifecycle identity. route-state then defers factory:done until workspace integration, which is correct in a managed run but
+# fails the unmanaged-route assertions. The managed behaviour is tested explicitly by setting the token itself.
+foreach ($identity in 'FACTORY_FENCING_TOKEN', 'FACTORY_MANAGED', 'FACTORY_OWNER_ID', 'FACTORY_RUN_ID', 'FACTORY_ISSUE', 'FACTORY_WORKSPACE') { Remove-Item "Env:$identity" -ErrorAction SilentlyContinue }
 . (Join-Path $scripts 'lib.ps1')
 
 $script:fail = 0
@@ -100,12 +104,14 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
-'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
+'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
 'schemas/routing-event.schema.json', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
+Assert 'review validates the reviewed PR head before the merge gate so receipts bind to it' ((Test-Path (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -and ((Get-Content -Raw (Join-Path $factory 'workflows/review.yaml')) -match '(?s)id: validate-head.*validate-reviewed-head.ps1.*id: merge-eligibility'))
+Assert 'validate-reviewed-head labels the PR through the REST API, since gh pr edit fails on the Projects (classic) GraphQL error' ((Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -notmatch 'pr edit' -and (Get-Content -Raw (Join-Path $factory 'scripts/validate-reviewed-head.ps1')) -like '*issues/$number/labels*')
 Assert 'automation catalog validates' ((Run 'validate-automation-catalog.ps1' @{}).Code -eq 0)
 $catalog = Get-Content -Raw (Join-Path $factory 'routing/automation-catalog.json') | ConvertFrom-Json
 $intakeAutomation = Get-Content -Raw (Join-Path $factory 'automations/intake.json') | ConvertFrom-Json
@@ -676,6 +682,18 @@ try {
         $atCapOutput = Join-Path $tmp 'at-cap-backlog-snapshot.json'
         $atCapRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $atCapOutput }
         Assert 'backlog collector rejects potentially truncated GitHub snapshots' ($atCapRun.Code -ne 0 -and -not (Test-Path $atCapOutput))
+        # One or two truncated GitHub responses are retried; a persistent failure still fails the collector.
+        $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
+        $env:FAKE_BACKLOG_COUNTER = Join-Path $tmp 'backlog-gh-calls.txt'; Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
+        $env:FAKE_BACKLOG_FAIL_FIRST = '2'
+        $retryOutput = Join-Path $tmp 'retry-backlog-snapshot.json'
+        $retryRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $retryOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector retries a transient gh failure instead of failing the canary' ($retryRun.Code -eq 0 -and (Test-Path $retryOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue; $env:FAKE_BACKLOG_FAIL_FIRST = '9'
+        $stuckOutput = Join-Path $tmp 'stuck-backlog-snapshot.json'
+        $stuckRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $stuckOutput; RetryDelaySeconds = 0 }
+        Assert 'backlog collector still fails after its bounded attempts' ($stuckRun.Code -ne 0 -and -not (Test-Path $stuckOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Remove-Item Env:FAKE_BACKLOG_FAIL_FIRST, Env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue
         $env:FAKE_BACKLOG_ISSUES = Join-Path $PSScriptRoot 'fixtures/backlog-issues.json'
         $reconciled = Run 'reconcile-backlog.ps1' @{ InputPath = $backlogInput; OutputPath = $backlogOutput; BatchCap = 10; ProjectConcurrencyCap = 10; DryRun = $true }
         Assert 'backlog reconciler ignores released leases and excludes active leases' ($reconciled.Code -eq 0 -and (Test-Path $backlogOutput))
@@ -948,10 +966,10 @@ try {
         graphql = @{ data = @{ repository = @{ pullRequest = @{ reviewThreads = @{ nodes = @(@{ isResolved = $true }); pageInfo = @{ hasNextPage = $false } } } } } }
     }
     $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
-    function Test-Eligibility($Review, [string]$Name) {
+    function Test-Eligibility($Review, [string]$Name, [string]$Mode = 'approval') {
         $reviewFile = Join-Path $tmp "eligibility-$Name-review.json"; $outputFile = Join-Path $tmp "eligibility-$Name-output.json"
         $Review | ConvertTo-Json -Depth 5 | Set-Content $reviewFile
-        $null = & pwsh -NoProfile -File $eligibilityScript -ReviewPath $reviewFile -OutputPath $outputFile -GhCommand $gh -ReceiptRoot $eligibilityRoot 2>&1
+        $null = & pwsh -NoProfile -File $eligibilityScript -ReviewPath $reviewFile -OutputPath $outputFile -GhCommand $gh -ReceiptRoot $eligibilityRoot -ReviewMode $Mode 2>&1
         [pscustomobject]@{ Code = $LASTEXITCODE; Output = if (Test-Path $outputFile) { Get-Content -Raw $outputFile | ConvertFrom-Json } else { $null } }
     }
     $approvedReview = With $rev @{ approvalChangeRequestStatus = 'approval'; blockingFindings = '' }
@@ -979,6 +997,24 @@ try {
     $eligibilityState.prHeadSha = ('a' * 40); $eligibilityState.prDetails.headRefOid = ('a' * 40); $eligibilityState.rules = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
     $noRules = Test-Eligibility $approvedReview 'no-rules'
     Assert 'merge gate denies missing effective repository rules' ($noRules.Output.decision -ne 'allowed')
+    # Solo-maintainer posture (promotion review mode 'self-review'): no dev rules and no independent GitHub approval exist,
+    # so those two requirements give way to the exact-head review result and head-bound receipts, which stay mandatory.
+    $eligibilityState.prDetails.reviewDecision = ''; $eligibilityState.prDetails.reviews = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $soloStrict = Test-Eligibility $approvedReview 'solo-strict'
+    Assert 'merge gate stays strict by default: no rules and no independent approval deny' ($soloStrict.Output.decision -eq 'denied' -and $soloStrict.Output.reviewMode -eq 'approval')
+    $soloSelf = Test-Eligibility $approvedReview 'solo-self' 'self-review'
+    Assert 'self-review mode allows a solo repo with head-bound receipts but no dev rules or GitHub approval' ($soloSelf.Output.decision -eq 'allowed' -and $soloSelf.Output.reviewMode -eq 'self-review')
+    $soloWrongHead = Test-Eligibility (With $approvedReview @{ reviewedHeadSha = ('b' * 40) }) 'solo-wrong-head' 'self-review'
+    Assert 'self-review mode still denies a review bound to a stale head' ($soloWrongHead.Output.decision -eq 'denied' -and (@($soloWrongHead.Output.blockers) -match 'reviewed head'))
+    $eligibilityState.prDetails.labels = @(); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $soloNoRisk = Test-Eligibility $approvedReview 'solo-no-risk' 'self-review'
+    Assert 'self-review mode still requires exactly one risk label' ($soloNoRisk.Output.decision -eq 'denied' -and (@($soloNoRisk.Output.blockers) -match 'risk label'))
+    $eligibilityState.prDetails.labels = @(@{ name = 'risk:medium' }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    Move-Item (Join-Path $eligibilityRoot 'verify/attempt/receipt.json') (Join-Path $eligibilityRoot 'verify/attempt/receipt.json.off')
+    $soloNoReceipt = Test-Eligibility $approvedReview 'solo-no-receipt' 'self-review'
+    Assert 'self-review mode still requires a head-bound verify receipt' ($soloNoReceipt.Output.decision -eq 'denied' -and (@($soloNoReceipt.Output.blockers) -match 'verify'))
+    Move-Item (Join-Path $eligibilityRoot 'verify/attempt/receipt.json.off') (Join-Path $eligibilityRoot 'verify/attempt/receipt.json')
+    $eligibilityState.prDetails.reviewDecision = 'APPROVED'; $eligibilityState.prDetails.reviews = @(@{ state = 'APPROVED'; commit = @{ oid = ('a' * 40) }; author = @{ login = 'independent-reviewer' } }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
     $eligibilityState.rules = @(
         @{ type = 'pull_request'; parameters = @{ required_approving_review_count = 1; dismiss_stale_reviews_on_push = $true; require_last_push_approval = $true } },
         @{ type = 'required_review_thread_resolution'; parameters = @{} },
@@ -1053,11 +1089,17 @@ try {
     Assert 'route: review approval without PR requests implementation correction' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval'; pr = '' })) -eq 0 -and (Get-Gh).labels -contains 'factory:changes-requested' -and (Get-Gh).labels -notcontains 'factory:human-review')
     Set-Gh @('factory:review', 'risk:low')
     Assert 'route: approval without eligibility receipt cannot merge or mark done' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' })) -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and -not (Get-Gh).prMerged)
+    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
+    Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue # hermetic: an ambient managed-run token defers factory:done
     $gatePath = Join-Path $tmp 'merge-eligibility.json'
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
-    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
+    # Solo-maintainer posture: merge directly (dev has no rules, so --auto is rejected), pinned to the reviewed head.
+    $selfGate = Join-Path $tmp 'merge-eligibility-self.json'
+    @{ decision = 'allowed'; reviewMode = 'self-review'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $selfGate
+    Set-Gh @('factory:review', 'risk:low'); $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    Assert 'route: self-review approval merges directly, pinned to the head, without --auto' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $selfGate) -eq 0 -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--squash') -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit') -and (@((Get-Gh).prMergeArgs) -notcontains '--auto'))
     try {
         $env:FACTORY_FENCING_TOKEN = '12'
         Set-Gh @('factory:review', 'risk:low'); $managedState = Get-Gh; $managedState | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $managedState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
@@ -1493,6 +1535,10 @@ Assert 'health report summarizes artifacts and tolerates missing inputs' ($LASTE
 $healthWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 Assert 'health workflow runs no agent and its startup preflights every script it runs' ($healthWorkflow -notmatch '(?m)^\s+(skill|prompt):' -and @('audit-factory-failures','publish-failure-audit','collect-backlog-snapshot','reconcile-backlog','write-health-report' | Where-Object { $healthWorkflow -notmatch "-RequiredScripts [^\r\n]*$_\.ps1" }).Count -eq 0)
 Assert 'retired failure-audit, backlog-reconciliation, and dead skills are gone' (-not (Test-Path (Join-Path $factory 'workflows/failure-audit.yaml')) -and -not (Test-Path (Join-Path $factory 'workflows/backlog-reconciliation.yaml')) -and -not (Test-Path (Join-Path $factory 'skills/factory-failure-audit')) -and -not (Test-Path (Join-Path $factory 'skills/factory-intake')) -and -not (Test-Path (Join-Path $factory 'skills/factory-implement-prepare')))
+Write-Host '== verification query layer =='
+$vqOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-query.ps1') 2>&1 | Out-String
+Write-Host $vqOutput
+Assert 'verification query layer: pagination, redaction, ordering, oversized artifacts, byte-identical output and schema validation' ($LASTEXITCODE -eq 0)
 Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
