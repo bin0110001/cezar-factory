@@ -1,44 +1,64 @@
 {
-  "generatedAt": "2026-11-06T13:00:33.2451067+00:00",
-  "cutoff": "2026-11-05T13:00:25.2150853+00:00",
+  "generatedAt": "2026-11-09T04:01:48.7912006+00:00",
+  "cutoff": "2026-11-08T04:01:41.4165111+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 98,
-  "eligible": 56,
+  "considered": 122,
+  "eligible": 68,
   "refreshed": [
     {
-      "issue": 55,
-      "title": "Add optional Hindsight incident memory and historical repair recall",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/55",
-      "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 14:03:29",
-      "ageHours": 334.9,
+      "issue": 101,
+      "title": "Reviewed baseline promotion, audit trail and anti-weakening guards",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/101",
+      "state": "factory:changes-requested",
+      "createdAt": "10/27/2026 16:07:16",
+      "ageHours": 299.9,
       "labels": [
-        "risk:medium",
-        "factory:needs-plan",
+        "factory:changes-requested",
         "type:feature",
+        "risk:high",
         "complexity:medium"
       ],
       "action": "refreshed"
     },
     {
-      "issue": 66,
-      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
-      "state": "factory:investigate",
-      "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 328.0,
+      "issue": 104,
+      "title": "Protect policy, baselines, check selection and evidence from agent changes",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/104",
+      "state": "factory:changes-requested",
+      "createdAt": "10/27/2026 16:17:10",
+      "ageHours": 299.7,
       "labels": [
-        "type:maintenance",
-        "risk:medium",
-        "factory:investigate",
-        "complexity:small"
+        "factory:changes-requested",
+        "type:refactor",
+        "risk:high",
+        "complexity:medium"
       ],
       "action": "refreshed"
     }
   ],
   "excluded": [
+    {
+      "issue": 364,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 320,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 306,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 304,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
     {
       "issue": 228,
       "state": "factory:working",
@@ -105,6 +125,11 @@
       "reason": "manual-or-terminal-state"
     },
     {
+      "issue": 110,
+      "state": "factory:pr-open",
+      "reason": "manual-or-terminal-state"
+    },
+    {
       "issue": 107,
       "state": "factory:blocked",
       "reason": "manual-or-terminal-state"
@@ -113,6 +138,16 @@
       "issue": 105,
       "state": "factory:blocked",
       "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 103,
+      "state": "factory:pr-open",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 102,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
     },
     {
       "issue": 100,
@@ -132,6 +167,11 @@
     {
       "issue": 91,
       "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 90,
+      "state": "factory:pr-open",
       "reason": "manual-or-terminal-state"
     },
     {
@@ -165,6 +205,11 @@
       "reason": "manual-or-terminal-state"
     },
     {
+      "issue": 66,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
       "issue": 65,
       "state": "factory:blocked",
       "reason": "manual-or-terminal-state"
@@ -183,6 +228,11 @@
       "issue": 60,
       "state": null,
       "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 55,
+      "state": "factory:pr-open",
+      "reason": "manual-or-terminal-state"
     },
     {
       "issue": 51,
