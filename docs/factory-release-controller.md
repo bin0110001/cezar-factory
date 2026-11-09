@@ -97,6 +97,27 @@ The embedded verification result is deliberately limited to source artifact
 integrity. The source `stable` ref is the separate promotion gate for the full
 Factory test suite. This controller does not claim to have run that suite.
 
+## Incident ledger module
+
+`scripts/release/factory_incident_ledger.py` provides a separate, host-local SQLite ledger for
+release self-healing work. Callers should place `incidents.sqlite3` under the configured release
+store; it must not replace or migrate `controller.sqlite3`, which remains the activation
+checkpoint. The module uses additive schema version 1 migrations, WAL, and bounded busy waits.
+
+`IncidentLedger.record_failure()` normalizes commit SHAs, timestamps, paths, labeled IDs, durations,
+and secrets before computing a stable SHA-256 fingerprint. It records attempts by failure class,
+applies the class budget and exponential retry delay, and escalates after the final allowed
+attempt. A release incident is marked as known debt and is not counted as a release failure unless
+the recorded causal evidence names the same full candidate SHA and includes a source plus stage,
+receipt, or evidence ID. Evidence fields are allowlisted and bounded.
+
+An optional `hindsight_summarizer` callback receives only the fingerprint, class, attempt, and
+outcome flags. Callback failures are logged as warnings and cannot change the durable ledger result.
+No Hindsight service is required for ledger operation. This module is an API for the later
+controller-integration phase; it does not change the release controller or service invocation.
+
+Run its unit tests with `python -B -m unittest discover -s tests -p test_factory_incident_ledger.py -v`.
+
 ## Retention and rollback
 
 The controller keeps at least three verified releases per channel and never
