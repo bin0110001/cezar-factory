@@ -1,19 +1,34 @@
 {
-  "generatedAt": "2026-11-06T13:00:33.2451067+00:00",
-  "cutoff": "2026-11-05T13:00:25.2150853+00:00",
+  "generatedAt": "2026-11-09T20:01:40.6225320+00:00",
+  "cutoff": "2026-11-08T20:01:31.4812567+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 98,
-  "eligible": 56,
+  "considered": 116,
+  "eligible": 64,
   "refreshed": [
     {
-      "issue": 55,
-      "title": "Add optional Hindsight incident memory and historical repair recall",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/55",
+      "issue": 108,
+      "title": "Verification history UI: runs, selection explanations, failure groups, episodes, artifacts, trends",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/108",
+      "state": "factory:ready",
+      "createdAt": "10/27/2026 16:22:03",
+      "ageHours": 315.7,
+      "labels": [
+        "risk:medium",
+        "factory:ready",
+        "type:feature",
+        "complexity:large"
+      ],
+      "action": "refreshed"
+    },
+    {
+      "issue": 109,
+      "title": "Accessible test-case drilldown, lineage, coverage limits and Cezar/GitHub links",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/109",
       "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 14:03:29",
-      "ageHours": 334.9,
+      "createdAt": "10/27/2026 16:22:04",
+      "ageHours": 315.7,
       "labels": [
         "risk:medium",
         "factory:needs-plan",
@@ -21,24 +36,29 @@
         "complexity:medium"
       ],
       "action": "refreshed"
-    },
-    {
-      "issue": 66,
-      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
-      "state": "factory:investigate",
-      "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 328.0,
-      "labels": [
-        "type:maintenance",
-        "risk:medium",
-        "factory:investigate",
-        "complexity:small"
-      ],
-      "action": "refreshed"
     }
   ],
   "excluded": [
+    {
+      "issue": 364,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 320,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 306,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 304,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
     {
       "issue": 228,
       "state": "factory:working",
@@ -115,6 +135,11 @@
       "reason": "manual-or-terminal-state"
     },
     {
+      "issue": 102,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
       "issue": 100,
       "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
@@ -161,6 +186,11 @@
     },
     {
       "issue": 67,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 66,
       "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
     },
