@@ -1,4 +1,5 @@
-import { trackerReadScope, fullRegressionRunResponseSchema } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema } from '@open-mercato/cezar-api-client'
+import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
@@ -1429,6 +1430,35 @@ export async function runFullRegression(projectId: string): Promise<FullRegressi
   const result = fullRegressionRunResponseSchema.safeParse(parseJson(body))
   if (!result.success) throw new ApiError(response.status, `the Cezarium server answered ${path} with an unexpected body`)
   return result.data
+}
+
+/** Read a bounded page from the shared, read-only verification query contract. */
+export async function queryVerificationHistory(input: VerificationQueryInput, opts?: ReadOptions): Promise<VerificationQueryResponse> {
+  const response = await cez.api.v1.p[':projectId'].verification.query.$get({
+    param: { projectId: queryScope() },
+    query: { kind: input.kind, runId: input.runId, status: input.status, pageSize: String(input.pageSize), cursor: input.cursor },
+  }, init(opts))
+  const bodyText = await response.text()
+  const body = parseJson(bodyText)
+  if (!response.ok) {
+    const error = verificationQueryWireSchema.safeParse(body)
+    if (error.success && 'error' in error.data) throw new ApiError(response.status, error.data.error.message)
+    throw errorFor(response.status, response.statusText, bodyText)
+  }
+  const parsed = verificationQueryResponseSchema.safeParse(body)
+  if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered /verification/query with an unexpected body')
+  return parsed.data
+}
+
+/** Load a referenced artifact only when the user opens its evidence row. */
+export async function getVerificationArtifact(verificationId: string, artifactId: string, opts?: ReadOptions): Promise<VerificationArtifactContent> {
+  const response = await cez.api.v1.p[':projectId'].verification.artifacts[':runId'][':artifactId'].$get({
+    param: { projectId: queryScope(), runId: encodeURIComponent(verificationId), artifactId: encodeURIComponent(artifactId) },
+  }, init(opts))
+  const body = await unwrap(response, '/verification/artifacts/:runId/:artifactId')
+  const parsed = verificationArtifactContentSchema.safeParse(body)
+  if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered the verification artifact request with an unexpected body')
+  return parsed.data
 }
 
 // ---- run mutations ------------------------------------------------------------------------

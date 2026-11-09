@@ -171,6 +171,65 @@ export const verificationRunSchema = z.object({
 });
 export type VerificationRun = z.infer<typeof verificationRunSchema>;
 
+/** The shared, versioned read-only query response (Factory #106) plus check timing data. */
+const verificationBoundedTextSchema = z.object({
+  bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  truncated: z.boolean(),
+  content: z.string().nullable(),
+  head: z.string().nullable(),
+  tail: z.string().nullable(),
+  reference: z.string().startsWith('run:'),
+}).strict();
+
+export const verificationQueryKinds = ['runs', 'selected', 'deferred', 'failures', 'episodes', 'artifacts', 'baseline'] as const;
+export const verificationQueryInputSchema = z.object({
+  kind: z.enum(verificationQueryKinds),
+  runId: z.string().max(128).optional(),
+  status: z.string().max(64).optional(),
+  pageSize: z.string().optional().transform((value) => value === undefined ? 50 : Number(value)).pipe(z.number().int().min(1).max(200)),
+  cursor: z.string().max(512).optional(),
+}).strict();
+export const verificationArtifactParamsSchema = z.object({ runId: z.string().min(1).max(128), artifactId: z.string().min(1).max(128) }).strict();
+
+const verificationQueryRunSchema = z.object({
+  id: z.string(), startedAt: z.string(), finishedAt: z.string(), status: z.string(), commitSha: z.string(), baseSha: z.string(),
+  baselineRunId: z.string().nullable(),
+  suite: z.string().optional(),
+  counts: z.object({ selected: z.number().int().nonnegative(), deferred: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), episodes: z.number().int().nonnegative(), artifacts: z.number().int().nonnegative() }).strict(),
+  checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, durationMs: z.number().int().nonnegative(), metrics: z.array(verificationMetricSchema), findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict()).optional(),
+}).strict();
+const verificationQueryTestSchema = z.object({ runId: z.string(), testId: z.string(), reason: verificationBoundedTextSchema }).strict();
+const verificationQueryFailureSchema = z.object({
+  runId: z.string(), id: z.string(), testId: z.string(), status: z.string(), message: verificationBoundedTextSchema, output: verificationBoundedTextSchema,
+  classification: z.enum(['new', 'known', 'unknown']).optional(), episodeId: z.string().optional(),
+}).strict();
+const verificationQueryEpisodeSchema = z.object({ runId: z.string(), id: z.string(), fingerprint: z.string(), status: z.string(), firstSeenAt: z.string(), lastSeenAt: z.string(), occurrences: z.number().int().nonnegative() }).strict();
+const verificationQueryArtifactSchema = z.object({ runId: z.string(), id: z.string(), name: z.string(), path: z.string(), mediaType: z.string(), data: verificationBoundedTextSchema }).strict();
+const verificationQueryBaselineSchema = z.object({ runId: z.string(), baselineRunId: z.string(), status: z.string(), regressions: z.array(z.string()), fixed: z.array(z.string()), unchanged: z.number().int().nonnegative() }).strict();
+const verificationQueryLimitsSchema = z.object({ inlineBytes: z.number().int().positive(), excerptChars: z.number().int().positive(), maxResponseBytes: z.number().int().positive() }).strict();
+const verificationQueryPageBase = z.object({
+  schemaVersion: z.literal(1), kind: z.enum(verificationQueryKinds),
+  query: z.object({ runId: z.string(), status: z.string(), pageSize: z.number().int().min(1).max(200) }).strict(),
+  page: z.object({ returned: z.number().int().nonnegative(), hasMore: z.boolean(), nextCursor: z.string().nullable() }).strict(),
+  limits: verificationQueryLimitsSchema,
+});
+export const verificationQueryResponseSchema = z.discriminatedUnion('kind', [
+  verificationQueryPageBase.extend({ kind: z.literal('runs'), items: z.array(verificationQueryRunSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('selected'), items: z.array(verificationQueryTestSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('deferred'), items: z.array(verificationQueryTestSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('failures'), items: z.array(verificationQueryFailureSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('episodes'), items: z.array(verificationQueryEpisodeSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('artifacts'), items: z.array(verificationQueryArtifactSchema) }).strict(),
+  verificationQueryPageBase.extend({ kind: z.literal('baseline'), items: z.array(verificationQueryBaselineSchema) }).strict(),
+]);
+export const verificationQueryErrorSchema = z.object({ schemaVersion: z.literal(1), error: z.object({ code: z.enum(['invalid_cursor', 'stale_cursor', 'invalid_query', 'unsupported_input_version']), message: z.string() }).strict() }).strict();
+export const verificationQueryWireSchema = z.union([verificationQueryResponseSchema, verificationQueryErrorSchema]);
+export const verificationArtifactContentSchema = z.object({ content: z.string().max(65_536), bytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/), truncated: z.boolean() }).strict();
+export type VerificationQueryInput = z.infer<typeof verificationQueryInputSchema>;
+export type VerificationQueryResponse = z.infer<typeof verificationQueryResponseSchema>;
+export type VerificationArtifactContent = z.infer<typeof verificationArtifactContentSchema>;
+
 /** Compatibility boundary: old validation-only projects continue on the legacy adapter path. */
 export const projectValidationConfigSchema = z.object({
   validation: z.object({ changed: z.string().optional(), full: z.string().optional(), verify: z.string().optional() }).optional(),

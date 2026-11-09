@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Governance authorization marker",
+  "description": "Pointer to a GitHub approving review that waives the protect-governance guard for an exact set of paths at an exact head commit. The marker alone authorizes nothing: the guard verifies the review on GitHub.",
+  "type": "object",
+  "required": ["schemaVersion", "pr", "reviewer", "headCommit", "paths"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "pr": { "type": "integer", "minimum": 1 },
+    "reviewer": { "type": "string", "minLength": 1 },
+    "headCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "paths": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+  }
+}

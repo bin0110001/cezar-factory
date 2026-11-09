@@ -64,7 +64,8 @@ function Copy-Factory([string]$From, [string]$To) {
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
 $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
-'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
+'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
+'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
 'routing/default.yaml', 'integrations/deployment/README.md', 'integrations/bazzite/compose.yaml',
 'integrations/bazzite/vault-config/vault.hcl', 'docs/vault.md', 'scripts/deploy/deploy-vault-bazzite.sh', 'scripts/deploy/validate-vault-bazzite.sh',
@@ -97,13 +98,14 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
-'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1',
+'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
+'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'scripts/factory/protect-governance.ps1', 'policies/protected-assets.json', 'schemas/governance-authorization.schema.json', 'tests/protect-governance.ps1', 'tests/fake-gh-governance.ps1', 'docs/governance-guard.md', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
 'schemas/routing-event.schema.json', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
@@ -215,7 +217,13 @@ Assert 'every workflow command step declares a timeoutSeconds deadline' ($deadli
 
 Assert 'startup keeps its failure reason visible on stderr' ($startupScript -match 'Console]::Error.WriteLine' -and $startupScript -match 'GIT_WORKTREE_CONFIG_INVALID')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
-Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
+$pushFactoryUpdates = Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')
+$promoteStable = Get-Content -Raw (Join-Path $factory 'scripts/release/promote-stable.ps1')
+$legacyReportDefault = "Join-Path `$factory '.factory/release-reports"
+Assert 'release records force-refresh requirement for blocked managed updates' ($pushFactoryUpdates -match 'forceRefreshRequired' -and $pushFactoryUpdates -match 'release-status\.jsonl')
+Assert 'release reports default to host state outside the shared checkout' ($pushFactoryUpdates -match 'FACTORY_STATE_DIR' -and $pushFactoryUpdates -match 'XDG_STATE_HOME' -and $promoteStable -match 'FACTORY_STATE_DIR' -and $promoteStable -match 'XDG_STATE_HOME' -and -not $pushFactoryUpdates.Contains($legacyReportDefault) -and -not $promoteStable.Contains($legacyReportDefault))
+$gitignore = Get-Content -Raw (Join-Path $factory '.gitignore')
+Assert 'the generated Prometheus bearer token is ignored as host-local secret state' ($gitignore -match '(?m)^integrations/bazzite/prometheus-vllm-token\.generated\s*$')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
 Assert 'new-project onboarding creates dev from the default branch' ($onboardScript -match 'git/ref/heads/dev' -and $onboardScript -match 'refs/heads/dev' -and $onboardScript -match 'defaultBranchRef')
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
@@ -1095,13 +1103,17 @@ try {
     Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue # hermetic: an ambient managed-run token defers factory:done
     $gatePath = Join-Path $tmp 'merge-eligibility.json'
     @{ decision = 'allowed'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $gatePath
+    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN; Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue
     $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
+    $savedFence = $env:FACTORY_FENCING_TOKEN; Remove-Item Env:FACTORY_FENCING_TOKEN -ErrorAction SilentlyContinue
+    try {
     Assert 'route: eligible approval uses expected head and marks done only after observed merge' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $gatePath) -eq 0 -and (Get-Gh).labels -contains 'factory:done' -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit'))
+    } finally { if ($null -ne $savedFence) { $env:FACTORY_FENCING_TOKEN = $savedFence } }
+    $oldFactoryFence = $env:FACTORY_FENCING_TOKEN
     # Solo-maintainer posture: merge directly (dev has no rules, so --auto is rejected), pinned to the reviewed head.
     $selfGate = Join-Path $tmp 'merge-eligibility-self.json'
     @{ decision = 'allowed'; reviewMode = 'self-review'; pr = $rev.pr; headSha = ('a' * 40); blockers = @() } | ConvertTo-Json | Set-Content $selfGate
     Set-Gh @('factory:review', 'risk:low'); $gs = Get-Gh; $gs | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $gs | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
-    Assert 'route: self-review approval merges directly, pinned to the head, without --auto' ((Invoke-Route 'review-result' (With $rev @{ approvalChangeRequestStatus = 'approval' }) -GatePath $selfGate) -eq 0 -and (Get-Gh).prMerged -and (@((Get-Gh).prMergeArgs) -contains '--squash') -and (@((Get-Gh).prMergeArgs) -contains '--match-head-commit') -and (@((Get-Gh).prMergeArgs) -notcontains '--auto'))
     try {
         $env:FACTORY_FENCING_TOKEN = '12'
         Set-Gh @('factory:review', 'risk:low'); $managedState = Get-Gh; $managedState | Add-Member -NotePropertyName prHeadSha -NotePropertyValue ('a' * 40) -Force; $managedState | ConvertTo-Json -Depth 6 | Set-Content $env:FAKE_GH_STATE
@@ -1350,7 +1362,7 @@ Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' (
 Assert 'local promotion is single-flight and hardware bounded' ($promotionUnit -match 'CPUQuota=200%' -and $promotionUnit -match 'MemoryMax=8G' -and $promotionUnit -match 'FACTORY_GPU_SLOTS=0' -and $promotionUnit -match 'branch dev')
 Assert 'local promotion service uses exact-SHA scheduler' ($promotionUnit -match 'factory_local_scheduler.py run')
 $promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
-Assert 'promotion policy defaults to the autonomous posture and defines a controlled one as data' ($promotionPolicy.promotion.mode -eq 'autonomous' -and $promotionPolicy.promotion.modes.controlled.stable -eq 'approval' -and $promotionPolicy.promotion.modes.autonomous.stable -eq 'auto')
+Assert 'production run selects controlled promotion while retaining both policy postures' ($promotionPolicy.promotion.mode -eq 'controlled' -and $promotionPolicy.promotion.modes.controlled.stable -eq 'approval' -and $promotionPolicy.promotion.modes.autonomous.stable -eq 'auto')
 Assert 'promotion policy gates stable on canaries and a circuit breaker, and moves stable only through the fast-forward refs API' (@($promotionPolicy.promotion.canaries.items).Count -ge 2 -and $promotionPolicy.promotion.breaker.maxConsecutiveFailures -ge 1 -and $promotionModule -match 'force=false' -and $promotionModule -match 'git/refs/heads')
 Assert 'promotion policy runs the full suite as a required check through the container' (@($promotionPolicy.checks | Where-Object { $_.id -eq 'full-suite' -and $_.required -and ($_.command -join ' ') -match 'validate-in-container\.sh' }).Count -eq 1)
 Assert 'promotion service passes the scheduler state root, not the release store the scheduler appends to it' ($promotionUnit -match '--store %h/\.local/share/cezar-factory --config' -and $promotionUnit -notmatch '--store \S*release-store')
@@ -1525,6 +1537,11 @@ $failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-
 Write-Host $failureAuditOutput
 Assert 'failure collector obeys identity and read budgets' ($LASTEXITCODE -eq 0)
 
+Write-Host '== failure summary =='
+$failureSummaryOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-summary.ps1') 2>&1 | Out-String
+Write-Host $failureSummaryOutput
+Assert 'failure summary dedups, caps, redacts and orders deterministically' ($LASTEXITCODE -eq 0)
+
 Write-Host '== failure audit publication =='
 $publisherOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-publisher.ps1') 2>&1 | Out-String
 Write-Host $publisherOutput
@@ -1537,6 +1554,16 @@ Assert 'health report summarizes artifacts and tolerates missing inputs' ($LASTE
 $healthWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 Assert 'health workflow runs no agent and its startup preflights every script it runs' ($healthWorkflow -notmatch '(?m)^\s+(skill|prompt):' -and @('audit-factory-failures','publish-failure-audit','collect-backlog-snapshot','reconcile-backlog','write-health-report' | Where-Object { $healthWorkflow -notmatch "-RequiredScripts [^\r\n]*$_\.ps1" }).Count -eq 0)
 Assert 'retired failure-audit, backlog-reconciliation, and dead skills are gone' (-not (Test-Path (Join-Path $factory 'workflows/failure-audit.yaml')) -and -not (Test-Path (Join-Path $factory 'workflows/backlog-reconciliation.yaml')) -and -not (Test-Path (Join-Path $factory 'skills/factory-failure-audit')) -and -not (Test-Path (Join-Path $factory 'skills/factory-intake')) -and -not (Test-Path (Join-Path $factory 'skills/factory-implement-prepare')))
+Write-Host '== governance guard =='
+$govOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'protect-governance.ps1') 2>&1 | Out-String
+Write-Host $govOutput
+Assert 'governance guard blocks policy, baseline, check-selection and ledger-evidence changes and rejects forged waivers' ($LASTEXITCODE -eq 0)
+$govMissing = @('implement', 'fix-review' | Where-Object {
+    $wf = Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")
+    $at = $wf.IndexOf('protect-governance.ps1', $wf.IndexOf('id: protect-governance'))
+    ($wf -notmatch '-RequiredScripts [^\r\n]*factory/protect-governance\.ps1') -or $at -lt 0 -or $at -gt $wf.IndexOf('id: targeted-tests')
+})
+Assert "implement and fix-review run the governance guard before targeted tests ($($govMissing -join ', '))" ($govMissing.Count -eq 0)
 Write-Host '== verification query layer =='
 $vqOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-query.ps1') 2>&1 | Out-String
 Write-Host $vqOutput
@@ -1573,5 +1600,108 @@ $blackboxUnit = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/stand
 Assert 'liveness probes check the response body, so the cockpit HTML-200 catch-all cannot read as healthy' ($blackboxCfg -match 'cezar_health' -and $blackboxCfg -match "fail_if_body_not_matches_regexp:\s+- '\^\\{`"version`":'" -and $blackboxCfg -match 'application/json' -and $blackboxCfg -match 'litellm_ready' -and $blackboxCfg -match 'readiness' -and $blackboxCfg -match 'db.*connected')
 Assert 'Prometheus probes Cezar and LiteLLM through the blackbox exporter and alerts on failure, slowness, and silence' ($standaloneProm -match 'job_name: liveness-cezar' -and $standaloneProm -match 'job_name: liveness-litellm' -and $standaloneProm -match '127\.0\.0\.1:9115' -and $standaloneProm -match 'api/v1/health' -and $standaloneProm -match 'health/readiness' -and @('FactoryEndpointDown', 'FactoryEndpointSlow', 'FactoryLivenessProbeMissing' | Where-Object { $promAlerts -notmatch "alert: $_" }).Count -eq 0)
 Assert 'the blackbox exporter is a boot-persistent loopback unit that Prometheus starts after, and the deploy validates it' ($blackboxUnit -match '(?m)^WantedBy=default\.target' -and $blackboxUnit -match '(?m)^Restart=always' -and $blackboxUnit -match 'web\.listen-address=127\.0\.0\.1:9115' -and $standaloneUnit -match 'After=[^\r\n]*factory-blackbox\.service' -and $standaloneDeploy -match 'config\.check' -and $standaloneDeploy -match 'probe_success')
+# ---- Reviewed baseline promotion and anti-weakening guard (hermetic: temp dirs only) ----
+Write-Host '== baseline promotion =='
+$bpRoot = Join-Path ([IO.Path]::GetTempPath()) "bp-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Force $bpRoot | Out-Null
+try {
+    $bpPolicy = Join-Path $bpRoot 'policy.json'
+    '{"version":1,"permittedApprovers":["alice"],"auditLog":"audit.jsonl","protectedPaths":["policy.json","audit.jsonl"],"baselinePaths":["baselines/*.json"],"mandatoryChecks":["tests"],"thresholdFloors":{"coverage":70}}' | Set-Content $bpPolicy
+    $bpCand = Join-Path $bpRoot 'cand.json'
+    '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}}}' | Set-Content $bpCand
+    $bpBase = Join-Path $bpRoot 'baseline.json'; '{"thresholds":{"coverage":80}}' | Set-Content $bpBase
+    $bpAudit = Join-Path $bpRoot 'audit.jsonl'
+    $baseDigest = (Get-FileHash $bpBase -Algorithm SHA256).Hash
+    function New-Review([string]$Name, $Data) { $p = Join-Path $bpRoot $Name; if ($null -ne $Data) { $Data | ConvertTo-Json | Set-Content $p }; $p }
+    function Promote($Rev) { Run 'promote-baseline.ps1' @{ Candidate = $bpCand; Baseline = $bpBase; Review = $Rev; Policy = $bpPolicy; AuditLog = $bpAudit } }
+    $good = @{ approver = 'alice'; changeAuthor = 'agent'; reviewRef = 'pr#1-review'; sourceRun = 'run-1' }
+    $rUnrev = Promote (Join-Path $bpRoot 'missing-review.json')
+    $rSelf = Promote (New-Review 'self.json' @{ approver = 'alice'; changeAuthor = 'Alice'; reviewRef = 'x'; sourceRun = 'r' })
+    $rUnperm = Promote (New-Review 'unperm.json' @{ approver = 'mallory'; changeAuthor = 'agent'; reviewRef = 'x'; sourceRun = 'r' })
+    $rNoRef = Promote (New-Review 'noref.json' @{ approver = 'alice'; changeAuthor = 'agent'; sourceRun = 'r' })
+    Assert 'unreviewed, self-approved, unpermitted and ref-less promotions are rejected' ($rUnrev.Code -eq 1 -and $rSelf.Code -eq 1 -and $rUnperm.Code -eq 1 -and $rNoRef.Code -eq 1)
+    Assert 'rejected promotions change neither baseline nor audit log' ((Get-FileHash $bpBase -Algorithm SHA256).Hash -eq $baseDigest -and -not (Test-Path $bpAudit))
+    $rOk = Promote (New-Review 'good.json' $good)
+    $auditLines = @(Get-Content $bpAudit)
+    $auditEntry = if ($auditLines.Count) { $auditLines[0] | ConvertFrom-Json } else { $null }
+    Assert 'reviewed promotion updates the baseline and writes exactly one audit entry' ($rOk.Code -eq 0 -and $auditLines.Count -eq 1 -and (Get-Content -Raw $bpBase) -eq (Get-Content -Raw $bpCand) -and $auditEntry.approver -eq 'alice' -and $auditEntry.reviewRef -eq 'pr#1-review' -and $auditEntry.sourceRun -eq 'run-1' -and $auditEntry.baselineBeforeDigest -eq $baseDigest.ToLower() -and $auditEntry.baselineAfterDigest -eq (Get-FileHash $bpCand -Algorithm SHA256).Hash.ToLower() -and $auditEntry.timestamp)
+
+    # Weakening guard over base/head directories.
+    function New-Tree([string]$Name) {
+        $d = Join-Path $bpRoot $Name; New-Item -ItemType Directory -Force (Join-Path $d 'baselines') | Out-Null
+        Copy-Item $bpPolicy (Join-Path $d 'policy.json'); '' | Set-Content (Join-Path $d 'audit.jsonl') -NoNewline
+        '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":[]}' | Set-Content (Join-Path $d 'rules.json')
+        '{"thresholds":{"coverage":80}}' | Set-Content (Join-Path $d 'baselines/main.json')
+        $d
+    }
+    function Guard($Head) { Run 'check-weakening.ps1' @{ BaseDir = $bpGuardBase; HeadDir = $Head; Policy = 'policy.json' } }
+    $bpGuardBase = New-Tree 'base'
+    $h0 = New-Tree 'h-same'; $g0 = Guard $h0
+    Assert 'guard passes an unchanged tree' ($g0.Code -eq 0)
+    $h1 = New-Tree 'h-lower'; '{"thresholds":{"coverage":50},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":[]}' | Set-Content (Join-Path $h1 'rules.json'); $g1 = Guard $h1
+    Assert 'guard fails a lowered threshold and names it' ($g1.Code -eq 1 -and $g1.Out -match 'rules\.json/thresholds/coverage: threshold lowered from 80 to 50')
+    $h2 = New-Tree 'h-rmcheck'; '{"thresholds":{"coverage":80},"checks":{},"suppressions":[]}' | Set-Content (Join-Path $h2 'rules.json'); $g2 = Guard $h2
+    Assert 'guard fails removal of a mandatory check' ($g2.Code -eq 1 -and $g2.Out -match 'tests: mandatory check removed')
+    $h2b = New-Tree 'h-downgrade'; '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"warn"}},"suppressions":[]}' | Set-Content (Join-Path $h2b 'rules.json'); $g2b = Guard $h2b
+    Assert 'guard fails a downgraded check level' ($g2b.Code -eq 1 -and $g2b.Out -match "downgraded from 'error' to 'warn'")
+    $h3 = New-Tree 'h-suppress'; '{"thresholds":{"coverage":80},"checks":{"tests":{"mandatory":true,"level":"error"}},"suppressions":["tests/flaky"]}' | Set-Content (Join-Path $h3 'rules.json'); $g3 = Guard $h3
+    Assert 'guard fails an added suppression' ($g3.Code -eq 1 -and $g3.Out -match 'suppression added')
+    $h4 = New-Tree 'h-policy'; '{"version":1,"permittedApprovers":["agent"],"auditLog":"audit.jsonl","protectedPaths":[],"baselinePaths":[]}' | Set-Content (Join-Path $h4 'policy.json'); $g4 = Guard $h4
+    Assert 'guard fails an edit to a protected path (the policy itself)' ($g4.Code -eq 1 -and $g4.Out -match 'policy\.json: protected path edited')
+    $h5 = New-Tree 'h-baseline'; '{"thresholds":{"coverage":10}}' | Set-Content (Join-Path $h5 'baselines/main.json'); $g5 = Guard $h5
+    Assert 'guard fails a baseline edit without an authorized promotion' ($g5.Code -eq 1 -and $g5.Out -match 'baseline edited without an authorized promotion')
+    $h6 = New-Tree 'h-corrupt'; '{not json' | Set-Content (Join-Path $h6 'rules.json'); $g6 = Guard $h6
+    Assert 'guard fails closed on an unparseable changed file' ($g6.Code -eq 2)
+
+    # Authorized promotion: baseline plus matching audit entry (produced by the real promote script).
+    $h7 = New-Tree 'h-promoted'
+    $null = Run 'promote-baseline.ps1' @{ Candidate = $bpCand; Baseline = (Join-Path $h7 'baselines/main.json'); Review = (Join-Path $bpRoot 'good.json'); Policy = $bpPolicy; AuditLog = (Join-Path $h7 'audit.jsonl') }
+    $g7 = Guard $h7
+    Assert 'guard accepts a reviewed promotion (baseline change plus matching audit entry)' ($g7.Code -eq 0)
+    $h8 = New-Tree 'h-audit-rewrite'; Copy-Item (Join-Path $h7 'audit.jsonl') (Join-Path $h8 'audit.jsonl'); Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h8 'baselines/main.json')
+    $bpGuardBase = $h7
+    $h9 = New-Tree 'h-audit-tamper'; Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h9 'baselines/main.json')
+    ((Get-Content -Raw (Join-Path $h7 'audit.jsonl')) -replace 'alice', 'agent') | Set-Content (Join-Path $h9 'audit.jsonl') -NoNewline
+    $g9 = Guard $h9
+    Assert 'guard fails a rewritten audit entry' ($g9.Code -eq 1 -and $g9.Out -match 'removed or rewritten')
+    $h10 = New-Tree 'h-audit-empty'; Copy-Item (Join-Path $h7 'baselines/main.json') (Join-Path $h10 'baselines/main.json')
+    $g10 = Guard $h10
+    Assert 'guard fails removal of all audit entries' ($g10.Code -eq 1 -and $g10.Out -match 'removed or rewritten')
+}
+finally { Remove-Item -LiteralPath $bpRoot -Recurse -Force -ErrorAction SilentlyContinue }
+$implementText = Get-Content -Raw (Join-Path $factory 'workflows/implement.yaml')
+Assert 'implement workflow runs the weakening guard from a command step after its changes' ($implementText -match 'id: weakening-guard' -and $implementText -match 'check-weakening\.ps1' -and $implementText.IndexOf('id: weakening-guard') -gt $implementText.IndexOf('id: implement'))
+Assert 'baseline promotion assets exist' (@(@('policies/baseline-promotion.json', 'schemas/baseline-promotion.schema.json', 'schemas/promotion-audit-entry.schema.json', 'scripts/promote-baseline.ps1', 'scripts/check-weakening.ps1', 'docs/baseline-promotion.md') | Where-Object { -not (Test-Path (Join-Path $factory $_)) }).Count -eq 0)
+
+# ---- Event retention prune -------------------------------------------------
+Write-Host '== event retention =='
+$pruneDir = Join-Path ([IO.Path]::GetTempPath()) ("prune-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $pruneDir | Out-Null
+$pruneNow = '2026-06-30T00:00:00Z'
+$pruneOld = '{"id":1,"timestamp":"2026-01-01T00:00:00Z"}'
+$pruneNew = '{"id":2,"timestamp":"2026-06-29T00:00:00Z"}'
+$pruneBad = '{"id":3,"timestamp":"not-a-date"}'
+$pruneFile = Join-Path $pruneDir 'events.jsonl'
+[IO.File]::WriteAllText($pruneFile, "$pruneOld`n$pruneNew`n$pruneBad`n")
+$prunePolicy = Join-Path $pruneDir 'retention.yaml'
+[IO.File]::WriteAllText($prunePolicy, "event_retention_days: 30`n")
+$pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+$prLogs = @($pr.Out -split "`r?`n" | Where-Object { $_ -match '^\{.*\}$' })
+Assert 'prune removes only old events and keeps newer and unparseable ones byte-for-byte' ($pr.Code -eq 0 -and ([IO.File]::ReadAllText($pruneFile) -ceq "$pruneNew`n$pruneBad`n"))
+$prLog = if ($prLogs.Count -eq 1) { $prLogs[0] | ConvertFrom-Json } else { $null }
+Assert 'prune emits exactly one structured log line with retention, cutoff, removed, and kept' ($prLogs.Count -eq 1 -and $prLog.retention_days -eq 30 -and $prLog.removed -eq 1 -and $prLog.kept -eq 2 -and $prLog.cutoff)
+foreach ($badRetention in 'abc', '0', '-5', '1.5', '') {
+    [IO.File]::WriteAllText($prunePolicy, "event_retention_days: $badRetention`n")
+    [IO.File]::WriteAllText($pruneFile, "$pruneOld`n$pruneNew`n")
+    $pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+    Assert "invalid retention '$badRetention' is rejected without touching events" ($pr.Code -ne 0 -and $pr.Out -match 'event_retention_days' -and ([IO.File]::ReadAllText($pruneFile) -ceq "$pruneOld`n$pruneNew`n"))
+}
+[IO.File]::WriteAllText($prunePolicy, "# no setting`n")
+$pr = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; PolicyPath = $prunePolicy; Now = $pruneNow }
+Assert 'missing retention is rejected' ($pr.Code -ne 0)
+$shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
+Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
+Remove-Item -Recurse -Force $pruneDir
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

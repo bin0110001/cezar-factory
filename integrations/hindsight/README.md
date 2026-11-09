@@ -16,3 +16,15 @@ best-effort and writes only the bounded, redacted recall artifact; an absent
 runtime, authorization failure, timeout, or malformed response becomes an
 observable `unavailable` miss. Retain requires the wrapper's explicit
 `-Approved` switch and emits a compact receipt rather than a raw response.
+
+## Incident memory (optional, advisory)
+
+`scripts/hindsight/incident.py` (wrapper `incident.ps1`, run from workflow `command:` steps only) retains compact
+first-seen/resolved/reopened incident summaries through a bounded file outbox (`.factory/memory/incident-outbox.json`:
+50 entries, 64 KB, 14 days; oldest dropped with a logged count). Events are allowlisted, redacted, length-bounded and keyed
+by a deterministic idempotency key (project, finding, event, run) also sent as the Hindsight `document_id`, so retries and
+duplicates create one memory. Recall queries only the project bank and returns items with provenance IDs, confidence and a
+`verified`/`hypothesized` marker; hypotheses are worded as such and items older than 90 days or whose finding was later
+reopened are flagged stale. Disable with `HINDSIGHT_INCIDENT_MEMORY=0`. Memory never decides counts, lifecycle status or gates;
+the finding ledger (#52) and execution events (#127) remain authoritative. The input event contract is
+`{event, findingId, runId, commit, evidenceIds, verified, summary, fix, occurredAt}`.

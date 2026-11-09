@@ -12,7 +12,7 @@ import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH } from '@open-mercato/cezar-contract';
+import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, verificationRunSchema } from '@open-mercato/cezar-contract';
 import { RunStore } from '../runs/store.ts';
 import type { RunManager } from '../workflows/run.ts';
 import {
@@ -895,6 +895,31 @@ describe('workspace projects API', () => {
       expect(response.status).toBe(202);
       expect(await response.json()).toEqual({ status: 'queued', runId: 'run-full-1', testedHead: 'a'.repeat(40), followUpPending: false });
       expect(requested).toEqual([other.id]);
+    });
+
+    it('serves project-scoped, paginated verification query results from existing run events', async () => {
+      const project = await registerProject(repoRoot);
+      const task = store.createRun({ title: 'verification history fixture', workflow: 'quick', task: 'test query', steps: [] });
+      const result = verificationRunSchema.parse({
+        resultVersion: 1, verificationId: 'verification-fixture', cezarRunId: task.id, projectId: project.id,
+        worktreeId: 'fixture-worktree', commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64),
+        startedAt: '2026-11-09T10:00:00.000Z', finishedAt: '2026-11-09T10:00:01.000Z',
+        toolVersions: {}, environment: {}, status: 'passed', semanticExitCode: 0,
+        coverage: { selected: 1, passed: 1, failed: 0, skipped: 0, unknown: 0 },
+        checks: [{ checkId: 'unit', required: true, attempt: 1, status: 'passed', rawExitCode: 0, semanticExitCode: 0,
+          durationMs: 10, outputPreview: 'ok', outputTruncated: false, diagnostics: [],
+          metrics: [{ name: 'cases', value: 4, unit: 'tests' }], coverage: { selected: 1, passed: 1, skipped: 0 }, artifacts: [] }],
+        artifacts: [],
+      });
+      store.appendEvent(task.id, { type: 'verification-result', result, suite: 'quick', selection: { suite: 'quick', selected: [{ testId: 'unit', reason: 'Included in suite quick.' }], deferred: [] } });
+      const response = await apiRequest(makeApp(), `/api/v1/p/${project.id}/verification/query?kind=runs&pageSize=1`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        schemaVersion: 1,
+        kind: 'runs',
+        items: [{ id: 'verification-fixture', suite: 'quick', checks: [{ checkId: 'unit', durationMs: 10, metrics: [{ name: 'cases', value: 4 }] }] }],
+        page: { returned: 1, hasMore: false },
+      });
     });
 
     it('clears tags on null and on [], storing no key at all', async () => {

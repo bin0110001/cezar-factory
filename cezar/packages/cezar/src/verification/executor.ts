@@ -50,6 +50,11 @@ export interface VerificationExecutionResult {
   run: VerificationRun;
   artifactPath: string;
   output: string;
+  selection: {
+    suite: string;
+    selected: Array<{ testId: string; reason: string }>;
+    deferred: Array<{ testId: string; reason: string }>;
+  };
 }
 
 async function withResources<T>(keys: string[], cancelled: () => boolean, fn: () => Promise<T>): Promise<T> {
@@ -79,6 +84,20 @@ async function withResources<T>(keys: string[], cancelled: () => boolean, fn: ()
 
 function semanticExit(status: VerificationRun['status']): number {
   return status === 'passed' ? 0 : status === 'failed' ? 1 : status === 'infrastructure-error' ? 3 : status === 'cancelled' ? 4 : 2;
+}
+
+/** Stable per-check finding identity used by the read-only recurrence projection. */
+export function verificationFindingFingerprint(check: VerificationCheckRun): string | undefined {
+  if (check.status !== 'failed') return undefined;
+  const evidence = check.diagnostics.length > 0
+    ? check.diagnostics.map(({ code, severity, file, message }) => ({ code, severity, file, message: message.trim().replace(/\s+/g, ' ') }))
+      .sort((a, b) => {
+        const left = JSON.stringify(a);
+        const right = JSON.stringify(b);
+        return left < right ? -1 : left > right ? 1 : 0;
+      })
+    : check.outputPreview.trim().replace(/\s+/g, ' ');
+  return createHash('sha256').update(JSON.stringify({ checkId: check.checkId, evidence })).digest('hex');
 }
 
 function aggregate(checks: VerificationCheckRun[]): VerificationRun['status'] {
@@ -252,7 +271,7 @@ async function incompleteRun(input: VerificationExecutionInput, root: string, ra
     coverage: { selected: 1, passed: 0, failed: 0, skipped: 0, unknown: 1 }, checks: [check], artifacts: [],
   });
   const artifactPath = await writeResult(root, id, run);
-  return { run, artifactPath, output: safeMessage };
+  return { run, artifactPath, output: safeMessage, selection: { suite: input.suite, selected: [], deferred: [] } };
 }
 
 /** Execute an explicitly selected project suite; shell parsing and host secrets are excluded. */
@@ -366,7 +385,12 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
         durationMs: Math.max(0, Math.trunc(durationMs)), outputPreview: `adapter returned an invalid check result: ${issueMessages}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck),
         outputTruncated: false, diagnostics: [], metrics: [], coverage: { selected: 1, passed: 0, skipped: 0 }, artifacts: [],
       };
-    } else checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
+    } else {
+      checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
+      if (checkRun.status === 'failed' && !checkRun.findingFingerprint) {
+        checkRun.findingFingerprint = verificationFindingFingerprint(checkRun);
+      }
+    }
     try { await input.adapter?.cleanup?.(context); }
     catch (error) { checkRun = { ...checkRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter cleanup failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } }; }
     checkRuns.push(checkRun);
@@ -459,5 +483,16 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
   }
   const run: VerificationRun = verificationRunSchema.parse(runRecord);
   const artifactPath = await writeResult(root, id, run);
-  return { run, artifactPath, output: sanitizeOutput(combined, root, secretValues) };
+  return {
+    run,
+    artifactPath,
+    output: sanitizeOutput(combined, root, secretValues),
+    selection: {
+      suite: input.suite,
+      selected: selected.map((testId) => ({ testId, reason: `Included in suite ${input.suite}.` })),
+      deferred: Object.keys(manifest.checks).filter((testId) => !selected.includes(testId))
+        .sort((a, b) => a.localeCompare(b, 'en'))
+        .map((testId) => ({ testId, reason: `Not included in suite ${input.suite}.` })),
+    },
+  };
 }

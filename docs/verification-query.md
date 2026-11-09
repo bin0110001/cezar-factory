@@ -48,6 +48,16 @@ Producers map their records into this shape; `ConvertFrom-VerificationRunResult`
 An artifact with `content` is bounded by the layer. A reference-only artifact (executor result) supplies
 `bytes` and `sha256` instead and is always returned as a reference.
 
+Version 1 keeps optional per-check trend data on each `runs` item:
+
+```json
+{ "checks": [{ "checkId": "unit", "status": "passed", "durationMs": 842, "metrics": [{ "name": "cases", "value": 12, "unit": "tests" }] }] }
+```
+
+Failure items may include `classification` (`new`, `known` or `unknown`) and `episodeId`. Producers with a
+stable finding fingerprint provide the episode link; without one the query reports `unknown` rather than
+guessing from a test name.
+
 ## Response
 
 ```json
@@ -75,3 +85,6 @@ Errors are structured and never partial: `{"schemaVersion":1,"error":{"code":"..
 - **Size caps.** Text over `InlineBytes` (failure messages and output, artifacts, reasons) returns `content: null`
   with a redacted `head`/`tail` excerpt, the original `bytes`, the `sha256` of the original and a `reference`
   (`run:<id>/artifacts/<id>`) for retrieval. The whole response is capped by `MaxResponseBytes`.
+- **Trend and recurrence evidence.** Run items can carry bounded check durations and metrics. Failures with a
+  stable fingerprint are classified by its occurrences in the supplied snapshot; records without that evidence
+  remain `unknown`.

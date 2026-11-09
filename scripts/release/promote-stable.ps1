@@ -24,7 +24,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path $FactoryPath).Path
 if (-not $TestScript) { $TestScript = Join-Path $factory 'tests/run-tests.ps1' }
-if (-not $ReportPath) { $ReportPath = Join-Path $factory '.factory/release-reports/promote-stable.jsonl' }
+if (-not $ReportPath) {
+    # Reports are operational state, not source. Keep them outside the shared
+    # checkout so a routine promotion cannot make the Bazzite deploy guard block.
+    $stateRoot = $env:FACTORY_STATE_DIR
+    if (-not $stateRoot -and $env:XDG_STATE_HOME) { $stateRoot = Join-Path $env:XDG_STATE_HOME 'cezar-factory' }
+    if (-not $stateRoot -and $env:LOCALAPPDATA) { $stateRoot = Join-Path $env:LOCALAPPDATA 'cezar-factory' }
+    if (-not $stateRoot -and $env:HOME) { $stateRoot = Join-Path $env:HOME '.local/state/cezar-factory' }
+    if (-not $stateRoot) { $stateRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'cezar-factory' }
+    $ReportPath = Join-Path $stateRoot 'release-reports/promote-stable.jsonl'
+}
 
 function Invoke-Git([string[]]$Arguments) {
     $output = & git -C $factory @Arguments 2>&1

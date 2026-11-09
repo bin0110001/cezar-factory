@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { executeVerification, type VerificationAdapter } from './executor.ts';
+import { executeVerification, verificationFindingFingerprint, type VerificationAdapter } from './executor.ts';
 
 const exec = promisify(execFile);
 const roots: string[] = [];
@@ -30,6 +30,7 @@ describe('generic verification executor', () => {
     ]);
     const { stdout: headSha } = await exec('git', ['rev-parse', 'HEAD'], { cwd: root });
     expect(first.run.status).toBe('passed');
+    expect(first.selection).toEqual({ suite: 'quick', selected: [{ testId: 'check', reason: 'Included in suite quick.' }], deferred: [] });
     expect(first.run.commitSha).toBe(headSha.trim());
     expect(first.run.toolVersions.check).toMatch(/^v?\d+\.\d+/);
     expect(first.artifactPath).not.toBe(second.artifactPath);
@@ -369,4 +370,19 @@ describe('generic verification executor', () => {
     }
     expect(alive).toBe(false);
   }, 15_000);
+});
+
+describe('verification finding fingerprints', () => {
+  it('is stable for the same check evidence and ignores passing checks', () => {
+    const failed = {
+      checkId: 'unit', required: true, attempt: 1, status: 'failed' as const,
+      rawExitCode: 1, semanticExitCode: 1, durationMs: 120, outputPreview: ' expected   true ', outputTruncated: false,
+      diagnostics: [{ code: 'assertion', severity: 'error' as const, message: 'expected true' }], metrics: [],
+      coverage: { selected: 1, passed: 0, skipped: 0 }, artifacts: [],
+    };
+    expect(verificationFindingFingerprint(failed)).toMatch(/^[a-f0-9]{64}$/);
+    expect(verificationFindingFingerprint(failed)).toBe(verificationFindingFingerprint({ ...failed, durationMs: 999 }));
+    expect(verificationFindingFingerprint({ ...failed, diagnostics: [{ ...failed.diagnostics[0]!, message: 'expected false' }] })).not.toBe(verificationFindingFingerprint(failed));
+    expect(verificationFindingFingerprint({ ...failed, status: 'passed' })).toBeUndefined();
+  });
 });
