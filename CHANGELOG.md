@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add an event retention policy (`policies/retention.yaml`, `event_retention_days`) and a prune step
+  (`scripts/prune-events.ps1`) that atomically removes JSONL events older than the window, keeps newer
+  and unparseable-timestamp events byte-for-byte, rejects invalid retention, and logs one JSON line.
 - Add concise deduplicated failure summaries for agents (#103): `scripts/summarize-failures.ps1` groups finding records by
   finding ID with occurrence counts, identifiers and detail paths, redacts secrets and caps size with omitted counts.
 - Add graphical worker operator runbook, benchmark and evidence docs (#343, part of #328); gaps are recorded
