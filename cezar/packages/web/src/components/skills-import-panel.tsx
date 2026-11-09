@@ -179,7 +179,7 @@ export function ImportSkillsPanel({ projectId }: { projectId: string }) {
       <SkillsUpdateCard projectId={projectId} state={update.data} loadError={update.error} />
 
       <p className="mt-4 text-xs text-soft-foreground">
-        These checkboxes choose what cezar shows; updates refresh installed skill files.
+        These checkboxes choose what Cezarium shows; updates refresh installed skill files.
       </p>
 
       <div className="mt-4 flex items-center gap-2">

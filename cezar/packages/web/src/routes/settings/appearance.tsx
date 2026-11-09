@@ -131,7 +131,7 @@ function ProjectOrderField() {
   return (
     <Field
       title="Project order"
-      hint="The sidebar is in the order you dragged it into. Reset puts it back to most-recently-opened first. Shared with every browser signed in to this cezar."
+      hint="The sidebar is in the order you dragged it into. Reset puts it back to most-recently-opened first. Shared with every browser signed in to this Cezarium."
     >
       <Button
         type="button"

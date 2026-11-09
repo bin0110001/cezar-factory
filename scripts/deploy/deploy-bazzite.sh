@@ -82,8 +82,12 @@ printf '[\n  {"targets": ["%s"], "labels": {"role": "model-host"}}\n]\n' \
 # LAN-only vLLM proxy key, not a credential for anything external.
 VLLM_TOKEN_FILE="$STACK_DIR/prometheus-vllm-token.generated"
 vllm_scrape_key="$(grep -E '^VLLM_API_KEY=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-printf '%s' "${vllm_scrape_key:-unset}" > "$VLLM_TOKEN_FILE"
-chmod 0644 "$VLLM_TOKEN_FILE"
+token_tmp="$(mktemp "$VLLM_TOKEN_FILE.tmp.XXXXXX")"
+trap 'rm -f -- "$token_tmp"' EXIT
+printf '%s' "${vllm_scrape_key:-unset}" > "$token_tmp"
+chmod 0644 "$token_tmp"
+mv -f -- "$token_tmp" "$VLLM_TOKEN_FILE"
+trap - EXIT
 
 VLLM_BASE_URL="$FACTORY_VLLM_BASE_URL"
 NO_PROXY="${NO_PROXY:-${FACTORY_VLLM_METRICS_TARGET%%:*},127.0.0.1,localhost}"

@@ -3,7 +3,7 @@ description: Address actionable review findings, re-validate, and return the iss
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fix-review -Step start -RequireGh -RequiredScripts check-already-resolved.ps1,route-state.ps1,validate-result.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -30,6 +30,10 @@ steps:
       scripts and do not edit factory:* labels. Read only the latest review comment's blocking findings.
       Push fixes to the existing PR, then write the structured result as JSON to .factory/implement-result.json
       (create the directory) with the issue number in "issue" and the PR URL in "pr".
+  - id: protect-governance
+    name: Guard verification governance from agent changes
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/protect-governance.ps1 -Task "{{task}}"
+    timeoutSeconds: 300
   - id: targeted-tests
     name: Run targeted validation
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"

@@ -15,3 +15,11 @@ Captured 2026-10-03 on Bazzite.
 - Grafana’s provisioned `factory-prometheus` datasource health: `OK`.
 
 The standalone proof deployment intentionally reports absent Compose-only services as down; the live vLLM target, datasource, dashboard provisioning, and both service health checks are the validated scope here.
+
+## Event retention
+
+`policies/retention.yaml` sets `event_retention_days` (positive integer). `scripts/prune-events.ps1
+-EventsPath <file.jsonl>` removes events whose ISO-8601 `timestamp` (configurable via `-TimestampField`)
+is older than the window, keeps all other lines unchanged (including blank or unparseable ones), rewrites
+the file atomically, and emits one single-line JSON log record with `retention_days`, `cutoff`, `removed`
+and `kept`. An invalid retention is rejected before any event is touched. Scheduling is out of scope.

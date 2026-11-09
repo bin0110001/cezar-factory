@@ -25,7 +25,7 @@ import { z } from 'zod';
  * flicker.
  */
 
-const REPO = 'open-mercato/cezar';
+const REPO = 'bin0110001/cezar-factory';
 export const CEZAR_REPO_URL = `https://github.com/${REPO}`;
 const API_URL = `https://api.github.com/repos/${REPO}`;
 const TIMEOUT_MS = 5_000;
