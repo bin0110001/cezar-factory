@@ -14,7 +14,7 @@ receipt_field() { sed -n "s/^[[:space:]]*\"$2\": \"\\([^\"]*\\)\",\?$/\\1/p" "$1
 validate_receipt() { node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$1"; }
 
 mkdir -p "$TMP/seed/scripts/deploy" "$TMP/seed/config" "$TMP/seed/workflows" "$TMP/seed/skills/demo" \
-  "$TMP/seed/scripts" "$TMP/seed/routing" "$TMP/seed/automations" "$TMP/seed/cezar" "$TMP/bin"
+  "$TMP/seed/scripts" "$TMP/seed/routing" "$TMP/seed/automations" "$TMP/seed/cezar" "$TMP/seed/integrations/bazzite" "$TMP/bin"
 cp "$ROOT/scripts/deploy/factory-autodeploy.sh" "$TMP/seed/scripts/deploy/"
 cp "$ROOT/scripts/deploy/lib-topology.sh" "$TMP/seed/scripts/deploy/"
 cat > "$TMP/seed/scripts/deploy/deploy-cezar-runtime.sh" <<'EOF'
@@ -30,7 +30,7 @@ printf 'name: demo\n' > "$TMP/seed/skills/demo/SKILL.md"
 printf '{"jobs":[]}\n' > "$TMP/seed/routing/automation-catalog.json"
 printf '{"targets":[{"projectId":"demo"}]}\n' > "$TMP/seed/config/factory-projects.json"
 printf '{"name":"[factory] demo"}\n' > "$TMP/seed/automations/demo.json"
-printf '__pycache__/\n*.py[cod]\n' > "$TMP/seed/.gitignore"
+printf '__pycache__/\n*.py[cod]\nintegrations/bazzite/.env\n' > "$TMP/seed/.gitignore"
 cat > "$TMP/topology.env" <<'EOF'
 FACTORY_CONTROL_PLANE_ID=test
 FACTORY_CONTROL_PLANE_SSH_TARGET=test
@@ -178,6 +178,8 @@ export FAKE_DEPLOY_LOG="$TMP/deploy.log"
 export FAKE_METADATA_LOG="$TMP/metadata.log"
 export FAKE_CONTAINER_SHA_FILE="$TMP/container-sha"
 printf '1eac4bf6d0bb726db87b4a8b472cee4da1339edf\n' > "$FAKE_CONTAINER_SHA_FILE"
+mkdir -p "$TMP/checkout/integrations/bazzite"
+printf 'VLLM_API_KEY=expected-test-token\n' > "$TMP/checkout/integrations/bazzite/.env"
 export FACTORY_RUNTIME_ROOT=/projects/cezar-factory
 AUTO="$TMP/checkout/scripts/deploy/factory-autodeploy.sh"
 
@@ -210,6 +212,7 @@ run_auto 0
 assert_text "$TMP/state/last-success.json" '"schemaVersion": 1'
 assert_text "$TMP/state/last-success.json" '"error": ""'
 validate_receipt "$TMP/state/last-success.json"
+
 initial_sha="$(receipt_field "$TMP/state/last-success.json" sourceSha)"
 [[ -n "$initial_sha" ]] || fail 'success receipt has no source SHA'
 [[ "$(wc -l < "$FAKE_DEPLOY_LOG")" -eq 2 ]] || fail 'autodeploy did not invoke the Cezar runtime deployment check'
@@ -272,6 +275,17 @@ run_auto 22
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" == "$sync_count" ]] || fail 'container drift still triggered sync'
 [[ "$(sha256sum "$TMP/state/last-success.json" | cut -d' ' -f1)" == "$last_success" ]] || fail 'parity failure replaced last success'
 unset FAKE_CONTAINER_STALE
+
+# A legacy checkout may have exactly the expected generated token untracked.
+# Verify it and advance so the newer ignore rule can take effect.
+printf 'expected-test-token' > "$TMP/checkout/integrations/bazzite/prometheus-vllm-token.generated"
+run_auto 0
+[[ -f "$TMP/checkout/integrations/bazzite/prometheus-vllm-token.generated" ]] || fail 'autodeploy removed the generated token while reconciling its ignore rule'
+generated_sha="$(git -C "$TMP/checkout" rev-parse HEAD)"
+printf 'unexpected-token' > "$TMP/checkout/integrations/bazzite/prometheus-vllm-token.generated"
+run_auto 20
+[[ "$(git -C "$TMP/checkout" rev-parse HEAD)" == "$generated_sha" ]] || fail 'mismatched generated token was overwritten'
+printf 'expected-test-token' > "$TMP/checkout/integrations/bazzite/prometheus-vllm-token.generated"
 
 # Dirty and divergent checkouts are refused without any checkout rewrite or sync.
 touch "$TMP/checkout/untracked-marker"
