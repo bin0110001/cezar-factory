@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add concise deduplicated failure summaries for agents (#103): `scripts/summarize-failures.ps1` groups finding records by
+  finding ID with occurrence counts, identifiers and detail paths, redacts secrets and caps size with omitted counts.
 - Add graphical worker operator runbook, benchmark and evidence docs (#343, part of #328); gaps are recorded
   explicitly because the runtime has not landed (`docs/graphical-worker-*.md`).
 - Add the routing event contract (#314, part of #94): `schemas/routing-event.schema.json`, an append-only JSONL
