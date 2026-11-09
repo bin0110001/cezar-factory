@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeftIcon, ArrowUpRightIcon, PencilIcon, RotateCcwIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { getAutomationLog, retryAutomationReceipt } from '@/api/client'
+import { checkAutomation, getAutomationCheck, getAutomationLog, retryAutomationReceipt } from '@/api/client'
 import { onWorkspaceEvent } from '@/api/global-events'
 import { Pill } from '@/components/pill'
 import { StatusDot } from '@/components/status-dot'
@@ -14,6 +14,7 @@ import { logTime, resultTone, statusTone, usd, AUTOMATION_COST_VISIBLE } from '@
 import { Link, useNavigate } from '@/lib/project-router'
 import {
   queryScope,
+  type AutomationCheck,
   type AutomationEvent,
   type AutomationListEntry,
   type AutomationLogRecord,
@@ -22,6 +23,7 @@ import {
 } from '@open-mercato/cezar-api-client'
 
 import { PageState } from './automations-route'
+import { IntakeHealthCard } from './intake-health'
 
 /**
  * `/automations/:id/log` — one automation's execution log (spec 2026-09-14-automations-redesign
@@ -102,6 +104,12 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
         </Button>
       </header>
 
+      {automation?.kind === 'github' && query.data ? (
+        <div className="flex justify-center px-5 pt-5">
+          <IntakeHealthCard automation={automation} records={query.data.records} timeZone={zone} onPreview={() => previewCheck(automationId)} />
+        </div>
+      ) : null}
+
       <div className="flex justify-center p-5">
         {query.isError ? (
           <div className="w-full max-w-[820px]"><PageState text={query.error instanceof Error ? query.error.message : String(query.error)} /></div>
@@ -129,10 +137,21 @@ export function AutomationLog({ automationId, automation, timeZone, onBack }: {
   )
 }
 
+/** A dry-run check: queue it, then poll the server's in-memory record until it settles. */
+async function previewCheck(automationId: string): Promise<AutomationCheck> {
+  const { checkId } = await checkAutomation(automationId, 'preview')
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const check = await getAutomationCheck(checkId)
+    if (check.status === 'complete' || check.status === 'error') return check
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error('The preview did not finish in time.')
+}
+
 /** Every result the log can hold, in the contract's order — the filter's menu. */
 const RESULTS: readonly AutomationLogResult[] = [
   'launched', 'no-match', 'duplicate', 'rate-limited', 'error', 'baseline', 'preview',
-  'manual', 'catch-up', 'skipped', 'failed',
+  'manual', 'catch-up', 'skipped', 'failed', 'deferred', 'admission-override',
 ]
 
 /** The seven bounded polls a GitHub automation can watch. */

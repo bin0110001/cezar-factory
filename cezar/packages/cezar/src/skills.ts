@@ -1,5 +1,6 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { sharedDirs } from './shared-dirs.ts';
 import { join, resolve, basename, dirname, extname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { gatedSkillsRepos } from './config.ts';
@@ -88,11 +89,15 @@ const GLOBAL_SKILL_DIRS: Array<{ dir: string; source: Skill['source'] }> = [
  * single chokepoint, so the decision is identical for every consumer — catalog, composer
  * picker, planner, runner.
  */
-export async function discoverSkills(repoRoot: string): Promise<Skill[]> {
+export async function discoverSkills(repoRoot: string, options: { factoryReleaseRoot?: string } = {}): Promise<Skill[]> {
   const [lists, gatedRepos, uiState] = await Promise.all([
     Promise.all([
       ...SKILL_DIRS.map(({ dir, source }) => readMarkdownSkills(resolve(repoRoot, dir), source)),
       ...GLOBAL_SKILL_DIRS.map(({ dir, source }) => readMarkdownSkills(dir, source)),
+      // Operator-mounted catalogs (e.g. the Factory checkout's skills/), below every local and global skill.
+      ...(options.factoryReleaseRoot
+        ? [readMarkdownSkills(join(options.factoryReleaseRoot, 'skills'), 'global')]
+        : sharedDirs('CEZ_SHARED_SKILL_DIRS').map((dir) => readMarkdownSkills(dir, 'global'))),
     ]),
     gatedSkillsRepos(repoRoot),
     readWorkspaceUiState(),

@@ -79,6 +79,12 @@ const GithubRoute = lazy(() =>
 const TrackerRoute = lazy(() =>
   import('./routes/tracker/tracker').then((m) => ({ default: m.TrackerRoute })),
 )
+const BacklogRoute = lazy(() =>
+  import('./routes/backlog').then((m) => ({ default: m.BacklogRoute })),
+)
+const DependencyIntelligenceRoute = lazy(() =>
+  import('./routes/dependency-intelligence').then((m) => ({ default: m.DependencyIntelligenceRoute })),
+)
 
 /** Lazy because the builder carries dnd-kit (R6 Step 1.6) — drag machinery only this surface
  *  uses, so only this surface pays for it. */
@@ -300,6 +306,8 @@ const PAGE_TITLE_ROUTES = [
   { pattern: '/git/*', pageLabel: 'Git' },
   { pattern: '/github/*', pageLabel: 'GitHub' },
   { pattern: '/tracker/*', pageLabel: 'Tracker' },
+  { pattern: '/dependencies', pageLabel: 'Dependencies' },
+  { pattern: '/backlog', pageLabel: 'Backlog' },
   { pattern: '/automations/*', pageLabel: 'Automations' },
   { pattern: '/skills', pageLabel: 'Skills' },
   { pattern: '/inbox', pageLabel: 'Inbox' },
@@ -446,6 +454,8 @@ export const AppRoutes = memo(function AppRoutes() {
           path="tracker/:id"
           element={<Suspense fallback={<ScopeResolving />}><TrackerRoute /></Suspense>}
         />
+        <Route path="dependencies" element={<Suspense fallback={<ScopeResolving />}><DependencyIntelligenceRoute /></Suspense>} />
+        <Route path="backlog" element={<Suspense fallback={<ScopeResolving />}><BacklogRoute /></Suspense>} />
         <Route
           path="github/prs"
           element={

@@ -32,6 +32,7 @@ import { Coverage, TaskRow, taskKey } from './rows'
 import { DashboardExportMenu } from './export-menu'
 import { ExportRows } from './export-rows'
 import { DashboardLayout } from './layout'
+import { WorkspaceLifecycle } from './workspaces'
 import { resetViewOrder, useDashboardPreferences } from './preferences'
 import {
   DashboardEntryContext,
@@ -48,6 +49,7 @@ const views = [
   ['overview', 'Overview'],
   ['costs', 'Usage & cost'],
   ['automations', 'Automations'],
+  ['workspaces', 'Workspaces'],
 ] as const
 
 export function DashboardRoute() {
@@ -74,6 +76,8 @@ function DashboardView({ entryKey }: { entryKey: string }) {
       ? 'costs'
       : search.get('view') === 'automations'
         ? 'automations'
+        : search.get('view') === 'workspaces'
+          ? 'workspaces'
         : 'overview'
   const viewLabel = views.find(([id]) => id === view)![1]
   const viewTiles =
@@ -81,6 +85,8 @@ function DashboardView({ entryKey }: { entryKey: string }) {
       ? (['usage', 'trends'] as const)
       : view === 'automations'
         ? (['automations'] as const)
+        : view === 'workspaces'
+          ? ([] as const)
         : (['fleet', 'needsYou', 'recent'] as const)
   const scope =
     view === 'overview'
@@ -378,6 +384,7 @@ function DashboardView({ entryKey }: { entryKey: string }) {
             />
           )}
           {view === 'automations' && <AutomationOutcomes />}
+          {view === 'workspaces' && <WorkspaceLifecycle />}
           <Overview active={view === 'overview'} onCurrent={open}>
             {(overviewModules) =>
               preferences.ready && (

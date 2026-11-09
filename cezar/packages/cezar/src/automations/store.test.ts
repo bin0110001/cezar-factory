@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe('AutomationStore', () => {
-  it('writes definitions atomically at private permissions and preserves unknown fields', async () => {
+  it.skipIf(process.platform === 'win32')('writes definitions atomically at private permissions and preserves unknown fields', async () => {
     const dir = await directory();
     const store = AutomationStore.open(dir);
     const created = store.create(input, 'review-prs');
@@ -132,6 +132,27 @@ describe('AutomationStore.acquireLease — a lock nobody is holding any more (#9
     // The reclaimed lock now names this process, so the next contender probes us, not the corpse.
     expect(JSON.parse(readFileSync(join(dir, 'automation-poll.lock'), 'utf8')).pid).toBe(process.pid);
     lease?.release();
+  });
+
+  // Regression: a container's cockpit is always pid 1, so the lock left by a previous container
+  // instance names the same pid as the new one. It looked held forever; every poll and manual run
+  // was refused ("automation polling lease is held by another process") until the file was removed.
+  it('reclaims a lock that names this pid but was issued by an earlier process instance', async () => {
+    const dir = await lockedDirectory(JSON.stringify({ pid: process.pid, token: 'issued-by-a-previous-container', startedAt: new Date().toISOString() }));
+    const store = AutomationStore.open(dir);
+    const lease = store.acquireLease();
+    expect(lease).toBeDefined();
+    expect(JSON.parse(readFileSync(join(dir, 'automation-poll.lock'), 'utf8')).token).not.toBe('issued-by-a-previous-container');
+    lease?.release();
+  });
+
+  it('still refuses a second lease while this process holds the first', async () => {
+    const dir = await directory();
+    const store = AutomationStore.open(dir);
+    const first = store.acquireLease();
+    expect(first).toBeDefined();
+    expect(AutomationStore.open(dir).acquireLease()).toBeUndefined();
+    first?.release();
   });
 
   it('leaves a lock alone while its writer is still alive', async () => {

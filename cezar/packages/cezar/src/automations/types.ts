@@ -34,6 +34,14 @@ export const automationFiltersSchema = z
     reviewers: stringList,
     lookbackDays: z.number().int().min(1).max(90).default(7),
     maxRecords: z.number().int().min(1).max(100).default(25),
+    /** Issue events only: new launches admitted per scheduler turn. Admissible candidates beyond it stay durably deferred (never dropped) and are admitted, highest `priority:<n>` first, on later turns. Omitted = unbounded. */
+    /** issue.labeled only: every this-many hours the poll also lists OPEN issues that still carry a changed label and recovers any whose labeling event the cursor never delivered (missed or skipped page). Already-received events are deduplicated by receipt. Omitted = never. */
+    /** With fullReconcileHours: 'eligible' also recovers open issues labeled BEFORE the automation was created (initial sync); 'new_only' (default) never replays history older than the baseline. */
+    initialSync: z.enum(['eligible', 'new_only']).optional(),
+    fullReconcileHours: z.number().int().min(1).max(720).optional(),
+    /** Up to this many seconds are added (randomly) to each next poll time so many automations do not hit GitHub in lockstep. Omitted = none. */
+    pollJitterSeconds: z.number().int().min(1).max(600).optional(),
+    maxAdmissionsPerCycle: z.number().int().min(1).max(100).optional(),
     /** Tracker kind only: the vendor workflow status a matching item must currently be in
      *  (e.g. "To Do"). Case-insensitive match against the item's own `status` field. */
     status: z.string().trim().min(1).max(200).optional(),
@@ -185,6 +193,9 @@ export const automationRuntimeStateSchema = z
     etags: z.record(z.string(), z.string()).optional(),
     backoffUntil: z.string().datetime().optional(),
     consecutiveFailures: z.number().int().nonnegative().optional(),
+    /** Last completed full reconciliation and how many never-received events it recovered. */
+    lastReconcileAt: z.string().datetime().optional(),
+    lastReconcileRecovered: z.number().int().nonnegative().optional(),
   })
   .passthrough();
 
@@ -202,11 +213,12 @@ export const automationReceiptSchema = z
     eventId: z.string().min(1),
     automationId: z.string().min(1),
     revision: z.number().int().positive(),
-    status: z.enum(['reserved', 'launched', 'launch-error']),
+    status: z.enum(['reserved', 'deferred', 'launched', 'launch-error']),
     runId: z.string().optional(),
     observedAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     error: z.string().max(2_000).optional(),
+    deferReason: z.string().max(2_000).optional(),
     /** schedule kind: the occurrence this receipt reserved, so a retry can fire it again. */
     occurrenceAt: z.string().datetime().optional(),
     candidate: z
@@ -256,6 +268,8 @@ export const automationLogResultSchema = z.enum([
   'catch-up',
   'skipped',
   'failed',
+  'deferred',
+  'admission-override',
 ]);
 
 export const automationLogRecordSchema = z

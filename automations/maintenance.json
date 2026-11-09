@@ -1,17 +1,16 @@
 {
   "name": "[factory] maintenance",
-  "description": "Nightly housekeeping sweep, opt-in via features.maintenance (managed by cezar-factory; do not edit in the cockpit)",
+  "description": "Hourly deterministic Factory housekeeping with bounded existing-issue intake, stale refresh, and repository sweep (managed by cezar-factory; do not edit in the cockpit)",
   "kind": "schedule",
   "schedule": {
-    "type": "daily",
-    "hour": 0,
-    "minute": 0
+    "type": "hours",
+    "every": 1
   },
   "task": {
-    "prompt": "Nightly maintenance sweep for {{project}} on {{date}}.",
+    "prompt": "Run the bounded Factory maintenance workflow for {{project}} at {{time}} on {{date}}. The workflow steps do all the work; do not inspect, select, or create issues or tasks yourself.",
     "workflow": "factory-maintenance",
-    "runner": "codex",
-    "model": "factory-gateway/factory-code",
+    "runner": "claude",
+    "model": "sonnet",
     "worktree": true,
     "autonomous": true
   }

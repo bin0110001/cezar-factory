@@ -32,6 +32,13 @@ localhost-only profile:
 That profile uses `com.vllm.gemma4.plist` on port 8001 and a reduced 4,096-token
 context so it can coexist with the coding model on the 16 GB Mac mini.
 
+> **Operational note (2026-11-06):** the live Mac mini runs only the coding model. With the general
+> profile resident beside a 64K-context Qwen and the Podman VM, the host swapped 12.6 of 13.3 GB and generation
+> alternated between 0.3 and 20 tok/s, which surfaced as `codex app-server timed out` failures. Its agent was
+> unloaded and renamed to `com.vllm.gemma4.plist.disabled-20261106`. Do not redeploy the general profile on that
+> host without first checking swap use; the model-host preflight (`scripts/probe-model-endpoint.ps1`) will
+> catch the symptom.
+
 ## Trusted proxy mode
 
 For the coding endpoint, use the checked-in user-level proxy deployment after

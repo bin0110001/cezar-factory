@@ -8,6 +8,7 @@ import { workflowDefSchema, workflowStepDefSchema } from './workflows.ts';
 // one. `src/runs/store.ts` imports the SAME value for its persistence twin, so the two halves of
 // `contract-parity.runs.test.ts` cannot drift apart by construction.
 import { dispatchIntentSchema, dispatchSchema } from './dispatch.ts';
+import { factoryReleaseProvenanceSchema } from './releases.ts';
 
 /**
  * The RUNS family of `/api/v1` — a task's record, its lifecycle mutations, and the artifacts
@@ -314,6 +315,8 @@ export const runRecordSchema = z.object({
    * like every other key.
    */
   workflowDef: workflowDefSchema.optional(),
+  /** Immutable Factory channel selection used by this run and its resumes. */
+  factoryRelease: factoryReleaseProvenanceSchema.optional(),
 });
 export type RunRecord = z.infer<typeof runRecordSchema>;
 

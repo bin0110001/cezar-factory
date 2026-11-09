@@ -29,7 +29,8 @@ export function EditorGithubFields({
 }) {
   const hasList = (['authors', 'assignees', 'anyLabels', 'allLabels', 'excludeLabels', 'changedLabels', 'reviewers'] as const)
     .some((key) => filters[key].trim().length > 0)
-  const [open, setOpen] = useState(hasList || filters.lookbackDays !== 7 || filters.maxRecords !== 25)
+  const [open, setOpen] = useState(hasList || filters.lookbackDays !== 7 || filters.maxRecords !== 25
+    || filters.maxAdmissionsPerCycle > 0 || filters.fullReconcileHours > 0 || filters.pollJitterSeconds > 0 || filters.initialSync !== 'new_only')
   const setFilter = <K extends keyof DraftFilters>(key: K, value: DraftFilters[K]) =>
     onChange({ filters: { ...filters, [key]: value } })
   const toggleEvent = (event: AutomationEvent) => {
@@ -96,6 +97,26 @@ export function EditorGithubFields({
             <FilterField id="filter-reviewers" label="Reviewers" value={filters.reviewers} onChange={(value) => setFilter('reviewers', value)} />
             <NumberField id="filter-lookback" label="Lookback days (1–90)" value={filters.lookbackDays} min={1} max={90} onChange={(value) => setFilter('lookbackDays', value)} />
             <NumberField id="filter-max-records" label="Max records (1–100)" value={filters.maxRecords} min={1} max={100} onChange={(value) => setFilter('maxRecords', value)} />
+          </div>
+          <div data-slot="editor-intake" className="mt-3 border-t border-border pt-3">
+            <div className="mb-2 text-[11px] font-semibold tracking-[.05em] uppercase text-soft-foreground">Issue intake (0 = off)</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <NumberField id="filter-max-admissions" label="Max new launches per check (0 = unlimited)" value={filters.maxAdmissionsPerCycle} min={0} max={100} onChange={(value) => setFilter('maxAdmissionsPerCycle', value)} />
+              <NumberField id="filter-reconcile-hours" label="Full reconcile every N hours (0 = off)" value={filters.fullReconcileHours} min={0} max={720} onChange={(value) => setFilter('fullReconcileHours', value)} />
+              <NumberField id="filter-jitter" label="Poll jitter seconds (0 = none)" value={filters.pollJitterSeconds} min={0} max={600} onChange={(value) => setFilter('pollJitterSeconds', value)} />
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="filter-initial-sync" className="text-xs text-muted-foreground">Initial sync</Label>
+                <Select value={filters.initialSync} onValueChange={(value) => setFilter('initialSync', value as DraftFilters['initialSync'])}>
+                  <SelectTrigger id="filter-initial-sync" size="sm" aria-label="Initial sync" className="text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new_only">New changes only</SelectItem>
+                    <SelectItem value="eligible">Include existing eligible issues</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>

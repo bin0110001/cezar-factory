@@ -2,12 +2,16 @@
 export const TASK_COLUMN_IDS = [
   'status',
   'task',
+  'priority',
   'workflow',
   'branch',
   'diff',
   'reference',
   'tokens',
   'cost',
+  'duration',
+  'nextRun',
+  'model',
   'cpu',
   'memory',
   'started',
@@ -16,11 +20,15 @@ export const TASK_COLUMN_IDS = [
 export type TaskColumnId = (typeof TASK_COLUMN_IDS)[number]
 export type TaskColumnIcon =
   | 'workflow'
+  | 'priority'
   | 'branch'
   | 'diff'
   | 'reference'
   | 'tokens'
   | 'cost'
+  | 'duration'
+  | 'nextRun'
+  | 'model'
   | 'cpu'
   | 'memory'
   | 'started'
@@ -35,6 +43,8 @@ export interface TaskColumnDefinition {
   width?: string
   icon?: TaskColumnIcon
   capability?: 'tokens' | 'cost'
+  /** False when the visible value is only a live sample and has no stable list-level sort key. */
+  sortable?: boolean
 }
 
 /**
@@ -44,6 +54,7 @@ export interface TaskColumnDefinition {
 export const TASK_COLUMNS = [
   { id: 'status', label: 'Status', canFold: false, defaultExpanded: true, align: 'left', width: '116px' },
   { id: 'task', label: 'Task', canFold: false, defaultExpanded: true, align: 'left' },
+  { id: 'priority', label: 'Priority', canFold: true, defaultExpanded: true, align: 'left', width: '94px', icon: 'priority' },
   {
     id: 'workflow',
     label: 'Workflow',
@@ -92,7 +103,10 @@ export const TASK_COLUMNS = [
     icon: 'cost',
     capability: 'cost',
   },
-  { id: 'cpu', label: 'CPU', canFold: true, defaultExpanded: true, align: 'right', width: '68px', icon: 'cpu' },
+  { id: 'duration', label: 'Duration', canFold: true, defaultExpanded: true, align: 'right', width: '88px', icon: 'duration' },
+  { id: 'nextRun', label: 'Next run', canFold: true, defaultExpanded: true, align: 'right', width: '116px', icon: 'nextRun' },
+  { id: 'model', label: 'Model / account', canFold: true, defaultExpanded: true, align: 'left', width: '148px', icon: 'model' },
+  { id: 'cpu', label: 'CPU', canFold: true, defaultExpanded: true, align: 'right', width: '68px', icon: 'cpu', sortable: false },
   {
     id: 'memory',
     label: 'Mem',
@@ -101,10 +115,11 @@ export const TASK_COLUMNS = [
     align: 'right',
     width: '88px',
     icon: 'memory',
+    sortable: false,
   },
   {
     id: 'started',
-    label: 'Started',
+    label: 'Last run',
     canFold: true,
     defaultExpanded: true,
     align: 'right',

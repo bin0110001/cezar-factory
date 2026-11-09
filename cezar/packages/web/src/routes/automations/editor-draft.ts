@@ -38,6 +38,11 @@ export interface DraftFilters {
   reviewers: string
   lookbackDays: number
   maxRecords: number
+  /** Issue intake limits; 0 means off / unlimited so the fields stay plain numbers. */
+  maxAdmissionsPerCycle: number
+  fullReconcileHours: number
+  pollJitterSeconds: number
+  initialSync: 'new_only' | 'eligible'
 }
 
 /** Shared editor kinds; each serializes only its own trigger. */
@@ -120,6 +125,10 @@ export const DEFAULT_FILTERS: DraftFilters = {
   reviewers: '',
   lookbackDays: 7,
   maxRecords: 25,
+  maxAdmissionsPerCycle: 0,
+  fullReconcileHours: 0,
+  pollJitterSeconds: 0,
+  initialSync: 'new_only',
 }
 
 export const DEFAULT_SCHEDULE: AutomationSchedule = { type: 'daily', hour: 4, minute: 0 }
@@ -178,6 +187,10 @@ export function fromDefinition(definition: AutomationDefinition): EditorDraft {
           reviewers: joinList(filters.reviewers),
           lookbackDays: filters.lookbackDays,
           maxRecords: filters.maxRecords,
+          maxAdmissionsPerCycle: filters.maxAdmissionsPerCycle ?? 0,
+          fullReconcileHours: filters.fullReconcileHours ?? 0,
+          pollJitterSeconds: filters.pollJitterSeconds ?? 0,
+          initialSync: filters.initialSync ?? 'new_only',
         }
       : base.filters,
     prompt: task.prompt,
@@ -303,6 +316,10 @@ export function toBody(draft: EditorDraft): AutomationBody {
       ...list(f.reviewers, 'reviewers'),
       lookbackDays: clamp(f.lookbackDays, 1, 90),
       maxRecords: clamp(f.maxRecords, 1, 100),
+      ...(f.maxAdmissionsPerCycle > 0 ? { maxAdmissionsPerCycle: clamp(f.maxAdmissionsPerCycle, 1, 100) } : {}),
+      ...(f.fullReconcileHours > 0 ? { fullReconcileHours: clamp(f.fullReconcileHours, 1, 720) } : {}),
+      ...(f.pollJitterSeconds > 0 ? { pollJitterSeconds: clamp(f.pollJitterSeconds, 1, 600) } : {}),
+      ...(f.initialSync === 'eligible' ? { initialSync: 'eligible' as const } : {}),
     },
     task,
   }

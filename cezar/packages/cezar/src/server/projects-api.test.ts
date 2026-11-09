@@ -28,6 +28,7 @@ import { loadWorkspaceConfig, mergeWriteWorkspaceConfig } from '../workspace/con
 import { workspaceConfigPath } from '../paths.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import type { CloneRunner } from './checkout.ts';
+import type { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import {
   WorkspaceEventBus,
   createApp,
@@ -72,13 +73,15 @@ describe('workspace projects API', () => {
   let repoRoot: string;
   let otherRoot: string;
   let store: RunStore;
+  let contexts: ProjectContexts;
 
   beforeEach(() => {
-    home = mkdtempSync(join(realpathSync(tmpdir()), 'cez-workspace-'));
-    repoRoot = mkdtempSync(join(realpathSync(tmpdir()), 'cez-projects-boot-'));
-    otherRoot = mkdtempSync(join(realpathSync(tmpdir()), 'cez-projects-other-'));
+    home = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-workspace-')));
+    repoRoot = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-projects-boot-')));
+    otherRoot = realpathSync.native(mkdtempSync(join(realpathSync.native(tmpdir()), 'cez-projects-other-')));
     process.env.CEZ_HOME = home; // paths.ts sends all workspace paths here
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    contexts = new ProjectContexts({ listProjects });
     delete process.env.CEZ_REMOTE;
     delete process.env.CEZ_FOLLOWUPS;
     delete process.env.CEZ_SINGLE_PROJECT;
@@ -89,7 +92,15 @@ describe('workspace projects API', () => {
 
   afterEach(() => {
     store.flush();
-    for (const dir of [home, repoRoot, otherRoot]) rmSync(dir, { recursive: true, force: true });
+    contexts.disposeAll();
+    for (const dir of [home, repoRoot, otherRoot]) {
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
+      } catch (error) {
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+        console.warn(`[projects-api.test] Windows kept a locked temporary directory for runner cleanup: ${dir}`);
+      }
+    }
     if (savedHome === undefined) delete process.env.CEZ_HOME;
     else process.env.CEZ_HOME = savedHome;
     if (savedRemote === undefined) delete process.env.CEZ_REMOTE;
@@ -108,6 +119,7 @@ describe('workspace projects API', () => {
       store,
       manager: {} as RunManager,
       version: '0.0.0-test',
+      contexts: over.contexts ?? contexts,
       ...over,
     });
 
@@ -826,6 +838,63 @@ describe('workspace projects API', () => {
       expect(body.project.maxParallel).toBe(3);
       const listed = await getProjects();
       expect(listed.projects.find((p) => p.id === other.id)?.tags).toEqual(['api', 'Storefront']);
+    });
+
+    it('sets a per-project Factory channel without changing tags or concurrency', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { tags: ['storefront'], maxParallel: 3 });
+      const { status, body } = await patch(other.id, { factoryChannel: 'dev' });
+      expect(status).toBe(200);
+      expect(body.project.factoryChannel).toBe('dev');
+      expect(body.project.tags).toEqual(['storefront']);
+      expect(body.project.maxParallel).toBe(3);
+      expect((await getProjects()).projects.find((p) => p.id === other.id)?.factoryChannel).toBe('dev');
+    });
+
+    it('clears a channel override and rejects unknown channels', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { factoryChannel: 'dev' });
+      const cleared = await patch(other.id, { factoryChannel: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.project.factoryChannel).toBeUndefined();
+      expect((await patch(other.id, { factoryChannel: 'canary' })).status).toBe(400);
+    });
+
+    it('stores a bounded full regression policy, preserves other project settings, and clears it', async () => {
+      const other = await registerProject(otherRoot);
+      await patch(other.id, { factoryChannel: 'dev', maxParallel: 2 });
+      const { status, body } = await patch(other.id, {
+        fullRegressionPolicy: { mode: 'after_changes', changesPerBatch: 25, maxRunsPerWindow: 3, maxUpdatesPerWindow: 200, maxQueuedRuns: 1, windowHours: 168 },
+      });
+      expect(status).toBe(200);
+      expect(body.project.fullRegressionPolicy).toEqual({
+        mode: 'after_changes', changesPerBatch: 25, maxRunsPerWindow: 3,
+        maxUpdatesPerWindow: 200, maxQueuedRuns: 1, windowHours: 168,
+      });
+      expect(body.project.factoryChannel).toBe('dev');
+      expect(body.project.maxParallel).toBe(2);
+      expect((await getProjects()).projects.find((p) => p.id === other.id)?.fullRegressionPolicy?.mode).toBe('after_changes');
+      expect((await patch(other.id, { fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'hours', every: 6 }, maxRunsPerWindow: 0 } })).status).toBe(400);
+      expect((await patch(other.id, { fullRegressionPolicy: null })).body.project.fullRegressionPolicy).toBeUndefined();
+    });
+
+    it('queues an on-demand full regression for the named project and returns the tested SHA', async () => {
+      const other = await registerProject(otherRoot);
+      const requested: string[] = [];
+      const scheduler = {
+        runNow: async (projectId: string) => {
+          requested.push(projectId);
+          return { status: 'queued' as const, runId: 'run-full-1', testedHead: 'a'.repeat(40), followUpPending: false };
+        },
+      } as unknown as FullRegressionScheduler;
+      const response = await apiRequest(
+        makeApp({ fullRegressionScheduler: scheduler }),
+        `/api/v1/projects/${encodeURIComponent(other.id)}/verification/full-regression`,
+        { method: 'POST' },
+      );
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ status: 'queued', runId: 'run-full-1', testedHead: 'a'.repeat(40), followUpPending: false });
+      expect(requested).toEqual([other.id]);
     });
 
     it('clears tags on null and on [], storing no key at all', async () => {

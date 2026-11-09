@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "factory-doc-state/v1",
+  "documentId": "legacy/docs/legacy-notes",
+  "kind": "proposed-spec",
+  "state": "proposed",
+  "title": "Migrated legacy note",
+  "repository": { "slug": "example/widgets" },
+  "ownership": { "owner": "unassigned" },
+  "revision": { "branch": "migration/legacy", "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "observedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sourceAnchors": [{ "path": "docs/legacy-notes.md" }] },
+  "claims": [{ "id": "legacy-summary", "text": "The service may retry a request after a transient timeout.", "knowledge": "proposed", "speculative": true, "sourceAnchors": [{ "path": "docs/legacy-notes.md" }], "evidence": [] }],
+  "verification": { "status": "not-verified", "evidence": [] },
+  "freshness": { "status": "unknown", "reason": "Legacy evidence has no revision pin." },
+  "sensitivity": "internal",
+  "projectPolicy": { "mode": "opt-in", "mandatoryGates": ["approved-contract", "security"], "advisoryChecks": [] },
+  "previousState": null,
+  "transitionReason": "Migrated without inferring owner, approval, or verification.",
+  "transitionedAt": "2026-11-02T12:00:00Z",
+  "transitionedBy": "migration/v1",
+  "migratedFrom": { "schemaVersion": "unversioned/v0", "sourceRef": "docs/legacy-notes.md" }
+}

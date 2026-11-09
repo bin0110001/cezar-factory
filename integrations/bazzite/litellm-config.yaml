@@ -8,6 +8,7 @@ model_list:
     model_info:
       max_input_tokens: 65536
       max_output_tokens: 4096
+      supports_mid_conversation_system: false
   - model_name: factory-code
     litellm_params:
       model: openai/qwen3.5-9b
@@ -17,6 +18,7 @@ model_list:
     model_info:
       max_input_tokens: 65536
       max_output_tokens: 4096
+      supports_mid_conversation_system: false
 
 router_settings:
   routing_strategy: simple-shuffle
@@ -30,6 +32,7 @@ router_settings:
     - factory-code: [factory-small]
 
 litellm_settings:
+  drop_params: true
   callbacks: ["langfuse_otel"]
 
 general_settings:

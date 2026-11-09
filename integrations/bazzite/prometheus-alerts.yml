@@ -17,3 +17,77 @@ groups:
         annotations:
           summary: "Model-host vLLM unavailable"
           description: "LiteLLM cannot reach the configured model endpoint."
+  - name: factory-model-host
+    rules:
+      # 2026-11-06: a 16 GB host swapping 12.6 of 13.3 GB held requests "running" at 0.3-0.5 tok/s for minutes
+      # at a time. `up` stayed 1 throughout, so FactoryServiceDown never fired.
+      - alert: ModelHostNotGenerating
+        expr: max by (instance) (vllm:num_requests_running) > 0 and sum by (instance) (rate(vllm:generation_tokens_total[5m])) < 2
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model host has requests running but is barely generating"
+          description: "{{ $labels.instance }} has had running requests with under 2 tokens/s for 10 minutes: the host is likely swapping or wedged. Check swap and resident models on the model host."
+      - alert: ModelHostQueueBacklog
+        expr: max by (instance) (vllm:num_requests_waiting) >= 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model host request queue is backed up"
+          description: "{{ $labels.instance }} has had two or more requests waiting for 10 minutes. Parallel agent runs exceed what the host can serve."
+      - alert: ModelHostKvCacheSaturated
+        expr: max by (instance) (vllm:kv_cache_usage_perc) > 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model host KV cache is saturated"
+          description: "{{ $labels.instance }} KV cache usage has stayed above 95% for 10 minutes; requests will be preempted or stall."
+      - alert: ModelHostPreempting
+        expr: sum by (instance) (rate(vllm:num_preemptions_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model host is preempting requests"
+          description: "{{ $labels.instance }} has been preempting requests for 10 minutes, which means memory pressure."
+      # `up` is 1 only when the scrape itself succeeded, so a 401 (bad or missing token) reads as down. This
+      # alert separates "the metrics endpoint is up but we cannot read it" from a real outage.
+      - alert: ModelHostMetricsMissing
+        expr: absent(vllm:num_requests_running) and on() (up{job="model-host-vllm"} == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model host answers but exports no vLLM metrics"
+          description: "The model-host target is scraped successfully but vllm:* series are absent; the generation alerts above cannot fire."
+  - name: factory-liveness
+    rules:
+      # Cezar and LiteLLM export no `up`-style signal of their own that means "working": Cezar has no metrics
+      # endpoint, and LiteLLM's /metrics needs a credential. The blackbox probes check the real health responses.
+      - alert: FactoryEndpointDown
+        expr: probe_success{job=~"liveness-.*"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Factory service failed its liveness probe"
+          description: "{{ $labels.service }} ({{ $labels.instance }}) has failed its health check for three minutes. A Cezar deploy restarts it briefly; longer than that is an outage."
+      - alert: FactoryEndpointSlow
+        expr: probe_duration_seconds{job=~"liveness-.*"} > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Factory service health check is slow"
+          description: "{{ $labels.service }} has taken over five seconds to answer its health check for ten minutes."
+      - alert: FactoryLivenessProbeMissing
+        expr: absent(probe_success{job="liveness-cezar"}) or absent(probe_success{job="liveness-litellm"})
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Liveness probes are not reporting"
+          description: "No probe_success series for Cezar or LiteLLM; the blackbox exporter is down or unreachable, so the endpoint alerts cannot fire."

@@ -37,6 +37,15 @@ missing target registry is a hard failure, not a reason to improvise a target.
 
 ## Runtime and container guidance
 
+Factory workflow commands execute inside the Cezar Linux container. The
+registered `FACTORY_RUNTIME_ROOT` is consequently an in-container path,
+normally `/projects/cezar-factory`; it must never be interpreted as a Windows
+drive path. If PowerShell reports that
+`/projects/cezar-factory/scripts/factory-startup.ps1` is not recognized, the
+container bind mount or deployed Factory checkout is missing or stale. Repair
+the mount/deployment on Bazzite rather than changing the workflow to a Windows
+path.
+
 Container images used for this workflow should include PowerShell (`pwsh`),
 Git, and GitHub CLI at image-build time. The startup entrypoint should invoke
 the preflight with `-NoProfile`, preserve its exit code, and only then launch

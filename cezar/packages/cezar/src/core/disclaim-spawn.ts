@@ -14,7 +14,7 @@
  * returned untouched, so a missing binary still fails the spawn with the usual ENOENT and hint.
  */
 import { accessSync, constants, statSync } from 'node:fs';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { delimiter, extname, isAbsolute, join } from 'node:path';
 
 export const DISCLAIM_EXEC_FLAG = '--cez-disclaim-exec';
 
@@ -25,6 +25,15 @@ export interface DisclaimOptions {
   hostEnv?: NodeJS.ProcessEnv;
 }
 
+/** Spawn JavaScript command shims through Node so file mode and OS extension
+ *  associations do not decide whether an agent or its test mock can run. */
+export function nodeScriptCommand(program: string, args: readonly string[]): [string, string[]] {
+  if (['.js', '.mjs', '.cjs'].includes(extname(program).toLowerCase())) {
+    return [process.execPath, [program, ...args]];
+  }
+  return [program, [...args]];
+}
+
 /** `[file, args]` to spawn so `program` runs as its own responsible process when it can. */
 export function disclaimedCommand(
   program: string,
@@ -32,12 +41,13 @@ export function disclaimedCommand(
   childEnv: NodeJS.ProcessEnv | undefined,
   opts: DisclaimOptions = {},
 ): [string, string[]] {
+  const [command, commandArgs] = nodeScriptCommand(program, args);
   const platform = opts.platform ?? process.platform;
   const trampoline = (opts.hostEnv ?? process.env).CEZ_DISCLAIM_EXEC;
-  if (platform !== 'darwin' || !trampoline || !isExecutable(trampoline)) return [program, [...args]];
-  const resolved = resolveProgram(program, childEnv?.PATH ?? process.env.PATH);
-  if (!resolved) return [program, [...args]];
-  return [trampoline, [DISCLAIM_EXEC_FLAG, resolved, ...args]];
+  if (platform !== 'darwin' || !trampoline || !isExecutable(trampoline)) return [command, commandArgs];
+  const resolved = resolveProgram(command, childEnv?.PATH ?? process.env.PATH);
+  if (!resolved) return [command, commandArgs];
+  return [trampoline, [DISCLAIM_EXEC_FLAG, resolved, ...commandArgs]];
 }
 
 function resolveProgram(program: string, path: string | undefined): string | null {

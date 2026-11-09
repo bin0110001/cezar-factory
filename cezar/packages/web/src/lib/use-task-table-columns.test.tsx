@@ -30,6 +30,8 @@ function Harness() {
   return (
     <>
       <output data-testid="loading">{String(columns.isPending)}</output>
+      <output data-testid="sort">{`${columns.sort.column}:${columns.sort.direction}`}</output>
+      <button type="button" onClick={() => columns.setSort({ column: 'task', direction: 'asc' })}>sort task</button>
       {(['status', 'branch', 'workflow'] as const).map((id) => (
         <button
           key={id}
@@ -69,9 +71,29 @@ afterEach(() => {
   fetchMock.mockReset()
   toastMock.mockReset()
   vi.unstubAllGlobals()
+  window.localStorage.clear()
 })
 
 describe('useTaskTableColumns', () => {
+  it('defaults to latest run and persists an accessible sort preference in local storage', async () => {
+    fetchMock.mockResolvedValue(json({}))
+    renderHarness()
+    await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'))
+    expect(screen.getByTestId('sort').textContent).toBe('started:desc')
+    fireEvent.click(screen.getByRole('button', { name: 'sort task' }))
+    expect(screen.getByTestId('sort').textContent).toBe('task:asc')
+    expect(JSON.parse(window.localStorage.getItem('cezar.tasks.table.sort') ?? 'null'))
+      .toEqual({ column: 'task', direction: 'asc' })
+  })
+
+  it('restores a saved sort preference on mount', async () => {
+    window.localStorage.setItem('cezar.tasks.table.sort', JSON.stringify({ column: 'status', direction: 'desc' }))
+    fetchMock.mockResolvedValue(json({}))
+    renderHarness()
+    await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'))
+    expect(screen.getByTestId('sort').textContent).toBe('status:desc')
+  })
+
   it('does not write before initial state loads, then preserves its nested siblings', async () => {
     const initial = deferred<Response>()
     fetchMock.mockImplementation(async (_input, init) => {

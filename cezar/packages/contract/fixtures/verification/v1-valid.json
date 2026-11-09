@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "checks": {
+    "parse": {
+      "runner": "command",
+      "executable": "node",
+      "args": ["-e", "process.exit(0)"],
+      "cwd": ".",
+      "timeoutSeconds": 15,
+      "tags": ["fast"],
+      "owns": ["src/**/*.ts"],
+      "requires": [],
+      "optional": false,
+      "resources": []
+    },
+    "optional-engine": {
+      "runner": "command",
+      "executable": "node",
+      "args": ["-e", "process.exit(0)"],
+      "cwd": ".",
+      "timeoutSeconds": 15,
+      "requires": ["optional-engine"],
+      "optional": true
+    }
+  },
+  "suites": {
+    "quick": ["parse"],
+    "full": ["parse", "optional-engine"]
+  }
+}

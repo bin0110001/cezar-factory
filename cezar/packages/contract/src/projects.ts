@@ -1,5 +1,33 @@
 import { z } from 'zod';
 import { trackerKindSchema } from './tracker.ts';
+import { automationScheduleSchema } from './automation-schedule.ts';
+
+export const factoryChannelSchema = z.enum(['dev', 'stable']);
+export type FactoryChannel = z.infer<typeof factoryChannelSchema>;
+
+const verificationBudgetSchema = z.object({
+  windowHours: z.number().int().min(1).max(24 * 365).default(168),
+  maxRunsPerWindow: z.number().int().min(1).max(100).default(1),
+  maxUpdatesPerWindow: z.number().int().min(1).max(100_000).default(100),
+  /** Full suites are single-flight per project; 0 parks follow-up batches, 1 allows one coalesced follow-up. */
+  maxQueuedRuns: z.number().int().min(0).max(1).default(1),
+});
+
+/** Missing policy is handled as on-demand by the scheduler, never as a recurring default. */
+export const fullRegressionPolicySchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('on-demand') }).merge(verificationBudgetSchema),
+  z.object({ mode: z.literal('scheduled'), schedule: automationScheduleSchema }).merge(verificationBudgetSchema),
+  z.object({ mode: z.literal('after_changes'), changesPerBatch: z.number().int().min(1).max(100_000).default(10) }).merge(verificationBudgetSchema),
+]);
+export type FullRegressionPolicy = z.infer<typeof fullRegressionPolicySchema>;
+
+export const fullRegressionRunResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.enum(['queued', 'running']), runId: z.string(), testedHead: z.string(), followUpPending: z.boolean() }),
+  z.object({ status: z.literal('coalesced'), runId: z.string(), testedHead: z.string(), followUpPending: z.literal(true) }),
+  z.object({ status: z.literal('limited'), reason: z.string(), retryAt: z.string().optional() }),
+  z.object({ status: z.literal('not-configured'), reason: z.string() }),
+]);
+export type FullRegressionRunResponse = z.infer<typeof fullRegressionRunResponseSchema>;
 
 /**
  * The project-registry family: `GET/POST/PATCH/DELETE /api/v1/projects`, the folder picker
@@ -69,6 +97,10 @@ export const projectListEntrySchema = z.object({
    * directly.
    */
   tags: z.array(z.string()).optional(),
+  /** Factory release channel selected for new tasks; absent means stable. */
+  factoryChannel: factoryChannelSchema.optional(),
+  /** Full regression cadence and resource budget; absent means on-demand only. */
+  fullRegressionPolicy: fullRegressionPolicySchema.optional(),
 });
 export type ProjectListEntry = z.infer<typeof projectListEntrySchema>;
 
@@ -147,10 +179,12 @@ export const updateProjectInputSchema = z
       .max(PROJECT_TAGS_MAX)
       .nullable()
       .optional(),
+    factoryChannel: factoryChannelSchema.nullable().optional(),
+    fullRegressionPolicy: fullRegressionPolicySchema.nullable().optional(),
   })
   .refine(
-    (body) => body.maxParallel !== undefined || body.tags !== undefined,
-    'specify maxParallel or tags',
+    (body) => body.maxParallel !== undefined || body.tags !== undefined || body.factoryChannel !== undefined || body.fullRegressionPolicy !== undefined,
+    'specify maxParallel, tags, factoryChannel, or fullRegressionPolicy',
   );
 export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
 

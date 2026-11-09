@@ -22,7 +22,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $workableStates = @(
-    'factory:new',
     'factory:needs-plan',
     'factory:ready',
     'factory:review',
@@ -34,7 +33,9 @@ $manualOrTerminalStates = @(
     'factory:working',
     'factory:human-review',
     'factory:blocked',
-    'factory:done'
+    'factory:done',
+    'factory:implemented',
+    'factory:pr-open'
 )
 $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large')
 

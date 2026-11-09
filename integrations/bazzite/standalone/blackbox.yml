@@ -1,0 +1,27 @@
+# Blackbox exporter modules for the Factory's liveness probes (see prometheus.yml, jobs liveness-*).
+#
+# Every module checks the response BODY as well as the status. Cezar's cockpit answers any unknown path, /metrics
+# included, with its HTML shell and HTTP 200, so a bare "returned 200" check would report a healthy service for a
+# URL that does not exist (this already produced one false positive during the Prometheus rollout).
+modules:
+  cezar_health:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      fail_if_header_not_matches:
+        - header: Content-Type
+          regexp: '^application/json'
+      fail_if_body_not_matches_regexp:
+        - '^\{"version":'
+  litellm_ready:
+    prober: http
+    timeout: 15s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      # /health/readiness also proves LiteLLM can reach its database; /health/liveliness would not.
+      fail_if_body_not_matches_regexp:
+        - '"status":\s*"healthy"'
+        - '"db":\s*"connected"'

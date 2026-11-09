@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "factory-local-promotion/v1",
+  "githubRepository": "bin0110001/cezar-factory",
+  "maxParallel": 1,
+  "gpuSlots": 0,
+  "checks": [
+    {
+      "id": "full-suite",
+      "when": ["**"],
+      "command": ["bash", "scripts/release/validate-in-container.sh"],
+      "required": true,
+      "timeoutSeconds": 3600
+    }
+  ],
+  "promotion": {
+    "mode": "autonomous",
+    "modes": {
+      "autonomous": { "review": "self-review", "stable": "auto", "soakSeconds": 0 },
+      "controlled": { "review": "approval", "stable": "approval", "soakSeconds": 3600 }
+    },
+    "ghCommand": ["podman", "exec", "cezar", "gh"],
+    "canaries": {
+      "projectId": "cezar-factory",
+      "readySeconds": 180,
+      "items": [
+        {
+          "id": "health",
+          "automation": "[factory] health",
+          "when": ["**"],
+          "timeoutSeconds": 900
+        },
+        {
+          "id": "maintenance",
+          "automation": "[factory] maintenance",
+          "when": ["scripts/**", "workflows/**", "automations/**", "skills/**", "policies/**", "routing/**", "cezar/**", "config/**", "VERSION"],
+          "timeoutSeconds": 3600
+        }
+      ]
+    },
+    "stable": {
+      "branch": "stable",
+      "deployCommand": ["bash", "scripts/deploy/factory-autodeploy.sh", "--force"],
+      "deployIdleWaitSeconds": 600
+    },
+    "breaker": { "maxConsecutiveFailures": 3, "pauseSeconds": 3600 },
+    "issues": { "labels": ["factory:new"], "escalationLabels": ["factory:needs-help"] },
+    "drift": { "graceSeconds": 1800 }
+  }
+}

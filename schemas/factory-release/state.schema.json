@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FactoryReleaseStateV1",
+  "description": "Mutable controller state keyed by full source SHA; channel pointers belong in deployment receipts.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "factory-release-state/v1" },
+    "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "manifestDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "state": { "type": "string", "enum": ["built", "verified", "quarantined"] },
+    "verification": { "$ref": "#/$defs/verification" },
+    "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "reason": { "type": "string", "maxLength": 2000 },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "required": ["schemaVersion", "sourceSha", "manifestDigest", "state", "updatedAt"],
+  "$defs": {
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "resultVersion": { "type": "integer", "const": 1 }, "status": { "type": "string", "const": "passed" }, "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }, "evidenceRef": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(/|$)).+$" } },
+      "required": ["resultVersion", "status", "digest", "evidenceRef"]
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "state": { "const": "verified" } }, "required": ["state"] }, "then": { "required": ["verification"] } },
+    { "if": { "properties": { "state": { "const": "quarantined" } }, "required": ["state"] }, "then": { "required": ["reasonCode"] } },
+    { "if": { "properties": { "state": { "enum": ["built", "verified"] } }, "required": ["state"] }, "then": { "not": { "anyOf": [{ "required": ["reasonCode"] }, { "required": ["reason"] }] } } }
+  ]
+}

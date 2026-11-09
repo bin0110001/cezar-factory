@@ -1,0 +1,59 @@
+name: cezar-factory-obot-poc
+
+services:
+  https-proxy:
+    image: ${CADDY_IMAGE:?Set CADDY_IMAGE to a version and immutable digest}
+    container_name: cezar-factory-obot-poc-https
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      OBOT_BIND_ADDRESS: ${OBOT_BIND_ADDRESS:?Set the Bazzite LAN address}
+      OBOT_TLS_HOSTNAME: ${OBOT_TLS_HOSTNAME:?Set the LAN DNS hostname}
+      OBOT_HTTPS_PORT: ${OBOT_HTTPS_PORT:-8443}
+      OBOT_HOST_PORT: ${OBOT_HOST_PORT:-8787}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - obot-proxy-data:/data:Z
+      - obot-proxy-config:/config:Z
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+  obot:
+    image: ${OBOT_IMAGE:?Set OBOT_IMAGE to a version and immutable digest}
+    container_name: cezar-factory-obot-poc
+    restart: unless-stopped
+    environment:
+      OBOT_SERVER_ENABLE_AUTHENTICATION: "true"
+      OBOT_SERVER_HOSTNAME: ${OBOT_SERVER_HOSTNAME:?Set the browser-reachable Obot hostname}
+      OBOT_BOOTSTRAP_TOKEN: ${OBOT_BOOTSTRAP_TOKEN:?Set a host-local bootstrap token}
+      OBOT_SERVER_DISABLE_UPDATE_CHECK: "true"
+      OBOT_SERVER_PRODUCT_ANALYTICS_MODE: "off"
+      OBOT_SERVER_MODEL_PROXY_URL: ""
+      OBOT_SERVER_MCPRUNTIME_BACKEND: docker
+      DOCKER_HOST: unix:///var/run/docker.sock
+    ports:
+      - 127.0.0.1:${OBOT_HOST_PORT:-8787}:8080
+    volumes:
+      - obot-data:/data
+      - /run/obot-runtime-api/podman.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+      - label=disable
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETGID
+      - SETUID
+
+volumes:
+  obot-data:
+    name: ${OBOT_DATA_VOLUME:-cezar-factory-obot-poc-data}
+  obot-proxy-data:
+    name: ${OBOT_PROXY_DATA_VOLUME:-cezar-factory-obot-poc-proxy-data}
+  obot-proxy-config:
+    name: ${OBOT_PROXY_CONFIG_VOLUME:-cezar-factory-obot-poc-proxy-config}

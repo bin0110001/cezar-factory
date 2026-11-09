@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach } from 'vitest'
@@ -25,6 +25,13 @@ if (!process.env.GIT_CONFIG_COUNT) {
 }
 
 const sandboxHome = mkdtempSync(join(realpathSync(tmpdir()), 'cez-vitest-home-'))
+// A booted legacy single-project install still has an authoritative project entry even when it
+// has not opted into channel-backed Factory releases. Route tests that call createApp directly
+// use the default boot id; seed that project in this isolated home so release resolution never
+// depends on the developer's ~/.cezar/config.json.
+writeFileSync(join(sandboxHome, 'config.json'), JSON.stringify({
+  projects: [{ id: 'default', root: process.cwd(), name: 'Vitest boot project', addedAt: '', lastOpenedAt: '', source: 'local' }],
+}), 'utf8')
 
 const pinSandboxHome = (): void => {
   if (!process.env.CEZ_HOME) process.env.CEZ_HOME = sandboxHome

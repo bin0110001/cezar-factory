@@ -1,0 +1,7 @@
+{
+  "validation": {
+    "changed": "npm test -- --changed",
+    "full": "npm test",
+    "verify": "npm run typecheck"
+  }
+}

@@ -10,12 +10,22 @@ tooling. This script does not edit source files or lifecycle labels.
 ##>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$Issue,
+    [ValidateRange(0, 2147483647)][int]$Issue = 0,
+    [string]$Task,
     [string]$GhCommand = 'gh',
     [string]$OutputPath = '.factory/implementation-context.json'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
+if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
+
+# Workflow commands pass the raw task text ("GitHub issue #N (...) at <url>") so no agent has to extract it.
+if ($Issue -lt 1 -and $Task -match 'GitHub issue #(\d+)|/issues/(\d+)|#(\d+)') {
+    $Issue = [int](($Matches[1], $Matches[2], $Matches[3]) | Where-Object { $_ } | Select-Object -First 1)
+}
+if ($Issue -lt 1) { throw 'An issue number is required: pass -Issue or a -Task containing "GitHub issue #N".' }
 
 function Invoke-Gh([string[]]$Arguments) {
     $output = & $GhCommand @Arguments 2>&1
@@ -72,6 +82,7 @@ $context = [ordered]@{
         workingDirectory = $workingDirectory
         repositoryRoot = $repoRoot
         gitBranch = if ($repoRoot) { (& git -C $repoRoot branch --show-current 2>$null) -join '' } else { $null }
+        baseCommit = if ($repoRoot) { ((& git -C $repoRoot rev-parse HEAD 2>$null) -join '').Trim() } else { $null }
         gitStatus = if ($repoRoot) { @(& git -C $repoRoot status --short 2>$null) } else { @() }
         factoryRuntimeRoot = if ($env:FACTORY_RUNTIME_ROOT) { $env:FACTORY_RUNTIME_ROOT } else { $null }
         tools = [ordered]@{ git = [bool](Get-Command git -ErrorAction SilentlyContinue); gh = [bool](Get-Command $GhCommand -ErrorAction SilentlyContinue); pwsh = [bool](Get-Command pwsh -ErrorAction SilentlyContinue) }

@@ -12,12 +12,13 @@ does not claim that an external service has run a workflow.
 | 4. Recall client and preflight | Implemented; live proof | NeonPath planning pilot consumed a bounded artifact from the project and Factory banks (2 memories / 1,808 characters); `scripts/hindsight/*`, schemas, and workflow commands exist. |
 | 5. Approval-gated retention | Implemented; live gate open | Candidate filter and receipt contract in `scripts/hindsight/client.py`. Operator: approve one candidate and verify a later recall; record it in `docs/hindsight-live-evidence.md`. |
 | 6. Live memory pilot | Recall complete; retain gate open | The credential was rotated and the bounded recall succeeded. Operator: approve one eligible retention candidate, verify later recall, and record only compact receipt evidence. |
-| 7. Read-only backlog reconciler | Implemented; live queue empty | `scripts/reconcile-backlog.ps1` plus fixtures for ordering, invalid state, blockers, gates, claims, expiry, caps, and no candidates. A read-only `gh issue list` check for `bin0110001/cezar-factory` on 2026-10-04 returned zero open issues. Operator: run against an approved GitHub snapshot when a candidate exists and retain the dry-run artifact. |
+| 7. Read-only backlog reconciler | Implemented; on-demand workflow available | `scripts/collect-backlog-snapshot.ps1` and `scripts/reconcile-backlog.ps1` run from `workflows/health.yaml`; the paused `[factory] backlog-reconciliation` automation collects the live snapshot and retains the dry-run artifact. The proposal remains capped at one and never claims or dispatches an issue. |
 | 8. GitHub-visible leases | Implemented; live gate open | `scripts/lease.ps1` uses issue marker comments; collision and idempotent release fixtures pass. Operator: rotate credential, then test one lease on a designated pilot issue. |
 | 9. Cezar dispatch | Deliberately disabled | Skill and reconciler are read-only. Operator: approve a low-risk project after dry-run/lease evidence; enable dispatch only through Cezar. |
 | 10. End-to-end provider pilot | External gate open | Operator: configure authenticated Codex/Claude OpenHands profiles and nominate one low-risk issue. |
 | 11. Shadow evaluation and promotion | Implemented; evidence collection open | `scripts/record-local-evaluation.ps1`, `scripts/evaluate-local-promotion.ps1`, and predeclared catalog thresholds. Operator: collect the required sample size. |
-| 12. Incremental automation enablement | Deliberately paused | Operator: enable one project with batch cap one only after items 6–11 have recorded evidence. |
+| 12. Automation enablement | Active testing authorized | Enable the requested project's relevant automations with their existing batch caps; provider-pilot evidence is not a prerequisite. |
+| Host-local release artifact controller (#63) | Implemented; not activated | `scripts/release/factory_release_controller.py` stages and verifies immutable channel artifacts with local checkpoints, safe rollback, and retention references. The Bazzite user timer is provided but not installed; Cezar still reads the existing mount until the separate channel resolver work in #64. |
 
 ## Selected pilot project: NeonPath
 
@@ -76,8 +77,9 @@ is recorded here.
 # Blackjack backlog-label audit pilot (2026-10-05)
 
 `blackjackandhookersGadot` is the first backlog-cleanup pilot. Its opt-in
-`features.backlog_label_cleanup` installs an hourly Cezar schedule
-(`{ "type": "hours", "every": 1 }`) that is capped at three open issues per run,
+`features.maintenance` or `features.backlog_label_cleanup` installs the combined
+hourly Cezar maintenance schedule (`{ "type": "hours", "every": 1 }`). It is
+capped at three backlog-audit issues and two stale-workable refreshes per run,
 preserves legacy labels, and may classify executable work with `factory:new`,
 one `type:*`, and one `risk:*` label. Epic and tracking parents receive the
 non-lifecycle `factory:tracking` marker instead; it never makes legacy work

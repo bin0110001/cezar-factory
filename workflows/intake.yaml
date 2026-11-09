@@ -1,21 +1,31 @@
 name: factory-intake
 description: Classify a newly opened issue, then route it to planning or genuine-question help
 steps:
+  - id: startup
+    name: Prepare workflow environment
+    # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
+    # container checkout, not a Windows host path.
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-intake -Step select-issue -RequireGh -RequiredScripts select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1
+    timeoutSeconds: 60
   - id: select-issue
-    name: Select one existing issue for intake
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -OutputPath .factory/intake-issue.json
+    name: Select the triggered issue or one existing open Factory issue
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/select-intake-issue.ps1 -Task "{{task}}" -OutputPath .factory/intake-issue.json
+    timeoutSeconds: 300
   - id: intake
     name: Classify selected existing issue
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/classify-intake.ps1 -InputPath .factory/intake-issue.json -OutputPath .factory/intake-result.json
+    timeoutSeconds: 300
   - id: validate
     name: Validate intake result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-intake-or-no-work.ps1 -Path .factory/intake-result.json
+    timeoutSeconds: 60
     onFail:
       retry: intake
       max: 1
   - id: route
     name: Route intake to planning
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-intake-or-no-work.ps1 -Path .factory/intake-result.json
+    timeoutSeconds: 300
     onFail:
       retry: validate
       max: 1

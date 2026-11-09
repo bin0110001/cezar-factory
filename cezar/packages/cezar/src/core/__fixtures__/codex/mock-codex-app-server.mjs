@@ -172,6 +172,16 @@ rl.on('line', (line) => {
       }
       return;
     }
+    if (turnText.includes('mock:stall-tool')) {
+      // A tool call that starts and then runs silently (a long test run): the model is NOT who we wait on.
+      emit({ method: 'item/started', params: { threadId: 'th_mock_1', turnId, item: { type: 'commandExecution', id: 'item_stall_tool', command: ['bash', '-lc', 'npm test'], cwd: '/repo', status: 'inProgress' } } });
+      return;
+    }
+    if (turnText.includes('mock:stall')) {
+      // The turn is open and the model host goes silent: no delta, no item, nothing more, ever.
+      emit({ method: 'item/started', params: { threadId: 'th_mock_1', turnId, item: { type: 'agentMessage', id: 'item_stall', text: '' } } });
+      return;
+    }
     if (turnText.includes('mock:child-compaction')) {
       // A sub-agent CHILD thread compacts ITS context and ends ITS turn. Neither the item
       // nor the turn boundary may reach the parent's lifecycle (#600 + #955): the parent is
@@ -183,6 +193,17 @@ rl.on('line', (line) => {
       emit({ method: 'item/started', params: { threadId: 'th_mock_1', turnId, item: { type: 'agentMessage', id: 'item_pc1', text: '' } } });
       emit({ method: 'item/agentMessage/delta', params: { threadId: 'th_mock_1', turnId, itemId: 'item_pc1', delta: 'Still working after the sub-agent compacted.' } });
       emit({ method: 'item/completed', params: { threadId: 'th_mock_1', turnId, item: { type: 'agentMessage', id: 'item_pc1', text: 'Still working after the sub-agent compacted.' } } });
+      emit({ method: 'turn/completed', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'completed' } } });
+      return;
+    }
+    if (turnText.includes('mock:completed-failed')) {
+      // Newer app-servers report a failed turn (bad auth, quota, unknown model) as a
+      // turn/completed whose turn.status is 'failed' — no turn/failed frame, no output.
+      emit({ method: 'turn/completed', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'failed', error: { message: 'model not available' } } } });
+      return;
+    }
+    if (turnText.includes('mock:completed-empty')) {
+      emit({ method: 'turn/started', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'inProgress' } } });
       emit({ method: 'turn/completed', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'completed' } } });
       return;
     }

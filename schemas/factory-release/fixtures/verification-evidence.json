@@ -1,0 +1,6 @@
+{
+  "resultVersion": 1,
+  "status": "passed",
+  "semanticExitCode": 0,
+  "coverage": { "selected": 1, "passed": 1, "failed": 0, "skipped": 0, "unknown": 0 }
+}

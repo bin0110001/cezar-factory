@@ -193,13 +193,13 @@ describe('workspace config', () => {
     expect(raw.futureKey).toBe(true);
   });
 
-  it('round-trips a merge-written config, with the file at mode 0600', async () => {
+  it('round-trips a merge-written config, with private mode on POSIX', async () => {
     await mergeWriteWorkspaceConfig((config) => {
       config.schemaVersion = 1;
       config.resources.maxParallel = 4;
       config.projects.push(project('cezar'));
     });
-    expect(statSync(workspaceConfigPath()).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(workspaceConfigPath()).mode & 0o777).toBe(0o600);
     const config = await loadWorkspaceConfig();
     expect(config.schemaVersion).toBe(1);
     expect(config.resources.maxParallel).toBe(4);
@@ -374,6 +374,13 @@ describe('workspace config', () => {
     expect(config.projects[1]?.source).toBe('local');
   });
 
+  it('accepts native absolute project roots on Windows', async () => {
+    if (process.platform !== 'win32') return;
+    write({ projects: [{ ...project('windows-root'), root: 'C:\\cezar\\project' }] });
+    const config = await loadWorkspaceConfig();
+    expect(config.projects.map((entry) => entry.id)).toEqual(['windows-root']);
+  });
+
   it('per-project maxParallel: keeps a valid value, degrades a bad one to inherit, absent stays absent', async () => {
     write({
       projects: [
@@ -388,6 +395,21 @@ describe('workspace config', () => {
     expect(config.projects[0]?.maxParallel).toBe(1);
     expect(config.projects[1]?.maxParallel).toBeUndefined();
     expect(config.projects[2]?.maxParallel).toBeUndefined();
+  });
+
+  it('full regression policy defaults to no automatic runs and discards malformed persisted policy', async () => {
+    write({ projects: [
+      project('on-demand'),
+      { ...project('scheduled'), fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'weekly', day: 1, hour: 3, minute: 0 } } },
+      { ...project('invalid-policy'), fullRegressionPolicy: { mode: 'scheduled', schedule: { type: 'cron', value: '* * * * *' } } },
+    ] });
+    const config = await loadWorkspaceConfig();
+    expect(config.projects[0]?.fullRegressionPolicy).toBeUndefined();
+    expect(config.projects[1]?.fullRegressionPolicy).toEqual({
+      mode: 'scheduled', schedule: { type: 'weekly', day: 1, hour: 3, minute: 0 },
+      windowHours: 168, maxRunsPerWindow: 1, maxUpdatesPerWindow: 100, maxQueuedRuns: 1,
+    });
+    expect(config.projects[2]?.fullRegressionPolicy).toBeUndefined();
   });
 
   it('memoryLimitMb keeps an explicit null and a real value', async () => {
@@ -416,7 +438,7 @@ describe('workspace config', () => {
       await registerOne();
       const snapshot = JSON.parse(readFileSync(workspaceConfigBackupPath(), 'utf8')) as WorkspaceConfig;
       expect(snapshot.projects.map((p) => p.id)).toEqual(['shop']);
-      expect(statSync(workspaceConfigBackupPath()).mode & 0o777).toBe(0o600);
+      if (process.platform !== 'win32') expect(statSync(workspaceConfigBackupPath()).mode & 0o777).toBe(0o600);
     });
 
     it('refreshes the snapshot when the last project is unregistered, so it cannot resurrect (#731)', async () => {

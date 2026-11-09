@@ -35,11 +35,12 @@ function serve() {
       const json = (payload: unknown) =>
         new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } })
       if (url.endsWith('/open-targets')) return json({ targets: [] })
+      if (url.endsWith('/factory-release')) return json({ status: 'resolved', projectId: 'demo', channel: 'stable', sourceSha: 'a'.repeat(40), manifestDigest: `sha256:${'b'.repeat(64)}` })
       if (url.startsWith('/api/v1/projects/') && method === 'DELETE') {
         return json({ removed: true, id: url.split('/').pop() })
       }
       if (url.startsWith('/api/v1/projects/') && method === 'PATCH') {
-        return json({ project: { ...project('demo'), maxParallel: 3 } })
+        return json({ project: { ...project('demo'), ...(body as object) } })
       }
       return new Promise<never>(() => {})
     }),
@@ -168,6 +169,38 @@ describe('the General page', () => {
     })
   })
 
+  it('pins new project tasks to the selected Factory channel', async () => {
+    renderAt('/p/demo/settings')
+    const channel = await screen.findByLabelText('Factory channel')
+    expect((channel as HTMLSelectElement).value).toBe('stable')
+    fireEvent.change(channel, { target: { value: 'dev' } })
+
+    await waitFor(() => {
+      expect(requests.find((request) => request.method === 'PATCH')?.body).toEqual({ factoryChannel: 'dev' })
+    })
+  })
+
+  it('saves cadence and independent rolling limits for full regression', async () => {
+    renderAt('/p/demo/settings')
+    const mode = await screen.findByLabelText('Full regression mode')
+    fireEvent.change(mode, { target: { value: 'after_changes' } })
+    fireEvent.change(screen.getByLabelText('Changes per full regression batch'), { target: { value: '25' } })
+    fireEvent.change(screen.getByLabelText('Maximum runs per window'), { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('Window hours'), { target: { value: '336' } })
+    fireEvent.change(screen.getByLabelText('Maximum updates per window'), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText('Queued follow-ups'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save regression policy' }))
+
+    await waitFor(() => {
+      expect(requests.find((request) => request.method === 'PATCH')?.body).toEqual({
+        fullRegressionPolicy: {
+          mode: 'after_changes', changesPerBatch: 25, maxRunsPerWindow: 4,
+          windowHours: 336, maxUpdatesPerWindow: 500, maxQueuedRuns: 0,
+        },
+      })
+    })
+  })
+
   it('removes the project after a confirm, then leaves the URL that just stopped resolving', async () => {
     renderAt('/p/demo/settings')
     const remove = await screen.findByRole('button', { name: /^Remove demo-project from the workspace/ })
@@ -196,7 +229,7 @@ describe('the General page', () => {
     const remove = await screen.findByRole('button', { name: /^Remove cezar from the workspace/ })
     expect(remove.hasAttribute('disabled')).toBe(true)
     expect(document.querySelector('[data-slot="project-general-remove-boot"]')?.textContent).toContain(
-      'cezar is serving this project',
+      'Cezarium is serving this project',
     )
   })
 
@@ -218,7 +251,7 @@ describe('the General page', () => {
 
     await waitFor(() => expect(general()).not.toBeNull())
     expect(document.querySelector('[data-slot="project-general-unregistered"]')?.textContent).toContain(
-      'served because cezar was started here',
+      'served because Cezarium was started here',
     )
     expect(document.querySelector('[data-action="project-general-remove"]')).toBeNull()
     expect(document.querySelector('[data-slot="project-max-parallel"]')).toBeNull()

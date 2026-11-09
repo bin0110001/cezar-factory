@@ -1,0 +1,59 @@
+# Prometheus for the Bazzite host as it actually runs: standalone containers, not the compose network.
+# Rendered into $STATE/config by scripts/deploy/deploy-prometheus-standalone.sh and run with host networking,
+# so every target is reachable on 127.0.0.1 or its LAN address. Only services that exist on this host are listed:
+# a target that is never up would make the FactoryServiceDown alert fire forever.
+global:
+  scrape_interval: 15s
+
+rule_files:
+  - /etc/prometheus/prometheus-alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+  # No `cezar` job: Cezar has no Prometheus endpoint. Its /metrics path is swallowed by the cockpit's catch-all
+  # route and returns the HTML shell with HTTP 200, so a scrape "succeeds" at the HTTP level and fails to parse,
+  # leaving `up` at 0 and FactoryServiceDown firing forever. Its liveness is /api/v1/health (JSON), which would
+  # need a blackbox exporter to scrape.
+  - job_name: hindsight
+    static_configs:
+      - targets: ["127.0.0.1:8888"]
+  # Liveness through the blackbox exporter: the exporter fetches each URL and reports probe_success / duration.
+  # `up` here only says the exporter answered; probe_success is the verdict on the service.
+  - job_name: liveness-cezar
+    metrics_path: /probe
+    params:
+      module: [cezar_health]
+    static_configs:
+      - targets: ["http://127.0.0.1:4321/api/v1/health"]
+        labels: { service: cezar }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+  - job_name: liveness-litellm
+    metrics_path: /probe
+    params:
+      module: [litellm_ready]
+    static_configs:
+      - targets: ["http://127.0.0.1:4001/health/readiness"]
+        labels: { service: litellm }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+  - job_name: model-host-vllm
+    # The Mac proxy requires a bearer token on every path, /metrics included. The token and the target file are
+    # rendered by the deploy script from VLLM_API_KEY and FACTORY_VLLM_METRICS_TARGET.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/vllm-token
+    file_sd_configs:
+      - files: ["/etc/prometheus/model-targets.json"]

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "factory-local-promotion-record/v1",
+  "promotionId": "f19255e2-2152-457f-8446-f94d918ea659",
+  "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "dev",
+  "status": "healthy",
+  "candidateState": "active",
+  "startedAt": "2026-10-23T20:00:00Z",
+  "finishedAt": "2026-10-23T20:05:00Z",
+  "changedPaths": ["scripts/release/factory_local_scheduler.py"],
+  "checks": [{
+    "id": "release-wide-suite",
+    "required": true,
+    "status": "passed",
+    "exitCode": 0,
+    "startedAt": "2026-10-23T20:01:00Z",
+    "finishedAt": "2026-10-23T20:03:00Z",
+    "durationMs": 120000,
+    "outputPreview": "ALL PASSED",
+    "outputTruncated": false,
+    "outputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }],
+  "activation": { "status": "healthy", "activationId": "activation-fixture", "targetCount": 1 },
+  "artifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "manifestDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "reason": null,
+  "recordDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

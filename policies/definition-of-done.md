@@ -9,5 +9,8 @@ An issue is considered done when:
 5. Required documentation updated.
 6. No accidental unrelated changes.
 7. Required PR exists.
-8. Human review completed where required.
+8. Independent technical review passes and any blocking findings are resolved.
+
+User review is post-delivery feedback, not a completion gate. Request user input
+only for a major architectural decision identified before implementation.
 

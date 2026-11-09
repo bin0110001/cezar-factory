@@ -1,0 +1,22 @@
+# Quadlet unit for the blackbox exporter that probes Cezar and LiteLLM liveness for Prometheus. Installed by
+# scripts/deploy/deploy-prometheus-standalone.sh next to factory-prometheus.container; same boot and restart story
+# (user systemd + lingering, Restart=always). Loopback only: Prometheus is the sole client.
+[Unit]
+Description=Factory blackbox exporter (Cezar and LiteLLM liveness probes)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=factory-blackbox
+Image=__BLACKBOX_IMAGE__
+Network=host
+Exec=--config.file=/etc/blackbox/blackbox.yml --web.listen-address=127.0.0.1:9115
+Volume=__BLACKBOX_DIR__:/etc/blackbox:ro,Z
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

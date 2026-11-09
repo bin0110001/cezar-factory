@@ -7,14 +7,18 @@
   "filters": {
     "changedLabels": ["factory:new"],
     "allLabels": ["factory:new"],
-    "excludeLabels": ["factory:blocked", "factory:needs-plan", "factory:working", "factory:needs-help"],
-    "maxRecords": 1
+    "excludeLabels": ["factory:blocked", "factory:needs-plan", "factory:working", "factory:needs-help", "factory:tracking", "epic"],
+    "lookbackDays": 30,
+    "maxRecords": 25,
+    "maxAdmissionsPerCycle": 1,
+    "fullReconcileHours": 24,
+    "initialSync": "eligible"
   },
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
     "workflow": "factory-intake",
-    "runner": "codex",
-    "model": "factory-gateway/factory-code",
+    "runner": "claude",
+    "model": "sonnet",
     "worktree": true,
     "autonomous": true
   }

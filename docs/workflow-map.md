@@ -9,8 +9,8 @@ activity from which to advance its cursor.
 
 | Current outcome | Update emitted by the workflow | Next automation | Trigger labels |
 |---|---|---|---|
-| New issue | `factory:new` | Intake | `factory:new` on `issue.opened` or `issue.labeled` |
-| Existing backlog issue | Scheduled intake selects oldest `factory:new` | Intake | Schedule, then the same intake route |
+| New issue | `factory:new` | Intake for that exact issue | `factory:new` on `issue.opened` or `issue.labeled` |
+| Existing backlog issue | Hourly maintenance pull selects the oldest eligible `factory:new` | Intake | `[factory] maintenance` schedule, then the same intake route |
 | Intake classified | `factory:needs-plan` | Planning | `factory:needs-plan` |
 | Plan ready | `factory:ready` plus exactly one complexity label | Implementation | `factory:ready` plus `complexity:*` |
 | Implementation succeeds | `factory:review` | Review | `factory:review` |
@@ -18,40 +18,70 @@ activity from which to advance its cursor.
 | Fix succeeds | `factory:review` | Review | `factory:review` |
 | Implementation fails | `factory:investigate` | Investigation | `factory:investigate` |
 | Investigation retry approved | `factory:ready` plus retained complexity | Implementation | `factory:ready` plus `complexity:*` |
+| Review approved with a PR URL | Verify current-head eligibility, request auto-merge with the expected head, and mark done only after GitHub reports merge | GitHub auto-merge | All risk levels after validation and independent review |
+| Plan decomposes into children | Parent closes as tracking work; children enter `factory:needs-plan` | Planning then implementation proceeds in dependency order |
+
+The merge eligibility check reads the current PR head, clean full/verify
+receipts, required checks, effective `dev` rules, independent approval, and
+review-thread state. Missing policy or unreadable evidence denies the merge
+request. If GitHub queues auto-merge but has not reported completion, the issue
+stays in `factory:review`; an approved review without a PR URL returns to
+implementation through `factory:changes-requested`.
 
 Every automatic handoff must therefore update the state label after all routing
 labels are correct. The state label is the event; the other labels are the
-filter envelope.
+filter envelope. Event-triggered intake uses the issue in its task context;
+the hourly catch-up path has no issue context and selects one oldest eligible
+issue. The stale-state refresher excludes `factory:new` because the scheduled
+intake pull handles that backlog directly. This keeps a missed event from
+stranding work without letting an event for one issue silently advance a
+different issue or racing the catch-up pull against a label replay.
 
-## Manual-gate paths
+## Exceptional user-input gate
 
-These are intentional stops. Their label updates are durable evidence for a
-human, but do not start another automatic workflow until a human chooses a new
-executable state.
+Only a major architectural decision pauses work for the user. An external
+dependency may block one issue, but it does not pause the rest of the backlog.
 
 | Outcome | State | Human action to resume |
 |---|---|---|
-| Intake has an unanswered product/security/legal/operations question | `factory:needs-help` | Answer the question and set `factory:needs-plan` |
-| Plan is not ready | `factory:needs-help` | Resolve blockers and set `factory:needs-plan` |
-| High-risk plan | `factory:needs-help` | Approve the plan and set `factory:ready` with complexity |
-| Decomposition parent | `factory:human-review` | Review the decomposition; child issues independently enter planning |
-| Approved non-low-risk implementation | `factory:human-review` | Complete human review, then set the chosen terminal/executable state |
-| Review limit reached | `factory:needs-help` | Decide whether to revise requirements or resume review/fix |
-| Investigation cannot safely retry | `factory:needs-help` | Resolve the external blocker and set the chosen executable state |
-| Accepted low-risk review | `factory:done` | None; auto-merge is requested |
+| Unresolved major architectural decision | `factory:needs-help` or `factory:human-review` | Ask one focused question about compatibility, ownership, or the system contract; planning resumes automatically after the answer |
+| External blocker | `factory:blocked` | Record the dependency and continue other eligible issues; resume this issue when evidence shows it is clear |
+| Independent review finds issues | `factory:changes-requested` | Fix and re-review automatically; user review is not a gate |
 
 `factory:working` is an in-run state, not an inbound automation. The
 implementation or fix workflow sets it first, then emits `factory:review` or
 `factory:investigate` when its run completes.
 
-The scheduled `[factory] refresh-stale-workable` automation is a bounded repair
-loop, not a new lifecycle state. Every four hours it selects at most two open
-issues older than 24 hours in `factory:new`, `factory:needs-plan`,
+When a backlog-level request is active, continue to the next eligible issue
+while another issue waits for CI, independent review, or release. Do not wait
+for per-issue user scheduling; only a major architectural decision pauses for
+user input.
+
+The `[factory] maintenance` automation runs fixed script steps plus one
+existing-issue intake, the capped legacy-label audit, `refresh-stale-workable`,
+and `maintain-repository.ps1`. `[factory] intake` handles event-triggered
+issues; maintenance supplies the scheduled catch-up path.
+`refresh-stale-workable` is a repair loop, not a new lifecycle state. It selects
+at most two open issues older than 24 hours in `factory:needs-plan`,
 `factory:ready`, `factory:review`, `factory:changes-requested`, or
 `factory:investigate`. It skips manual/terminal states, multiple or missing
 lifecycle labels, audit/tracking markers, and `factory:ready` issues without
 exactly one complexity label. It removes and re-adds only the selected state
 label, causing the existing downstream automation to receive a fresh event.
+
+The legacy-label audit (`backlog-label-audit-*` steps and `recover-audit-reservations`) is a one-time
+migration. With no ambiguous candidates it already ends the run through the typed `no_work` output
+before any agent step, so an idle audit costs no agent session. Retire the audit steps, the skill, and
+`recover-audit-reservations.ps1` together once the `backlog-label-audit-prepare` receipt reports
+`candidateCount: 0` and `resolvedCount: 0` for every configured project over a week of hourly runs.
+
+## Health
+
+`[factory] health` (`factory-health`, daily 01:00) is read-only and runs no agent. It audits recent
+Cezar failures, publishes only Factory-defect evidence as a canonical Factory issue, runs the
+dry-run backlog reconciliation, and writes `.factory/health-report.json`. It replaces the separate
+`failure-audit` and `backlog-reconciliation` automations. `factory-environment-analysis` is
+on-demand and host-side only.
 
 ## Update contract
 
@@ -70,3 +100,9 @@ When the requested state is already present, `-Retrigger` removes and re-adds
 it in separate edits so Cezar receives a fresh `issue.labeled` event. It never
 dispatches a run directly and it refuses an unroutable `factory:ready` unless
 `-AllowUnroutable` is explicitly supplied.
+
+## Godot upgrade
+
+`factory-godot-upgrade` (`[factory] godot-upgrade`, daily) adopts new stable Godot releases per
+Godot project: check, stage, pin on `factory/godot-<version>`, test, agent fix, re-test, auto-merge
+PR. Details in `docs/godot-upgrades.md`.

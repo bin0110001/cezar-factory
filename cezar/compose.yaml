@@ -3,7 +3,12 @@ services:
   cezar:
     image: localhost/cezar:local
     container_name: cezar
-    build: .
+    build:
+      context: .
+      args:
+        # Baseline Godot only; projects pin their own version in .godot-version (no rebuild needed).
+        GODOT_VERSION: ${GODOT_VERSION:-4.7}
+        GODOT_CHANNEL: ${GODOT_CHANNEL:-stable}
     restart: unless-stopped
     ports:
       # Host loopback only: cezar has NO built-in auth, so never publish on 0.0.0.0.
@@ -18,6 +23,8 @@ services:
       - codex-home:/home/cezar/.codex
       - opencode-data:/home/cezar/.local/share/opencode
       - opencode-config:/home/cezar/.config/opencode
+      # Godot versions installed on demand (godot-install); survive rebuilds so upgrades need no image change.
+      - godot-versions:/opt/godot-versions
       # The repo cezar operates on (worktrees land in .ai/cezar/ inside it).
       - ${CEZAR_WORKSPACE:-.}:/workspace:Z
 volumes:
@@ -27,3 +34,4 @@ volumes:
   codex-home:
   opencode-data:
   opencode-config:
+  godot-versions:

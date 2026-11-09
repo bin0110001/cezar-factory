@@ -1,0 +1,14 @@
+{
+  "name": "[factory] repair latest failure",
+  "description": "Hosted repair of one latest failed run; deterministic known-error and history gates spend no model tokens. Deploys only configured non-stable channels (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {"type": "hours", "every": 1, "minute": 15},
+  "task": {
+    "prompt": "Repair the latest failure for {{project}}. Workflow commands select, classify, validate and publish; no replacement tasks or manual discovery.",
+    "workflow": "factory-repair-latest-failure",
+    "runner": "claude",
+    "model": "sonnet",
+    "worktree": true,
+    "autonomous": true
+  }
+}

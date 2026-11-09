@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "factory-doc-state/v1",
+  "documentId": "api/widget/create",
+  "kind": "approved-contract",
+  "state": "verified",
+  "title": "Invalid freshness claim",
+  "repository": { "slug": "example/widgets" },
+  "ownership": { "owner": "widgets-maintainers" },
+  "revision": { "branch": "main", "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "observedSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "sourceAnchors": [] },
+  "claims": [{ "id": "claim", "text": "This behavior is supported.", "knowledge": "verified", "speculative": false, "sourceAnchors": [], "evidence": ["tests/widget.test.ts passed"] }],
+  "verification": { "status": "verified", "verifier": "ci", "verifiedAt": "2026-11-02T12:00:00Z", "toolVersion": "test-1", "evidence": ["artifacts/run.json"] },
+  "freshness": { "status": "fresh", "checkedAt": "2026-11-02T12:00:00Z", "checkedAgainstSha": "cccccccccccccccccccccccccccccccccccccccc", "reason": "Mismatched revision must not be fresh." },
+  "sensitivity": "internal",
+  "projectPolicy": { "mode": "opt-in", "mandatoryGates": ["approved-contract", "security"], "advisoryChecks": [] },
+  "previousState": "implemented",
+  "transitionReason": "Evidence verification completed.",
+  "transitionedAt": "2026-11-02T12:00:00Z",
+  "transitionedBy": "example/reviewer"
+}

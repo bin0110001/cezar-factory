@@ -7,9 +7,29 @@ services:
     environment:
       CEZ_AUTOMATIONS: ${CEZAR_AUTOMATIONS}
       CEZ_API_URL: ${CEZ_API_URL}
+      # Enable only after the host release controller has staged verified channel pointers.
+      CEZ_FACTORY_RELEASE_STORE: ${CEZ_FACTORY_RELEASE_STORE:-}
+      FACTORY_RUNTIME_SOURCE_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
+      # Cezar executes Factory workflows in Linux; this is the in-container
+      # mount path, not a Windows host path.
       FACTORY_RUNTIME_ROOT: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}
+      # Factory workflows and skills are loaded straight from the mounted checkout for every
+      # project (a project's own .ai/ files still win by name), so a Factory update needs no
+      # per-project copy. Updating the checkout is the only deployment step.
+      CEZ_SHARED_WORKFLOWS_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/workflows
+      CEZ_SHARED_SKILL_DIRS: ${FACTORY_RUNTIME_ROOT:-/projects/cezar-factory}/skills
     volumes:
+      # Preserve the shared project checkouts; the Factory bind mount below
+      # overlays only /projects/cezar-factory.
+      - openhands-projects:/projects
       - ${FACTORY_RUNTIME_HOST_DIR}:/projects/cezar-factory:ro,Z
+      # Cezar must update the controller's SQLite lease table so active runs stay protected from GC.
+      - ${FACTORY_RELEASE_STORE_HOST_DIR:-/var/home/bin0110001/.local/share/cezar-factory/release-store}:/var/lib/cezar-factory/release-store:Z
+      # The Factory checkout is immutable at runtime; Cezar still needs a
+      # persistent writable home for run receipts and worktree metadata.
+      - cezar-factory-runtime:/projects/cezar-factory/.ai/cezar:Z
+      # Godot versions install on demand into this volume; a project pins one in .godot-version.
+      - godot-versions:/opt/godot-versions
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -45,7 +65,7 @@ services:
       HINDSIGHT_API_PORT: 8888
     volumes:
       - hindsight-data:/home/hindsight/.pg0:Z
-    restart: unless-stopped
+    restart: always
     ports:
       - "127.0.0.1:8888:8888"
 
@@ -101,6 +121,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro
       - ./prometheus-model-targets.generated.json:/etc/prometheus/model-targets.json:ro
+      - ./prometheus-vllm-token.generated:/etc/prometheus/vllm-token:ro
       - prometheus-data:/prometheus
     restart: unless-stopped
     ports:
@@ -148,6 +169,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  cezar-factory-runtime:
+  godot-versions:
   prometheus-data:
   grafana-data:
   openhands-data:

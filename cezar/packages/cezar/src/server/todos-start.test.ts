@@ -31,6 +31,8 @@ describe('POST /api/v1/todos/:id/start', () => {
   let app: Hono;
   let captured: StartRunInput | undefined;
   const savedFollowups = process.env.CEZ_FOLLOWUPS;
+  const savedCezHome = process.env.CEZ_HOME;
+  const savedFactoryReleaseStore = process.env.CEZ_FACTORY_RELEASE_STORE;
 
   const writeTodos = (todos: TodoItem[]) => {
     mkdirSync(dataDir, { recursive: true });
@@ -43,6 +45,16 @@ describe('POST /api/v1/todos/:id/start', () => {
     // rather than inherited from whatever the dev box exports.
     process.env.CEZ_FOLLOWUPS = '1';
     repoRoot = mkdtempSync(join(tmpdir(), 'cez-todos-start-'));
+    // This route resolves the effective Factory release from the workspace registry. Keep the
+    // fixture hermetic and exercise the legacy shared-mount path with a registered project that
+    // has not opted into channel-backed releases.
+    const cezHome = join(repoRoot, '.cez-home');
+    mkdirSync(cezHome, { recursive: true });
+    process.env.CEZ_HOME = cezHome;
+    delete process.env.CEZ_FACTORY_RELEASE_STORE;
+    writeFileSync(join(cezHome, 'config.json'), JSON.stringify({
+      projects: [{ id: 'default', root: repoRoot, name: 'Fixture', addedAt: '', lastOpenedAt: '', source: 'local' }],
+    }), 'utf8');
     dataDir = join(repoRoot, '.ai/cezar');
     store = RunStore.open(dataDir);
     captured = undefined;
@@ -64,6 +76,10 @@ describe('POST /api/v1/todos/:id/start', () => {
   afterEach(() => {
     if (savedFollowups === undefined) delete process.env.CEZ_FOLLOWUPS;
     else process.env.CEZ_FOLLOWUPS = savedFollowups;
+    if (savedCezHome === undefined) delete process.env.CEZ_HOME;
+    else process.env.CEZ_HOME = savedCezHome;
+    if (savedFactoryReleaseStore === undefined) delete process.env.CEZ_FACTORY_RELEASE_STORE;
+    else process.env.CEZ_FACTORY_RELEASE_STORE = savedFactoryReleaseStore;
     store.flush();
     rmSync(repoRoot, { recursive: true, force: true });
   });

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from './agent-runner.js';
 import { KILL_GRACE_MS } from './claude-cli-runner.js';
-import { CodexAppServerRunner } from './codex-app-server-runner.js';
+import { CodexAppServerRunner, DEFAULT_IDLE_TIMEOUT_MS, resolveIdleTimeoutMs } from './codex-app-server-runner.js';
 import { RunStore } from '../runs/store.ts';
 
 /** Only the escalation tests below swap the child out; every other test in this
@@ -61,7 +61,7 @@ describe('a teardown cezar initiated (codex app-server)', () => {
     expect(events.some((e) => e.type === 'error')).toBe(false);
     expect(events.at(-1)).toEqual({ type: 'done' });
     expect(
-      events.some((e) => e.type === 'note' && e.message.includes('terminated by cezar (code 143)')),
+      events.some((e) => e.type === 'note' && e.message.includes('ended after cezar stopped it')),
     ).toBe(true);
   }, 15_000);
 
@@ -188,6 +188,19 @@ describe('a turn that ended at a context-compaction boundary (#955)', () => {
     expect(events.filter((e) => e.type === 'turn-end')).toEqual([
       { type: 'turn-end', reason: 'context-compaction' },
     ]);
+  }, 15_000);
+
+  it('reports a turn/completed with status failed as an error, not a clean empty turn', async () => {
+    const events = await collect('mock:completed-failed do the work');
+    expect(events).toContainEqual({ type: 'error', message: 'codex: turn failed: model not available' });
+  }, 15_000);
+
+  it('reports a clean but empty turn as a backend failure', async () => {
+    const events = await collect('mock:completed-empty do the work');
+    expect(events).toContainEqual({
+      type: 'error',
+      message: 'codex: turn completed without assistant output or tool activity',
+    });
   }, 15_000);
 
   it('leaves an ordinary turn-end bare, so old consumers see no new field', async () => {
@@ -426,5 +439,70 @@ describe('SIGTERM→SIGKILL escalation for an app-server that survives SIGTERM',
       vi.advanceTimersByTime(KILL_GRACE_MS);
       expect(fake.signals).toEqual(['SIGTERM', 'SIGKILL']);
     });
+  });
+});
+/**
+ * The stall bound: a turn that goes silent WHILE WAITING ON THE MODEL is killed with a diagnosis that says so,
+ * but silence is never held against a tool call, a pending question, or a run with the bound switched off.
+ * (2026-11-06: a swapping model host left runs idle until the 30-minute wall clock.)
+ */
+describe('stall bound (codex app-server)', () => {
+  const mockBin = fileURLToPath(
+    new URL('./__fixtures__/codex/mock-codex-app-server.mjs', import.meta.url),
+  );
+  const IDLE_MS = 400;
+
+  function start(prompt: string, opts: { idleTimeoutMs: number }, env: Record<string, string> = {}) {
+    const events: AgentEvent[] = [];
+    const session = new CodexAppServerRunner({ bin: mockBin, timeoutMs: 0, idleTimeoutMs: opts.idleTimeoutMs }).startSession(
+      { userPrompt: prompt, cwd: process.cwd(), env },
+      (event) => events.push(event),
+    );
+    return { events, session };
+  }
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it('kills a turn that goes silent while waiting on the model, and says why', async () => {
+    const { events, session } = start('mock:stall', { idleTimeoutMs: IDLE_MS });
+    await session.result;
+    const error = events.find((e) => e.type === 'error');
+    expect(error && 'message' in error ? error.message : '').toMatch(/timed out: no output for .*waiting on the model \(stalled/);
+    expect(events.at(-1)).toEqual({ type: 'done' });
+  }, 15_000);
+
+  it('does not hold silence against a tool call that is still running', async () => {
+    const { events, session } = start('mock:stall-tool', { idleTimeoutMs: IDLE_MS });
+    await sleep(IDLE_MS * 4);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    session.interrupt();
+    await session.result;
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  }, 15_000);
+
+  it('does not hold silence against a question waiting on a person', async () => {
+    const { events, session } = start('mock:native-codex-ask', { idleTimeoutMs: IDLE_MS });
+    await sleep(IDLE_MS * 4);
+    expect(events.some((e) => e.type === 'error'), JSON.stringify(events)).toBe(false);
+    session.interrupt();
+    await session.result;
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  }, 15_000);
+
+  it('is off when the bound is 0, so only the wall clock applies', async () => {
+    const { events, session } = start('mock:stall', { idleTimeoutMs: 0 });
+    await sleep(IDLE_MS * 4);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    session.interrupt();
+    await session.result;
+  }, 15_000);
+
+  it('reads CEZ_CODEX_IDLE_TIMEOUT_MS and falls back to the default on anything unusable', () => {
+    expect(resolveIdleTimeoutMs({})).toBe(DEFAULT_IDLE_TIMEOUT_MS);
+    expect(resolveIdleTimeoutMs({ CEZ_CODEX_IDLE_TIMEOUT_MS: '120000' })).toBe(120_000);
+    expect(resolveIdleTimeoutMs({ CEZ_CODEX_IDLE_TIMEOUT_MS: '0' })).toBe(0);
+    for (const bad of ['', '  ', 'abc', '-5', '1.5', 'NaN']) {
+      expect(resolveIdleTimeoutMs({ CEZ_CODEX_IDLE_TIMEOUT_MS: bad })).toBe(DEFAULT_IDLE_TIMEOUT_MS);
+    }
+    expect(DEFAULT_IDLE_TIMEOUT_MS).toBeLessThan(30 * 60_000);
   });
 });

@@ -1,0 +1,22 @@
+{
+  "defaultProject": "cezar-factory",
+  "projects": {
+    "cezar-factory": {
+      "repo": "bin0110001/cezar-factory",
+      "factoryProjectId": "cezar-factory",
+      "baseBranch": "dev",
+      "maxDeployAttempts": 3,
+      "maxRunAttempts": 10,
+      "verifyTimeoutMinutes": 45,
+      "verify": {
+        "mode": "rerun-workflow",
+        "defaultAutomation": "health"
+      },
+      "deploy": {
+        "owner": "host-promoter",
+        "timeoutMinutes": 90,
+        "pollSeconds": 30
+      }
+    }
+  }
+}

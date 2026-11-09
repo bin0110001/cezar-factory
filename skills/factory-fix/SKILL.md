@@ -42,13 +42,20 @@ source: skills/factory-fix/SKILL.md
 
 ### 5. Re-run Validation
 
-- Execute the project's `test-changed.ps1` script to validate the fixes.
-- If full validation is required, run `test-full.ps1` or `verify.ps1`.
+- Run the project's own test commands while fixing. The workflow runs `test-changed.ps1` after you finish; do not run Factory scripts yourself.
 - Ensure all tests pass before returning to review.
 
 ### 6. Return to Review
 
 - Update the PR with the fixes.
+- Keep the PR mergeable: it is yours until it merges. If the PR is `CONFLICTING`, or `dev`
+  has moved since your last push, fetch the base and merge it into the branch
+  (`git fetch origin dev`, `git merge origin/dev`; do not rebase a pushed branch), resolve
+  every conflict yourself keeping the intent of both sides (shared files such as `VERSION`,
+  `CHANGELOG.md` and `tests/run-tests.ps1` keep both sides' entries; `VERSION` takes the
+  higher bump), re-run validation on the merged result, push, and confirm
+  `gh pr view <number> --json mergeable` is `MERGEABLE`. Never discard the other side's work
+  to clear a conflict, and never leave the rebase to the user.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
 - Fixes are reported with the implementation result schema; the workflow returns the issue to `factory:review`.
 
@@ -63,14 +70,28 @@ Produce an implementation result conforming to `implementation-result.schema.jso
 
 ```json
 {
-  "status": "success | failure",
-  "summary": "Description of fixes applied",
-  "filesChanged": ["path/to/file1"],
-  "testsRun": ["test name"],
-  "testResult": "passed | failed",
-  "acceptanceCriteriaStatus": "All criteria met | Partially met",
-  "knownConcerns": "Any remaining concerns",
-  "followUpSuggestions": "Recommended follow-up work",
-  "durableKnowledgeCandidates": "Reusable knowledge discovered"
+  "issue": 272,
+  "status": "success",
+  "summary": "Fixed the blocking review finding.",
+  "filesChanged": ["src/example.ps1"],
+  "testsRun": ["focused regression test"],
+  "testResult": "passed",
+  "acceptanceCriteriaStatus": "All criteria met",
+  "documentationUpdated": false,
+  "knownConcerns": "",
+  "followUpSuggestions": "",
+  "durableKnowledgeCandidates": "",
+  "pr": "https://github.com/example/project/pull/12"
 }
 ```
+
+The example shows a successful fix. Use `status: failure` and describe the
+blocker when the review finding cannot be resolved; a successful result needs
+the existing PR URL. Set `documentationUpdated` to `false` after confirming
+that no documentation change is needed.
+
+## Already-resolved issues
+
+The workflow's first step (`check-already-resolved.ps1`) finishes work on a closed or `factory:done` issue by
+writing `.factory/already-resolved.json`. If that file exists, reply with one line saying the issue is already
+resolved and stop: no discovery, no edits, no result file. Every later workflow step then no-ops.

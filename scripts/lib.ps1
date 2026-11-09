@@ -49,6 +49,307 @@ function Test-FactoryConfig($Config) {
     $errs
 }
 
+# Drain both child streams while retaining the beginning and end (at most 64
+# KiB combined) of each. The tail preserves test failure summaries after noisy
+# progress output, while one enormous line still cannot defeat the bound.
+function New-ValidationCapture {
+    if (-not ('FactoryValidationCappedStream' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+public sealed class FactoryValidationCappedStream : Stream {
+    private readonly int headLimit;
+    private readonly byte[] tail;
+    private int tailCount;
+    private int tailStart;
+    private static readonly byte[] Marker = System.Text.Encoding.UTF8.GetBytes("\r\n... middle output truncated ...\r\n");
+    public long BytesSeen { get; private set; }
+    public int CapturedCapacity { get { return headLimit + tail.Length; } }
+    public FactoryValidationCappedStream(int limit) {
+        headLimit = limit / 2;
+        tail = new byte[limit - headLimit - Marker.Length];
+    }
+    private readonly MemoryStream head = new MemoryStream();
+    public byte[] SavedBytes() {
+        byte[] first = head.ToArray();
+        bool truncated = BytesSeen > CapturedCapacity;
+        int markerLength = truncated ? Marker.Length : 0;
+        byte[] result = new byte[first.Length + markerLength + tailCount];
+        Buffer.BlockCopy(first, 0, result, 0, first.Length);
+        if (truncated) Buffer.BlockCopy(Marker, 0, result, first.Length, markerLength);
+        int tailOffset = tailStart;
+        for (int i = 0; i < tailCount; i++) result[first.Length + markerLength + i] = tail[(tailOffset + i) % tail.Length];
+        return result;
+    }
+    private void SaveTail(byte[] buffer, int offset, int count) {
+        for (int i = 0; i < count; i++) {
+            int slot = (tailStart + tailCount) % tail.Length;
+            tail[slot] = buffer[offset + i];
+            if (tailCount < tail.Length) tailCount++;
+            else tailStart = (tailStart + 1) % tail.Length;
+        }
+    }
+    public override void Write(byte[] buffer, int offset, int count) {
+        int keepHead = Math.Min(count, Math.Max(0, headLimit - (int)head.Length));
+        if (keepHead > 0) head.Write(buffer, offset, keepHead);
+        int tailCountInWrite = count - keepHead;
+        if (tailCountInWrite > 0) SaveTail(buffer, offset + keepHead, tailCountInWrite);
+        BytesSeen += count;
+    }
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken token) {
+        Write(buffer, offset, count);
+        return Task.CompletedTask;
+    }
+    public override bool CanRead { get { return false; } }
+    public override bool CanSeek { get { return false; } }
+    public override bool CanWrite { get { return true; } }
+    public override long Length { get { return SavedBytes().Length; } }
+    public override long Position { get { return 0; } set { throw new NotSupportedException(); } }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
+    public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
+    public override void SetLength(long value) { throw new NotSupportedException(); }
+}
+'@
+    }
+    [FactoryValidationCappedStream]::new(65536)
+}
+
+function Get-ValidationTimeoutSeconds([string]$Stage) {
+    if ($Stage -eq 'changed') { return 1200 }
+    return 7200
+}
+
+function Get-ChangedValidationSelection([string]$Root, $Config) {
+    $mapPath = Join-Path $Root '.ai/factory/test-ownership.json'
+    if (-not (Test-Path -LiteralPath $mapPath)) { return $null }
+    $map = Get-Content -Raw -LiteralPath $mapPath | ConvertFrom-Json -AsHashtable
+    if ($map.schemaVersion -ne 1 -or -not ($map.checks -is [array]) -or $map.checks.Count -eq 0) {
+        throw "Changed-test ownership map is invalid: $mapPath"
+    }
+    $base = ''
+    $contextPath = Join-Path $Root '.factory/implementation-context.json'
+    if (Test-Path -LiteralPath $contextPath) {
+        try { $base = [string](Get-Content -Raw -LiteralPath $contextPath | ConvertFrom-Json).environment.baseCommit } catch { }
+    }
+    if ($base -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') {
+        foreach ($candidate in @('origin/dev', 'origin/stable', 'HEAD^')) {
+            $null = & git -C $Root rev-parse --verify "$candidate^{commit}" 2>$null
+            if ($LASTEXITCODE -ne 0) { continue }
+            $base = ((& git -C $Root merge-base HEAD $candidate 2>$null) -join '').Trim()
+            if ($LASTEXITCODE -eq 0 -and $base) { break }
+        }
+    }
+    if ($base -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { throw 'Cannot establish a trusted base commit for changed-test selection.' }
+    $paths = @(& git -C $Root diff --name-only "$base...HEAD" 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw "Could not compare changed files with base commit $base." }
+    $paths += @(& git -C $Root diff --name-only 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate unstaged changed files.' }
+    $paths += @(& git -C $Root diff --cached --name-only 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate staged changed files.' }
+    $paths += @(& git -C $Root ls-files --others --exclude-standard 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate untracked changed files.' }
+    # .factory/ is Factory runtime state (receipts, logs, results), never source; counting it forced a full regression.
+    $paths = @($paths | ForEach-Object { ([string]$_).Trim().Replace('\', '/') } | Where-Object { $_ -and $_ -notmatch '^\.factory/' } | Sort-Object -Unique)
+    if (-not $paths.Count) {
+        $why = ''
+        $handoff = Join-Path $Root '.factory/implement-result.json'
+        if (Test-Path -LiteralPath $handoff -PathType Leaf) {
+            try {
+                $r = Get-Content -Raw -LiteralPath $handoff | ConvertFrom-Json
+                if ($r.status) { $why = " The implementation handoff reports status '$($r.status)': $($r.summary)" }
+            } catch { }
+        }
+        throw "No changed files were found for targeted validation; refusing to report a pass.$why"
+    }
+    $selected = [System.Collections.Generic.List[object]]::new()
+    $covered = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($check in $map.checks) {
+        if (-not $check.id -or -not $check.command -or -not ($check.patterns -is [array]) -or -not $check.patterns.Count) {
+            throw "Changed-test map entry in $mapPath requires id, patterns, and command."
+        }
+        $matched = [System.Collections.Generic.List[string]]::new()
+        foreach ($path in $paths) {
+            foreach ($pattern in $check.patterns) {
+                $regex = '^' + [regex]::Escape([string]$pattern).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$'
+                if ($path -match $regex) { $matched.Add($path); $null = $covered.Add($path); break }
+            }
+        }
+        if ($matched.Count) { $selected.Add([pscustomobject]@{ id = [string]$check.id; command = [string]$check.command; paths = @($matched | Sort-Object -Unique) }) }
+    }
+    $unmapped = @($paths | Where-Object { -not $covered.Contains($_) })
+    if ($unmapped.Count) {
+        if ($map.unmapped -ne 'full' -or -not $Config.validation.full) {
+            throw "Changed files have no focused-test owner; refusing a green result: $($unmapped -join ', ')"
+        }
+        $selected.Add([pscustomobject]@{ id = 'unmapped-full-regression'; command = [string]$Config.validation.full; paths = $unmapped })
+    }
+    if (-not $selected.Count) { throw 'No changed-test owner matched the changed files.' }
+    return [pscustomobject]@{ baseCommit = $base; changedPaths = $paths; unmappedPaths = $unmapped; checks = @($selected) }
+}
+
+function Invoke-FactoryValidation {
+    param(
+        [ValidateSet('changed', 'full', 'verify')][string]$Stage,
+        [string]$WrapperPath,
+        [string]$Task = '',
+        [switch]$Quiet
+    )
+    $root = (Get-Location).Path
+    $gitRoot = @(& git rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $gitRoot.Count -gt 0) { $root = ([string]$gitRoot[0]).Trim() }
+    $attempt = [guid]::NewGuid().ToString('N')
+    $relative = ".factory/artifacts/validation/$Stage/$attempt"
+    $directory = Join-Path $root $relative
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $stdoutPath = Join-Path $directory 'stdout.log'
+    $stderrPath = Join-Path $directory 'stderr.log'
+    $receiptPath = Join-Path $directory 'receipt.json'
+    $receipt = [ordered]@{
+        schemaVersion = 1; issue = 0; repository = ''; pr = ''; headSha = ''
+        stage = $Stage; status = 'error'; exitCode = 1
+        artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
+        worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
+        selectedChecks = @(); changedPaths = @(); unmappedPaths = @()
+        startedAt = (Get-Date).ToUniversalTime().ToString('o')
+        finishedAt = ''; command = ''; truncated = $false; message = ''
+    }
+    $stdout = [byte[]]@(); $stderr = [byte[]]@()
+    try {
+        if ($env:FACTORY_VALIDATION_ROOT -and
+            [string]::Equals([IO.Path]::GetFullPath($env:FACTORY_VALIDATION_ROOT), [IO.Path]::GetFullPath($root), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Nested Factory validation in the same worktree is not allowed.'
+        }
+        if ($LASTEXITCODE -ne 0 -or $gitRoot.Count -eq 0) { throw 'Current directory is not inside a Git worktree.' }
+        $head = @(& git -C $root rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) { throw 'Cannot resolve the current worktree HEAD.' }
+        $receipt.headSha = ([string]$head[0]).Trim()
+        # `.factory/` is the workflow's own scratch (artifacts, results, startup records), some of it tracked and rewritten
+        # by every step; the receipt asserts the *work* tree is clean, as the lifecycle handoff does.
+        $dirty = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
+        $receipt.worktreeClean = ($LASTEXITCODE -eq 0 -and $dirty.Count -eq 0)
+        $remote = [string](@(& git -C $root config --get remote.origin.url 2>$null) | Select-Object -First 1)
+        if ($remote -match '(?i)github\.com[:/](?<slug>[^/\s]+/[^/\s]+?)(?:\.git)?$') { $receipt.repository = $Matches.slug }
+        $resultPath = Join-Path $root '.factory/implement-result.json'
+        if (-not (Test-Path $resultPath)) { $resultPath = Join-Path $root '.factory/review-result.json' }
+        if (Test-Path $resultPath) {
+            $result = Get-Content -Raw $resultPath | ConvertFrom-Json
+            # Failure results omit optional fields and StrictMode rejects reading them.
+            $resultIssue = $result.PSObject.Properties['issue']
+            $resultPr = $result.PSObject.Properties['pr']
+            if ($resultIssue -and $resultIssue.Value) { $receipt.issue = [int]$resultIssue.Value }
+            if ($resultPr -and $resultPr.Value) { $receipt.pr = [string]$resultPr.Value }
+        }
+        if ($Task -match '(?:issues/|#)?([1-9][0-9]*)$') { $receipt.issue = [int]$Matches[1] }
+        if (Test-Path (Join-Path $root '.factory/already-resolved.json')) {
+            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Issue already resolved.'
+            return 0
+        }
+        $configPath = Join-Path $root '.ai/factory/factory.config.yaml'
+        $config = Read-FactoryConfig $configPath
+        if (-not $config.Contains('validation') -or $null -eq $config.validation -or -not $config.validation.Contains($Stage)) {
+            throw "Configured validation.$Stage command is missing from $configPath."
+        }
+        $command = ([string]$config.validation[$Stage]).Trim()
+        if (-not $command) { throw "Configured validation.$Stage command is empty." }
+        $selection = if ($Stage -eq 'changed') { Get-ChangedValidationSelection $root $config } else { $null }
+        if ($selection) {
+            $receipt.changedPaths = @($selection.changedPaths)
+            $receipt.unmappedPaths = @($selection.unmappedPaths)
+            $receipt.selectedChecks = @($selection.checks | ForEach-Object { [string]$_.id })
+            $commandLines = [System.Collections.Generic.List[string]]::new()
+            foreach ($check in $selection.checks) {
+                $checkId = ([string]$check.id).Replace("'", "''")
+                $checkCommand = ([string]$check.command).Replace("'", "''")
+                $changedPathsJson = ConvertTo-Json -InputObject @($check.paths) -Compress
+                $changedPathsLiteral = $changedPathsJson.Replace("'", "''")
+                $commandLines.Add("`$env:FACTORY_CHANGED_PATHS = '$changedPathsLiteral'")
+                $commandLines.Add("Write-Output 'CHECK_START: $checkId'")
+                $commandLines.Add('$global:LASTEXITCODE = 0')
+                $commandLines.Add("Invoke-Expression '$checkCommand'")
+                $commandLines.Add("if (`$LASTEXITCODE -ne 0) { throw 'Changed validation check $checkId failed with exit code ' + `$LASTEXITCODE }")
+            }
+            $command = [string]::Join("`n", $commandLines)
+            $receipt.command = [string]::Join(' ; ', @($selection.checks | ForEach-Object { "$($_.id): $($_.command)" }))
+        }
+        if ($command -eq 'skip' -and $Stage -eq 'changed') {
+            $receipt.status = 'skipped'; $receipt.exitCode = 0; $receipt.message = 'Targeted validation explicitly unsupported.'
+            return 0
+        }
+        if ($command -eq 'skip') { throw "Required validation.$Stage cannot be skipped." }
+        if (-not $selection) { $receipt.command = $command }
+        foreach ($match in [regex]::Matches($command, '(?:"[^"]+\.ps1"|''[^'']+\.ps1''|[^\s]+\.ps1)')) {
+            $candidate = $match.Value.Trim('"', "'")
+            $candidatePath = if ([IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $root $candidate }
+            $resolved = [IO.Path]::GetFullPath($candidatePath)
+            if ([string]::Equals($resolved, [IO.Path]::GetFullPath($WrapperPath), [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Configured validation.$Stage recursively invokes its Factory wrapper."
+            }
+        }
+        $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
+        $start.ArgumentList.Add('-NoProfile')
+        $start.ArgumentList.Add('-EncodedCommand')
+        $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+        $start.WorkingDirectory = $root
+        $start.UseShellExecute = $false
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
+        if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
+        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+        if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
+        $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
+        $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
+        $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
+        if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
+            $process.Kill($true); $null = $process.WaitForExit(10000)
+            # Preserve the bounded diagnostic output on timeouts too. Without
+            # joining these readers before throwing, a two-hour full-suite
+            # timeout left empty stdout/stderr artifacts and only a generic
+            # non-zero workflow step for the operator to inspect.
+            try {
+                [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+                $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+                $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+            } catch { }
+            throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
+        }
+        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+        $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+        $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+        $receipt.exitCode = [int]$process.ExitCode
+        $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
+        if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
+    } catch {
+        $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
+    } finally {
+        # A project runner can modify tracked files or create untracked files
+        # after the initial snapshot. Keep the receipt clean only if both the
+        # pre-run and post-run worktree are clean.
+        # `.factory/` is the workflow's own scratch and is excluded here exactly as in the pre-run snapshot above.
+        $postRunStatus = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
+        $postRunStatusOk = ($LASTEXITCODE -eq 0)
+        $postRunHead = @(& git -C $root rev-parse HEAD 2>$null)
+        $headUnchanged = ($LASTEXITCODE -eq 0 -and $postRunHead.Count -gt 0 -and
+            ([string]$postRunHead[0]).Trim() -eq $receipt.headSha)
+        $receipt.worktreeClean = ($receipt.worktreeClean -and $postRunStatusOk -and
+            $postRunStatus.Count -eq 0 -and $headUnchanged)
+        if ($receipt.headSha -and -not $headUnchanged) {
+            $receipt.status = 'error'; $receipt.exitCode = 1
+            $receipt.message = 'Project HEAD changed during validation.'
+        }
+        [IO.File]::WriteAllBytes($stdoutPath, $stdout)
+        [IO.File]::WriteAllBytes($stderrPath, $stderr)
+        $receipt.finishedAt = (Get-Date).ToUniversalTime().ToString('o')
+        $receipt | ConvertTo-Json -Depth 6 | Set-Content -Path $receiptPath -Encoding utf8
+        if (-not $Quiet) { Write-Host ($receipt | ConvertTo-Json -Compress -Depth 6) }
+    }
+    if ($receipt.status -eq 'passed' -or ($Stage -eq 'changed' -and $receipt.status -eq 'skipped')) { return 0 }
+    return 1
+}
+
 function Get-MarkerStyle([string]$RelPath) {
     if ($RelPath -match '\.md$') { return 'html' }
     if ($RelPath -match '\.(ya?ml|ps1)$') { return 'hash' }
@@ -107,12 +408,17 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'prepare-implementation.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'audit-factory-failures.ps1', 'refresh-stale-workable.ps1', 'validate-automation-catalog.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-investigation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+
+# Retired names stay valid in project configs so an installed project keeps updating; they install nothing (skills)
+# or their replacement (workflows).
+$script:RetiredSkills = @('factory-intake', 'factory-implement-prepare', 'factory-failure-audit')
+$script:WorkflowAliases = @{ 'failure-audit' = 'health'; 'backlog-reconciliation' = 'health' }
 
 # Desired managed files for a config. Each: Target (project-relative, '/'), Content, Hash.
 # A project override at .ai/factory/overrides/<source path> fully replaces the factory file.
 function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [string]$ProjectPath) {
-    $skills = @($Config['skills']); $workflows = @($Config['workflows'])
+    $skills = @(@($Config['skills']) | Where-Object { $script:RetiredSkills -notcontains $_ }); $workflows = @(@($Config['workflows']) | ForEach-Object { if ($script:WorkflowAliases.ContainsKey([string]$_)) { $script:WorkflowAliases[[string]$_] } else { $_ } } | Select-Object -Unique)
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($s in $skills) {
         $p = "skills/$s/SKILL.md"
@@ -132,17 +438,22 @@ function Get-DesiredFiles([string]$FactoryRoot, $Config, [string]$Version, [stri
     foreach ($sc in $script:RuntimeScripts) { $selected.Add("scripts/$sc") }
     $maint = Get-FeatureOn $Config 'maintenance'
     $labelCleanup = Get-FeatureOn $Config 'backlog_label_cleanup'
-    if ($maint -and $workflows -notcontains 'maintenance') { $selected.Add('workflows/maintenance.yaml') }
-    if ($labelCleanup -and $workflows -notcontains 'backlog-label-audit') { $selected.Add('workflows/backlog-label-audit.yaml') }
-    if ($labelCleanup -and $skills -notcontains 'factory-backlog-label-audit') { $selected.Add('skills/factory-backlog-label-audit/SKILL.md') }
+    $combinedMaintenance = $maint -or $labelCleanup
+    if ($combinedMaintenance -and $workflows -notcontains 'maintenance') { $selected.Add('workflows/maintenance.yaml') }
+    if ($combinedMaintenance -and $skills -notcontains 'factory-backlog-label-audit') { $selected.Add('skills/factory-backlog-label-audit/SKILL.md') }
+    $godotUpgrade = Get-FeatureOn $Config 'godot_upgrade'
+    if ($godotUpgrade -and $workflows -notcontains 'godot-upgrade') { $selected.Add('workflows/godot-upgrade.yaml') }
+    if ($godotUpgrade -and $skills -notcontains 'factory-godot-upgrade') { $selected.Add('skills/factory-godot-upgrade/SKILL.md') }
     if ((Get-FeatureOn $Config 'knowledge_extraction') -and $skills -notcontains 'factory-learn') { $selected.Add('skills/factory-learn/SKILL.md') }
-    if ((Get-FeatureOn $Config 'backlog_reconciliation') -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
+    $backlogReconciliation = Get-FeatureOn $Config 'backlog_reconciliation'
+    if ($backlogReconciliation -and $workflows -notcontains 'health') { $selected.Add('workflows/health.yaml') }
+    if ($backlogReconciliation -and $skills -notcontains 'factory-work-backlog') { $selected.Add('skills/factory-work-backlog/SKILL.md') }
     # Automations: only those whose workflow is installed (maintenance only with the feature on).
-    $allWorkflows = @($workflows) + $(if ($maint) { 'maintenance' }) + $(if ($labelCleanup) { 'backlog-label-audit' })
+    $allWorkflows = @($workflows) + $(if ($combinedMaintenance) { 'maintenance' }) + $(if ($godotUpgrade) { 'godot-upgrade' }) + $(if ($backlogReconciliation) { 'health' })
     foreach ($f in Get-ChildItem (Join-Path $FactoryRoot 'automations') -File -Filter *.json) {
         $def = Get-Content -Raw $f.FullName | ConvertFrom-Json
-        if ($f.BaseName -eq 'maintenance' -and -not $maint) { continue }
-        if ($f.BaseName -eq 'backlog-label-audit' -and -not $labelCleanup) { continue }
+        if ($f.BaseName -eq 'maintenance' -and -not $combinedMaintenance) { continue }
+        if ($f.BaseName -eq 'godot-upgrade' -and -not $godotUpgrade) { continue }
         $wf = $def.task.workflow -replace '^factory-', ''
         if ($wf -and $allWorkflows -notcontains $wf) { continue }
         $selected.Add("automations/$($f.Name)")

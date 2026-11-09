@@ -1,0 +1,24 @@
+# Quadlet unit for the Factory's Prometheus. Installed by scripts/deploy/deploy-prometheus-standalone.sh into
+# ~/.config/containers/systemd/ (placeholders are filled in there). systemd --user generates
+# factory-prometheus.service from it; with user lingering enabled that service starts at boot with no login, and
+# Restart=always brings it back after a crash. It does not depend on podman-restart.service.
+[Unit]
+Description=Factory Prometheus (service and model-host monitoring)
+After=network-online.target factory-blackbox.service
+Wants=network-online.target factory-blackbox.service
+
+[Container]
+ContainerName=factory-prometheus
+Image=__IMAGE__
+Network=host
+Exec=--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=30d --storage.tsdb.retention.size=1GB --web.listen-address=127.0.0.1:9090
+Volume=__CONFIG_DIR__:/etc/prometheus:ro,Z
+Volume=factory-prometheus-data:/prometheus:Z,U
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

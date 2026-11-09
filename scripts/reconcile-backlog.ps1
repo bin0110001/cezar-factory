@@ -11,17 +11,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$input = Get-Content -Raw $InputPath | ConvertFrom-Json
+$backlog = Get-Content -Raw $InputPath | ConvertFrom-Json
 $now = [DateTimeOffset]::UtcNow
 $actions = @(); $invalid = @(); $excluded = @()
-$stateLabels = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate')
+$stateLabels = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate','factory:implemented','factory:pr-open')
 $actionForState = @{ 'factory:needs-plan' = 'plan'; 'factory:ready' = 'implement'; 'factory:review' = 'review'; 'factory:changes-requested' = 'fix-review'; 'factory:investigate' = 'investigate' }
 if ($Dispatch -and -not $LeaseOwner) { throw '-Dispatch requires an explicit -LeaseOwner or FACTORY_LEASE_OWNER.' }
-foreach ($issue in $input.issues) {
+foreach ($issue in $backlog.issues) {
     $states = @($issue.labels | Where-Object { $stateLabels -contains $_ })
     if ($states.Count -ne 1) { $invalid += [ordered]@{ issue = $issue.number; reason = 'invalid-factory-state'; states = $states }; continue }
     $lease = $issue.lease
-    $activeLease = $lease -and $lease.expiresAt -and ([DateTimeOffset]::Parse($lease.expiresAt) -gt $now)
+    $activeLease = $lease -and -not $lease.releasedAt -and $lease.expiresAt -and ([DateTimeOffset]::Parse($lease.expiresAt) -gt $now)
     if ($issue.blocked -or $issue.openHumanGate -or $activeLease) {
         $excluded += [ordered]@{ issue = $issue.number; reason = if ($activeLease) { 'active-lease' } elseif ($issue.openHumanGate) { 'human-gate' } else { 'blocked' } }
         continue

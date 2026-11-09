@@ -1,0 +1,21 @@
+{
+  "name": "[factory] godot-upgrade",
+  "description": "Daily check for a new stable Godot release; pins it, runs the project's tests, fixes regressions and opens an auto-merge PR (managed by cezar-factory; do not edit in the cockpit)",
+  "factoryRequires": {
+    "projectType": "godot"
+  },
+  "kind": "schedule",
+  "schedule": {
+    "type": "daily",
+    "hour": 3,
+    "minute": 0
+  },
+  "task": {
+    "prompt": "Run the Godot upgrade workflow for {{project}} on {{date}}. The workflow steps do all the work; if there is no newer stable Godot release, do nothing.",
+    "workflow": "factory-godot-upgrade",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
+    "worktree": true,
+    "autonomous": true
+  }
+}
