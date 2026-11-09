@@ -89,10 +89,10 @@ export function SelfUpdateDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span>cezar {data ? `v${data.version}` : ''}</span>
+            <span>Cezarium {data ? `v${data.version}` : ''}</span>
             <ActiveBadge data={data} />
           </DialogTitle>
-          <DialogDescription className="sr-only">Update cezar, pick a release channel or switch versions.</DialogDescription>
+          <DialogDescription className="sr-only">Update Cezarium, pick a release channel or switch versions.</DialogDescription>
         </DialogHeader>
 
         {data ? (
@@ -131,7 +131,7 @@ export function SelfUpdateDialog({
             {data.activeRuns > 0 && data.canSelfUpdate ? (
               <p className="rounded-md border border-pending/50 bg-pending/10 px-3 py-2 text-[12.5px] text-foreground">
                 {data.activeRuns} task{data.activeRuns === 1 ? ' is' : 's are'} running. A restart interrupts
-                them; cezar re-queues or resumes them on the way back up.
+                them; Cezarium re-queues or resumes them on the way back up.
               </p>
             ) : null}
 
@@ -141,7 +141,7 @@ export function SelfUpdateDialog({
                 {/* The cockpit is read from disk on every request, the server only at boot: a rebuilt
                     worktree can show a channel its still-running server has never heard of. */}
                 {setChannel.variables === 'development'
-                  ? ' The running cezar server predates the Development channel — restart cezar to load it.'
+                  ? ' The running Cezarium server predates the Development channel — restart Cezarium to load it.'
                   : null}
               </p>
             ) : null}
@@ -167,7 +167,7 @@ const CHANNELS: { value: UpdateChannel; label: string }[] = [
 const CHANNEL_HINTS: Record<UpdateChannel, string> = {
   stable: 'Tagged releases.',
   nightly: 'A fresh build of main every night.',
-  development: 'A cezar worktree or an open pull request. Never updates on its own.',
+  development: 'A Cezarium worktree or an open pull request. Never updates on its own.',
 }
 
 function ChannelToggle({
@@ -436,7 +436,7 @@ function InstallHint({ data }: { data: SelfUpdateStatus }) {
   return (
     <div data-slot="self-update-install-hint" className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-[12.5px]">
       <p>{data.reason}</p>
-      <p className="mt-1.5 text-muted-foreground">Run this once, then start cezar with the plain command:</p>
+      <p className="mt-1.5 text-muted-foreground">Run this once, then start Cezarium with the plain command:</p>
       <pre className="mt-1.5 overflow-x-auto rounded bg-background px-2 py-1.5 font-mono text-[12px]">{command}</pre>
     </div>
   )

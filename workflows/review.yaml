@@ -3,7 +3,7 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/verify.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,validate-reviewed-head.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/verify.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -38,6 +38,10 @@ steps:
     onFail:
       retry: review
       max: 1
+  - id: validate-head
+    name: Validate the reviewed PR head so the receipts bind to it
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-reviewed-head.ps1 -ReviewPath .factory/review-result.json -Task "{{task}}"
+    timeoutSeconds: 3600
   - id: merge-eligibility
     name: Verify live PR, review, validation and repository gates
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verify-merge-eligibility.ps1 -ReviewPath .factory/review-result.json -OutputPath .factory/merge-eligibility.json

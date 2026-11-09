@@ -226,7 +226,9 @@ function Invoke-FactoryValidation {
         $head = @(& git -C $root rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) { throw 'Cannot resolve the current worktree HEAD.' }
         $receipt.headSha = ([string]$head[0]).Trim()
-        $dirty = @(& git -C $root status --porcelain 2>$null)
+        # `.factory/` is the workflow's own scratch (artifacts, results, startup records), some of it tracked and rewritten
+        # by every step; the receipt asserts the *work* tree is clean, as the lifecycle handoff does.
+        $dirty = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
         $receipt.worktreeClean = ($LASTEXITCODE -eq 0 -and $dirty.Count -eq 0)
         $remote = [string](@(& git -C $root config --get remote.origin.url 2>$null) | Select-Object -First 1)
         if ($remote -match '(?i)github\.com[:/](?<slug>[^/\s]+/[^/\s]+?)(?:\.git)?$') { $receipt.repository = $Matches.slug }
@@ -326,7 +328,8 @@ function Invoke-FactoryValidation {
         # A project runner can modify tracked files or create untracked files
         # after the initial snapshot. Keep the receipt clean only if both the
         # pre-run and post-run worktree are clean.
-        $postRunStatus = @(& git -C $root status --porcelain 2>$null)
+        # `.factory/` is the workflow's own scratch and is excluded here exactly as in the pre-run snapshot above.
+        $postRunStatus = @(& git -C $root status --porcelain -- . ':(exclude).factory' 2>$null)
         $postRunStatusOk = ($LASTEXITCODE -eq 0)
         $postRunHead = @(& git -C $root rev-parse HEAD 2>$null)
         $headUnchanged = ($LASTEXITCODE -eq 0 -and $postRunHead.Count -gt 0 -and
@@ -405,7 +408,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-investigation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-investigation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'failure-summary-lib.ps1', 'summarize-failures.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1')
 
 # Retired names stay valid in project configs so an installed project keeps updating; they install nothing (skills)
 # or their replacement (workflows).

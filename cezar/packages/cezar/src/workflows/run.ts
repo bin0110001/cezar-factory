@@ -4309,7 +4309,13 @@ export class RunManager {
           const previous = (await lifecycleStatus({ cwd: this.repoRoot }))
             .find((item) => item.issue === String(lifecycleRun.issueNumber));
           const previousRun = previous ? this.store.getRun(previous.executionId) : undefined;
-          const previousRunTerminal = Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
+          // A Factory-owned claim (`factory:<host>:<runId>`) whose run is no longer in the store (retention pruned it,
+          // or the cockpit was rebuilt) has nothing left that could be running it. Treating that as "not terminal"
+          // orphaned the claim for good: every restart of the issue died with "already has active execution".
+          // `external:` claims (a person's dev window) are never taken over this way.
+          const previousClaimOrphaned = Boolean(previous && !previousRun && previous.ownerId.startsWith('factory:'));
+          const previousRunTerminal = previousClaimOrphaned
+            || Boolean(previousRun && ['review', 'done', 'failed', 'cancelled'].includes(previousRun.status));
           const allowReadyTransfer = previous?.state === 'ready' && previousRunTerminal;
           const allowTerminalTransfer = ['working', 'validating', 'blocked', 'recoverable'].includes(previous?.state ?? '') && previousRunTerminal;
           let execution: Awaited<ReturnType<typeof registerFactoryWorkspace>>;

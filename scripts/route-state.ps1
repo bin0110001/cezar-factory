@@ -225,6 +225,9 @@ switch ($Event) {
         Add-Comment $plan; Set-State 'factory:ready'; Done 'factory:ready'
     }
     'implement-result' {
+        # A workflow retry after a later step failed (preflight, handoff) re-runs this route step. The first
+        # call already moved the issue to review and posted the comment, so a repeat is a no-op, not a refusal.
+        if ($result.status -eq 'success' -and $current -contains 'factory:review') { Done 'factory:review' 'already routed to review by an earlier attempt' }
         Assert-Source 'factory:working'
         if ($result.status -ne 'success') {
             Write-ExecutionRecord 'failed' $result
@@ -251,7 +254,22 @@ switch ($Event) {
                     Add-Comment ($body + "`n`nMerge was not requested. The live eligibility gate denied this PR at the reviewed head. The issue remains in review.`n`n$blockers")
                     Done 'factory:review' 'merge eligibility denied; no GitHub write made'
                 }
+                if ([string]$gate.reviewMode -eq 'self-review') {
+                    # Solo-maintainer posture: dev has no rules, so GitHub rejects --auto. The gate has verified the exact head,
+                    # the review result and the head-bound receipts, so merge directly, pinned to that head.
+                    try { Invoke-Gh pr merge ([string]$result.pr) --squash --delete-branch --match-head-commit ([string]$gate.headSha) | Out-Null }
+                    catch {
+                        $live = try { Invoke-Gh pr view ([string]$result.pr) --json 'mergeable,state' | ConvertFrom-Json } catch { $null }
+                        if ($live -and [string]$live.state -eq 'OPEN' -and [string]$live.mergeable -eq 'CONFLICTING') {
+                            # The job that owns the PR repairs it (AGENTS.md: a job owns its pull request until it merges).
+                            Add-Comment ($body + "`n`nThe PR was approved but cannot merge: it conflicts with dev. Returning it to the fix automation, which owns resolving the conflict, merging dev in and re-validating.")
+                            Set-State 'factory:changes-requested'; Done 'factory:changes-requested' 'approved PR conflicts with dev; fix job resolves it'
+                        }
+                        throw
+                    }
+                } else {
                 Invoke-Gh pr merge ([string]$result.pr) --auto --squash --delete-branch --match-head-commit ([string]$gate.headSha) | Out-Null
+                }
                 $mergeState = Invoke-Gh pr view ([string]$result.pr) --json 'state,headRefOid' | ConvertFrom-Json
                 if ([string]$mergeState.headRefOid -ne [string]$gate.headSha) { Fail 'PR head changed while requesting merge; issue remains open for fresh review' }
                 if ([string]$mergeState.state -eq 'MERGED') {
