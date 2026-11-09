@@ -94,7 +94,28 @@ content_digest() {
 }
 
 cd "$FACTORY_DIR"
-if [[ -n "$(git status --porcelain)" ]]; then
+dirty_entries=()
+mapfile -t dirty_entries < <(git status --porcelain=v1 --untracked-files=all)
+if (( ${#dirty_entries[@]} == 1 )) && [[ "${dirty_entries[0]}" == '?? integrations/bazzite/prometheus-vllm-token.generated' ]]; then
+  # Older checkouts did not ignore this host-generated credential file. Accept
+  # only the exact generated path and only when its bytes still match the host
+  # env file; every other dirty state continues to block the checkout update.
+  token_file="$FACTORY_DIR/integrations/bazzite/prometheus-vllm-token.generated"
+  env_file="$FACTORY_DIR/integrations/bazzite/.env"
+  configured_token=""
+  if [[ -f "$env_file" ]]; then
+    configured_token="$(grep -E '^VLLM_API_KEY=' "$env_file" | tail -n 1 | cut -d= -f2- || true)"
+  fi
+  expected_token="${configured_token:-unset}"
+  if [[ -L "$token_file" || ! -f "$token_file" ]] || [[ "$(cat -- "$token_file")" != "$expected_token" ]]; then
+    failure="$token_file is not the expected generated token; not touching it"
+    log "BLOCKED: $failure" >&2
+    exit 20
+  fi
+  log "verified legacy generated Prometheus token; continuing to the commit that ignores it"
+  dirty_entries=()
+fi
+if (( ${#dirty_entries[@]} != 0 )); then
   failure="$FACTORY_DIR has uncommitted or untracked changes; not touching it"
   log "BLOCKED: $failure" >&2
   exit 20

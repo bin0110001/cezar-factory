@@ -38,3 +38,11 @@ errors, rate limits, cancellation, gh missing), `project-defect` (test, build, o
 `unknown`. Only `factory-defect` rows are published as Factory issues; the rest appear in the
 publisher receipt message and in `.factory/health-report.json`. An artifact without
 `classification` (an older collector) is published as before. No agent classifies failures.
+
+## Agent failure summaries (#103)
+
+`scripts/summarize-failures.ps1 -InputPath <records.json> [-OutputPath <file>] [-MaxChars 4000]` (run from a workflow
+`command:` step) turns finding records `{findingId, identifier, message, detailPath, occurrence}` into one entry per
+finding ID with `occurrenceCount`, capped identifiers and `detailPaths`. Secrets are `[REDACTED]` using the audit
+collector's rules (`scripts/failure-summary-lib.ps1`). Entries are ordered by occurrences descending then finding ID and
+cut at entry boundaries to the cap; `omittedEntries` and `omittedOccurrences` keep truncated repeats visible.

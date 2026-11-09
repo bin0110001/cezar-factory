@@ -11,7 +11,10 @@ import type { RunRecord, RunStatus } from '@open-mercato/cezar-api-client'
  */
 
 /** Where every surface of the ask points. */
-export const CEZAR_REPO_URL = 'https://github.com/open-mercato/cezar'
+export const CEZAR_REPO_URL = 'https://github.com/bin0110001/cezar-factory'
+
+/** The fork's own source build instructions, separate from upstream npm update checks. */
+export const CEZARIUM_BUILDS_URL = `${CEZAR_REPO_URL}/blob/dev/cezar/docs/reference.md#in-checkout-scripts`
 
 /** Where the retired one-time toast (#1200) recorded itself. Still READ: a browser that saw the
  *  toast has spent one of its asks, so the dialog never opens as if it were the first. */

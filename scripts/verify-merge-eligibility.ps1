@@ -13,11 +13,24 @@ param(
     [Parameter(Mandatory)][string]$ReviewPath,
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$GhCommand = 'gh',
-    [string]$ReceiptRoot = (Join-Path (Get-Location).Path '.factory/artifacts/validation')
+    [string]$ReceiptRoot = (Join-Path (Get-Location).Path '.factory/artifacts/validation'),
+    # 'self-review' is the solo-maintainer posture (config/promotion-policy.json promotion.modes.<mode>.review): the repository
+    # has no dev rules and cannot give an independent GitHub approval, so those two requirements are replaced by the review
+    # result bound to the exact head plus head-bound validation receipts. Empty reads the configured posture; anything
+    # unreadable or unknown fails closed to the strict 'approval' behaviour.
+    [ValidateSet('', 'self-review', 'approval')][string]$ReviewMode = ''
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 $blockers = [System.Collections.Generic.List[string]]::new()
+if (-not $ReviewMode) {
+    try {
+        $policy = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/promotion-policy.json') | ConvertFrom-Json
+        $ReviewMode = [string]$policy.promotion.modes.([string]$policy.promotion.mode).review
+    } catch { $ReviewMode = 'approval' }
+}
+if ($ReviewMode -ne 'self-review') { $ReviewMode = 'approval' }
+$selfReview = $ReviewMode -eq 'self-review'
 
 function Get-GhJson([string[]]$Arguments) {
     $raw = & $GhCommand @Arguments 2>&1
@@ -28,7 +41,7 @@ function Add-Blocker([string]$Message) { if (-not $blockers.Contains($Message)) 
 function Normalize-Url([string]$Url) { $Url.TrimEnd('/').ToLowerInvariant() }
 
 $decision = [ordered]@{
-    schemaVersion = 1; decision = 'denied'; issue = 0; repository = ''; pr = ''; headSha = ''
+    schemaVersion = 1; decision = 'denied'; reviewMode = $ReviewMode; issue = 0; repository = ''; pr = ''; headSha = ''
     reviewedHeadSha = ''; reviewerIdentity = ''; checkedAt = [DateTime]::UtcNow.ToString('o')
     requiredChecks = @(); validation = [ordered]@{ changed = $false; full = $false; verify = $false; fullRequired = $false }
     effectiveRules = @(); blockers = @()
@@ -64,12 +77,13 @@ try {
         if (-not $closesIssue) { Add-Blocker "PR body does not close issue #$($decision.issue)" }
 
         $repoSettings = Get-GhJson @('api',"repos/$owner/$repoName")
-        if ($repoSettings.allow_auto_merge -ne $true) { Add-Blocker 'repository auto-merge is disabled' }
+        if (-not $selfReview -and $repoSettings.allow_auto_merge -ne $true) { Add-Blocker 'repository auto-merge is disabled' }
         $rules = @(Get-GhJson @('api',"repos/$owner/$repoName/rules/branches/dev"))
         $decision.effectiveRules = @($rules | ForEach-Object { [string]$_.type })
-        if (-not $rules.Count) { Add-Blocker 'no effective rules apply to dev' }
+        if (-not $selfReview -and -not $rules.Count) { Add-Blocker 'no effective rules apply to dev' }
         $prRules = @($rules | Where-Object { $_.type -eq 'pull_request' })
-        if (-not $prRules.Count) { Add-Blocker 'effective rules do not require pull requests' }
+        if ($selfReview) { }
+        elseif (-not $prRules.Count) { Add-Blocker 'effective rules do not require pull requests' }
         else {
             $approvalCount = 0
             $staleReviewsDismissed = $false
@@ -83,7 +97,7 @@ try {
             if (-not $staleReviewsDismissed) { Add-Blocker 'effective rules do not dismiss stale approvals after a new push' }
             if (-not $lastPushApprovalRequired) { Add-Blocker 'effective rules do not require an approval after the latest push' }
         }
-        if (-not ($rules | Where-Object { $_.type -eq 'required_review_thread_resolution' })) { Add-Blocker 'effective rules do not require resolved review conversations' }
+        if (-not $selfReview -and -not ($rules | Where-Object { $_.type -eq 'required_review_thread_resolution' })) { Add-Blocker 'effective rules do not require resolved review conversations' }
         $checkRules = @($rules | Where-Object { $_.type -eq 'required_status_checks' })
         $requiredChecks = @($checkRules | ForEach-Object { @($_.parameters.required_status_checks | ForEach-Object { [string]$_.context }) } | Where-Object { $_ } | Sort-Object -Unique)
         $decision.requiredChecks = $requiredChecks
@@ -97,9 +111,9 @@ try {
         }
         $author = [string]$pr.author.login
         if ($decision.reviewerIdentity -and $decision.reviewerIdentity -ieq $author) { Add-Blocker 'reviewer identity matches the PR author' }
-        if ([string]$pr.reviewDecision -ne 'APPROVED') { Add-Blocker "GitHub review decision is '$($pr.reviewDecision)', not APPROVED" }
+        if (-not $selfReview -and [string]$pr.reviewDecision -ne 'APPROVED') { Add-Blocker "GitHub review decision is '$($pr.reviewDecision)', not APPROVED" }
         $currentApprovals = @($pr.reviews | Where-Object { $_.state -eq 'APPROVED' -and $_.commit.oid -eq $decision.headSha -and $_.author.login -and $_.author.login -ine $author })
-        if (-not $currentApprovals.Count) { Add-Blocker 'no independent GitHub approval is bound to the current PR head' }
+        if (-not $selfReview -and -not $currentApprovals.Count) { Add-Blocker 'no independent GitHub approval is bound to the current PR head' }
 
         $query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}pageInfo{hasNextPage}}}}}'
         $threads = Get-GhJson @('api','graphql','-f',"query=$query",'-F',"owner=$owner",'-F',"name=$repoName",'-F',"number=$prNumber")

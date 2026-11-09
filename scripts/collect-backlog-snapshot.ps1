@@ -7,7 +7,11 @@ Collects a read-only, compact GitHub snapshot for the deterministic backlog reco
 param(
     [string]$GhCommand = 'gh',
     [string]$Repo = '',
-    [string]$OutputPath = '.factory/github-issues.json'
+    [string]$OutputPath = '.factory/github-issues.json',
+    # A single truncated or throttled GitHub response ("unexpected end of JSON input") must not fail the health canary and roll
+    # back a promotion, so a failed gh call is retried a bounded number of times before the script gives up.
+    [ValidateRange(1, 5)][int]$Attempts = 3,
+    [ValidateRange(0, 60)][int]$RetryDelaySeconds = 5
 )
 
 Set-StrictMode -Version Latest
@@ -16,10 +20,13 @@ $ErrorActionPreference = 'Stop'
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
     if ($Repo) { $all += @('--repo', $Repo) }
-    $global:LASTEXITCODE = 0
-    $output = & $GhCommand @all 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "gh $($all -join ' ') failed ($LASTEXITCODE): $($output -join "`n")" }
-    $output -join "`n"
+    for ($try = 1; $try -le $Attempts; $try++) {
+        $global:LASTEXITCODE = 0
+        $output = & $GhCommand @all 2>&1
+        if ($LASTEXITCODE -eq 0) { return ($output -join "`n") }
+        if ($try -ge $Attempts) { throw "gh $($all -join ' ') failed ($LASTEXITCODE) after $Attempts attempt(s): $($output -join "`n")" }
+        Start-Sleep -Seconds ($RetryDelaySeconds * $try)
+    }
 }
 
 function Get-LabelNames($Issue) {

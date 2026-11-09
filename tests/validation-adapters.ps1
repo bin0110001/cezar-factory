@@ -114,6 +114,10 @@ validation:
     $runtimeRun = Run-Stage changed
     Check 'factory runtime state under .factory/ never selects the unmapped full regression' ($runtimeRun.Code -eq 0 -and $runtimeRun.Receipt.selectedChecks -notcontains 'unmapped-full-regression' -and -not @($runtimeRun.Receipt.changedPaths | Where-Object { $_ -like '.factory/*' }).Count)
     & git -C $project checkout -q -- owned-check.txt
+    # Untracked .factory/ scratch in a project that does not ignore it must not make a receipt dirty: the review's
+    # validate-head step failed the merge gate on exactly this (every receipt carried worktreeClean=false).
+    $scratchRun = Run-Stage verify
+    Check 'untracked .factory/ scratch does not make a receipt dirty' ($scratchRun.Code -eq 0 -and $scratchRun.Receipt.status -eq 'passed' -and $scratchRun.Receipt.worktreeClean)
 
     # A run that changed nothing must fail closed and say why, using the implementation handoff.
     $handoffPath = Join-Path $project '.factory/implement-result.json'

@@ -92,7 +92,7 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
       {project.unregistered ? (
         <SettingsField
           title="Add to your projects"
-          hint="cezar is serving this folder because you started it here — starting cezar somewhere new never adds it to your project list for you. Adding it keeps it in the sidebar between runs and gives it a registry entry to hold settings like the task cap. Nothing on disk changes either way."
+          hint="Cezarium is serving this folder because you started it here — starting Cezarium somewhere new never adds it to your project list for you. Adding it keeps it in the sidebar between runs and gives it a registry entry to hold settings like the task cap. Nothing on disk changes either way."
         >
           <AddBootProjectButton root={project.root} name={project.name} />
         </SettingsField>
@@ -119,7 +119,7 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
                 <span className="text-[11px] text-soft-foreground">Current version: {factoryRelease.data.sourceSha.slice(0, 12)}</span>
               </div>
             ) : factoryRelease.data?.status === 'legacy' ? (
-              <p className="text-[13px] text-soft-foreground">Channel releases are not configured for this Cezar instance.</p>
+              <p className="text-[13px] text-soft-foreground">Channel releases are not configured for this Cezarium instance.</p>
             ) : factoryRelease.isError || factoryRelease.data?.status === 'error' ? (
               <p className="text-[13px] text-danger">Factory release unavailable: {factoryRelease.data?.status === 'error' ? factoryRelease.data.error : factoryRelease.error?.message ?? 'request failed'}</p>
             ) : (
@@ -353,7 +353,7 @@ function ProjectFacts({ project, canRemove }: { project: ProjectListEntry; canRe
           <>
             <dt className="text-muted-foreground">In your projects</dt>
             <dd data-slot="project-general-unregistered" className="text-foreground">
-              No — served because cezar was started here
+              No — served because Cezarium was started here
             </dd>
           </>
         ) : (
@@ -412,7 +412,7 @@ function RemoveProject({ project, bootProject }: { project: ProjectListEntry; bo
           // reach it, then says what "Remove" actually does — the row context that makes a bare
           // "Remove" safe-sounding isn't read out with it.
           aria-label={`Remove ${project.name} from the workspace — unregisters it, no files are deleted`}
-          title={isBoot ? 'cezar is serving this project — stop it and use `cezar projects remove`' : undefined}
+          title={isBoot ? 'Cezarium is serving this project — stop it and use `cezar projects remove`' : undefined}
           disabled={isBoot || remove.isPending}
           onClick={() => setConfirming(project)}
           className="text-danger"
@@ -421,7 +421,7 @@ function RemoveProject({ project, bootProject }: { project: ProjectListEntry; bo
         </Button>
         {isBoot ? (
           <span data-slot="project-general-remove-boot" className="text-[11px] text-soft-foreground">
-            cezar is serving this project — stop cezar and run `cezar projects remove` to drop it.
+            Cezarium is serving this project — stop Cezarium and run `cezar projects remove` to drop it.
           </span>
         ) : null}
       </div>
