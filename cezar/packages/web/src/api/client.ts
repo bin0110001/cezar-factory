@@ -325,7 +325,7 @@ export async function unwrap<R extends ClientResponse<unknown, number, ResponseF
   if (!res.ok) throw errorFor(res.status, res.statusText, body)
   const parsed = parseJson(body)
   if (parsed === undefined) {
-    throw new ApiError(res.status, `the cezar server answered ${label} with a non-JSON body`)
+    throw new ApiError(res.status, `the Cezarium server answered ${label} with a non-JSON body`)
   }
   return parsed as OkJson<R>
 }
@@ -364,7 +364,7 @@ async function unwrapValidated<R extends ClientResponse<unknown, number, Respons
   const parsed = await unwrap(res, label)
   const result = schema.safeParse(parsed)
   if (!result.success) {
-    throw new ApiError(status, `the cezar server answered ${label} with an unexpected body`)
+    throw new ApiError(status, `the Cezarium server answered ${label} with an unexpected body`)
   }
   return result.data
 }
@@ -388,7 +388,7 @@ async function fetchOrThrow(url: string, init?: RequestInit): Promise<Response> 
     return await fetch(url, { ...init, credentials: 'include' })
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
-    throw new ApiError(0, `cannot reach the cezar server (${url})`, { cause })
+    throw new ApiError(0, `cannot reach the Cezarium server (${url})`, { cause })
   }
 }
 
@@ -1360,7 +1360,7 @@ export async function registerProject(root: string): Promise<RegisterProjectResp
     return parsed as RegisterProjectResponse
   }
   if (!res.ok) throw errorFor(res.status, res.statusText, body)
-  throw new ApiError(res.status, `the cezar server answered ${path} without a project`)
+  throw new ApiError(res.status, `the Cezarium server answered ${path} without a project`)
 }
 
 /**
@@ -1427,7 +1427,7 @@ export async function runFullRegression(projectId: string): Promise<FullRegressi
   const body = await response.text()
   if (!response.ok) throw errorFor(response.status, response.statusText, body)
   const result = fullRegressionRunResponseSchema.safeParse(parseJson(body))
-  if (!result.success) throw new ApiError(response.status, `the cezar server answered ${path} with an unexpected body`)
+  if (!result.success) throw new ApiError(response.status, `the Cezarium server answered ${path} with an unexpected body`)
   return result.data
 }
 

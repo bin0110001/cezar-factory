@@ -199,17 +199,17 @@ export function StarAskDialog({
               Open source · MIT
             </span>
             <DialogTitle className="text-xl font-semibold tracking-tight">
-              Is cezar pulling its weight?
+              Is Cezarium pulling its weight?
             </DialogTitle>
             <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
-              cezar is free, open source and runs on your machine, with no account to create. A
+              Cezarium is free, open source and runs on your machine, with no account to create. A
               GitHub star is how other developers find it, and how we know what to keep building.
             </DialogDescription>
           </div>
           {stats && (
             <div className="rounded-lg border bg-card-2 p-3">
               <span className="block font-mono text-[10.5px] uppercase tracking-[0.12em] text-soft-foreground">
-                Your last 30 days with cezar
+                Your last 30 days with Cezarium
               </span>
               <dl
                 className="mt-2 grid gap-2"
@@ -235,7 +235,7 @@ export function StarAskDialog({
               }}
             >
               <StarIcon className="size-4 fill-current" aria-hidden="true" />
-              Star cezar on GitHub
+              Star Cezarium on GitHub
               <ArrowUpRightIcon className="size-4" aria-hidden="true" />
             </a>
           </Button>

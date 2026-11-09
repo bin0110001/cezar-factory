@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/verification-query.schema.json",
+  "title": "Verification query response (schemaVersion 1)",
+  "description": "Response of Invoke-VerificationQuery (scripts/verification-query.ps1): a page of runs, selected/deferred tests, failures, recurrence episodes, artifacts or baseline comparisons, or a structured error. See docs/verification-query.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/page" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "error": {
+      "type": "object",
+      "required": ["schemaVersion", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "enum": ["invalid_cursor", "stale_cursor", "invalid_query", "unsupported_input_version"] },
+            "message": { "type": "string" }
+          }
+        }
+      }
+    },
+    "bounded": {
+      "description": "Redacted text. Inline content when bytes <= limits.inlineBytes; otherwise a head/tail excerpt, never the full content. bytes and sha256 describe the original; reference locates it.",
+      "type": "object",
+      "required": ["bytes", "sha256", "truncated", "content", "head", "tail", "reference"],
+      "additionalProperties": false,
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "content": { "type": ["string", "null"] },
+        "head": { "type": ["string", "null"] },
+        "tail": { "type": ["string", "null"] },
+        "reference": { "type": "string", "pattern": "^run:" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["id", "startedAt", "finishedAt", "status", "commitSha", "baseSha", "counts", "baselineRunId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" }, "startedAt": { "type": "string" }, "finishedAt": { "type": "string" },
+        "status": { "type": "string" }, "commitSha": { "type": "string" }, "baseSha": { "type": "string" },
+        "baselineRunId": { "type": ["string", "null"] },
+        "counts": {
+          "type": "object",
+          "required": ["selected", "deferred", "failures", "episodes", "artifacts"],
+          "additionalProperties": false,
+          "properties": {
+            "selected": { "type": "integer", "minimum": 0 }, "deferred": { "type": "integer", "minimum": 0 },
+            "failures": { "type": "integer", "minimum": 0 }, "episodes": { "type": "integer", "minimum": 0 },
+            "artifacts": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "test": {
+      "description": "A selected or deferred test with the reason it was chosen or postponed.",
+      "type": "object",
+      "required": ["runId", "testId", "reason"],
+      "additionalProperties": false,
+      "properties": { "runId": { "type": "string" }, "testId": { "type": "string" }, "reason": { "$ref": "#/$defs/bounded" } }
+    },
+    "failure": {
+      "type": "object",
+      "required": ["runId", "id", "testId", "status", "message", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string" }, "id": { "type": "string" }, "testId": { "type": "string" }, "status": { "type": "string" },
+        "message": { "$ref": "#/$defs/bounded" }, "output": { "$ref": "#/$defs/bounded" }
+      }
+    },
+    "episode": {
+      "description": "A recurrence episode: the same failure fingerprint seen across runs.",
+      "type": "object",
+      "required": ["runId", "id", "fingerprint", "status", "firstSeenAt", "lastSeenAt", "occurrences"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string" }, "id": { "type": "string" }, "fingerprint": { "type": "string" }, "status": { "type": "string" },
+        "firstSeenAt": { "type": "string" }, "lastSeenAt": { "type": "string" }, "occurrences": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["runId", "id", "name", "path", "mediaType", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string" }, "id": { "type": "string" }, "name": { "type": "string" }, "path": { "type": "string" },
+        "mediaType": { "type": "string" }, "data": { "$ref": "#/$defs/bounded" }
+      }
+    },
+    "baseline": {
+      "description": "Comparison of a run against its baseline run.",
+      "type": "object",
+      "required": ["runId", "baselineRunId", "status", "regressions", "fixed", "unchanged"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string" }, "baselineRunId": { "type": "string" }, "status": { "type": "string" },
+        "regressions": { "type": "array", "items": { "type": "string" } },
+        "fixed": { "type": "array", "items": { "type": "string" } },
+        "unchanged": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "page": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "query", "items", "page", "limits"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "enum": ["runs", "selected", "deferred", "failures", "episodes", "artifacts", "baseline"] },
+        "query": {
+          "type": "object",
+          "required": ["runId", "status", "pageSize"],
+          "additionalProperties": false,
+          "properties": { "runId": { "type": "string" }, "status": { "type": "string" }, "pageSize": { "type": "integer", "minimum": 1, "maximum": 200 } }
+        },
+        "items": { "type": "array" },
+        "page": {
+          "type": "object",
+          "required": ["returned", "hasMore", "nextCursor"],
+          "additionalProperties": false,
+          "properties": { "returned": { "type": "integer", "minimum": 0 }, "hasMore": { "type": "boolean" }, "nextCursor": { "type": ["string", "null"] } }
+        },
+        "limits": {
+          "type": "object",
+          "required": ["inlineBytes", "excerptChars", "maxResponseBytes"],
+          "additionalProperties": false,
+          "properties": { "inlineBytes": { "type": "integer" }, "excerptChars": { "type": "integer" }, "maxResponseBytes": { "type": "integer" } }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "runs" } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/run" } } } } },
+        { "if": { "properties": { "kind": { "enum": ["selected", "deferred"] } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/test" } } } } },
+        { "if": { "properties": { "kind": { "const": "failures" } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/failure" } } } } },
+        { "if": { "properties": { "kind": { "const": "episodes" } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/episode" } } } } },
+        { "if": { "properties": { "kind": { "const": "artifacts" } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/artifact" } } } } },
+        { "if": { "properties": { "kind": { "const": "baseline" } } }, "then": { "properties": { "items": { "items": { "$ref": "#/$defs/baseline" } } } } }
+      ]
+    }
+  }
+}

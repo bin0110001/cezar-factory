@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "performance-policy.schema.json",
+  "title": "Factory performance-regression policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "fingerprintFields", "spans"],
+  "properties": {
+    "version": { "const": 1 },
+    "fingerprintFields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "spans": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/budget" }
+    }
+  },
+  "$defs": {
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["medianMs"] },
+        { "required": ["p95Ms"] },
+        { "required": ["absoluteMs"] }
+      ],
+      "properties": {
+        "medianMs": { "type": "number", "exclusiveMinimum": 0 },
+        "p95Ms": { "type": "number", "exclusiveMinimum": 0 },
+        "absoluteMs": { "type": "number", "exclusiveMinimum": 0 },
+        "minSamples": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

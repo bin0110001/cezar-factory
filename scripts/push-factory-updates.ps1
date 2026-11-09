@@ -26,7 +26,16 @@ $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path $FactoryPath).Path
 $version = (Get-Content -Raw (Join-Path $factory 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Factory VERSION '$version' is not semver." }
-if (-not $ReportPath) { $ReportPath = Join-Path $factory '.factory/release-reports/release-status.jsonl' }
+if (-not $ReportPath) {
+    # Reports are operational state, not source. Keep them outside the shared
+    # checkout so a routine sync cannot make the Bazzite deploy guard block.
+    $stateRoot = $env:FACTORY_STATE_DIR
+    if (-not $stateRoot -and $env:XDG_STATE_HOME) { $stateRoot = Join-Path $env:XDG_STATE_HOME 'cezar-factory' }
+    if (-not $stateRoot -and $env:LOCALAPPDATA) { $stateRoot = Join-Path $env:LOCALAPPDATA 'cezar-factory' }
+    if (-not $stateRoot -and $env:HOME) { $stateRoot = Join-Path $env:HOME '.local/state/cezar-factory' }
+    if (-not $stateRoot) { $stateRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'cezar-factory' }
+    $ReportPath = Join-Path $stateRoot 'release-reports/release-status.jsonl'
+}
 
 function Write-ReleaseStatus([string]$Target, [string]$Mode, [string]$Status, [string]$Detail, [bool]$ForceRefreshRequired = $false) {
     $record = [ordered]@{
