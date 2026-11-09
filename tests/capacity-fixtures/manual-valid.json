@@ -1,0 +1,2 @@
+{"windows": {"5h": {"remaining": 40, "limit": 100, "unit": "messages", "updatedAt": "2026-11-07T10:00:00Z", "resetAt": "2026-11-07T15:00:00Z", "ttlSeconds": 3600},
+ "weekly": {"remaining": 300, "unit": "messages", "updatedAt": "2026-11-07T10:00:00Z", "resetAt": "2026-11-10T00:00:00Z"}}}
