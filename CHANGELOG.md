@@ -5,6 +5,24 @@
 - Add an event retention policy (`policies/retention.yaml`, `event_retention_days`) and a prune step
   (`scripts/prune-events.ps1`) that atomically removes JSONL events older than the window, keeps newer
   and unparseable-timestamp events byte-for-byte, rejects invalid retention, and logs one JSON line.
+- Add concise deduplicated failure summaries for agents (#103): `scripts/summarize-failures.ps1` groups finding records by
+  finding ID with occurrence counts, identifiers and detail paths, redacts secrets and caps size with omitted counts.
+- Add graphical worker operator runbook, benchmark and evidence docs (#343, part of #328); gaps are recorded
+  explicitly because the runtime has not landed (`docs/graphical-worker-*.md`).
+- Add the routing event contract (#314, part of #94): `schemas/routing-event.schema.json`, an append-only JSONL
+  event store with strictly monotonic sequence, a pluggable emit function and an allow-list redaction layer
+  (`docs/routing-events.md`).
+
+## [0.3.66] - 2026-11-07
+
+- Add the performance-regression policy (`policies/performance.yaml`, schema, `docs/performance-regression.md`):
+  measured-completion spans, environment-fingerprinted baselines, median/p95/absolute budgets, and a
+  performance result recorded separately from the functional result (first slow attempt preserved).
+
+- Add optional Hindsight incident memory (`scripts/hindsight/incident.py`, `incident.ps1`): a bounded,
+  redacted, idempotent outbox for first-seen/resolved/reopened incident summaries and bank-scoped advisory
+  recall with provenance, confidence, verified/hypothesized and stale markers. Hindsight stays advisory and
+  never affects counts, status or gates; disabled/offline degrades to a warning.
 
 ## [0.3.65] - 2026-11-05
 

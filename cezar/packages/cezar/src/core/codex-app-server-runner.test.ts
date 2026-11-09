@@ -61,7 +61,7 @@ describe('a teardown cezar initiated (codex app-server)', () => {
     expect(events.some((e) => e.type === 'error')).toBe(false);
     expect(events.at(-1)).toEqual({ type: 'done' });
     expect(
-      events.some((e) => e.type === 'note' && e.message.includes('terminated by cezar (code 143)')),
+      events.some((e) => e.type === 'note' && e.message.includes('ended after cezar stopped it')),
     ).toBe(true);
   }, 15_000);
 
@@ -193,6 +193,14 @@ describe('a turn that ended at a context-compaction boundary (#955)', () => {
   it('reports a turn/completed with status failed as an error, not a clean empty turn', async () => {
     const events = await collect('mock:completed-failed do the work');
     expect(events).toContainEqual({ type: 'error', message: 'codex: turn failed: model not available' });
+  }, 15_000);
+
+  it('reports a clean but empty turn as a backend failure', async () => {
+    const events = await collect('mock:completed-empty do the work');
+    expect(events).toContainEqual({
+      type: 'error',
+      message: 'codex: turn completed without assistant output or tool activity',
+    });
   }, 15_000);
 
   it('leaves an ordinary turn-end bare, so old consumers see no new field', async () => {
@@ -474,7 +482,7 @@ describe('stall bound (codex app-server)', () => {
   it('does not hold silence against a question waiting on a person', async () => {
     const { events, session } = start('mock:native-codex-ask', { idleTimeoutMs: IDLE_MS });
     await sleep(IDLE_MS * 4);
-    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'error'), JSON.stringify(events)).toBe(false);
     session.interrupt();
     await session.result;
     expect(events.some((e) => e.type === 'error')).toBe(false);

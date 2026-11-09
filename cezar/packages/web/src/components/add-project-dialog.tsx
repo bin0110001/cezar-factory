@@ -86,7 +86,7 @@ export function AddProjectDialog({
         <DialogHeader>
           <DialogTitle>Open local folder</DialogTitle>
           <DialogDescription>
-            Pick the folder cezar should run in. Git repos are marked; any folder works.
+            Pick the folder Cezarium should run in. Git repos are marked; any folder works.
           </DialogDescription>
         </DialogHeader>
 

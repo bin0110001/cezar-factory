@@ -595,7 +595,7 @@ function ProjectGroup({
               // one-click Add; repeating the button here would put a registry write in the nav.
               <span
                 data-slot="project-unregistered"
-                title="cezar is serving this folder — it is not in your saved projects. Add it in Global settings → Projects."
+                title="Cezarium is serving this folder — it is not in your saved projects. Add it in Global settings → Projects."
                 className="shrink-0 rounded-full bg-muted px-[7px] py-px text-[10px] font-medium text-soft-foreground"
               >
                 not saved

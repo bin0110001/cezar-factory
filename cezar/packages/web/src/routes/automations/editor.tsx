@@ -282,7 +282,7 @@ export function AutomationEditor({ data, automation, actions, onBack, onSaved, o
                 onAutonomous={(autonomous) => patch({ autonomous })}
               />
               <p className="m-0 text-xs leading-[1.5] text-soft-foreground">
-                Each run is an ordinary cezar task in its own worktree — it queues behind the parallel cap like anything else and never auto-merges.
+                Each run is an ordinary Cezarium task in its own worktree — it queues behind the parallel cap like anything else and never auto-merges.
               </p>
               <EditorDispatchRow
                 available={dispatchAvailable}

@@ -62,6 +62,7 @@ stateDiagram-v2
 3. **Human-required transitions**:
    - Entry to `factory:needs-help` or `factory:human-review` only when a major architectural decision requires user input
    - User review after delivery is optional feedback, not a workflow gate
+   - **PR ownership**: the implementation and fix automations own their PR until it merges. They merge the current `dev` into the branch, resolve conflicts themselves, and leave the PR `MERGEABLE` before handoff; a PR that turns `CONFLICTING` while waiting for review is repaired by the fix automation, never by the user (see `AGENTS.md`, "A job owns its pull request until it merges").
 4. **Blocked work resumption**: When a blocker is removed, the issue returns to `factory:working`.
 5. **Conflicting state prevention**: An issue can only have one factory-state label at a time.
 

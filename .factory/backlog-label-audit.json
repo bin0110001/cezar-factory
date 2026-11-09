@@ -1,5 +1,6 @@
 {
   "considered": [],
   "changed": [],
-  "skipped": []
+  "skipped": [],
+  "notes": "No candidates available for audit; this is a valid terminal state per the collector output `no-unmarked-open-issues`."
 }

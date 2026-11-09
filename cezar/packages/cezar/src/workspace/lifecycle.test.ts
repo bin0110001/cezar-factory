@@ -575,6 +575,10 @@ describe('local workspace lifecycle', () => {
     await expect(handoffWorkspace({ executionId: first.executionId, fencingToken: first.fencingToken, cwd: repo }))
       .rejects.toThrow('uncommitted changes');
     rmSync(uncommitted);
+    // Workflow scratch under .factory/ (untracked artifacts, a rewritten execution record) must not block handoff.
+    mkdirSync(join(firstPath, '.factory', 'artifacts'), { recursive: true });
+    writeFileSync(join(firstPath, '.factory', 'artifacts', 'receipt.json'), '{}');
+    writeFileSync(join(firstPath, '.factory', 'execution.json'), '{}');
     await handoffWorkspace({ executionId: first.executionId, fencingToken: first.fencingToken, cwd: repo });
 
     const nextPath = join(repo, 'factory-next');

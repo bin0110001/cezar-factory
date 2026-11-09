@@ -616,7 +616,7 @@ function WorkflowsBuilder({ routeName }: { routeName: string | undefined }) {
               {yaml}
             </pre>
             <p className="mt-2 text-[11.5px] leading-relaxed text-soft-foreground">
-              Portable — export this file and import it in any repo running cezar.
+              Portable — export this file and import it in any repo running Cezarium.
             </p>
           </aside>
         </div>

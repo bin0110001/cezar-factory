@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,23 @@ import { materializeRuntimeScript, resolveFactoryRelease, resolvePinnedFactoryRe
 
 const sha256 = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 let temp = '';
-afterEach(async () => { if (temp) await rm(temp, { recursive: true, force: true }); temp = ''; });
+async function makeWritable(dir: string): Promise<void> {
+  await chmod(dir, 0o755).catch(() => {});
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) await makeWritable(path);
+    else await chmod(path, 0o644).catch(() => {});
+  }
+}
+afterEach(async () => {
+  // Restore read-only release trees so cleanup can unlink them on both POSIX and Windows.
+  if (temp) {
+    await makeWritable(temp);
+    spawnSync('chmod', ['-R', 'u+w', temp], { windowsHide: true });
+    await rm(temp, { recursive: true, force: true });
+  }
+  temp = '';
+});
 
 async function fixtureStore(channel: 'dev' | 'stable' = 'stable') {
   temp = await mkdtemp(join(tmpdir(), 'factory-release-resolver-'));
@@ -69,7 +85,7 @@ describe('pinned runtime materialization script', () => {
   it('is valid Python', () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; the materialization script cannot be checked').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = "", ...prefix] = python!;
     const result = spawnSync(command, [...prefix, '-c', 'import ast, sys; ast.parse(sys.argv[1])', materializeRuntimeScript()], { encoding: 'utf8', windowsHide: true });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
@@ -87,7 +103,7 @@ describe('pinned runtime materialization script', () => {
   it('materializes a release built by the real controller', async () => {
     const python = findPython();
     expect(python, 'no Python interpreter found; materialization cannot be exercised').not.toBeNull();
-    const [command, ...prefix] = python!;
+    const [command = "", ...prefix] = python!;
     const factoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
     temp = await mkdtemp(join(tmpdir(), 'factory-materialize-'));
     const repo = join(temp, 'repo');
@@ -105,7 +121,7 @@ describe('pinned runtime materialization script', () => {
     git('commit', '-q', '-m', 'release fixture');
     const sha = git('rev-parse', 'HEAD');
 
-    const build = spawnSync(command, [...prefix, '-c', [
+    const build = spawnSync(command!, [...prefix, '-c', [
       'import json, pathlib, sys',
       'sys.path.insert(0, sys.argv[1])',
       'from scripts.release.factory_release_controller import ReleaseController',
@@ -115,7 +131,7 @@ describe('pinned runtime materialization script', () => {
     expect(build.status, build.stderr).toBe(0);
     const { manifestDigest } = JSON.parse(build.stdout.trim().split('\n').pop()!) as { manifestDigest: string };
 
-    const run = spawnSync(command, [...prefix, '-c', materializeRuntimeScript(), factoryRoot, store, sha, manifestDigest, destination], { encoding: 'utf8', windowsHide: true });
+    const run = spawnSync(command!, [...prefix, '-c', materializeRuntimeScript(), factoryRoot, store, sha, manifestDigest, destination], { encoding: 'utf8', windowsHide: true });
     expect(run.stderr).toBe('');
     expect(run.status).toBe(0);
     expect(await readFile(join(destination, 'scripts', 'factory-startup.ps1'), 'utf8')).toBe('# startup');
