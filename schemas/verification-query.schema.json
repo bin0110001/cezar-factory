@@ -45,7 +45,7 @@
       "required": ["id", "startedAt", "finishedAt", "status", "commitSha", "baseSha", "counts", "baselineRunId"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string" }, "startedAt": { "type": "string" }, "finishedAt": { "type": "string" },
+        "id": { "type": "string" }, "startedAt": { "type": "string" }, "finishedAt": { "type": "string" }, "suite": { "type": "string" },
         "status": { "type": "string" }, "commitSha": { "type": "string" }, "baseSha": { "type": "string" },
         "baselineRunId": { "type": ["string", "null"] },
         "counts": {
@@ -56,6 +56,30 @@
             "selected": { "type": "integer", "minimum": 0 }, "deferred": { "type": "integer", "minimum": 0 },
             "failures": { "type": "integer", "minimum": 0 }, "episodes": { "type": "integer", "minimum": 0 },
             "artifacts": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "checks": {
+          "description": "Optional per-check duration and metric data for performance history views.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["checkId", "status", "durationMs", "metrics"],
+            "additionalProperties": false,
+            "properties": {
+              "checkId": { "type": "string" },
+              "status": { "type": "string" },
+              "durationMs": { "type": "integer", "minimum": 0 },
+              "metrics": { "type": "array", "items": {
+                "type": "object",
+                "required": ["name", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" }, "value": { "type": "number" },
+                  "unit": { "type": "string" }, "samples": { "type": "integer", "minimum": 1 }, "method": { "type": "string" }
+                }
+              } },
+              "findingFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
           }
         }
       }
@@ -73,7 +97,8 @@
       "additionalProperties": false,
       "properties": {
         "runId": { "type": "string" }, "id": { "type": "string" }, "testId": { "type": "string" }, "status": { "type": "string" },
-        "message": { "$ref": "#/$defs/bounded" }, "output": { "$ref": "#/$defs/bounded" }
+        "message": { "$ref": "#/$defs/bounded" }, "output": { "$ref": "#/$defs/bounded" },
+        "classification": { "enum": ["new", "known", "unknown"] }, "episodeId": { "type": "string" }
       }
     },
     "episode": {

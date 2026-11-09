@@ -15,6 +15,7 @@ import {
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
+import { queryVerificationHistory, readVerificationArtifact } from '../verification/history.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -229,6 +230,7 @@ import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
+import { verificationArtifactParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
 import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
 import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
@@ -6885,6 +6887,24 @@ export function createApp(deps: ServerDeps) {
     name: z.string().trim().min(1).max(200),
     from: z.string().trim().min(1).max(200).optional(),
   });
+  // ---- verification query family (read-only) ------------------------------
+  const verificationRoutes = new Hono<ProjectApiEnv>()
+    .get('/verification/query', queryZodValidator(verificationQueryInputSchema), async (c) => {
+      const result = await queryVerificationHistory(c.get('project'), c.req.valid('query'));
+      if ('error' in result) return c.json(result, result.error.code === 'invalid_cursor' ? 400 : 409);
+      return c.json(result);
+    })
+    .get('/verification/artifacts/:runId/:artifactId', paramZodValidator(verificationArtifactParamsSchema), async (c) => {
+      const { runId, artifactId } = c.req.valid('param');
+      const result = await readVerificationArtifact(c.get('project'), runId, artifactId);
+      if (result.status === 200) return c.json(result.body);
+      return result.status === 404
+        ? c.json({ error: 'verification artifact not found' }, 404)
+        : result.status === 410
+          ? c.json({ error: 'verification artifact is no longer available' }, 410)
+          : c.json({ error: 'verification artifact does not match the recorded digest' }, 409);
+    });
+
   // ---- assemble the chained families --------------------------------------
   // Every chained family is registered ONCE and mounted into the versioned table. There is no
   // second, unversioned spelling: `/api/*` was removed once the whole API was reachable under
@@ -6905,6 +6925,7 @@ export function createApp(deps: ServerDeps) {
     .route('/', planRoutes)
     .route('/', automationsRoutes)
     .route('/', dispatchRoutes)
+    .route('/', verificationRoutes)
     .route('/', runsRoutes)
     .route('/', draftRoutes)
     .route('/', groupsRoutes)

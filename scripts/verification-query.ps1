@@ -132,14 +132,24 @@ function New-VqBoundedText([string]$Text, [string]$Reference, [hashtable]$Limits
 function ConvertFrom-VerificationRunResult {
     <# .SYNOPSIS Maps one executor VerificationRun result (resultVersion 1) into a query-layer run record. #>
     param([Parameter(Mandatory)]$Result)
-    $selected = @(); $deferred = @(); $failures = @(); $artifacts = @()
+    $selected = @(); $deferred = @(); $failures = @(); $artifacts = @(); $checks = @()
     foreach ($check in @(Get-VqProp $Result 'checks')) {
         $id = [string](Get-VqProp $check 'checkId'); $status = [string](Get-VqProp $check 'status')
+        $checkRow = [ordered]@{
+            checkId = $id; status = $status; durationMs = [long](Get-VqProp $check 'durationMs')
+            metrics = @(Get-VqProp $check 'metrics')
+        }
+        $fingerprint = Get-VqProp $check 'findingFingerprint'
+        if ($fingerprint) { $checkRow.findingFingerprint = [string]$fingerprint }
+        $checks += $checkRow
         if ($status -eq 'not-selected') { $deferred += [ordered]@{ testId = $id; reason = 'not selected for this run' }; continue }
         $selected += [ordered]@{ testId = $id; reason = $(if (Get-VqProp $check 'required') { 'required check' } else { 'optional check' }) }
         if ($status -in @('failed', 'unknown', 'infrastructure-error', 'cancelled')) {
             $diag = @(@(Get-VqProp $check 'diagnostics') | ForEach-Object { [string](Get-VqProp $_ 'message') }) -join "`n"
-            $failures += [ordered]@{ id = "$id#$([string](Get-VqProp $check 'attempt'))"; testId = $id; status = $status; message = $diag; output = [string](Get-VqProp $check 'outputPreview') }
+            $failure = [ordered]@{ id = "$id#$([string](Get-VqProp $check 'attempt'))"; testId = $id; status = $status; message = $diag; output = [string](Get-VqProp $check 'outputPreview') }
+            $fingerprint = Get-VqProp $check 'findingFingerprint'
+            if ($fingerprint) { $failure.episodeId = [string]$fingerprint }
+            $failures += $failure
         }
         foreach ($a in @(Get-VqProp $check 'artifacts')) { $artifacts += [ordered]@{ id = [string](Get-VqProp $a 'sha256'); name = "$id/$([string](Get-VqProp $a 'path'))"; path = [string](Get-VqProp $a 'path'); mediaType = [string](Get-VqProp $a 'mediaType'); bytes = Get-VqProp $a 'bytes'; sha256 = [string](Get-VqProp $a 'sha256') } }
     }
@@ -148,7 +158,7 @@ function ConvertFrom-VerificationRunResult {
         id = [string](Get-VqProp $Result 'verificationId'); startedAt = ConvertTo-VqString (Get-VqProp $Result 'startedAt')
         finishedAt = ConvertTo-VqString (Get-VqProp $Result 'finishedAt'); status = [string](Get-VqProp $Result 'status')
         commitSha = [string](Get-VqProp $Result 'commitSha'); baseSha = [string](Get-VqProp $Result 'baseSha')
-        selected = $selected; deferred = $deferred; failures = $failures; episodes = @(); artifacts = $artifacts; baseline = $null
+        selected = $selected; deferred = $deferred; failures = $failures; episodes = @(); artifacts = $artifacts; baseline = $null; checks = $checks
     }
 }
 
@@ -203,8 +213,20 @@ function Get-VqItems($Snapshot, [string]$Kind, [hashtable]$Limits, [string[]]$Kn
                 & $add '' ([ordered]@{
                     id = $rid; startedAt = $started; finishedAt = ConvertTo-VqString (Get-VqProp $run 'finishedAt'); status = $runStatus
                     commitSha = ConvertTo-VqString (Get-VqProp $run 'commitSha'); baseSha = ConvertTo-VqString (Get-VqProp $run 'baseSha')
+                    suite = ConvertTo-VqString (Get-VqProp $run 'suite')
                     counts = [ordered]@{ selected = @(& $sub 'selected').Count; deferred = @(& $sub 'deferred').Count; failures = @(& $sub 'failures').Count; episodes = @(& $sub 'episodes').Count; artifacts = @(& $sub 'artifacts').Count }
                     baselineRunId = $(if ($baseline) { ConvertTo-VqString (Get-VqProp $baseline 'baselineRunId') } else { $null })
+                    checks = @(& $sub 'checks' | ForEach-Object {
+                        $check = $_
+                        $checkBody = [ordered]@{
+                            checkId = ConvertTo-VqString (Get-VqProp $check 'checkId')
+                            status = ConvertTo-VqString (Get-VqProp $check 'status')
+                            durationMs = [long](Get-VqProp $check 'durationMs')
+                            metrics = @(Get-VqProp $check 'metrics')
+                        }
+                        if (Get-VqProp $check 'findingFingerprint') { $checkBody.findingFingerprint = ConvertTo-VqString (Get-VqProp $check 'findingFingerprint') }
+                        Protect-VqValue $checkBody '' $KnownSecrets
+                    })
                 })
             }
             { $_ -in 'selected', 'deferred' } {
@@ -217,11 +239,30 @@ function Get-VqItems($Snapshot, [string]$Kind, [hashtable]$Limits, [string[]]$Kn
                 foreach ($f in & $sub 'failures') {
                     $fid = ConvertTo-VqString (Get-VqProp $f 'id'); $fs = ConvertTo-VqString (Get-VqProp $f 'status')
                     if ($Status -and $fs -ne $Status) { continue }
-                    & $add $fid ([ordered]@{
+                    $failureBody = [ordered]@{
                         runId = $rid; id = $fid; testId = ConvertTo-VqString (Get-VqProp $f 'testId'); status = $fs
                         message = New-VqBoundedText (ConvertTo-VqString (Get-VqProp $f 'message')) "run:$rid/failures/$fid/message" $Limits $KnownSecrets
                         output = New-VqBoundedText (ConvertTo-VqString (Get-VqProp $f 'output')) "run:$rid/failures/$fid/output" $Limits $KnownSecrets
-                    })
+                    }
+                    $episodeId = Get-VqProp $f 'episodeId'
+                    if (-not $episodeId) { $episodeId = Get-VqProp $f 'findingFingerprint' }
+                    $classification = Get-VqProp $f 'classification'
+                    if ($classification -notin @('new', 'known', 'unknown')) {
+                        if ($episodeId) {
+                            $occurrences = 0
+                            foreach ($historyRun in @(Get-VqProp $Snapshot 'runs')) {
+                                foreach ($historyFailure in @(Get-VqProp $historyRun 'failures')) {
+                                    $historyId = Get-VqProp $historyFailure 'episodeId'
+                                    if (-not $historyId) { $historyId = Get-VqProp $historyFailure 'findingFingerprint' }
+                                    if ($historyId -and [string]$historyId -ceq [string]$episodeId) { $occurrences++ }
+                                }
+                            }
+                            $classification = if ($occurrences -gt 1) { 'known' } else { 'new' }
+                        } else { $classification = 'unknown' }
+                    }
+                    $failureBody.classification = [string]$classification
+                    if ($episodeId) { $failureBody.episodeId = ConvertTo-VqString $episodeId }
+                    & $add $fid $failureBody
                 }
             }
             'episodes' {

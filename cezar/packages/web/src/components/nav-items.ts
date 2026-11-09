@@ -1,4 +1,5 @@
 import {
+  ActivityIcon,
   GitBranchIcon,
   InboxIcon,
   ListChecksIcon,
@@ -54,6 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/github', label: 'GitHub', icon: GithubIcon, match: ['/github'], forge: true },
   { to: '/tracker', label: 'Tracker', icon: TicketIcon, match: ['/tracker'], tracker: true },
   { to: '/dependencies', label: 'Dependencies', icon: WaypointsIcon, match: ['/dependencies'] },
+  { to: '/verification', label: 'Verification', icon: ActivityIcon, match: ['/verification'] },
   { to: '/backlog', label: 'Backlog', icon: KanbanIcon, match: ['/backlog'] },
   { to: '/automations', label: 'Automations', icon: ZapIcon, match: ['/automations'], automations: true },
   { to: '/skills', label: 'Skills', icon: SparklesIcon, match: ['/skills'], badge: 'skills-update' },
