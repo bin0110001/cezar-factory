@@ -30,6 +30,7 @@ config/server-topology.env
 config/factory-projects.json
 config/failure-repair.json
 integrations/bazzite/prometheus-model-targets.generated.json
+integrations/bazzite/prometheus-vllm-token.generated
 
 
 connections/**/*
@@ -42,3 +43,13 @@ connections/**/*
 .factory/issue-*
 .factory/target-*
 .factory/worktrees/
+
+# Workflow scratch written into every run worktree; an agent's `git add -A` must not commit it into the PR
+.factory/artifacts/
+.factory/implement-result.json
+.factory/implementation-context.json
+.factory/model-probe.json
+.factory/fix-result.json
+.factory/review-result.json
+.factory/plan-result.json
+.factory/investigation-result.json

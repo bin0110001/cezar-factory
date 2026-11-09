@@ -115,6 +115,22 @@ source: skills/factory-implement/SKILL.md
   auto-merge into `dev`.
 - Link the PR to the issue.
 
+### 8a. Own the merge: leave the PR mergeable
+
+The PR is yours until it merges; do not hand a conflicting PR to review or to the user.
+
+- Fetch the base branch and merge it into your branch (`git fetch origin dev`, then
+  `git merge origin/dev`). Do not rebase a branch that is already pushed.
+- Resolve every conflict yourself, keeping the intent of both sides. Files other jobs also
+  edit (`VERSION`, `CHANGELOG.md`, `tests/run-tests.ps1`, registries and lists) keep both
+  sides' entries; for `VERSION`, keep the higher number and bump it only if both sides did.
+  Never take one side wholesale just to clear a marker, and never delete the other job's work.
+- Re-run the targeted validation on the merged result, then push.
+- Confirm the PR is mergeable (`gh pr view <number> --json mergeable,mergeStateStatus` shows
+  `MERGEABLE`). Record the base commit you merged in the result's notes.
+- If a conflict cannot be reconciled without a major architectural decision, say so in the
+  result with the conflicting paths; that is the only reason to stop short of mergeable.
+
 ### 9. Factory-managed asset handoff
 
 When the change touches a Factory-managed asset or its source equivalent

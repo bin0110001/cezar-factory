@@ -75,7 +75,7 @@ describe('AppShell', () => {
     expect(sidebar().querySelector('img[src="/icon.svg"]')).toBeNull()
 
     const name = lockup!.querySelector('[data-slot="brand-name"]') as HTMLElement | null
-    expect(name?.textContent).toBe('cezar')
+    expect(name?.textContent).toBe('Cezarium')
     expect(name!.style.fontSize).toBe('19px')
     expect(name!.style.fontFamily).toBe('var(--brand)')
     expect(name!.className).toContain('font-semibold')
@@ -302,11 +302,12 @@ describe('AppShell', () => {
       expect(opened).toHaveBeenCalledTimes(1)
     })
 
-    it('still shows the version chip update affordance (#368) in the narrower row', () => {
-      renderShell('/', { version: '1.2.3', latestVersion: '1.3.0' })
+    it('links the version chip to Cezarium build instructions in our repository', () => {
+      renderShell('/', { version: '1.2.3' })
       const chip = controls().querySelector('[data-slot="version-chip"]') as HTMLElement
-      expect(chip.getAttribute('data-update-available')).toBe('true')
-      expect(chip.querySelector('[data-slot="status-dot"]')).not.toBeNull()
+      expect(chip.tagName).toBe('A')
+      expect(chip.getAttribute('href')).toBe('https://github.com/bin0110001/cezar-factory/blob/dev/cezar/docs/reference.md#in-checkout-scripts')
+      expect(chip.getAttribute('target')).toBe('_blank')
     })
 
     /* The two-row footer holds only while something in the controls row can give: every icon
@@ -325,8 +326,9 @@ describe('AppShell', () => {
       const label = chip.querySelector('span:not([data-slot])') as HTMLElement
       expect(label.className).toContain('truncate')
       expect(label.textContent).toBe('v0.9.2-nightly.20260813.1')
-      // …and the full string stays legible on hover, since the visible one may be clipped.
-      expect(chip.getAttribute('title')).toBe('v0.9.2-nightly.20260813.1')
+      // …and the full version plus the link purpose stay legible on hover, since the visible
+      // version may be clipped.
+      expect(chip.getAttribute('title')).toBe('Cezarium v0.9.2-nightly.20260813.1 — view our repository build instructions')
       // Everything else in the row still refuses to shrink — that is what keeps them readable.
       for (const slot of ['tools-menu', 'global-settings-link', 'theme-toggle']) {
         const el = controls().querySelector(`[data-slot="${slot}"]`) as HTMLElement
@@ -376,7 +378,7 @@ describe('AppShell', () => {
 
       it('links to cezar, in a new tab, leaking neither opener nor referrer', () => {
         renderShell('/', { starCount: 42 })
-        expect(chip()?.getAttribute('href')).toBe('https://github.com/open-mercato/cezar')
+        expect(chip()?.getAttribute('href')).toBe('https://github.com/bin0110001/cezar-factory')
         expect(chip()?.getAttribute('target')).toBe('_blank')
         expect(chip()?.getAttribute('rel')).toContain('noopener')
         expect(chip()?.getAttribute('rel')).toContain('noreferrer')
@@ -387,7 +389,7 @@ describe('AppShell', () => {
         // The visible chip abbreviates for the 264px column; the accessible name must not —
         // "12.3k stars" is a worse answer to "how many" than the number itself.
         const label = chip()?.getAttribute('aria-label') ?? ''
-        expect(label).toMatch(/star cezar on github/i)
+        expect(label).toMatch(/star cezarium on github/i)
         // Formatted for the reader's own locale, so assert it the same way rather than pinning
         // `12,345` — that spelling is a property of the test machine, not of this component.
         expect(label).toContain(new Intl.NumberFormat().format(12_345))
@@ -408,33 +410,13 @@ describe('AppShell', () => {
       })
     })
 
-    describe('version chip update affordance (#368)', () => {
+    describe('version chip repository link', () => {
       const chip = () => document.querySelector('[data-slot="version-chip"]') as HTMLElement
 
-      it('stays plain while the registry has nothing newer', () => {
+      it('links the running version to our source and build instructions', () => {
         renderShell('/', { version: '1.2.3' })
-        expect(chip().getAttribute('data-update-available')).toBeNull()
-        // A tooltip, but one that claims nothing: the chip truncates, so the full version has to
-        // stay reachable on hover even when there is no update to announce.
-        expect(chip().getAttribute('title')).toBe('v1.2.3')
-        expect(chip().querySelector('[data-slot="status-dot"]')).toBeNull()
-      })
-
-      it('stays plain when latestVersion equals the running version', () => {
-        renderShell('/', { version: '1.2.3', latestVersion: '1.2.3' })
-        expect(chip().getAttribute('data-update-available')).toBeNull()
-        expect(chip().querySelector('[data-slot="status-dot"]')).toBeNull()
-      })
-
-      it('pulses and names the newer version when one exists', () => {
-        renderShell('/', { version: '1.2.3', latestVersion: '1.3.0' })
-        expect(chip().getAttribute('data-update-available')).toBe('true')
-        expect(chip().getAttribute('title')).toBe('v1.2.3 — update available: v1.3.0')
-        const dot = chip().querySelector('[data-slot="status-dot"]') as HTMLElement
-        expect(dot.getAttribute('data-tone')).toBe('pending')
-        expect(dot.className).toContain('animate-pulse')
-        // The version shown is still the one actually running.
-        expect(chip().textContent).toContain('v1.2.3')
+        expect(chip().getAttribute('href')).toBe('https://github.com/bin0110001/cezar-factory/blob/dev/cezar/docs/reference.md#in-checkout-scripts')
+        expect(chip().getAttribute('title')).toContain('Cezarium v1.2.3')
       })
     })
 

@@ -743,7 +743,11 @@ export async function workspaceOverlaps(options: { cwd?: string; home?: string }
   const changedByIssue = new Map<string, { paths: Set<string>; workspace: string }>();
   for (const record of records) {
     if (!['working', 'validating', 'ready', 'integrating', 'blocked', 'recoverable'].includes(record.state)) continue;
-    const paths = await changedPaths(record);
+    // Advisory only: a workspace whose directory is gone (a pruned or stale registry row) must not fail
+    // the caller. It broke every `cez workspace preflight` with `spawn git ENOENT` — git cannot start in a
+    // missing cwd — and so every implement run's preflight step.
+    const paths = await changedPaths(record).catch(() => undefined);
+    if (!paths) continue;
     changedByIssue.set(record.issue, {
       paths,
       workspace: record.workspacePath,
@@ -1117,7 +1121,9 @@ export async function handoffWorkspace(options: {
     if (!active || active.executionId !== options.executionId || active.fencingToken !== options.fencingToken) {
       throw new Error('Handoff rejected: execution is stale or fenced.');
     }
-    const dirty = await git(active.workspacePath, ['status', '--porcelain', '--untracked-files=all']);
+    // `.factory/` is the workflow's own scratch (run artifacts, receipts, execution records), some of it tracked,
+    // and every workflow step rewrites it. Handoff guards the *work*; scratch must not block it.
+    const dirty = await git(active.workspacePath, ['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).factory']);
     if (dirty) throw new Error(`Handoff refused: workspace has uncommitted changes. Commit or preserve them before handoff.\n${dirty}`);
     return transitionWorkspace({ issue: String(issue.issue_key), to: 'ready', cwd: options.cwd, executionId: options.executionId, fencingToken: options.fencingToken, home: options.home });
   } finally { db.close(); }

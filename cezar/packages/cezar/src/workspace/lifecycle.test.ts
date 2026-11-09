@@ -396,6 +396,20 @@ describe('local workspace lifecycle', () => {
     }]);
   });
 
+  it('skips an active workspace whose directory is gone instead of failing the overlap report', async () => {
+    const live = await claimWorkspace({ issue: '53', cwd: repo, owner: 'external:test:530', base: 'dev' });
+    const other = await claimWorkspace({ issue: '54', cwd: repo, owner: 'external:test:540', base: 'dev' });
+    const stale = await claimWorkspace({ issue: '55', cwd: repo, owner: 'external:test:550', base: 'dev' });
+    writeFileSync(join(live.workspacePath, 'shared.ts'), 'live');
+    writeFileSync(join(other.workspacePath, 'shared.ts'), 'other');
+    rmSync(stale.workspacePath, { recursive: true, force: true });
+    // Without the guard this rejected with `spawn git ENOENT` (a missing cwd), which failed every preflight.
+    expect(await workspaceOverlaps({ cwd: repo })).toEqual([{
+      issues: ['53', '54'], paths: ['shared.ts'],
+      workspaces: [live.workspacePath, other.workspacePath],
+    }]);
+  });
+
   it('tracks predicted versus actual impact on the fenced execution, with expiry and honest coordination scope', async () => {
     const a = await claimWorkspace({ issue: '61', cwd: repo, owner: 'external:test:610', base: 'dev', minutes: 60 });
     const b = await claimWorkspace({ issue: '62', cwd: repo, owner: 'external:test:620', base: 'dev', minutes: 60 });
@@ -561,6 +575,10 @@ describe('local workspace lifecycle', () => {
     await expect(handoffWorkspace({ executionId: first.executionId, fencingToken: first.fencingToken, cwd: repo }))
       .rejects.toThrow('uncommitted changes');
     rmSync(uncommitted);
+    // Workflow scratch under .factory/ (untracked artifacts, a rewritten execution record) must not block handoff.
+    mkdirSync(join(firstPath, '.factory', 'artifacts'), { recursive: true });
+    writeFileSync(join(firstPath, '.factory', 'artifacts', 'receipt.json'), '{}');
+    writeFileSync(join(firstPath, '.factory', 'execution.json'), '{}');
     await handoffWorkspace({ executionId: first.executionId, fencingToken: first.fencingToken, cwd: repo });
 
     const nextPath = join(repo, 'factory-next');

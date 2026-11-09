@@ -160,7 +160,6 @@ export const AppShellContainer = memo(function AppShellContainer({ children }: {
       <AppShell
         repo={repo}
         version={health.data?.version ?? null}
-        latestVersion={health.data?.latestVersion ?? null}
         // The ⭐ ask's count. Same honesty rule as the chips above: `available: false` — offline,
         // a rate-limited IP, or promos silenced with `CEZ_NO_BANNER=1` — is `null` here, and
         // AppShell renders no chip for it rather than a button that cannot count.
