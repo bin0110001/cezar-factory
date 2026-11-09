@@ -241,7 +241,7 @@ function ResourcesForm({ config }: { config: WorkspaceConfigResponse }) {
 
       <SettingsField
         title="Auto-resume after a usage limit"
-        hint="When an agent stops because its provider usage limit is reached, cezar waits for the reset the provider named and continues the task 30 seconds later — up to 12 times in a row without you. Off leaves the task failed with its Continue button."
+        hint="When an agent stops because its provider usage limit is reached, Cezarium waits for the reset the provider named and continues the task 30 seconds later — up to 12 times in a row without you. Off leaves the task failed with its Continue button."
       >
         <select
           aria-label="Auto-resume after a usage limit"

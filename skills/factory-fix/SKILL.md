@@ -48,6 +48,14 @@ source: skills/factory-fix/SKILL.md
 ### 6. Return to Review
 
 - Update the PR with the fixes.
+- Keep the PR mergeable: it is yours until it merges. If the PR is `CONFLICTING`, or `dev`
+  has moved since your last push, fetch the base and merge it into the branch
+  (`git fetch origin dev`, `git merge origin/dev`; do not rebase a pushed branch), resolve
+  every conflict yourself keeping the intent of both sides (shared files such as `VERSION`,
+  `CHANGELOG.md` and `tests/run-tests.ps1` keep both sides' entries; `VERSION` takes the
+  higher bump), re-run validation on the merged result, push, and confirm
+  `gh pr view <number> --json mergeable` is `MERGEABLE`. Never discard the other side's work
+  to clear a conflict, and never leave the rebase to the user.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
 - Fixes are reported with the implementation result schema; the workflow returns the issue to `factory:review`.
 

@@ -32,6 +32,7 @@ param(
     [string]$RunId = '',
     [switch]$Wait,
     [int]$PollSeconds = 20,
+    [string]$Sha = '',
     [switch]$DryRun
 )
 Set-StrictMode -Off
@@ -104,6 +105,15 @@ switch ($Action) {
         if (-not $target -or -not $dir) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET / FACTORY_CONTROL_PLANE_FACTORY_DIR missing from config/server-topology.env' }
         & git -C $root fetch origin dev --quiet
         $head = (& git -C $root rev-parse origin/dev).Trim()
+        if ($Sha) {
+            # Explicit commit (a squash-merged PR's merge commit): it only has to be on origin/dev, so the guard
+            # below, which compares local files, cannot refuse it just because other PRs landed after it.
+            $pinned = (& git -C $root rev-parse "$Sha^{commit}").Trim()
+            & git -C $root merge-base --is-ancestor $pinned $head
+            if ($LASTEXITCODE -ne 0) { Fail 2 "-Sha $($pinned.Substring(0, 9)) is not on origin/dev ($($head.Substring(0, 9))); merge it to dev first" }
+            $head = $pinned
+            Write-Host "SHIP_PROGRESS watching pinned commit $($head.Substring(0, 9)), on origin/dev"
+        } else {
         & git -C $root merge-base --is-ancestor HEAD $head
         if ($LASTEXITCODE -ne 0) {
             # A squash merge never makes the local commit an ancestor: accept it when every file the local work
@@ -113,6 +123,7 @@ switch ($Action) {
             $differs = if ($files.Count -gt 0) { & git -C $root diff --name-only HEAD $head -- @files } else { @() }
             if ($files.Count -eq 0 -or @($differs).Count -gt 0) { Fail 2 "local HEAD is not on origin/dev ($($head.Substring(0, 9))); merge the fix to dev first, the promoter only promotes merged work" }
             Write-Host "SHIP_PROGRESS local work is on origin/dev via a squash merge ($($head.Substring(0, 9)))"
+        }
         }
         if ($DryRun) { Write-Host "DRYRUN would nudge the promoter on ${target} and wait for $($head.Substring(0, 9)) to reach stage stable-deployed"; break }
         & ssh -o BatchMode=yes -o ConnectTimeout=10 $target 'systemctl --user start --no-block factory-local-promotion.service'

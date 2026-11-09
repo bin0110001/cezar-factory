@@ -113,7 +113,7 @@ export function BookmarkletPanel({ skills }: { skills: readonly Skill[] }) {
       <div data-slot="bm-generic" className="mt-4">
         {/* Generic launcher: no skill, auto forced off — it only prefills the form. */}
         <BookmarkletRow
-          label={repoName ? `cezar (${repoName}): this PR/issue` : 'cezar: this PR/issue'}
+          label={repoName ? `Cezarium (${repoName}): this PR/issue` : 'Cezarium: this PR/issue'}
           url={bookmarkletUrl('', false, key, origin, projectId)}
           hint="prefills the form — nothing starts by itself"
         />

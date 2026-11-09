@@ -202,6 +202,11 @@ rl.on('line', (line) => {
       emit({ method: 'turn/completed', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'failed', error: { message: 'model not available' } } } });
       return;
     }
+    if (turnText.includes('mock:completed-empty')) {
+      emit({ method: 'turn/started', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'inProgress' } } });
+      emit({ method: 'turn/completed', params: { threadId: 'th_mock_1', turn: { id: turnId, status: 'completed' } } });
+      return;
+    }
     if (turnText.includes('mock:turn-failed')) {
       emit({ method: 'turn/failed', params: {
         turn: { id: 'turn_mock_1', status: 'failed' },

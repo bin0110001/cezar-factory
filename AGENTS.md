@@ -127,6 +127,21 @@ your branch. If the merge is refused or conflicts, resolve it and re-validate ra
 than bypassing a gate. Runs outside Dev mode still follow the production-release gates
 above.
 
+**A job owns its pull request until it merges.** The job that opens or updates a PR
+(implement, fix) is responsible for getting it to `dev`; the user is never the one who
+rebases or resolves conflicts for it. Before handing off, the job merges the current
+`origin/dev` into its branch, resolves every conflict itself, re-runs its validation on the
+merged result, and leaves the PR `MERGEABLE` (`gh pr view <n> --json mergeable` is
+`MERGEABLE`). Resolve a conflict by keeping the intent of both sides: shared hot files
+(`VERSION`, `CHANGELOG.md`, `tests/run-tests.ps1`, lists and registries) take both changes,
+and `VERSION` takes the higher of the two bumps plus one only if both sides bumped it.
+Never discard the other side's work to make a conflict disappear, never close a conflicting
+PR to avoid the work, and never leave a conflicting PR waiting for a human. If `dev` moves
+while a PR waits for review and it becomes `CONFLICTING`, repairing it is again the owning
+job's work (the fix automation on that issue), followed by the same validation. A PR that
+cannot be reconciled without a major architectural decision is the only case that goes to
+`factory:needs-help`, with the conflicting paths listed in the issue comment.
+
 Use an independent technical reviewer when another eligible maintainer is
 available. In a solo-maintainer repository, the author must instead record a
 structured self-review on the PR covering scope, risk, important invariants,

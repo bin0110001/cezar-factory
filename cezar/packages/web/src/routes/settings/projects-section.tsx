@@ -269,7 +269,7 @@ function RegistryTable({
   return (
     <SettingsField
       title="Registered projects"
-      hint={`The folders you have added. While this list is empty the folder cezar is serving is listed as “not registered” with an Add button; once you have projects, starting cezar somewhere new neither registers nor lists that folder — use “Add project” when you want to keep it. “Tags” group connected repositories — give the API, the web app and the design system a shared “storefront” tag and the global Tasks page can show all three as one piece of work. “Max parallel” caps how many of that project's tasks run at once (leave it empty to inherit the workspace limit); the workspace limit (${workspaceMax}) still applies as an overall ceiling, so a per-project value above it has no extra effect until the workspace limit is raised. Removing a project only unregisters it — no files on disk are deleted.`}
+      hint={`The folders you have added. While this list is empty the folder Cezarium is serving is listed as “not registered” with an Add button; once you have projects, starting Cezarium somewhere new neither registers nor lists that folder — use “Add project” when you want to keep it. “Tags” group connected repositories — give the API, the web app and the design system a shared “storefront” tag and the global Tasks page can show all three as one piece of work. “Max parallel” caps how many of that project's tasks run at once (leave it empty to inherit the workspace limit); the workspace limit (${workspaceMax}) still applies as an overall ceiling, so a per-project value above it has no extra effect until the workspace limit is raised. Removing a project only unregisters it — no files on disk are deleted.`}
     >
       {/* Defensive: `GET /api/v1/projects` names at least the folder this server is serving
           whenever the registry is empty (the unregistered row), and the registry's own rows
@@ -409,7 +409,7 @@ function ProjectRow({
             aria-label={`Remove ${project.name} from the workspace — unregisters it, no files are deleted`}
             // The boot project is refused server-side too (this server runs out of it);
             // disabling here means the user gets the explanation before the click, not after.
-            title={isBoot ? 'cezar is serving this project — stop it and use `cezar projects remove`' : undefined}
+            title={isBoot ? 'Cezarium is serving this project — stop it and use `cezar projects remove`' : undefined}
             disabled={disabled || isBoot}
             onClick={onRemove}
           >
@@ -448,7 +448,7 @@ export function AddBootProjectButton({
       size="sm"
       data-action="project-add-boot"
       aria-label={`Add ${name} to your projects`}
-      title="cezar is serving this folder — save it to your projects"
+      title="Cezarium is serving this folder — save it to your projects"
       disabled={disabled || register.isPending}
       onClick={() =>
         register.mutate(root, {
