@@ -5941,9 +5941,12 @@ export class RunManager {
         suite: step.verificationSuite,
         cancelled: () => state.cancelled,
         onOutput: (text) => emit({ type: 'check-output', stepId: step.id, text }),
-      }).then(({ run, artifactPath, output }) => {
+      }).then(({ run, artifactPath, output, selection }) => {
         const exitCode = run.semanticExitCode;
-        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), coverage: run.coverage, exitCode });
+        // The query view reads the existing append-only run event store, so verification history
+        // survives worktree retention without introducing another store. `run` is already
+        // bounded to 1 MiB and its output/artifact metadata are redacted by the executor.
+        emit({ type: 'verification-result', stepId: step.id, verificationId: run.verificationId, status: run.status, artifactPath: relativePath(state.cwd, artifactPath).replaceAll('\\', '/'), coverage: run.coverage, exitCode, suite: selection.suite, selection, result: run });
         return { ok: run.status === 'passed', output: output || `verification status: ${run.status}`, exitCode };
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);

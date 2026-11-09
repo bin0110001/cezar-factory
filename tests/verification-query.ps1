@@ -123,6 +123,9 @@ if (Test-Path $fixture) {
     $snap = @{ schemaVersion = 1; runs = @($adapted) }
     $f = ConvertFrom-Json (Invoke-VerificationQuery -Snapshot $snap -Kind failures)
     Check 'an executor result maps to runs, selected tests and failures' ($f.items.Count -eq 1 -and $f.items[0].testId -eq 'parse' -and (ConvertFrom-Json (Invoke-VerificationQuery -Snapshot $snap -Kind runs)).items[0].id -eq 'v-1')
+    $runQuery = ConvertFrom-Json (Invoke-VerificationQuery -Snapshot $snap -Kind runs)
+    Check 'executor queries expose per-check duration, metrics and fingerprint' ($runQuery.items[0].checks[0].durationMs -eq 1 -and $runQuery.items[0].checks[0].metrics[0].name -eq 'parse-ms' -and $runQuery.items[0].checks[0].findingFingerprint -eq ('a' * 64))
+    Check 'executor failures expose new-vs-known classification and episode link' ($f.items[0].classification -eq 'new' -and $f.items[0].episodeId -eq ('a' * 64))
 }
 
 if ($script:failures) { Write-Host "verification-query: $script:failures failure(s)"; exit 1 }
