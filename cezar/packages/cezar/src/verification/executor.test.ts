@@ -153,6 +153,20 @@ describe('generic verification executor', () => {
     expect(withoutVersion.run.toolVersions.check).toBe('unavailable (adapter-managed)');
   });
 
+  it('writes versioned strategy metadata beside executor-generated failure fingerprints', async () => {
+    const root = await fixture('adapter-version');
+    const result = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: { execute: async () => ({ status: 'failed', code: 1, output: 'assertion failed at src/test.ts:12', truncated: false, durationMs: 1 }) },
+    });
+    expect(result.run.checks[0]).toMatchObject({
+      status: 'failed',
+      findingFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      findingStrategyId: 'cezar.verification.test-failure',
+      findingStrategyVersion: 1,
+    });
+  });
+
   it('treats an unexpected non-test exit as infrastructure failure', async () => {
     const root = await fixture('crash');
     const config = join(root, '.ai/factory/factory.config.yaml');

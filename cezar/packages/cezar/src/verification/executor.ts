@@ -10,6 +10,7 @@ import {
   type VerificationCheckRun, type VerificationManifest, type VerificationRun,
 } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
+import { fingerprintFinding, type FingerprintedFinding, type VerificationFindingKind } from './fingerprint.ts';
 
 const execFileAsync = promisify(execFile);
 const MANIFEST_PATH = '.ai/factory/factory.config.yaml';
@@ -89,15 +90,28 @@ function semanticExit(status: VerificationRun['status']): number {
 /** Stable per-check finding identity used by the read-only recurrence projection. */
 export function verificationFindingFingerprint(check: VerificationCheckRun): string | undefined {
   if (check.status !== 'failed') return undefined;
-  const evidence = check.diagnostics.length > 0
-    ? check.diagnostics.map(({ code, severity, file, message }) => ({ code, severity, file, message: message.trim().replace(/\s+/g, ' ') }))
-      .sort((a, b) => {
-        const left = JSON.stringify(a);
-        const right = JSON.stringify(b);
-        return left < right ? -1 : left > right ? 1 : 0;
-      })
-    : check.outputPreview.trim().replace(/\s+/g, ' ');
-  return createHash('sha256').update(JSON.stringify({ checkId: check.checkId, evidence })).digest('hex');
+  return verificationFindingIdentity(check)?.fingerprint;
+}
+
+function verificationFindingIdentity(check: VerificationCheckRun): FingerprintedFinding | undefined {
+  if (check.status !== 'failed') return undefined;
+  const id = check.checkId.toLowerCase();
+  const kind: VerificationFindingKind = /parse|lint|typecheck|syntax/.test(id) ? 'parse-error'
+    : /startup|launch|boot|import/.test(id) ? 'startup-error'
+      : /perf|benchmark|latency|throughput/.test(id) ? 'performance-finding' : 'test-failure';
+  const findings = check.diagnostics.length > 0
+    ? check.diagnostics.map((diagnostic) => fingerprintFinding({
+      kind, checkId: check.checkId, code: diagnostic.code, message: diagnostic.message,
+      ...(diagnostic.file ? { file: diagnostic.file } : {}),
+      ...(diagnostic.line ? { line: diagnostic.line } : {}),
+      ...(diagnostic.column ? { column: diagnostic.column } : {}),
+    }))
+    : [fingerprintFinding({ kind, checkId: check.checkId, message: check.outputPreview })];
+  const fingerprints = [...new Set(findings.map((finding) => finding.fingerprint))].sort();
+  const fingerprint = fingerprints.length === 1
+    ? fingerprints[0]!
+    : createHash('sha256').update(`${findings[0]!.strategyId}@${findings[0]!.strategyVersion}\0${fingerprints.join('\0')}`).digest('hex');
+  return { fingerprint, strategyId: findings[0]!.strategyId, strategyVersion: findings[0]!.strategyVersion };
 }
 
 function aggregate(checks: VerificationCheckRun[]): VerificationRun['status'] {
@@ -388,7 +402,12 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     } else {
       checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
       if (checkRun.status === 'failed' && !checkRun.findingFingerprint) {
-        checkRun.findingFingerprint = verificationFindingFingerprint(checkRun);
+        const identity = verificationFindingIdentity(checkRun);
+        if (identity) {
+          checkRun.findingFingerprint = identity.fingerprint;
+          checkRun.findingStrategyId = identity.strategyId;
+          checkRun.findingStrategyVersion = identity.strategyVersion;
+        }
       }
     }
     try { await input.adapter?.cleanup?.(context); }
