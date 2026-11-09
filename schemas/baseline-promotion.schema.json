@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Baseline promotion policy and review record (minimal, versioned; #99/#100 may adopt or replace)",
+  "type": "object",
+  "properties": {
+    "version": { "const": 1 },
+    "permittedApprovers": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "mandatoryChecks": { "type": "array", "items": { "type": "string" } },
+    "thresholdFloors": { "type": "object", "additionalProperties": { "type": "number" } },
+    "baselinePaths": { "type": "array", "items": { "type": "string" } },
+    "auditLog": { "type": "string" },
+    "protectedPaths": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["version", "permittedApprovers", "auditLog", "protectedPaths"],
+  "$defs": {
+    "reviewRecord": {
+      "description": "Reviewer data supplied by the workflow from the PR review, never by the agent.",
+      "type": "object",
+      "properties": {
+        "approver": { "type": "string" },
+        "reviewRef": { "type": "string" },
+        "changeAuthor": { "type": "string" },
+        "sourceRun": { "type": "string" }
+      },
+      "required": ["approver", "reviewRef", "changeAuthor", "sourceRun"]
+    }
+  }
+}

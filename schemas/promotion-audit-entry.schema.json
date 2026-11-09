@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One line of the append-only baseline promotion audit log (JSONL)",
+  "type": "object",
+  "properties": {
+    "version": { "const": 1 },
+    "seq": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "approver": { "type": "string" },
+    "changeAuthor": { "type": "string" },
+    "sourceRun": { "type": "string" },
+    "reviewRef": { "type": "string" },
+    "baseline": { "type": "string" },
+    "baselineBeforeDigest": { "type": "string" },
+    "baselineAfterDigest": { "type": "string" },
+    "prevEntryDigest": { "type": "string", "description": "SHA-256 of the previous line; empty for the first entry" }
+  },
+  "required": ["version", "seq", "timestamp", "approver", "sourceRun", "reviewRef", "baseline", "baselineBeforeDigest", "baselineAfterDigest", "prevEntryDigest"]
+}

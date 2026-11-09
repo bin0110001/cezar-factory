@@ -15,6 +15,12 @@
 
 ## [0.3.66] - 2026-11-07
 
+- Add reviewed baseline promotion (`scripts/promote-baseline.ps1`: permitted, non-author approver required,
+  atomic baseline update, one hash-chained audit entry) and an anti-weakening guard
+  (`scripts/check-weakening.ps1`, wired into the implement workflow) that rejects lowered thresholds,
+  removed or downgraded mandatory checks, added suppressions, audit rewrites and protected-path edits.
+  See `docs/baseline-promotion.md`.
+
 - Add the performance-regression policy (`policies/performance.yaml`, schema, `docs/performance-regression.md`):
   measured-completion spans, environment-fingerprinted baselines, median/p95/absolute budgets, and a
   performance result recorded separately from the functional result (first slow attempt preserved).

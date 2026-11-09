@@ -3,7 +3,7 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1,check-weakening.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -59,6 +59,13 @@ steps:
     name: Guard verification governance from agent changes
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/protect-governance.ps1 -Task "{{task}}"
     timeoutSeconds: 300
+  - id: weakening-guard
+    name: Fail when the change weakens mandatory checks, thresholds or protected paths
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-weakening.ps1 -BaseRef origin/dev
+    timeoutSeconds: 120
+    onFail:
+      retry: implement
+      max: 1
   - id: targeted-tests
     name: Run targeted tests
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"

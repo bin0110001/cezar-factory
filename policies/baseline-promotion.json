@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "permittedApprovers": ["bin0110001"],
+  "mandatoryChecks": ["tests", "validation"],
+  "thresholdFloors": {},
+  "baselinePaths": ["baselines/*.json"],
+  "auditLog": "baselines/promotion-audit.jsonl",
+  "protectedPaths": [
+    "policies/baseline-promotion.json",
+    "baselines/promotion-audit.jsonl",
+    "scripts/promote-baseline.ps1",
+    "scripts/check-weakening.ps1",
+    "schemas/baseline-promotion.schema.json",
+    "schemas/promotion-audit-entry.schema.json",
+    "workflows/implement.yaml"
+  ]
+}
