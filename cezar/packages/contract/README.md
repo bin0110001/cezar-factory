@@ -24,3 +24,12 @@ Three consumers, one definition:
    defect, not a convenience: the per-route guard in `src/server/contract-parity.test.ts` asserts
    `z.infer<schema>` and the route's own inferred type are MUTUALLY assignable, so a schema that
    drifts either way fails to compile.
+
+## Verification finding identity
+
+Verification check results may include `findingFingerprint`, `findingStrategyId`, and
+`findingStrategyVersion`. The strategy fields are optional for older stored results. New
+fingerprinting code records all three fields; a strategy version change must include explicit
+fingerprint aliases for identities already stored. The pure implementation keeps a separate,
+versioned strategy ID for parse, test, startup, and performance findings. Normalization rules and
+the required alias check live in `packages/cezar/src/verification/fingerprint.ts`.

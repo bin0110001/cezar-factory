@@ -2,12 +2,19 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { verificationManifestSchema, verificationRunSchema, projectValidationConfigSchema } from '@open-mercato/cezar-contract';
+import { verificationFingerprintStrategySchema, verificationManifestSchema, verificationRunSchema, projectValidationConfigSchema } from '@open-mercato/cezar-contract';
 
 const fixtures = new URL('../../../contract/fixtures/verification/', import.meta.url);
 const read = async (name: string) => JSON.parse(await readFile(new URL(name, fixtures), 'utf8'));
 
 describe('versioned verification contracts', () => {
+  it('validates fingerprint strategy descriptors', () => {
+    expect(verificationFingerprintStrategySchema.safeParse({
+      id: 'cezar.verification.test-failure', version: 1, kinds: ['test-failure'],
+    }).success).toBe(true);
+    expect(verificationFingerprintStrategySchema.safeParse({ id: 'x', version: 0, kinds: [] }).success).toBe(false);
+  });
+
   it('preserves legacy validation config unchanged', async () => {
     const legacy = await read('legacy-valid.json');
     expect(projectValidationConfigSchema.parse(legacy)).toEqual(legacy);
@@ -38,6 +45,14 @@ describe('versioned verification contracts', () => {
     fabricatedPass.checks[0].semanticExitCode = 2;
     fabricatedPass.checks[0].coverage = { selected: 1, passed: 0, skipped: 0 };
     expect(verificationRunSchema.safeParse(fabricatedPass).success).toBe(false);
+    const versionedFinding = structuredClone(passing);
+    versionedFinding.checks[0].findingFingerprint = 'b'.repeat(64);
+    versionedFinding.checks[0].findingStrategyId = 'cezar.verification.test-failure';
+    versionedFinding.checks[0].findingStrategyVersion = 1;
+    expect(verificationRunSchema.safeParse(versionedFinding).success).toBe(true);
+    const partialStrategy = structuredClone(passing);
+    partialStrategy.checks[0].findingStrategyId = 'cezar.verification.test-failure';
+    expect(verificationRunSchema.safeParse(partialStrategy).success).toBe(false);
   });
 
   it('validates fixtures with an independent Node-only consumer', async () => {

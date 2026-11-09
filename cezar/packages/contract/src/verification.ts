@@ -62,6 +62,13 @@ export const verificationDiagnosticSchema = z.object({
   column: z.number().int().positive().optional(),
 }).strict();
 
+export const verificationFindingKindSchema = z.enum(['parse-error', 'test-failure', 'startup-error', 'performance-finding']);
+export const verificationFingerprintStrategySchema = z.object({
+  id: z.string().min(1).max(128),
+  version: z.number().int().positive(),
+  kinds: z.array(verificationFindingKindSchema).min(1).max(4),
+}).strict();
+
 export const verificationMetricSchema = z.object({
   name: z.string().min(1).max(128),
   value: z.number().finite(),
@@ -91,8 +98,16 @@ export const verificationCheckRunSchema = z.object({
   metrics: z.array(verificationMetricSchema).max(VERIFICATION_LIMITS.metricsPerCheck),
   coverage: z.object({ selected: z.number().int().nonnegative(), passed: z.number().int().nonnegative(), skipped: z.number().int().nonnegative() }).strict(),
   findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  findingStrategyId: z.string().min(1).max(128).optional(),
+  findingStrategyVersion: z.number().int().positive().optional(),
   artifacts: z.array(verificationArtifactRefSchema).max(VERIFICATION_LIMITS.artifactRefsPerRun),
-}).strict();
+}).strict().superRefine((check, ctx) => {
+  if (check.findingStrategyId !== undefined || check.findingStrategyVersion !== undefined) {
+    if (!check.findingFingerprint || !check.findingStrategyId || !check.findingStrategyVersion) {
+      ctx.addIssue({ code: 'custom', path: ['findingStrategyId'], message: 'strategy metadata requires a fingerprint, strategy id, and strategy version' });
+    }
+  }
+});
 export type VerificationCheckRun = z.infer<typeof verificationCheckRunSchema>;
 
 function utf8ByteLength(value: string): number {
