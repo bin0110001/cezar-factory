@@ -36,13 +36,20 @@ Factory-managed run, inspect the current branch and worktree, and preserve all
 unrelated changes; stage only files for the requested issue. If the session is
 running on the Cezar runner, or its execution context is unclear, use the
 `cez workspace` CLI to claim or adopt local work as described by the skill.
-For local interactive development, use the one existing checkout. Do not create
-or switch to another Git worktree, temporary clone, or task branch unless the
-user directly asks for one. If the requested task does not fit the current
-checkout, preserve it and report the mismatch instead of silently moving the
-work elsewhere. This local one-checkout rule does not authorize managing or
-cleaning up worktrees created by Cezar automation; treat those as automation
-state and leave them alone unless the user asks for cleanup.
+For local interactive development, use the one existing checkout; do not create
+or switch to another Git worktree or temporary clone unless the user directly
+asks for one. Use a fresh task branch in that checkout by default. After a task's
+PR is confirmed merged into `dev`, update `origin/dev` and create the next task
+branch from it before starting unrelated work; do not keep stacking unrelated
+tasks on the merged branch. This normal branch rollover does not require a
+separate user request. Preserve unrelated local changes and stage only files for
+the requested issue. If a dirty change would be lost or carried into the next
+task, preserve it safely or report the mismatch before switching. If the
+requested task otherwise does not fit the current checkout, preserve it and
+report the mismatch instead of silently moving the work elsewhere. This local
+one-checkout rule does not authorize managing or cleaning up worktrees created
+by Cezar automation; treat those as automation state and leave them alone unless
+the user asks for cleanup.
 The Cezar scheduler verifies Factory run identity and fencing data before
 setting `FACTORY_MANAGED=1`; a marker by itself is never trusted. Do not add
 Factory scripts to agent-facing skill instructions.
