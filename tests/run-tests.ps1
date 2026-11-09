@@ -215,7 +215,13 @@ Assert 'every workflow command step declares a timeoutSeconds deadline' ($deadli
 
 Assert 'startup keeps its failure reason visible on stderr' ($startupScript -match 'Console]::Error.WriteLine' -and $startupScript -match 'GIT_WORKTREE_CONFIG_INVALID')
 Assert 'startup normalizes comma-delimited required scripts from workflow commands' ($startupScript -match "-split ','" -and $startupScript -match 'requiredScripts = @\(\$RequiredScripts\)')
-Assert 'release records force-refresh requirement for blocked managed updates' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'forceRefreshRequired' -and (Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'release-status\.jsonl')
+$pushFactoryUpdates = Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')
+$promoteStable = Get-Content -Raw (Join-Path $factory 'scripts/release/promote-stable.ps1')
+$legacyReportDefault = "Join-Path `$factory '.factory/release-reports"
+Assert 'release records force-refresh requirement for blocked managed updates' ($pushFactoryUpdates -match 'forceRefreshRequired' -and $pushFactoryUpdates -match 'release-status\.jsonl')
+Assert 'release reports default to host state outside the shared checkout' ($pushFactoryUpdates -match 'FACTORY_STATE_DIR' -and $pushFactoryUpdates -match 'XDG_STATE_HOME' -and $promoteStable -match 'FACTORY_STATE_DIR' -and $promoteStable -match 'XDG_STATE_HOME' -and -not $pushFactoryUpdates.Contains($legacyReportDefault) -and -not $promoteStable.Contains($legacyReportDefault))
+$gitignore = Get-Content -Raw (Join-Path $factory '.gitignore')
+Assert 'the generated Prometheus bearer token is ignored as host-local secret state' ($gitignore -match '(?m)^integrations/bazzite/prometheus-vllm-token\.generated\s*$')
 $onboardScript = Get-Content -Raw (Join-Path $factory 'scripts/onboard-project.ps1')
 Assert 'new-project onboarding creates dev from the default branch' ($onboardScript -match 'git/ref/heads/dev' -and $onboardScript -match 'refs/heads/dev' -and $onboardScript -match 'defaultBranchRef')
 Assert 'new-project onboarding is bounded and release-gated' ($onboardScript -match 'SeedOpenIssues' -and $onboardScript -match 'DryRun' -and $onboardScript -match 'never merges|never.*enables live automations|never.*dispatches')
@@ -1350,7 +1356,7 @@ Assert 'local scheduler verifies reviewed dev merges without Actions dispatch' (
 Assert 'local promotion is single-flight and hardware bounded' ($promotionUnit -match 'CPUQuota=200%' -and $promotionUnit -match 'MemoryMax=8G' -and $promotionUnit -match 'FACTORY_GPU_SLOTS=0' -and $promotionUnit -match 'branch dev')
 Assert 'local promotion service uses exact-SHA scheduler' ($promotionUnit -match 'factory_local_scheduler.py run')
 $promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
-Assert 'promotion policy defaults to the autonomous posture and defines a controlled one as data' ($promotionPolicy.promotion.mode -eq 'autonomous' -and $promotionPolicy.promotion.modes.controlled.stable -eq 'approval' -and $promotionPolicy.promotion.modes.autonomous.stable -eq 'auto')
+Assert 'production run selects controlled promotion while retaining both policy postures' ($promotionPolicy.promotion.mode -eq 'controlled' -and $promotionPolicy.promotion.modes.controlled.stable -eq 'approval' -and $promotionPolicy.promotion.modes.autonomous.stable -eq 'auto')
 Assert 'promotion policy gates stable on canaries and a circuit breaker, and moves stable only through the fast-forward refs API' (@($promotionPolicy.promotion.canaries.items).Count -ge 2 -and $promotionPolicy.promotion.breaker.maxConsecutiveFailures -ge 1 -and $promotionModule -match 'force=false' -and $promotionModule -match 'git/refs/heads')
 Assert 'promotion policy runs the full suite as a required check through the container' (@($promotionPolicy.checks | Where-Object { $_.id -eq 'full-suite' -and $_.required -and ($_.command -join ' ') -match 'validate-in-container\.sh' }).Count -eq 1)
 Assert 'promotion service passes the scheduler state root, not the release store the scheduler appends to it' ($promotionUnit -match '--store %h/\.local/share/cezar-factory --config' -and $promotionUnit -notmatch '--store \S*release-store')

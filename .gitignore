@@ -30,6 +30,7 @@ config/server-topology.env
 config/factory-projects.json
 config/failure-repair.json
 integrations/bazzite/prometheus-model-targets.generated.json
+integrations/bazzite/prometheus-vllm-token.generated
 
 
 connections/**/*

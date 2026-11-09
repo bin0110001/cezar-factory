@@ -77,10 +77,11 @@ dev, and what Cezar actually serves against the channel pointer. Drift that pers
 
 ## Modes are data
 
-`config/promotion-policy.json` carries both postures; `promotion.mode` selects one. There is no code path
-that forks on the mode outside policy loading and the review decision.
+`config/promotion-policy.json` carries both postures; `promotion.mode` selects one. This Production Run
+selects `controlled` in the reviewed config. There is no code path that forks on the mode outside policy
+loading and the review decision.
 
-| | `autonomous` (default) | `controlled` |
+| | `autonomous` | `controlled` |
 |---|---|---|
 | Review evidence | approved review **or** a recorded self-review section in the PR | approved review only |
 | Soak before stable | none | `soakSeconds` (default 1 hour) |
