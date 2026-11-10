@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircleIcon, ChevronDownIcon, ChevronRightIcon, FileTextIcon, RefreshCwIcon } from 'lucide-react'
 import type { VerificationQueryResponse } from '@open-mercato/cezar-api-client'
-import { getVerificationArtifact, queryVerificationHistory } from '@/api/client'
+import { getVerificationArtifact, queryReliabilityAnalytics, queryVerificationHistory } from '@/api/client'
 import { Button } from '@/components/ui/button'
 
 const HISTORY_PAGE_SIZE = 25
@@ -100,6 +100,7 @@ function ArtifactEvidence({ verificationId, artifact }: {
 
 export function VerificationHistoryRoute() {
   const [status, setStatus] = useState('')
+  const [windowDays, setWindowDays] = useState<7 | 30 | 90>(30)
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined])
   const [pageIndex, setPageIndex] = useState(0)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -110,6 +111,11 @@ export function VerificationHistoryRoute() {
     queryKey: [...historyKey, 'runs', status, cursor],
     queryFn: ({ signal }) => queryVerificationHistory({ kind: 'runs', pageSize: HISTORY_PAGE_SIZE, ...(status ? { status } : {}), ...(cursor ? { cursor } : {}) }, { signal }),
     staleTime: 15_000,
+  })
+  const analytics = useQuery({
+    queryKey: [...historyKey, 'reliability', windowDays],
+    queryFn: () => queryReliabilityAnalytics(windowDays),
+    staleTime: 30_000,
   })
   const runPage = page.data?.kind === 'runs' ? page.data as RunsPage : undefined
   const run = runPage?.items.find((item) => item.id === selectedRunId)
@@ -162,6 +168,49 @@ export function VerificationHistoryRoute() {
           <Button variant="outline" size="sm" onClick={() => void page.refetch()} disabled={page.isFetching}><RefreshCwIcon className="size-4" /> Refresh</Button>
         </div>
       </header>
+
+      <section className="rounded-lg border p-4" aria-labelledby="reliability-analytics-heading" data-testid="reliability-analytics">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 id="reliability-analytics-heading" className="font-semibold">Reliability analytics</h2><p className="text-xs text-muted-foreground">Evidence-backed validation, repair, failure and pull request outcomes for this project.</p></div>
+          <label className="flex items-center gap-2 text-sm">Window
+            <select aria-label="Reliability analytics window" className="min-h-9 rounded-md border bg-background px-2" value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as 7 | 30 | 90)}>
+              <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
+            </select>
+          </label>
+        </div>
+        {analytics.isPending && <p className="mt-3 text-sm text-muted-foreground" role="status">Loading reliability metrics…</p>}
+        {analytics.isError && <p className="mt-3 text-sm text-destructive" role="alert">Reliability metrics are unavailable: {analytics.error.message}</p>}
+        {analytics.data && <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-md bg-muted/30 p-3"><p className="text-xs text-muted-foreground">First pass validation</p><p className="mt-1 text-lg font-semibold">{analytics.data.summary.firstPass.rate === null ? 'No data' : `${Math.round(analytics.data.summary.firstPass.rate * 100)}%`}</p><p className="text-xs">{analytics.data.summary.firstPass.successful} / {analytics.data.summary.firstPass.eligible} work items</p></div>
+            <div className="rounded-md bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Bounded repair success</p><p className="mt-1 text-lg font-semibold">{analytics.data.summary.boundedRepairs.rate === null ? 'No data' : `${Math.round(analytics.data.summary.boundedRepairs.rate * 100)}%`}</p><p className="text-xs">{analytics.data.summary.boundedRepairs.successful} / {analytics.data.summary.boundedRepairs.eligible} repair attempts</p></div>
+            <div className="rounded-md bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Failure classification</p><p className="mt-1 text-sm">{analytics.data.summary.failures.regression} regression · {analytics.data.summary.failures.flaky} flaky</p><p className="text-xs">{analytics.data.summary.failures.infrastructure} infrastructure · {analytics.data.summary.failures.unknown} unknown</p></div>
+            <div className="rounded-md bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Pull request outcomes</p><p className="mt-1 text-sm">{analytics.data.summary.pullRequests.merged} merged · {analytics.data.summary.pullRequests.rejected} closed unmerged</p><p className="text-xs">{analytics.data.summary.pullRequests.reverted} reverted · {analytics.data.summary.pullRequests.pending} open · {analytics.data.summary.pullRequests.unknown} unknown</p></div>
+            <div className="rounded-md bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Time to accepted PR</p><p className="mt-1 text-lg font-semibold">{analytics.data.summary.pullRequests.medianTimeToAcceptedMs === null ? 'No data' : `${(analytics.data.summary.pullRequests.medianTimeToAcceptedMs / 3_600_000).toFixed(1)} h`}</p><p className="text-xs">Median · {analytics.data.summary.pullRequests.acceptedDurationCount} linked merge{analytics.data.summary.pullRequests.acceptedDurationCount === 1 ? '' : 's'}</p></div>
+          </div>
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <section aria-labelledby="reliability-trend-heading">
+              <h3 id="reliability-trend-heading" className="text-sm font-semibold">Daily trend</h3>
+              <div className="mt-2 overflow-x-auto rounded border">
+                <table className="w-full text-left text-xs"><thead className="bg-muted/30"><tr><th scope="col" className="p-2">Date</th><th scope="col" className="p-2">Runs</th><th scope="col" className="p-2">First pass</th><th scope="col" className="p-2">Repair</th><th scope="col" className="p-2">Failures</th><th scope="col" className="p-2">Merged</th><th scope="col" className="p-2">Closed</th><th scope="col" className="p-2">Reverted</th></tr></thead>
+                  <tbody>{analytics.data.trends.filter((row) => row.validationRuns || row.merged || row.rejected || row.reverted || Object.values(row.failures).some(Boolean)).map((row) => <tr key={row.date} className="border-t"><th scope="row" className="p-2 font-normal">{row.date}</th><td className="p-2">{row.validationRuns}</td><td className="p-2">{row.firstPassSuccessful}</td><td className="p-2">{row.repairsSuccessful}</td><td className="p-2">{row.failures.infrastructure + row.failures.flaky + row.failures.regression + row.failures.unknown}</td><td className="p-2">{row.merged}</td><td className="p-2">{row.rejected}</td><td className="p-2">{row.reverted}</td></tr>)}</tbody>
+                </table>
+                {analytics.data.trends.every((row) => row.validationRuns === 0 && row.merged === 0 && row.rejected === 0 && row.reverted === 0) && <p className="p-3 text-xs text-muted-foreground">No recorded activity in this window.</p>}
+              </div>
+            </section>
+            <section aria-labelledby="reliability-segments-heading">
+              <h3 id="reliability-segments-heading" className="text-sm font-semibold">Project and model segments</h3>
+              <div className="mt-2 overflow-x-auto rounded border"><table className="w-full text-left text-xs"><thead className="bg-muted/30"><tr><th scope="col" className="p-2">Project / model</th><th scope="col" className="p-2">Runs</th><th scope="col" className="p-2">First pass</th><th scope="col" className="p-2">Repair</th><th scope="col" className="p-2">PRs M / C / R</th></tr></thead><tbody>{analytics.data.segments.map((segment) => <tr key={`${segment.projectId}:${segment.model}`} className="border-t"><th scope="row" className="p-2 font-normal"><span className="block">{segment.projectId}</span><span className="text-muted-foreground">{segment.model}</span></th><td className="p-2">{segment.validationRuns}</td><td className="p-2">{segment.firstPass.rate === null ? '—' : `${Math.round(segment.firstPass.rate * 100)}%`}</td><td className="p-2">{segment.boundedRepairs.rate === null ? '—' : `${Math.round(segment.boundedRepairs.rate * 100)}%`}</td><td className="p-2">{segment.pullRequests.merged} / {segment.pullRequests.rejected} / {segment.pullRequests.reverted}</td></tr>)}</tbody></table></div>
+            </section>
+          </div>
+          {(analytics.data.coverage.missingBaselineSha > 0 || !analytics.data.coverage.pullRequestStatusesAvailable || analytics.data.coverage.truncated || analytics.data.coverage.timelineTruncated) && <p className="mt-3 rounded border border-amber-500/40 p-2 text-xs" role="note">Coverage limits: {analytics.data.coverage.missingBaselineSha} failures have no baseline SHA; {analytics.data.coverage.pullRequestReferences} pull request references observed; {analytics.data.coverage.truncated ? 'PR status list capped at 50. ' : ''}{analytics.data.coverage.timelineTruncated ? 'Only eight terminal PR timelines were checked. ' : ''}{!analytics.data.coverage.pullRequestStatusesAvailable ? analytics.data.coverage.pullRequestStatusReason ?? 'GitHub status is unavailable.' : ''}</p>}
+          <p className="mt-2 text-xs text-muted-foreground">{analytics.data.coverage.linkedCodingRuns} of {analytics.data.coverage.validationEvents} verification runs link to coding-run metadata · {analytics.data.coverage.unreadableValidationEvents} validation events could not be parsed · finding-ledger retention {analytics.data.coverage.retentionDays} days · generated {when(analytics.data.generatedAt)}</p>
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm font-medium">Recurring failure drilldown ({analytics.data.drilldowns.length})</summary>
+            {analytics.data.drilldowns.length > 0 ? <ul className="mt-2 space-y-2">{analytics.data.drilldowns.map((item) => <li className="rounded border p-3 text-xs" key={item.fingerprint}><p><span className="font-mono">{item.fingerprint.slice(0, 16)}</span> · {item.classification} · {item.occurrences} occurrence{item.occurrences === 1 ? '' : 's'}</p><p className="mt-1 text-muted-foreground">Issues {item.issueNumbers.length ? item.issueNumbers.map((number) => `#${number}`).join(', ') : 'unknown'} · source {item.sourceShas[0]?.slice(0, 12) ?? 'unknown'} · baseline {item.baselineShas[0]?.slice(0, 12) ?? 'not recorded'} · evidence IDs {item.evidenceIds.length ? item.evidenceIds.join(', ') : 'not recorded'}</p></li>)}</ul> : <p className="mt-2 text-xs text-muted-foreground">No fingerprinted failures in this window.</p>}
+          </details>
+        </>}
+      </section>
 
       {page.isPending && <p className="rounded-md border p-5 text-sm text-muted-foreground" role="status">Loading verification history…</p>}
       {page.isError && <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert"><AlertCircleIcon className="mr-2 inline size-4" />Verification history is unavailable: {page.error.message}</section>}

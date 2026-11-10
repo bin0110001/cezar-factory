@@ -154,7 +154,7 @@ export const CODING_RUN_EVENT_TYPES = [
   'run.started', 'attempt.started', 'context.prepared', 'implementation.started',
   'implementation.completed', 'validation.completed', 'repair.started', 'repair.completed',
   'attempt.completed', 'attempt.failed', 'attempt.cancelled', 'attempt.superseded',
-  'delivery.opened', 'delivery.merged', 'learning.recorded', 'run.completed', 'run.failed', 'run.cancelled',
+  'delivery.opened', 'delivery.merged', 'delivery.rejected', 'delivery.reverted', 'learning.recorded', 'run.completed', 'run.failed', 'run.cancelled',
 ] as const;
 export const codingRunEventTypeSchema = z.enum(CODING_RUN_EVENT_TYPES);
 

@@ -1,5 +1,5 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema } from '@open-mercato/cezar-api-client'
-import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema } from '@open-mercato/cezar-api-client'
+import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
@@ -1463,6 +1463,18 @@ export async function queryVerificationHistory(input: VerificationQueryInput, op
   }
   const parsed = verificationQueryResponseSchema.safeParse(body)
   if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered /verification/query with an unexpected body')
+  return parsed.data
+}
+
+/** Read the bounded, project-scoped reliability metrics rollup. */
+export async function queryReliabilityAnalytics(windowDays: 7 | 30 | 90 = 30, opts?: ReadOptions): Promise<ReliabilityAnalyticsResponse> {
+  const response = await cez.api.v1.p[':projectId'].verification.analytics.$get({
+    param: { projectId: queryScope() }, query: { windowDays: String(windowDays) },
+  }, init(opts))
+  const body = await response.text()
+  if (!response.ok) throw errorFor(response.status, response.statusText, body)
+  const parsed = reliabilityAnalyticsResponseSchema.safeParse(parseJson(body))
+  if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered /verification/analytics with an unexpected body')
   return parsed.data
 }
 

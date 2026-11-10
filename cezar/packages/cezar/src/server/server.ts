@@ -16,7 +16,7 @@ import {
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
-import { queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
+import { queryReliabilityAnalytics, queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
 import { readCodingRunArtifact, type CodingRunArtifactReference } from '../workspace/coding-run-artifacts.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
@@ -233,7 +233,7 @@ import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
-import { verificationArtifactParamsSchema, verificationAttemptManifestParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
+import { reliabilityAnalyticsQuerySchema, verificationArtifactParamsSchema, verificationAttemptManifestParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
 import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
 import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
@@ -6949,6 +6949,9 @@ export function createApp(deps: ServerDeps) {
   });
   // ---- verification query family (read-only) ------------------------------
   const verificationRoutes = new Hono<ProjectApiEnv>()
+    .get('/verification/analytics', queryZodValidator(reliabilityAnalyticsQuerySchema), async (c) => {
+      return c.json(await queryReliabilityAnalytics(c.get('project'), c.req.valid('query').windowDays));
+    })
     .get('/verification/query', queryZodValidator(verificationQueryInputSchema), async (c) => {
       const result = await queryVerificationHistory(c.get('project'), c.req.valid('query'));
       if ('error' in result) return c.json(result, result.error.code === 'invalid_cursor' ? 400 : 409);

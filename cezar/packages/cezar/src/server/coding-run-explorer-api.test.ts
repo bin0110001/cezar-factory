@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { codingRunExplorerResponseSchema, type CodingRunRecord } from '@open-mercato/cezar-contract';
+import { codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, type CodingRunRecord } from '@open-mercato/cezar-contract';
 import { RunStore } from '../runs/store.ts';
 import type { RunManager } from '../workflows/run.ts';
 import { createCodingRun } from '../workspace/lifecycle.ts';
@@ -51,6 +51,16 @@ describe('coding run explorer API', () => {
     expect(await (await apiRequest(instance, '/api/v1/p/default/tracker/43/run-explorer')).json()).toMatchObject({ runs: [], issueNumber: 43 });
     expect((await apiRequest(instance, '/api/v1/p/default/tracker/42/run-explorer?cursor=bad')).status).toBe(400);
     expect((await apiRequest(instance, '/api/v1/p/unknown/tracker/42/run-explorer')).status).toBe(404);
+  });
+
+  it('serves a bounded reliability analytics response and rejects unsupported windows', async () => {
+    const instance = app();
+    const response = await apiRequest(instance, '/api/v1/p/default/verification/analytics?windowDays=30');
+    expect(response.status).toBe(200);
+    const analytics = reliabilityAnalyticsResponseSchema.parse(await response.json());
+    expect(analytics).toMatchObject({ windowDays: 30, summary: { validationRuns: 0, pullRequests: { tracked: 0, unknown: 0 } }, coverage: { truncated: false } });
+    expect(analytics.trends).toHaveLength(30);
+    expect((await apiRequest(instance, '/api/v1/p/default/verification/analytics?windowDays=14')).status).toBe(400);
   });
 
   it('serves only unexpired evidence attached to the requested issue and run', async () => {

@@ -306,9 +306,26 @@ export const verificationQueryResponseSchema = z.discriminatedUnion('kind', [
 export const verificationQueryErrorSchema = z.object({ schemaVersion: z.literal(1), error: z.object({ code: z.enum(['invalid_cursor', 'stale_cursor', 'invalid_query', 'unsupported_input_version']), message: z.string() }).strict() }).strict();
 export const verificationQueryWireSchema = z.union([verificationQueryResponseSchema, verificationQueryErrorSchema]);
 export const verificationArtifactContentSchema = z.object({ content: z.string().max(65_536), bytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/), truncated: z.boolean() }).strict();
+
+export const reliabilityAnalyticsQuerySchema = z.object({
+  windowDays: z.string().optional().transform((value) => value === undefined ? 30 : Number(value)).pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])),
+}).strict();
+const reliabilityRateSchema = z.object({ eligible: z.number().int().nonnegative(), successful: z.number().int().nonnegative(), rate: z.number().min(0).max(1).nullable() }).strict();
+const reliabilityFailureCountsSchema = z.object({ infrastructure: z.number().int().nonnegative(), flaky: z.number().int().nonnegative(), regression: z.number().int().nonnegative(), unknown: z.number().int().nonnegative() }).strict();
+const reliabilityPullRequestCountsSchema = z.object({ tracked: z.number().int().nonnegative(), merged: z.number().int().nonnegative(), rejected: z.number().int().nonnegative(), reverted: z.number().int().nonnegative(), pending: z.number().int().nonnegative(), unknown: z.number().int().nonnegative(), acceptedDurationCount: z.number().int().nonnegative(), medianTimeToAcceptedMs: z.number().int().nonnegative().nullable() }).strict();
+const reliabilitySegmentSchema = z.object({ projectId: z.string(), model: z.string(), validationRuns: z.number().int().nonnegative(), firstPass: reliabilityRateSchema, boundedRepairs: reliabilityRateSchema, failures: reliabilityFailureCountsSchema, pullRequests: reliabilityPullRequestCountsSchema }).strict();
+const reliabilityTrendSchema = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), validationRuns: z.number().int().nonnegative(), firstPassSuccessful: z.number().int().nonnegative(), repairsSuccessful: z.number().int().nonnegative(), failures: reliabilityFailureCountsSchema, merged: z.number().int().nonnegative(), rejected: z.number().int().nonnegative(), reverted: z.number().int().nonnegative() }).strict();
+const reliabilityDrilldownSchema = z.object({ fingerprint: z.string().regex(/^[a-f0-9]{64}$/), occurrences: z.number().int().nonnegative(), classification: z.enum(['infrastructure', 'flaky', 'regression', 'unknown', 'mixed']), firstSeenAt: z.string().datetime(), lastSeenAt: z.string().datetime(), issueNumbers: z.array(z.number().int().positive()).max(20), checkIds: z.array(z.string()).max(20), sourceShas: z.array(z.string().regex(/^[a-f0-9]{40,64}$/i)).max(20), baselineShas: z.array(z.string().regex(/^[a-f0-9]{40,64}$/i)).max(20), evidenceIds: z.array(z.string()).max(20), verificationIds: z.array(z.string()).max(20) }).strict();
+export const reliabilityAnalyticsResponseSchema = z.object({
+  schemaVersion: z.literal(1), generatedAt: z.string().datetime(), projectId: z.string(), windowDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+  coverage: z.object({ validationEvents: z.number().int().nonnegative(), unreadableValidationEvents: z.number().int().nonnegative(), linkedCodingRuns: z.number().int().nonnegative(), missingBaselineSha: z.number().int().nonnegative(), pullRequestReferences: z.number().int().nonnegative(), pullRequestStatusesAvailable: z.boolean(), pullRequestStatusReason: z.string().max(512).optional(), truncated: z.boolean(), timelineTruncated: z.boolean(), retentionDays: z.number().int().positive() }).strict(),
+  summary: z.object({ validationRuns: z.number().int().nonnegative(), firstPass: reliabilityRateSchema, boundedRepairs: reliabilityRateSchema, failures: reliabilityFailureCountsSchema, pullRequests: reliabilityPullRequestCountsSchema }).strict(),
+  trends: z.array(reliabilityTrendSchema).max(90), segments: z.array(reliabilitySegmentSchema).max(100), drilldowns: z.array(reliabilityDrilldownSchema).max(20),
+}).strict();
 export type VerificationQueryInput = z.infer<typeof verificationQueryInputSchema>;
 export type VerificationQueryResponse = z.infer<typeof verificationQueryResponseSchema>;
 export type VerificationArtifactContent = z.infer<typeof verificationArtifactContentSchema>;
+export type ReliabilityAnalyticsResponse = z.infer<typeof reliabilityAnalyticsResponseSchema>;
 
 /** Compatibility boundary: old validation-only projects continue on the legacy adapter path. */
 export const projectValidationConfigSchema = z.object({

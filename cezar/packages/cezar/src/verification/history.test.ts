@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { verificationRunSchema, type VerificationRun } from '@open-mercato/cezar-contract';
 import type { ProjectContext } from '../server/project-context.ts';
-import { queryVerificationHistory, readVerificationArtifact } from './history.ts';
+import { queryReliabilityAnalytics, queryVerificationHistory, readVerificationArtifact } from './history.ts';
 import { readCodingAttemptManifest } from './history.ts';
 import { appendCodingRunEvent, createCodingRun } from '../workspace/lifecycle.ts';
 import { buildCodingAttemptManifest } from '../workspace/coding-run-manifest.ts';
@@ -42,7 +42,7 @@ async function fixture() {
   return { root, records, owners, context };
 }
 
-function record(id: string, startedAt: string, status: 'failed' | 'passed', findingFingerprint?: string) {
+function record(id: string, startedAt: string, status: 'failed' | 'passed', findingFingerprint?: string, shas: { commitSha?: string; baseSha?: string } = {}) {
   const failed = status === 'failed';
   const result: VerificationRun = verificationRunSchema.parse({
     resultVersion: 1,
@@ -50,7 +50,8 @@ function record(id: string, startedAt: string, status: 'failed' | 'passed', find
     cezarRunId: id,
     projectId: 'project',
     worktreeId: 'worktree',
-    commitSha: '1'.repeat(40),
+    commitSha: shas.commitSha ?? '1'.repeat(40),
+    ...(shas.baseSha ? { baseSha: shas.baseSha } : {}),
     manifestSha256: '2'.repeat(64),
     startedAt,
     finishedAt: new Date(Date.parse(startedAt) + 1000).toISOString(),
@@ -85,6 +86,57 @@ function record(id: string, startedAt: string, status: 'failed' | 'passed', find
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('verification history query', () => {
+  it('builds evidence-backed reliability totals and leaves baseline attribution unknown when absent', async () => {
+    const { context } = await fixture();
+    const analytics = await queryReliabilityAnalytics(context, 30);
+    expect(analytics).toMatchObject({
+      schemaVersion: 1,
+      windowDays: 30,
+      summary: {
+        validationRuns: 2,
+        firstPass: { eligible: 2, successful: 0, rate: 0 },
+        boundedRepairs: { eligible: 0, successful: 0, rate: null },
+        failures: { infrastructure: 0, flaky: 0, regression: 0, unknown: 2 },
+        pullRequests: { tracked: 0, merged: 0, rejected: 0, reverted: 0, pending: 0, unknown: 0 },
+      },
+      coverage: { missingBaselineSha: 2, pullRequestStatusesAvailable: true, truncated: false },
+      drilldowns: [{ fingerprint, occurrences: 2, classification: 'unknown', evidenceIds: [] }],
+    });
+    expect(analytics.trends).toHaveLength(30);
+    expect(analytics.segments).toMatchObject([{ projectId: 'project', model: 'unknown', validationRuns: 2 }]);
+  });
+
+  it('distinguishes same-source flakes from failures proven against an exact passing base SHA', async () => {
+    const { context, owners } = await fixture();
+    const baseSha = 'c'.repeat(40);
+    const failing = record('verify-regression', '2026-11-10T09:00:00.000Z', 'failed', fingerprint, { commitSha: 'd'.repeat(40), baseSha });
+    const passingBase = record('verify-base', '2026-11-09T08:00:00.000Z', 'passed', undefined, { commitSha: baseSha });
+    const flakyPass = record('verify-flaky-pass', '2026-11-10T10:00:00.000Z', 'passed', undefined, { commitSha: '1'.repeat(40) });
+    const makeOwner = (row: ReturnType<typeof record>) => ({ id: row.id, worktree: false, createdAt: row.result.startedAt, result: row.result, selection: row.selection,
+      events: [{ seq: 1, ts: row.result.finishedAt, type: 'verification-result', result: row.result, selection: row.selection, suite: 'quick' }] });
+    owners.push(makeOwner(failing), makeOwner(passingBase), makeOwner(flakyPass));
+    const analytics = await queryReliabilityAnalytics(context, 30);
+    expect(analytics.summary.failures).toMatchObject({ regression: 1, flaky: 2, unknown: 0 });
+    expect(analytics.drilldowns.find((item) => item.fingerprint === fingerprint)?.baselineShas).toContain(baseSha);
+  });
+
+  it('counts explicit infrastructure failures separately from test failures', async () => {
+    const { context, owners } = await fixture();
+    const infrastructureFingerprint = 'e'.repeat(64);
+    const source = record('verify-infra', '2026-11-10T11:00:00.000Z', 'failed', infrastructureFingerprint);
+    const result = verificationRunSchema.parse({
+      ...source.result,
+      status: 'infrastructure-error', semanticExitCode: 3,
+      coverage: { selected: 1, passed: 0, failed: 0, skipped: 0, unknown: 1 },
+      checks: [{ ...source.result.checks[0]!, status: 'infrastructure-error', rawExitCode: 3, semanticExitCode: 3 }],
+    });
+    owners.push({ id: source.id, worktree: false, result, selection: source.selection,
+      events: [{ seq: 1, ts: result.finishedAt, type: 'verification-result', result, selection: source.selection, suite: 'quick' }] });
+    const analytics = await queryReliabilityAnalytics(context, 30);
+    expect(analytics.summary.failures.infrastructure).toBe(1);
+    expect(analytics.drilldowns.find((item) => item.fingerprint === infrastructureFingerprint)?.classification).toBe('infrastructure');
+  });
+
   it('joins immutable attempt manifest references into run query output and resolves them read-only', async () => {
     const { root, context } = await fixture();
     const previousHome = process.env.CEZ_HOME;
