@@ -1682,6 +1682,11 @@ $impactOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'collect-impact
 Write-Host $impactOutput
 Assert 'change impact collector handles merge-base diffs, ownership, renames and invalid inputs' ($LASTEXITCODE -eq 0)
 
+Write-Host '== Godot dependency graph =='
+$godotImpactOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'godot-impact.ps1') 2>&1 | Out-String
+Write-Host $godotImpactOutput
+Assert 'Godot dependency graph fixtures pass' ($LASTEXITCODE -eq 0)
+
 Write-Host '== bounded failure audit =='
 $failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-bounds.ps1') 2>&1 | Out-String
 Write-Host $failureAuditOutput
