@@ -18,6 +18,13 @@ redacted text. A reclaimed worktree makes its artifact unavailable (HTTP 410), w
 check history remain visible. Selection reasons explain suite membership; no separate test-impact
 selector is implied by this executor.
 
+The verification contract also accepts an optional `visualEvidence` descriptor on a check artifact.
+Version 1 binds the artifact hash, verification ID, check attempt, test ID, commit, manifest, and
+storage path. It records the worker and renderer fingerprint, capture time, retention and access
+policy, and redaction state. Visual evidence must belong to a check so the contract can reject
+cross-attempt or cross-test mixing. Legacy artifacts and headless runs without descriptors remain
+valid; this metadata contract does not enable graphical execution or change artifact retention.
+
 Failure recurrence uses the check's stable `findingFingerprint`. The executor derives one from the
 check identity and its diagnostics, falling back to normalized output when diagnostics are absent.
 The read view classifies a fingerprint with one recorded occurrence as new, repeated occurrences as

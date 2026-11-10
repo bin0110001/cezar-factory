@@ -37,7 +37,17 @@ export async function consumeVerificationFixtures(directory) {
     const result = await read(file);
     if (result.status !== status || result.semanticExitCode === 0) throw new Error(`unexpected result semantics: ${file}`);
   }
-  return { platform: process.platform, fixtures: 19 };
+  const visual = await read('visual-evidence-valid.json');
+  const visualCheck = visual.checks?.[0];
+  const visualArtifact = visualCheck?.artifacts?.[0];
+  if (visualArtifact?.visualEvidence?.version !== 1 || visualArtifact.visualEvidence.contentSha256 !== visualArtifact.sha256) {
+    throw new Error('visual evidence descriptor fixture changed');
+  }
+  const mixedAttempt = await read('visual-evidence-cross-attempt.json');
+  if (mixedAttempt.checks?.[0]?.attempt === mixedAttempt.checks?.[0]?.artifacts?.[0]?.visualEvidence?.attempt) {
+    throw new Error('cross-attempt fixture no longer demonstrates a mismatch');
+  }
+  return { platform: process.platform, fixtures: 21 };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
