@@ -104,6 +104,9 @@ export const codingEvidenceReferenceSchema = z.object({
   sha256: digestSchema.optional(),
   mediaType: z.string().min(1).max(128).optional(),
   bytes: z.number().int().nonnegative().optional(),
+  createdAt: timestampSchema.optional(),
+  /** Local content-addressed evidence expiry; the audit reference remains permanent. */
+  expiresAt: timestampSchema.optional(),
   verificationId: identifierSchema.optional(),
   verificationRunId: identifierSchema.optional(),
   findingId: identifierSchema.optional(),
