@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runWorkspaceCommand } from './lifecycle-cli.ts';
+import { readCodingRunArtifact, storeCodingRunArtifact } from './coding-run-artifacts.ts';
 import {
   appendCodingRunEvent,
   createCodingRun,
@@ -75,6 +76,26 @@ afterEach(() => {
 });
 
 describe('coding run lifecycle ledger', () => {
+  it('stores content-addressed attempt evidence and keeps its permanent ledger reference after expiry', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'attempt.started', attemptId: 'attempt-1', cwd: root, home, occurredAt: start });
+    const reference = await storeCodingRunArtifact({
+      content: Buffer.from('redacted verification receipt'), mediaType: 'application/json', home,
+      retentionDays: 1, now: new Date(start), evidenceId: 'receipt-1',
+    });
+    const snapshot = await appendCodingRunEvent({
+      runId: 'run-1', type: 'validation.completed', attemptId: 'attempt-1', evidence: [reference],
+      cwd: root, home, occurredAt: '2026-11-10T12:30:00.000Z',
+    });
+
+    expect(snapshot.evidence).toContainEqual(reference);
+    await expect(readCodingRunArtifact({ reference, home, now: new Date('2026-11-12T00:00:00.000Z') }))
+      .resolves.toMatchObject({ status: 'expired' });
+    await expect(getCodingRunSnapshot({ runId: 'run-1', cwd: root, home }))
+      .resolves.toMatchObject({ evidence: [expect.objectContaining({ evidenceId: 'receipt-1', expiresAt: reference.expiresAt })] });
+  });
+
   it('appends attempts and evidence atomically and rebuilds the same projection after reopen', async () => {
     const { root, home } = workspace();
     const created = await createCodingRun({ record: runRecord(), cwd: root, home });

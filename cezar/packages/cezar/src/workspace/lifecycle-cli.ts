@@ -14,6 +14,7 @@ import {
   recordPredictedImpact, reconcileActualImpact, impactSnapshot,
   type LifecycleState,
 } from './lifecycle.ts';
+import { pruneCodingRunArtifacts } from './coding-run-artifacts.ts';
 
 const execFileAsync = promisify(execFile);
 const USAGE = `cez workspace <command>
@@ -34,6 +35,7 @@ const USAGE = `cez workspace <command>
   list                                 list current local lifecycle records
   inspect --issue <id>                 inspect one issue's local lifecycle record
   history (--run <id>|--issue <id>) [--cursor <token>] [--limit <n>] query bounded coding-run audit history
+  artifact-prune                       remove expired content-addressed run evidence
   overlaps                             show changed paths shared by active workspaces (advisory)
   hook-context --event <name>          supply verified context to a native agent lifecycle hook
   doctor                               reconcile registry records with Git worktrees
@@ -536,6 +538,7 @@ export async function runWorkspaceCommand(args: string[], opts: { cwd?: string; 
         ...(typeof parsed.cursor === 'string' ? { cursor: parsed.cursor } : {}),
         ...(parsed.limit === undefined ? {} : { limit: integerFlag(parsed.limit, 'limit') }),
       }); break;
+      case 'artifact-prune': result = await pruneCodingRunArtifacts({}); break;
       case 'overlaps': result = await workspaceOverlaps({ cwd }); break;
       case 'impact-predict': {
         // Reserve predicted impact from a validated manifest file; the manifest is also persisted for the scheduler.

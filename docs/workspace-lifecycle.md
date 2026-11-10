@@ -114,6 +114,32 @@ can distinguish an empty history from data omitted by configured retention.
 projections, and schema versions, and reports valid, incomplete, corrupt, and
 unsupported histories separately. It does not repair or rewrite history.
 
+### Content-addressed run evidence
+
+Run evidence blobs are stored outside the audit database under
+`~/.cezar/coding-run-artifacts/sha256/`; set `CEZ_HOME` to relocate the store.
+`storeCodingRunArtifact` accepts byte content up to 16 MiB, computes its SHA-256,
+and returns a contract-ready artifact evidence reference with byte count, media
+type, creation time, and expiry. Pass that object in the `evidence` list when
+appending the associated attempt event. Callers must redact content before
+storing it. The coding-run ledger stores only that reference and its digest; the
+audit events and their evidence references remain permanent when the blob
+expires.
+
+`CEZ_CODING_RUN_ARTIFACT_RETENTION_DAYS` sets retention for new blobs and
+defaults to 30 days (allowed range: 1 to 3650). Repeated writes of the same
+content extend its expiry. `readCodingRunArtifact` reports `expired`, `missing`,
+or `corrupt` rather than returning replacement data. Run
+`cez workspace artifact-prune` to delete expired blobs; its JSON result reports
+the counts deleted, retained, and skipped for invalid metadata. This keeps the
+bounded evidence store separate from the never-pruned coding-run audit ledger.
+
+When attaching a stored blob to an event, persist its `reference`, bare
+64-character `sha256`, `bytes`, `mediaType`, and `expiresAt` in the evidence
+record. An expired reference remains visible in history and can be reported
+without claiming the underlying content is still available. A fresh execution
+must create a new attempt; reconstructing an event history does not rerun work.
+
 Coding-run audit events are full-fidelity and have permanent retention; no
 trace or transcript janitor may delete them. Operational telemetry is a
 separate, optional, coarse-event outbox. The outbox contains delivery metadata,
