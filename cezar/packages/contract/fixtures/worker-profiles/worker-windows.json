@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "os": "windows",
+  "architecture": "x64",
+  "executors": ["node"],
+  "runtimes": { "chromium": "140.0" },
+  "resources": { "cpuCores": 8, "memoryMiB": 16384, "diskMiB": 102400, "gpuCount": 0, "vramMiB": 0, "displaySlots": 0, "networkMbps": 1000 },
+  "isolation": "container",
+  "networkZones": ["isolated", "restricted"],
+  "storage": ["workspace-readwrite", "artifact-write"],
+  "accessibility": ["dom"],
+  "capabilities": { "browser.headless": { "status": "validated", "value": true } },
+  "profileTags": ["general-compute", "chromium"],
+  "maxConcurrency": 4,
+  "observedAt": "2030-01-01T00:00:00.000Z",
+  "freshForMs": 300000
+}
