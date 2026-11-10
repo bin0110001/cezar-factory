@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add W3C trace context propagation and coarse, allowlisted OTLP spans for workflow attempts (#128).
 - Reconcile the contributor guide, release skills, target example, and synchronization docs with shared-checkout delivery, promotion ownership, receipt-bound migration/backout, and the guarded legacy compatibility path (#280).
 - Guard legacy Factory pushes against configured active release/autodeploy locks, route shared-mode targets through automation-only sync, and record a fail-closed audit receipt gate for eventual script retirement (#279).
 - Migrate installed Factory copies only from a schema-validated shadow-audit receipt. The new workflow

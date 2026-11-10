@@ -97,7 +97,7 @@ import {
   sweepAgentTmpDirs,
 } from '../runs/agent-tmpdir.ts';
 import { extractTaskRefs, refineTaskRefs, titleRefNumber } from '../runs/task-refs.ts';
-import { drainLifecycleOutbox, factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
+import { drainLifecycleOutbox, factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle, heartbeatWorkspace, lifecycleStatus, reconcileWorkspaceLifecycle, recordWorkflowTelemetrySpan, registerFactoryWorkspace } from '../workspace/lifecycle.ts';
 import { reconcileReadyWorkspaceIntegrations } from '../workspace/lifecycle-cli.ts';
 import { parseTaskMarkers, stripTaskMarkers } from '../runs/task-markers.ts';
 import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidateTitle } from '../runs/auto-name.ts';
@@ -120,6 +120,7 @@ import { freshContinuationContext } from './continuation-context.ts';
 import { factoryRuntimeRootForSha, resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 import { executeVerification } from '../verification/executor.ts';
 import { listProjects } from '../workspace/projects.ts';
+import { createChildTraceContext, createTraceContext, stableSpanId } from '../observability/trace-context.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 /** Backstop for a command step with no explicit `timeoutSeconds`: long enough for a real test suite,
@@ -1306,8 +1307,47 @@ export class RunManager {
       ...(apiUrl && process.env.CEZ_BIN ? { CEZ_BIN: process.env.CEZ_BIN } : {}),
       // The tree directory — brief, notes, inbox — for a run in a dispatch tree only.
       ...(dispatch ? { CEZ_TREE_DIR: treeDir(this.dataDir, dispatch.rootRunId) } : {}),
+      ...this.traceEnv(runId),
       ...this.factoryReleaseEnv(runId),
     };
+  }
+
+  private traceIdentity(runId: string): string {
+    const run = this.store.getRun(runId);
+    const factory = run?.workflow.startsWith('factory-') && run.issueNumber
+      ? factoryContextForRun(this.repoRoot, run.issueNumber, runId)
+      : null;
+    return factory?.executionId ?? run?.dispatch?.rootRunId ?? runId;
+  }
+
+  /** Propagate identifiers only; sink credentials and content never enter agent environments. */
+  private traceEnv(runId: string): Record<string, string> {
+    const run = this.store.getRun(runId);
+    const identity = this.traceIdentity(runId);
+    const sampled = process.env.CEZ_OTEL_SAMPLE === '1'
+      || Boolean(process.env.LANGFUSE_HOST && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
+    const root = createTraceContext({ identity, spanId: stableSpanId(`run:${identity}`), sample: sampled });
+    const step = run?.currentStepId ? run.steps.find((item) => item.id === run.currentStepId) : undefined;
+    const attemptId = step ? `${runId}:${step.id}:${step.iterations ?? 1}` : `${runId}:run`;
+    const span = createChildTraceContext(root.traceparent, attemptId);
+    return {
+      TRACEPARENT: span.traceparent,
+      CEZ_TRACE_ID: span.traceId,
+      CEZ_RUN_ID: runId,
+      CEZ_ATTEMPT_ID: attemptId,
+    };
+  }
+
+  private recordStepTelemetry(runId: string, step: WorkflowStepDef, iteration: number, startedAt: string, outcome: 'completed' | 'failed' | 'cancelled' | 'waiting'): void {
+    const run = this.store.getRun(runId);
+    const attemptId = `${runId}:${step.id}:${iteration}`;
+    const kind = step.verificationSuite ? 'verification' : stepKind(step) === 'agent' ? 'agent' : 'command';
+    void recordWorkflowTelemetrySpan({
+      ...(run?.issueNumber ? { issue: run.issueNumber } : {}),
+      executionId: this.traceIdentity(runId), runId, attemptId,
+      workflow: run?.workflow ?? 'unknown', stepId: step.id, kind, outcome,
+      startedAt, endedAt: new Date().toISOString(), ...(this.projectId ? { projectId: this.projectId } : {}), cwd: this.repoRoot,
+    }).catch(() => console.warn('[telemetry] workflow span was not queued'));
   }
 
   private factoryReleaseRoot(runId: string): string | undefined {
@@ -1390,7 +1430,7 @@ export class RunManager {
     }
     this.store.registerRunSecrets(runId, secrets);
     return {
-      env: { ...this.agentEnv(runId, options.generateFollowups), ...trackerEnv, ...resolved.env },
+      env: { ...this.agentEnv(runId, options.generateFollowups), ...trackerEnv, ...resolved.env, ...this.traceEnv(runId) },
       profileId: resolved.profile.id,
     };
   }
@@ -4493,11 +4533,12 @@ export class RunManager {
       const record = this.store.getRun(runId)?.steps.find((s) => s.id === step.id);
       const iteration = (record?.iterations ?? 0) + 1;
 
+      const stepStartedAt = new Date().toISOString();
       this.store.updateRun(runId, { currentStepId: step.id });
       this.store.updateStep(runId, step.id, {
         status: 'running',
         iterations: iteration,
-        startedAt: new Date().toISOString(),
+        startedAt: stepStartedAt,
         error: undefined,
       });
       emit({ type: 'step-start', stepId: step.id, name: step.name ?? step.id, kind, iteration });
@@ -4529,8 +4570,9 @@ export class RunManager {
         startImages = undefined;
         startAttachments = [];
         checkFailure = null;
-        if (state.cancelled) break;
+        if (state.cancelled) { this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'cancelled'); break; }
         if (failure) {
+          this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
           this.finishStep(runId, step.id, 'failed', failure, emit);
           runError = `step "${step.id}" failed: ${failure}`;
           break;
@@ -4540,6 +4582,7 @@ export class RunManager {
         // user pressed Finish. Either way the step is over and the workflow must
         // not walk into the next check; the settlement below owns the outcome.
         if (state.askPark) {
+          this.recordStepTelemetry(runId, step, iteration, stepStartedAt, state.askPark === 'waiting' ? 'waiting' : 'completed');
           // An abandoned park is the user accepting the step as it stands, so
           // the rail reads like any other finished step. An unanswered one is
           // marked by the settlement, alongside the run it failed.
@@ -4550,18 +4593,21 @@ export class RunManager {
         // (#689): the settlement below fails the step with the run, so it is not
         // stamped `done` here first.
         if (await this.idleClosedFails(runId, state)) {
+          this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
           idleFailed = true;
           break;
         }
+        this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'completed');
         this.finishStep(runId, step.id, 'done', undefined, emit);
         i++;
         continue;
       }
 
       const { ok, output, exitCode } = await this.runCheckStep(runId, state, step, input.task, emit);
-      if (state.cancelled) break;
+      if (state.cancelled) { this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'cancelled'); break; }
       const checkLabel = step.command ?? `verification suite "${step.verificationSuite}"`;
       if (ok) {
+        this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'completed');
         this.finishStep(runId, step.id, 'done', undefined, emit);
         i++;
         continue;
@@ -4571,6 +4617,7 @@ export class RunManager {
       // ends the run here: looping back would spend a full agent attempt on a
       // cause that is not in the worktree, twice over.
       if (step.onFail && !retryableExit(step.onFail.retryOn, exitCode)) {
+        this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
         const codes = (step.onFail.retryOn ?? []).join(', ');
         emit({
           type: 'note',
@@ -4584,6 +4631,7 @@ export class RunManager {
 
       const used = retriesUsed.get(step.id) ?? 0;
       if (step.onFail && used < step.onFail.max) {
+        this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
         retriesUsed.set(step.id, used + 1);
         checkFailure = output;
         this.finishStep(runId, step.id, 'failed', 'check failed — looping back', emit);
@@ -4602,6 +4650,7 @@ export class RunManager {
         continue;
       }
 
+      this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
       this.finishStep(runId, step.id, 'failed', `\`${checkLabel}\` exited non-zero`, emit);
       runError = `check "${step.id}" failed${step.onFail ? ` after ${used + 1} attempts` : ''}`;
       break;
