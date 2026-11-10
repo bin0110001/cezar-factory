@@ -104,6 +104,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
 'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_incident_ledger.py', 'scripts/release/factory_drift_repair.py', 'scripts/release/factory_self_healing.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_incident_ledger.py', 'tests/test_factory_drift_repair.py', 'tests/test_factory_self_healing.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'workflows/release-self-healing.yaml', 'workflows/release-fix-pr.yaml', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
+'scripts/check-release-locks.py', 'tests/test_factory_legacy_push_lock.py',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'scripts/factory/protect-governance.ps1', 'policies/protected-assets.json', 'schemas/governance-authorization.schema.json', 'tests/protect-governance.ps1', 'tests/fake-gh-governance.ps1', 'docs/governance-guard.md', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1'
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
@@ -221,6 +222,7 @@ $pushFactoryUpdates = Get-Content -Raw (Join-Path $factory 'scripts/push-factory
 $promoteStable = Get-Content -Raw (Join-Path $factory 'scripts/release/promote-stable.ps1')
 $legacyReportDefault = "Join-Path `$factory '.factory/release-reports"
 Assert 'release records force-refresh requirement for blocked managed updates' ($pushFactoryUpdates -match 'forceRefreshRequired' -and $pushFactoryUpdates -match 'release-status\.jsonl')
+Assert 'legacy push holds the configured controller and autodeploy locks through the command and is explicitly deprecated' ($pushFactoryUpdates -match 'FACTORY_RELEASE_LOCKS_HELD' -and $pushFactoryUpdates -match 'check-release-locks\.py' -and $pushFactoryUpdates -match '--hold' -and $pushFactoryUpdates -match 'Deprecated')
 Assert 'release reports default to host state outside the shared checkout' ($pushFactoryUpdates -match 'FACTORY_STATE_DIR' -and $pushFactoryUpdates -match 'XDG_STATE_HOME' -and $promoteStable -match 'FACTORY_STATE_DIR' -and $promoteStable -match 'XDG_STATE_HOME' -and -not $pushFactoryUpdates.Contains($legacyReportDefault) -and -not $promoteStable.Contains($legacyReportDefault))
 $gitignore = Get-Content -Raw (Join-Path $factory '.gitignore')
 Assert 'the generated Prometheus bearer token is ignored as host-local secret state' ($gitignore -match '(?m)^integrations/bazzite/prometheus-vllm-token\.generated\s*$')
@@ -1430,6 +1432,15 @@ $missingUpdateReport = Join-Path $tmp 'missing-update-target-report.jsonl'
 $noUpdateTarget = & pwsh -NoProfile -File (Join-Path $scripts 'push-factory-updates.ps1') -FactoryPath $factory -TargetsPath $missingUpdateTargets -SyncAutomations -DryRun -ReportPath $missingUpdateReport *>&1 | Out-String
 $noUpdateTargetExit = $LASTEXITCODE
 Assert 'Factory update requires an explicit target and writes no release receipt' ($noUpdateTargetExit -ne 0 -and $noUpdateTarget -match 'Needs target configuration' -and -not (Test-Path $missingUpdateReport))
+$sharedModeProject = Join-Path $sg 'shared-mode-target'
+New-Item -ItemType Directory -Path $sharedModeProject -Force | Out-Null
+$sharedModeSentinel = Join-Path $sharedModeProject 'keep.txt'
+[IO.File]::WriteAllText($sharedModeSentinel, 'unchanged')
+$sharedModeTargets = Join-Path $sg 'shared-mode-targets.json'
+[IO.File]::WriteAllText($sharedModeTargets, (@([pscustomobject]@{ projectId = 'shared'; projectPath = $sharedModeProject; mode = 'shared'; apiUrl = 'http://127.0.0.1:1' }) | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+$sharedModePush = & pwsh -NoProfile -File (Join-Path $scripts 'push-factory-updates.ps1') -FactoryPath $factory -TargetsPath $sharedModeTargets -ReportPath (Join-Path $sg 'shared-mode-report.jsonl') *>&1 | Out-String
+$sharedModePushExit = $LASTEXITCODE
+Assert 'shared-mode targets refuse managed-file pushes and leave the project unchanged' ($sharedModePushExit -ne 0 -and $sharedModePush -match 'requires -SyncAutomations' -and (Get-Content -Raw $sharedModeSentinel) -eq 'unchanged' -and -not (Test-Path (Join-Path $sharedModeProject '.ai/factory/factory.config.yaml')))
 
 $targetResolutionPaths = @('scripts/sync-all-automations.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/factory-preflight.ps1')
 $diskDiscoveryPattern = '(?i)\bGet-ChildItem\b|\bGet-PSDrive\b|\bWin32_LogicalDisk\b|\[IO\.Directory\]::(?:GetLogicalDrives|EnumerateDirectories|GetDirectories)'
@@ -1491,6 +1502,7 @@ function Invoke-ShadowAudit([string]$Name, $Targets, [string]$RegistryOverride =
 $auditCleanProject = New-AuditProject 'clean' $auditSharedContent
 $auditClean = Invoke-ShadowAudit 'clean' @([pscustomobject]@{ projectId = 'clean'; projectPath = $auditCleanProject })
 Assert 'shadow audit: identical installed copy is classified as shadowed and path-bound' ($auditClean.Run.Code -eq 0 -and $auditClean.Receipt.targets[0].effectiveSource -eq 'installed' -and $auditClean.Receipt.targets[0].shadowConflict -eq 'identical' -and $auditClean.Receipt.targets[0].migrationStatus -eq 'shadowed' -and $auditClean.Receipt.targets[0].projectPathHash -match '^[a-f0-9]{64}$' -and (Test-Json -Json (Get-Content -Raw $auditClean.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
+Assert 'shadow audit retirement gate stays closed while an installed copy is shadowed' (-not $auditClean.Receipt.legacyPushRetirementReady)
 $auditChangedProject = New-AuditProject 'changed' $auditSharedContent
 Add-Content (Join-Path $auditChangedProject $auditTargetRel) 'local edit'
 $auditChanged = Invoke-ShadowAudit 'changed' @([pscustomobject]@{ projectId = 'changed'; projectPath = $auditChangedProject })
@@ -1506,12 +1518,17 @@ Assert 'shadow audit: missing manifest is not-installed' ($auditMissing.Run.Code
 $auditSharedProject = Join-Path $auditRoot 'shared'; New-Item -ItemType Directory -Path $auditSharedProject -Force | Out-Null
 $auditShared = Invoke-ShadowAudit 'shared' @([pscustomobject]@{ projectId = 'shared'; projectPath = $auditSharedProject; mode = 'shared' })
 Assert 'shadow audit: a shared target with no installed manifest stays shared' ($auditShared.Run.Code -eq 0 -and $auditShared.Receipt.targets[0].effectiveSource -eq 'shared' -and $auditShared.Receipt.targets[0].migrationStatus -eq 'shared')
+Assert 'shadow audit retirement gate opens only when every registered target is shared or migrated' ($auditShared.Receipt.legacyPushRetirementReady)
+$auditMixed = Invoke-ShadowAudit 'mixed' @([pscustomobject]@{ projectId = 'shared'; projectPath = $auditSharedProject; mode = 'shared' }, [pscustomobject]@{ projectId = 'clean'; projectPath = $auditCleanProject })
+Assert 'shadow audit retirement gate stays closed when any registered target is still shadowed' ($auditMixed.Run.Code -eq 0 -and -not $auditMixed.Receipt.legacyPushRetirementReady -and $auditMixed.Receipt.targets.Count -eq 2)
 $auditUnreachable = Invoke-ShadowAudit 'unreachable' @([pscustomobject]@{ projectId = 'unreachable'; projectPath = (Join-Path $auditRoot 'absent') })
 Assert 'shadow audit: unreachable registered path is reported without path discovery' ($auditUnreachable.Run.Code -eq 0 -and $auditUnreachable.Receipt.targets[0].migrationStatus -eq 'unreachable')
 $auditRemote = Invoke-ShadowAudit 'remote' @([pscustomobject]@{ projectId = 'remote'; mode = 'shared' })
 Assert 'shadow audit: remote-only target remains unknown' ($auditRemote.Run.Code -eq 0 -and $auditRemote.Receipt.targets[0].effectiveSource -eq 'unknown' -and $auditRemote.Receipt.targets[0].migrationStatus -eq 'unknown')
+Assert 'shadow audit retirement gate stays closed for unknown remote-only targets' (-not $auditRemote.Receipt.legacyPushRetirementReady)
 $auditNoRegistry = Invoke-ShadowAudit 'no-registry' $null (Join-Path $auditRoot 'not-configured.json')
 Assert 'shadow audit: missing registry requests target configuration and writes a valid receipt' ($auditNoRegistry.Run.Code -eq 0 -and $auditNoRegistry.Receipt.status -eq 'needs-target-configuration' -and (Test-Json -Json (Get-Content -Raw $auditNoRegistry.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
+Assert 'legacy push remains installed while any registered target is unverified' ((Get-Content -Raw (Join-Path $factory 'scripts/push-factory-updates.ps1')) -match 'Deprecated' -and -not $auditNoRegistry.Receipt.legacyPushRetirementReady)
 
 Write-Host '== shadow migration =='
 $migrationReviewRoot = Join-Path $auditRoot 'migration-review'

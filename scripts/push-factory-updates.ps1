@@ -7,7 +7,8 @@ Pushes the current Factory version into explicitly configured projects.
 Updates each local project's factory.version pin and managed files, or, for a
 remote-only target, reconciles live Cezar automations directly from this
 Factory checkout. Targets must be explicit: pass -ProjectPath or maintain a
-host-local targets JSON file.
+host-local targets JSON file. Deprecated: remove this script only after a fresh
+shadow-audit receipt proves every registered target shared or migrated.
 #>
 [CmdletBinding()]
 param(
@@ -19,7 +20,9 @@ param(
     [switch]$DryRun,
     [switch]$ForceManagedRefresh,
     [string]$ReportPath = '',
-    [switch]$SkipBazziteRuntime
+    [switch]$SkipBazziteRuntime,
+    [string]$ReleaseStorePath = $env:FACTORY_RELEASE_STORE,
+    [string]$AutodeployLockPath = $env:FACTORY_AUTODEPLOY_LOCK
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +68,29 @@ else {
     throw "Needs target configuration: pass -ProjectPath explicitly or create the host-local target registry '$TargetsPath' from config/factory-projects.json.example."
 }
 if (-not $targets.Count) { throw 'Needs target configuration: no Factory update targets are configured.' }
+
+if (-not $DryRun -and -not $env:FACTORY_RELEASE_LOCKS_HELD) {
+    $lockArgs = @()
+    if ($ReleaseStorePath) { $lockArgs += @('--controller-lock', (Join-Path $ReleaseStorePath 'controller.lock')) }
+    if ($AutodeployLockPath) { $lockArgs += @('--autodeploy-lock', $AutodeployLockPath) }
+    foreach ($target in $targets) {
+        if (-not $ReleaseStorePath -and $target.releaseStorePath) { $lockArgs += @('--controller-lock', (Join-Path ([string]$target.releaseStorePath) 'controller.lock')) }
+        if (-not $AutodeployLockPath -and $target.autodeployLockPath) { $lockArgs += @('--autodeploy-lock', [string]$target.autodeployLockPath) }
+    }
+    if ($lockArgs.Count) {
+        $python = Get-Command python -ErrorAction Stop
+        $lockProbe = Join-Path $factory 'scripts/check-release-locks.py'
+        $childArgs = @('-NoProfile', '-File', $PSCommandPath)
+        foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+            $childArgs += "-$($entry.Key)"
+            if ($entry.Value -isnot [System.Management.Automation.SwitchParameter] -and $entry.Value -isnot [bool]) {
+                $childArgs += $entry.Value
+            }
+        }
+        & $python.Source $lockProbe @lockArgs --hold -- pwsh @childArgs
+        exit $LASTEXITCODE
+    }
+}
 
 & (Join-Path $factory 'scripts/validate-automation-catalog.ps1')
 
