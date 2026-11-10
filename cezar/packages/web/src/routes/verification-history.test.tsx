@@ -38,7 +38,8 @@ describe('verification history route', () => {
       switch (input.kind) {
         case 'runs': return page('runs', [{
           id: 'verify-ui', startedAt: '2026-11-09T10:00:00.000Z', finishedAt: '2026-11-09T10:00:01.000Z',
-          status: 'failed', commitSha: 'a'.repeat(40), baseSha: '', baselineRunId: null, suite: 'quick',
+          status: 'failed', commitSha: 'a'.repeat(40), baseSha: '', baselineRunId: null, suite: 'quick', projectId: 'shop', cezarRunId: 'agent-run-1', githubIssueUrl: 'https://github.com/acme/project/issues/42',
+          environment: { platform: 'linux', token: '[REDACTED]' }, coverage: { selected: 2, passed: 0, failed: 1, skipped: 0, unknown: 1 },
           counts: { selected: 1, deferred: 1, failures: 1, episodes: 1, artifacts: 1 },
           checks: [{ checkId: 'unit', status: 'failed', durationMs: 125, metrics: [{ name: 'cases', value: 7, unit: 'tests' }], findingFingerprint: 'f'.repeat(64) }],
         }])
@@ -71,6 +72,16 @@ describe('verification history route', () => {
     expect(screen.getByRole('link', { name: 'View run evidence' }).getAttribute('href')).toBe('#verification-artifacts')
     expect(screen.getByText(/1 occurrence/)).toBeTruthy()
     expect(screen.getByText('125 ms')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Open Cezar agent work' }).getAttribute('href')).toBe('/p/shop/tasks/agent-run-1')
+    expect(screen.getByRole('link', { name: 'Open linked GitHub issue' }).getAttribute('href')).toBe('https://github.com/acme/project/issues/42')
+    expect(screen.getByText(/0 passed · 1 failed · 0 skipped · 1 unknown of 2 selected/)).toBeTruthy()
+    expect(screen.getByText('platform')).toBeTruthy()
+    expect(screen.getByText('[REDACTED]')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'unit' }))
+    expect(screen.getByText('Coverage: failed')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Stable link to this check' }).getAttribute('href')).toBe('?runId=verify-ui&testId=unit')
+    fireEvent.click(screen.getByRole('button', { name: 'browser' }))
+    expect(screen.getByText('Coverage limitation: this check was deferred, so this run has no result for it.')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /Load evidence/ }))
     expect(await screen.findByText('safe build evidence')).toBeTruthy()
@@ -88,5 +99,20 @@ describe('verification history route', () => {
     vi.mocked(queryVerificationHistory).mockRejectedValueOnce(new Error('offline'))
     renderRoute()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('offline'))
+  })
+
+  it('keeps run pagination ordered and supports returning to the prior page', async () => {
+    vi.mocked(queryVerificationHistory).mockImplementation(async (input) => {
+      if (input.kind !== 'runs') return page(input.kind, [])
+      return input.cursor
+        ? page('runs', [{ id: 'older-run', startedAt: '2026-11-08T10:00:00.000Z', finishedAt: '2026-11-08T10:00:01.000Z', status: 'passed', commitSha: 'b'.repeat(40), baseSha: '', baselineRunId: null, counts: { selected: 0, deferred: 0, failures: 0, episodes: 0, artifacts: 0 }, checks: [] }])
+        : page('runs', [{ id: 'newer-run', startedAt: '2026-11-09T10:00:00.000Z', finishedAt: '2026-11-09T10:00:01.000Z', status: 'passed', commitSha: 'a'.repeat(40), baseSha: '', baselineRunId: null, counts: { selected: 0, deferred: 0, failures: 0, episodes: 0, artifacts: 0 }, checks: [] }], true)
+    })
+    renderRoute()
+    expect(await screen.findByRole('button', { name: /newer-run/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByRole('button', { name: /older-run/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    expect(await screen.findByRole('button', { name: /newer-run/ })).toBeTruthy()
   })
 })

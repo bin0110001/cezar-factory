@@ -19,6 +19,7 @@ async function fixture() {
   ];
   const owners = records.map(({ id, result, selection }) => ({
     id, worktree: false,
+    ...(id === 'verify-2' ? { referencedIssueUrl: 'https://github.com/acme/project/issues/42' } : {}),
     result,
     selection,
     events: [{ seq: 1, ts: result.finishedAt, type: 'verification-result', result, selection, suite: 'quick' }],
@@ -47,7 +48,7 @@ function record(id: string, startedAt: string, status: 'failed' | 'passed', find
     startedAt,
     finishedAt: new Date(Date.parse(startedAt) + 1000).toISOString(),
     toolVersions: {},
-    environment: {},
+    environment: { platform: 'linux', API_TOKEN: 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456' },
     status,
     semanticExitCode: failed ? 1 : 0,
     coverage: { selected: 1, passed: failed ? 0 : 1, failed: failed ? 1 : 0, skipped: 0, unknown: 0 },
@@ -83,6 +84,7 @@ describe('verification history query', () => {
     expect(first).toMatchObject({ schemaVersion: 1, kind: 'runs', page: { returned: 1, hasMore: true } });
     if (!('kind' in first) || first.kind !== 'runs') throw new Error('expected run query page');
     expect(first.items[0]?.checks?.[0]).toMatchObject({ checkId: 'unit', durationMs: 120, metrics: [{ name: 'cases', value: 4 }] });
+    expect(first.items[0]).toMatchObject({ projectId: 'project', cezarRunId: 'verify-2', githubIssueUrl: 'https://github.com/acme/project/issues/42', environment: { platform: 'linux', API_TOKEN: '[REDACTED]' }, coverage: { selected: 1, failed: 1 } });
     const nextCursor = first.page.nextCursor;
     expect(nextCursor).toBeTruthy();
     const second = await queryVerificationHistory(context, { kind: 'runs', pageSize: 1, cursor: nextCursor! });

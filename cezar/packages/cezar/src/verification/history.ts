@@ -182,6 +182,11 @@ function makeItems(all: HistoryRecord[], query: VerificationQueryInput): QueryIt
       add(record, result.verificationId, {
         id: result.verificationId, startedAt: result.startedAt, finishedAt: result.finishedAt, status: result.status,
         commitSha: result.commitSha, baseSha: result.baseSha ?? '', baselineRunId: null,
+        cezarRunId: result.cezarRunId,
+        projectId: result.projectId,
+        ...(record.owner.referencedIssueUrl?.startsWith('https://github.com/') ? { githubIssueUrl: record.owner.referencedIssueUrl } : {}),
+        environment: Object.fromEntries(Object.entries(result.environment).map(([key, value]) => [safeText(key), safeText(value)])),
+        coverage: result.coverage,
         suite: record.selection.suite,
         counts: {
           selected: record.selection.selected.length || result.checks.filter((check) => check.status !== 'not-selected').length,

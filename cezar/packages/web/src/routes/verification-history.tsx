@@ -104,6 +104,7 @@ export function VerificationHistoryRoute() {
   const [pageIndex, setPageIndex] = useState(0)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [trendCheckId, setTrendCheckId] = useState<string | null>(null)
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null)
   const cursor = cursors[pageIndex]
   const page = useQuery({
     queryKey: [...historyKey, 'runs', status, cursor],
@@ -133,6 +134,7 @@ export function VerificationHistoryRoute() {
     setPageIndex(0)
     setSelectedRunId(null)
     setTrendCheckId(null)
+    setSelectedTestId(null)
   }
   const nextPage = () => {
     if (!runPage?.page.nextCursor) return
@@ -140,8 +142,9 @@ export function VerificationHistoryRoute() {
     setCursors(next)
     setPageIndex(next.length - 1)
     setSelectedRunId(null)
+    setSelectedTestId(null)
   }
-  const previousPage = () => { setPageIndex((index) => Math.max(0, index - 1)); setSelectedRunId(null) }
+  const previousPage = () => { setPageIndex((index) => Math.max(0, index - 1)); setSelectedRunId(null); setSelectedTestId(null) }
 
   return (
     <main className="flex flex-col gap-4 p-4" data-testid="verification-history-route">
@@ -172,26 +175,36 @@ export function VerificationHistoryRoute() {
           {runPage.items.map((item) => {
             const expanded = item.id === selectedRunId
             return <li key={item.id} className="border-b last:border-0">
-              <button className="grid w-full grid-cols-[minmax(0,1.6fr)_minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(7rem,.8fr)] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/30" aria-expanded={expanded} onClick={() => { setSelectedRunId(expanded ? null : item.id); setTrendCheckId(null) }}>
+              <button className="grid w-full grid-cols-[minmax(0,1.6fr)_minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(7rem,.8fr)] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/30" aria-expanded={expanded} aria-controls={`verification-run-detail-${encodeURIComponent(item.id)}`} onClick={() => { setSelectedRunId(expanded ? null : item.id); setTrendCheckId(null); setSelectedTestId(null) }}>
                 <span className="flex min-w-0 items-center gap-2">{expanded ? <ChevronDownIcon className="size-4 shrink-0" /> : <ChevronRightIcon className="size-4 shrink-0" />}<span className="min-w-0"><span className="block truncate font-medium">{item.id}</span><span className="block truncate font-mono text-xs text-muted-foreground">{item.commitSha.slice(0, 10)} · {item.checks?.length ?? 0} checks</span></span></span>
                 <span className={statusColor(item.status)}>{item.status}</span>
                 <span className="text-xs text-muted-foreground">{item.counts.selected} selected · {item.counts.deferred} deferred · {item.counts.failures} failed</span>
                 <time className="text-xs text-muted-foreground">{when(item.startedAt)}</time>
               </button>
-              {expanded && <div className="border-t bg-muted/10 p-4">
+              {expanded && <div id={`verification-run-detail-${encodeURIComponent(item.id)}`} className="border-t bg-muted/10 p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div><p className="font-medium">Suite: {item.suite ?? 'verification'}</p><p className="text-xs text-muted-foreground">Finished {when(item.finishedAt)}</p></div>
+                  <div><p className="font-medium">Suite: {item.suite ?? 'verification'}</p><p className="text-xs text-muted-foreground">Finished {when(item.finishedAt)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Commit {item.commitSha.slice(0, 12)} · base {item.baseSha ? item.baseSha.slice(0, 12) : 'not recorded'}</p>
+                    <nav className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label={`Links for verification run ${item.id}`}>
+                      {item.cezarRunId && <a className="text-primary underline underline-offset-2" href={`/p/${encodeURIComponent(item.projectId ?? '')}/tasks/${encodeURIComponent(item.cezarRunId)}`}>Open Cezar agent work</a>}
+                      {item.githubIssueUrl && <a className="text-primary underline underline-offset-2" href={item.githubIssueUrl} target="_blank" rel="noreferrer">Open linked GitHub issue</a>}
+                    </nav>
+                  </div>
                   {detailQueries.isFetching && <span className="text-xs text-muted-foreground" role="status">Loading run evidence…</span>}
                 </div>
                 {detailQueries.isError && <p className="mt-3 text-sm text-destructive" role="alert">Run details could not be loaded: {detailQueries.error.message}</p>}
                 {detailQueries.data && <div className="mt-4 grid gap-5 xl:grid-cols-2">
                   <section>
                     <h2 className="text-sm font-semibold">Selected checks</h2>
-                    <ul className="mt-2 space-y-2 text-sm">{detailQueries.data.selected.map((entry) => <li key={entry.testId} className="rounded border p-2"><span className="font-mono">{entry.testId}</span><p className="mt-1 text-xs text-muted-foreground">{boundedText(entry.reason)}</p></li>)}</ul>
+                    <ul className="mt-2 space-y-2 text-sm">{detailQueries.data.selected.map((entry) => <li key={entry.testId} className="rounded border p-2"><button className="font-mono text-left underline underline-offset-2" aria-expanded={selectedTestId === entry.testId} aria-controls={`test-detail-${encodeURIComponent(entry.testId)}`} onClick={() => setSelectedTestId((current) => current === entry.testId ? null : entry.testId)}>{entry.testId}</button><p className="mt-1 text-xs text-muted-foreground">{boundedText(entry.reason)}</p>{selectedTestId === entry.testId && <div id={`test-detail-${encodeURIComponent(entry.testId)}`} className="mt-2 rounded bg-muted/30 p-2 text-xs"><p>Coverage: {(item.checks ?? []).find((check) => check.checkId === entry.testId)?.status ?? 'not reported by this run'}</p><a className="mt-1 inline-block text-primary underline underline-offset-2" href={`?runId=${encodeURIComponent(item.id)}&testId=${encodeURIComponent(entry.testId)}`}>Stable link to this check</a></div>}</li>)}</ul>
                     {detailQueries.data.selected.length === 0 && <p className="mt-2 text-xs text-muted-foreground">No selection details were recorded.</p>}
                     <h2 className="mt-4 text-sm font-semibold">Deferred checks</h2>
-                    <ul className="mt-2 space-y-2 text-sm">{detailQueries.data.deferred.map((entry) => <li key={entry.testId} className="rounded border p-2"><span className="font-mono">{entry.testId}</span><p className="mt-1 text-xs text-muted-foreground">{boundedText(entry.reason)}</p></li>)}</ul>
+                    <ul className="mt-2 space-y-2 text-sm">{detailQueries.data.deferred.map((entry) => <li key={entry.testId} className="rounded border p-2"><button className="font-mono text-left underline underline-offset-2" aria-expanded={selectedTestId === entry.testId} aria-controls={`test-detail-${encodeURIComponent(entry.testId)}`} onClick={() => setSelectedTestId((current) => current === entry.testId ? null : entry.testId)}>{entry.testId}</button><p className="mt-1 text-xs text-muted-foreground">{boundedText(entry.reason)}</p>{selectedTestId === entry.testId && <div id={`test-detail-${encodeURIComponent(entry.testId)}`} className="mt-2 rounded bg-muted/30 p-2 text-xs"><p>Coverage limitation: this check was deferred, so this run has no result for it.</p><a className="mt-1 inline-block text-primary underline underline-offset-2" href={`?runId=${encodeURIComponent(item.id)}&testId=${encodeURIComponent(entry.testId)}`}>Stable link to this check</a></div>}</li>)}</ul>
                     {detailQueries.data.deferred.length === 0 && <p className="mt-2 text-xs text-muted-foreground">No checks were deferred.</p>}
+                    <h2 className="mt-4 text-sm font-semibold">Run coverage and environment</h2>
+                    {item.coverage ? <p className="mt-1 text-xs text-muted-foreground">{item.coverage.passed} passed · {item.coverage.failed} failed · {item.coverage.skipped} skipped · {item.coverage.unknown} unknown of {item.coverage.selected} selected</p> : <p className="mt-1 text-xs text-muted-foreground">Coverage totals were not recorded for this run.</p>}
+                    {item.baselineRunId ? <p className="mt-1 text-xs">Baseline run: <a className="text-primary underline" href={`?runId=${encodeURIComponent(item.baselineRunId)}`}>{item.baselineRunId}</a></p> : <p className="mt-1 text-xs text-muted-foreground">No baseline run was recorded; comparisons are unavailable.</p>}
+                    {item.environment && Object.keys(item.environment).length > 0 ? <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">{Object.entries(item.environment).map(([key, value]) => <div className="contents" key={key}><dt className="font-medium">{key}</dt><dd className="break-all text-muted-foreground">{value}</dd></div>)}</dl> : <p className="mt-1 text-xs text-muted-foreground">Environment details were not recorded.</p>}
                   </section>
 
                   <section>
