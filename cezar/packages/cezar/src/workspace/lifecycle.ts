@@ -19,6 +19,7 @@ import {
 } from '@open-mercato/cezar-contract';
 import { cezarHomeDir } from '../paths.ts';
 import { globToRegExp } from '../server/impact/manifest.ts';
+import { createChildTraceContext, createTraceContext, parseTraceparent, safeTelemetryAttributes, stableSpanId } from '../observability/trace-context.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -587,6 +588,60 @@ export async function retryLifecycleOutbox(options: { eventId: string; destinati
   } finally { db.close(); }
 }
 
+/** Persist one coarse workflow span to the optional local OTLP outbox. */
+export async function recordWorkflowTelemetrySpan(options: {
+  issue?: number;
+  executionId: string;
+  runId: string;
+  attemptId: string;
+  workflow: string;
+  stepId: string;
+  kind: 'agent' | 'command' | 'verification';
+  outcome: 'completed' | 'failed' | 'cancelled' | 'waiting';
+  startedAt: string;
+  endedAt: string;
+  projectId?: string;
+  cwd?: string;
+  home?: string;
+}): Promise<{ queued: boolean }> {
+  if (!process.env.LANGFUSE_HOST || !process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) return { queued: false };
+  const started = Date.parse(options.startedAt);
+  const ended = Date.parse(options.endedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) throw new Error('invalid workflow telemetry span timestamps');
+  const identity = options.executionId || options.runId;
+  const root = createTraceContext({ identity, spanId: stableSpanId(`run:${identity}`), sample: true });
+  const context = createChildTraceContext(root.traceparent, options.attemptId);
+  const attributes = safeTelemetryAttributes({
+    'workflow.name': options.workflow,
+    'workflow.step': options.stepId,
+    'workflow.kind': options.kind,
+    'run.id': options.runId,
+    'run.attempt_id': options.attemptId,
+    ...(options.issue ? { 'issue.number': options.issue } : {}),
+    ...(options.projectId ? { 'project.id': options.projectId } : {}),
+    outcome: options.outcome,
+  });
+  let commonDir: string;
+  try { commonDir = (await gitTop(options.cwd ?? process.cwd())).commonDir; }
+  catch { return { queued: false }; }
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => {
+      event(db, repoId, options.issue ? String(options.issue) : 'untracked', identity, 'workflow.telemetry.span', {
+        traceId: context.traceId,
+        spanId: context.spanId,
+        parentSpanId: context.parentSpanId,
+        name: `workflow.${options.kind}`,
+        startTimeUnixNano: (BigInt(started) * 1_000_000n).toString(),
+        endTimeUnixNano: (BigInt(ended) * 1_000_000n).toString(),
+        attributes,
+      });
+    });
+    tx();
+    return { queued: true };
+  } finally { db.close(); }
+}
+
 async function hindsightRequest(base: string, bank: string, token: string | undefined, method: string,
   params: Record<string, unknown>, sessionId?: string, id: number | null = 1, fetcher: typeof fetch = fetch): Promise<{ body: Record<string, unknown>; sessionId?: string }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
@@ -654,7 +709,7 @@ export async function drainLifecycleOutbox(options: { cwd?: string; home?: strin
     db.prepare('DELETE FROM outbox_delivery_claims WHERE event_id=? AND destination=? AND claim_token=?').run(eventId, destination, token);
   };
   try {
-    const rows = db.prepare(`SELECT o.event_id,o.attempts,e.issue_key,e.execution_id,e.event_type,e.timestamp
+    const rows = db.prepare(`SELECT o.event_id,o.attempts,e.issue_key,e.execution_id,e.event_type,e.timestamp,e.payload_json
       FROM event_outbox o JOIN events e USING(event_id)
       WHERE e.repo_id=? AND o.destination='langfuse' AND o.status IN ('pending','failed') AND o.attempts<12 AND o.next_attempt_at<=?
       ORDER BY e.seq LIMIT ?`).all(repoId, new Date().toISOString(), Math.max(1, Math.min(100, options.limit ?? 20)));
@@ -667,14 +722,44 @@ export async function drainLifecycleOutbox(options: { cwd?: string; home?: strin
       const secretKey = process.env.LANGFUSE_SECRET_KEY;
       try {
         if (!endpoint || !publicKey || !secretKey) throw new Error('sink-unconfigured');
-        const startNs = (BigInt(Date.parse(String(row.timestamp))) * 1_000_000n).toString();
-        const traceId = createHash('sha256').update(`cezar:${id}`).digest('hex').slice(0, 32);
-        const spanId = createHash('sha256').update(`cezar-span:${id}`).digest('hex').slice(0, 16);
+        const timestampNs = (BigInt(Date.parse(String(row.timestamp))) * 1_000_000n).toString();
+        const identity = row.execution_id ? String(row.execution_id) : `issue:${repoId}:${String(row.issue_key)}`;
+        let span: { traceId: string; spanId: string; parentSpanId?: string; name: string; startTimeUnixNano: string; endTimeUnixNano: string; attributes: Record<string, string> };
+        if (row.event_type === 'workflow.telemetry.span') {
+          const payload = JSON.parse(String(row.payload_json)) as Record<string, unknown>;
+          const traceId = typeof payload.traceId === 'string' ? payload.traceId : '';
+          const spanId = typeof payload.spanId === 'string' ? payload.spanId : '';
+          const parentSpanId = typeof payload.parentSpanId === 'string' ? payload.parentSpanId : '';
+          const traceparent = `00-${traceId}-${parentSpanId}-01`;
+          const parent = parseTraceparent(traceparent);
+          const validSpanId = /^[0-9a-f]{16}$/i.test(spanId) && spanId !== '0000000000000000';
+          const name = typeof payload.name === 'string' && /^workflow\.(agent|command|verification)$/.test(payload.name) ? payload.name : 'workflow.step';
+          if (parent && validSpanId && traceId === createTraceContext({ identity }).traceId) {
+            span = {
+              traceId: parent.traceId, spanId: spanId.toLowerCase(), parentSpanId: parent.spanId, name,
+              startTimeUnixNano: typeof payload.startTimeUnixNano === 'string' && /^\d+$/.test(payload.startTimeUnixNano) ? payload.startTimeUnixNano : timestampNs,
+              endTimeUnixNano: typeof payload.endTimeUnixNano === 'string' && /^\d+$/.test(payload.endTimeUnixNano) ? payload.endTimeUnixNano : (BigInt(timestampNs) + 1_000_000n).toString(),
+              attributes: safeTelemetryAttributes(payload.attributes && typeof payload.attributes === 'object' ? payload.attributes as Record<string, unknown> : {}),
+            };
+          } else {
+            const context = createTraceContext({ identity, spanId: stableSpanId(`event:${id}`), sample: true });
+            span = { traceId: context.traceId, spanId: context.spanId, name: 'workflow.step', startTimeUnixNano: timestampNs, endTimeUnixNano: (BigInt(timestampNs) + 1_000_000n).toString(), attributes: {} };
+          }
+        } else {
+          const context = createTraceContext({ identity, spanId: stableSpanId(`event:${id}`), sample: true });
+          span = {
+            traceId: context.traceId, spanId: context.spanId, parentSpanId: stableSpanId(`run:${identity}`),
+            name: /^[A-Za-z0-9_.-]{1,128}$/.test(String(row.event_type)) ? String(row.event_type) : 'workspace.event',
+            startTimeUnixNano: timestampNs, endTimeUnixNano: (BigInt(timestampNs) + 1_000_000n).toString(), attributes: {},
+          };
+        }
         const attribute = (key: string, value: string) => ({ key, value: { stringValue: value } });
+        const attributes = [attribute('service.name', 'cezar-factory'), attribute('issue.number', String(row.issue_key)),
+          ...(row.execution_id ? [attribute('run.id', String(row.execution_id))] : []), attribute('workspace.event_id', id),
+          ...Object.entries(span.attributes).map(([key, value]) => attribute(key, value))];
         const body = { resourceSpans: [{ resource: { attributes: [attribute('service.name', 'cezar-factory')] }, scopeSpans: [{ scope: { name: 'cezar.workspace.lifecycle' }, spans: [{
-          traceId, spanId, name: String(row.event_type), startTimeUnixNano: startNs,
-          endTimeUnixNano: (BigInt(startNs) + 1_000_000n).toString(), kind: 1,
-          attributes: [attribute('workspace.issue', String(row.issue_key)), ...(row.execution_id ? [attribute('workspace.execution_id', String(row.execution_id))] : []), attribute('workspace.event_id', id)],
+          traceId: span.traceId, spanId: span.spanId, ...(span.parentSpanId ? { parentSpanId: span.parentSpanId } : {}), name: span.name,
+          startTimeUnixNano: span.startTimeUnixNano, endTimeUnixNano: span.endTimeUnixNano, kind: 1, attributes,
         }] }] }] };
         const response = await fetcher(`${endpoint}/api/public/otel/v1/traces`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'x-langfuse-ingestion-version': '4',

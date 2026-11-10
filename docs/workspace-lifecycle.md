@@ -192,3 +192,6 @@ curated lesson, then explicitly approve it with
 publishes approved lessons to the configured project bank; failures stay local
 for retry. After correcting a sink configuration, requeue an exhausted delivery
 with `cez workspace outbox --retry <event-id> --destination <langfuse|hindsight>`.
+Workflow agent, command, and verification attempts add coarse duration spans to
+this optional outbox. They share the workflow's W3C trace ID and export only
+allowlisted identifiers and outcomes. See [Coding run trace context](observability.md).

@@ -12,6 +12,7 @@ import {
   acquireIntegrationLock, completeIntegration, factoryContextForRun, handoffWorkspace,
   pruneWorkspace, registerFactoryWorkspace, releaseIntegrationLock, transitionWorkspace, verifiedFactoryContext,
   recordIntegrationValidationFailure,
+  recordWorkflowTelemetrySpan,
   lifecycleOutbox, drainLifecycleOutbox,
   workspaceOverlaps, reconcileWorkspaceLifecycle,
   recoverWorkspace, resumeBlockedWorkspace, approveHindsightLesson,
@@ -215,6 +216,38 @@ describe('local workspace lifecycle', () => {
       expect(results.reduce((total, result) => total + result.delivered, 0)).toBe(1);
       expect(requests).toBe(1);
       expect(posted?.resourceSpans).toBeDefined();
+      expect((await lifecycleOutbox({ cwd: repo })).delivered).toBeGreaterThan(0);
+    } finally {
+      names.forEach((key, index) => { if (old[index] === undefined) delete process.env[key]; else process.env[key] = old[index]; });
+    }
+  });
+
+  it('correlates workflow spans with lifecycle spans and exports only allowlisted metadata', async () => {
+    const names = ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_HOST'] as const;
+    const old = names.map((key) => process.env[key]);
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'; process.env.LANGFUSE_SECRET_KEY = 'sk-never-export'; process.env.LANGFUSE_HOST = 'http://langfuse.test';
+    try {
+      const claim = await claimWorkspace({ issue: '1005', cwd: repo, owner: 'external:test:trace' });
+      await recordWorkflowTelemetrySpan({
+        issue: 1005, executionId: claim.executionId, runId: 'agent-run-5', attemptId: 'agent-run-5:validate:1',
+        workflow: 'factory-implement', stepId: 'validate', kind: 'verification', outcome: 'failed',
+        startedAt: '2026-11-10T15:00:00.000Z', endedAt: '2026-11-10T15:00:01.250Z', projectId: 'project-5', cwd: repo,
+      });
+      const spans: Array<Record<string, unknown>> = [];
+      await drainLifecycleOutbox({ cwd: repo, fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<Record<string, unknown>> }> }> };
+        spans.push(...body.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)));
+        return new Response(null, { status: 200 });
+      } });
+      const workflowSpan = spans.find((span) => span.name === 'workflow.verification');
+      expect(workflowSpan).toMatchObject({ traceId: expect.any(String), spanId: expect.any(String), parentSpanId: expect.any(String), startTimeUnixNano: '1794322800000000000', endTimeUnixNano: '1794322801250000000' });
+      expect(spans.every((span) => span.traceId === workflowSpan?.traceId)).toBe(true);
+      const attributes = (workflowSpan?.attributes as Array<{ key: string; value: { stringValue: string } }>).map((item) => [item.key, item.value.stringValue]);
+      expect(attributes).toContainEqual(['workflow.name', 'factory-implement']);
+      expect(attributes).toContainEqual(['run.attempt_id', 'agent-run-5:validate:1']);
+      expect(JSON.stringify(spans)).not.toContain('sk-never-export');
+      expect(JSON.stringify(spans)).not.toContain('prompt');
+      expect(JSON.stringify(spans)).not.toContain('source');
       expect((await lifecycleOutbox({ cwd: repo })).delivered).toBeGreaterThan(0);
     } finally {
       names.forEach((key, index) => { if (old[index] === undefined) delete process.env[key]; else process.env[key] = old[index]; });

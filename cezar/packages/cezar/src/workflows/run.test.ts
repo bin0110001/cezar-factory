@@ -2031,6 +2031,23 @@ describe('CEZ:ASK parks as waiting and emits ask.requested (#473)', () => {
     startSession.mockRestore();
   }, 30_000);
 
+  it('propagates W3C trace, run, and attempt identifiers to the agent CLI', async () => {
+    const startSession = vi.spyOn(ClaudeCliRunner.prototype, 'startSession');
+    try {
+      const record = manager.startRun(SINGLE_STEP, { task: 'mock:done trace propagation', worktree: false });
+      currentId = record.id;
+      await waitFor(record.id, (r) => r?.status === 'done');
+      const spec = startSession.mock.calls[0]?.[0];
+      const traceparent = spec?.env?.TRACEPARENT ?? '';
+      expect(traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/);
+      expect(spec?.env?.CEZ_TRACE_ID).toBe(traceparent.split('-')[1]);
+      expect(spec?.env?.CEZ_RUN_ID).toBe(record.id);
+      expect(spec?.env?.CEZ_ATTEMPT_ID).toBe(`${record.id}:task:1`);
+    } finally {
+      startSession.mockRestore();
+    }
+  }, 30_000);
+
   it('an autonomous run parks on an intermediate ask it is nudged past and repeats', async () => {
     const record = manager.startRun(BLOCKING_CHECK, {
       task: 'mock:autonomous mock:ask-repeat choose a path',
