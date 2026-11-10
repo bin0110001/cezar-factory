@@ -17,6 +17,10 @@ export const DATA_GITIGNORE_ENTRIES = [
   'runs.json',
   'runs.json.tmp',
   'runs/',
+  'verification-ledger.json',
+  'verification-ledger.json.*.tmp',
+  'verification-ledger.lock',
+  'verification-ledger.lock.lock/',
   'dispatch/', // filesystem channel for dispatched task trees
   // The per-project attachment library (#929): every named file a user attaches to any task is
   // copied here. It is USER content — a production log, an internal PDF, a brief — so it must
