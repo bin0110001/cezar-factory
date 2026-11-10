@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "requestId": "request-2",
+  "sessionId": "session-1",
+  "action": { "type": "click", "target": { "kind": "role", "value": "button", "name": "Continue" }, "timeoutMs": 2000 }
+}

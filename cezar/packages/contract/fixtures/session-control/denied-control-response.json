@@ -1,0 +1,7 @@
+{
+  "ok": false,
+  "schemaVersion": 1,
+  "requestId": "request-2",
+  "sessionId": "session-1",
+  "error": { "code": "denied_control", "message": "This session only allows observation." }
+}
