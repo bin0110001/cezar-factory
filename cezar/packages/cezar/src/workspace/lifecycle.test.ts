@@ -231,7 +231,7 @@ describe('local workspace lifecycle', () => {
       await recordWorkflowTelemetrySpan({
         issue: 1005, executionId: claim.executionId, runId: 'agent-run-5', attemptId: 'agent-run-5:validate:1',
         workflow: 'factory-implement', stepId: 'validate', kind: 'verification', outcome: 'failed',
-        startedAt: '2026-11-10T15:00:00.000Z', endedAt: '2026-11-10T15:00:01.250Z', projectId: 'project-5', cwd: repo,
+        startedAt: '2026-11-10T15:00:00.000Z', endedAt: '2026-11-10T15:00:01.250Z', projectId: 'project-5', workerId: 'worker-test-5', cwd: repo,
       });
       const spans: Array<Record<string, unknown>> = [];
       await drainLifecycleOutbox({ cwd: repo, fetcher: async (_input, init) => {
@@ -245,6 +245,7 @@ describe('local workspace lifecycle', () => {
       const attributes = (workflowSpan?.attributes as Array<{ key: string; value: { stringValue: string } }>).map((item) => [item.key, item.value.stringValue]);
       expect(attributes).toContainEqual(['workflow.name', 'factory-implement']);
       expect(attributes).toContainEqual(['run.attempt_id', 'agent-run-5:validate:1']);
+      expect(attributes).toContainEqual(['worker.id', 'worker-test-5']);
       expect(JSON.stringify(spans)).not.toContain('sk-never-export');
       expect(JSON.stringify(spans)).not.toContain('prompt');
       expect(JSON.stringify(spans)).not.toContain('source');

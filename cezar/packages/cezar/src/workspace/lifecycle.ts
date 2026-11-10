@@ -601,6 +601,7 @@ export async function recordWorkflowTelemetrySpan(options: {
   startedAt: string;
   endedAt: string;
   projectId?: string;
+  workerId?: string;
   cwd?: string;
   home?: string;
 }): Promise<{ queued: boolean }> {
@@ -619,6 +620,7 @@ export async function recordWorkflowTelemetrySpan(options: {
     'run.attempt_id': options.attemptId,
     ...(options.issue ? { 'issue.number': options.issue } : {}),
     ...(options.projectId ? { 'project.id': options.projectId } : {}),
+    ...(options.workerId ? { 'worker.id': options.workerId } : {}),
     outcome: options.outcome,
   });
   let commonDir: string;

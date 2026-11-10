@@ -85,7 +85,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'docs/hindsight-live-evidence.md',
 'docs/observability-live-evidence.md',
 'docs/local-utility-live-evidence.md',
-'docs/langfuse-live-evidence.md',
+'docs/langfuse-live-evidence.md', 'docs/langfuse-operations.md',
 'integrations/openhands/job-request.schema.json', 'integrations/openhands/job-result.schema.json',
 'scripts/openhands/validate-job.ps1', 'scripts/openhands/run-job.py', 'tests/fixtures/openhands-job-request.json', 'tests/fixtures/openhands-failure-request.json', 'docs/operations-readiness.md',
 'docs/local-coding-tool-evaluation.md',
@@ -448,6 +448,16 @@ Assert 'Hindsight live deployment evidence exists' (Test-Path (Join-Path $factor
 Assert 'Observability live deployment evidence exists' (Test-Path (Join-Path $factory 'docs/observability-live-evidence.md'))
 Assert 'Local utility live evidence exists' (Test-Path (Join-Path $factory 'docs/local-utility-live-evidence.md'))
 Assert 'Langfuse live deployment evidence exists' (Test-Path (Join-Path $factory 'docs/langfuse-live-evidence.md'))
+$langfuseCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
+$missingLangfuseServices = @(@('langfuse-worker:', 'langfuse-postgres:', 'langfuse-clickhouse:', 'langfuse-redis:', 'langfuse-minio:', 'langfuse-event-storage-init:', 'langfuse-clickhouse-retention:') | Where-Object { $langfuseCompose -notmatch "(?m)^  $_" })
+Assert 'Langfuse Compose has web, worker, and all four supporting stores' ($missingLangfuseServices.Count -eq 0)
+Assert 'Langfuse release and stateful component versions are explicit' ($bazziteEnv -match '(?m)^LANGFUSE_IMAGE_TAG=\d+\.\d+$' -and $bazziteEnv -match '(?m)^LANGFUSE_POSTGRES_VERSION=' -and $bazziteEnv -match '(?m)^LANGFUSE_CLICKHOUSE_VERSION=' -and $bazziteEnv -match '(?m)^LANGFUSE_REDIS_VERSION=' -and $langfuseCompose -match 'cgr\.dev/chainguard/minio@sha256:[0-9a-f]{64}')
+Assert 'Langfuse OSS retention is 30 days for trace tables and isolated event objects, not media' ($bazziteEnv -match '(?m)^LANGFUSE_RETENTION_DAYS=30$' -and $langfuseCompose -match 'LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events' -and $langfuseCompose -match 'mc ilm rule add --expire-days' -and $langfuseCompose -match 'mc ilm rule add --prefix events/' -and $langfuseCompose -match 'ALTER TABLE traces MODIFY TTL timestamp' -and $langfuseCompose -match 'ALTER TABLE observations MODIFY TTL start_time' -and $langfuseCompose -match 'ALTER TABLE scores MODIFY TTL timestamp' -and $langfuseCompose -match 'ALTER TABLE event_log MODIFY TTL created_at' -and $langfuseCompose -match 'LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse')
+Assert 'Langfuse web and MinIO are loopback-only while databases stay internal' ($langfuseCompose -match '127\.0\.0\.1:\$\{LANGFUSE_WEB_PORT' -and $langfuseCompose -match '127\.0\.0\.1:\$\{LANGFUSE_MINIO_API_PORT' -and $langfuseCompose -match 'langfuse-postgres-data:/var/lib/postgresql/data' -and $langfuseCompose -match 'langfuse-clickhouse-data:/var/lib/clickhouse' -and $langfuseCompose -notmatch '(?ms)^  langfuse-(postgres|clickhouse|redis):\r?\n(?:(?!^  [\w-]+:).)*?^    ports:')
+Assert 'Langfuse operations guide covers isolated upgrades and backups' ((Get-Content -Raw (Join-Path $factory 'docs/langfuse-operations.md')) -match 'Backup and restore rehearsal' -and (Get-Content -Raw (Join-Path $factory 'docs/langfuse-operations.md')) -match 'langfuse-scratch')
+$langfuseFixture = Get-Content -Raw (Join-Path $factory 'integrations/langfuse/fixtures/factory-eval-fixture.json') | ConvertFrom-Json
+Assert 'Langfuse evaluation fixture is synthetic and correlates two workers' ($langfuseFixture.syntheticOnly -and $langfuseFixture.observations.Count -eq 2 -and $langfuseFixture.observations[0].workerId -ne $langfuseFixture.observations[1].workerId -and $langfuseFixture.observations[1].parentSpanId -eq $langfuseFixture.observations[0].spanId)
+Assert 'Langfuse fixture excludes raw prompt, source, command, and secret fields' ((Get-Content -Raw (Join-Path $factory 'integrations/langfuse/fixtures/factory-eval-fixture.json')) -notmatch '(?i)"(prompt|source|command|token|secret|output)"\s*:')
 $openhandsEvidence = Get-Content -Raw (Join-Path $factory 'docs/openhands-live-evidence.md')
 Assert 'OpenHands live evidence records tool-enabled repository read' ($openhandsEvidence -match '4d1695f0-c868-4e4b-94c4-15672b064e1f' -and $openhandsEvidence -match 'qwen3_xml' -and $openhandsEvidence -match 'terminal\s+actions')
 Assert 'OpenHands live evidence records concurrent isolated worktrees' ($openhandsEvidence -match '1cf59217-923a-4187-8c32-7237071ad196' -and $openhandsEvidence -match '2980fac1-408e-4784-b6cc-61aa1987b274' -and $openhandsEvidence -match 'distinct')

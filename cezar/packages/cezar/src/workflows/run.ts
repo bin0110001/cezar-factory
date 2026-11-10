@@ -1346,7 +1346,8 @@ export class RunManager {
       ...(run?.issueNumber ? { issue: run.issueNumber } : {}),
       executionId: this.traceIdentity(runId), runId, attemptId,
       workflow: run?.workflow ?? 'unknown', stepId: step.id, kind, outcome,
-      startedAt, endedAt: new Date().toISOString(), ...(this.projectId ? { projectId: this.projectId } : {}), cwd: this.repoRoot,
+      startedAt, endedAt: new Date().toISOString(), ...(this.projectId ? { projectId: this.projectId } : {}),
+      ...(process.env.CEZ_WORKER_ID ? { workerId: process.env.CEZ_WORKER_ID } : {}), cwd: this.repoRoot,
     }).catch(() => console.warn('[telemetry] workflow span was not queued'));
   }
 

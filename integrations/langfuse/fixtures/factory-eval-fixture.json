@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "factory-eval-fixture",
+  "purpose": "Synthetic multi-host trace correlation and workflow-span completeness for issue 137 evaluator wiring",
+  "syntheticOnly": true,
+  "traceId": "11111111111141118111111111111111",
+  "runId": "synthetic-eval-001",
+  "issueNumber": 0,
+  "observations": [
+    {
+      "spanId": "2222222222224222",
+      "parentSpanId": null,
+      "workerId": "synthetic-host-a",
+      "workflow": "factory-implement",
+      "step": "agent",
+      "kind": "agent",
+      "outcome": "completed"
+    },
+    {
+      "spanId": "3333333333334333",
+      "parentSpanId": "2222222222224222",
+      "workerId": "synthetic-host-b",
+      "workflow": "factory-implement",
+      "step": "verify",
+      "kind": "verification",
+      "outcome": "completed"
+    }
+  ],
+  "assertions": [
+    "both observations retain the same traceId",
+    "the verification observation is a child of the agent observation",
+    "workflow, step, kind, outcome, runId, issueNumber, and worker.id are queryable",
+    "no prompt, source, command, credential, or raw output field exists"
+  ]
+}

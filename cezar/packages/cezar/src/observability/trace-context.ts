@@ -73,6 +73,18 @@ export function createChildTraceContext(parentValue: string, identity: string): 
   };
 }
 
+/** Build the Langfuse UI deep link for a project-scoped trace ID. */
+export function createLangfuseTraceUrl(options: { baseUrl: string; projectId: string; traceId: string }): string {
+  if (!/^[0-9a-f]{32}$/i.test(options.traceId)) throw new Error('trace ID must be a 32-character OpenTelemetry hex ID');
+  if (!options.projectId.trim() || options.projectId.length > 128) throw new Error('project ID is required and must be at most 128 characters');
+  const base = new URL(options.baseUrl);
+  if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Langfuse UI URL must be an HTTP(S) URL without embedded credentials');
+  base.pathname = `${base.pathname.replace(/\/+$/, '')}/project/${encodeURIComponent(options.projectId)}/traces/${options.traceId.toLowerCase()}`;
+  base.search = '';
+  base.hash = '';
+  return base.toString();
+}
+
 const SAFE_ATTRIBUTE_KEYS = new Set([
   'service.name', 'workflow.name', 'workflow.step', 'workflow.kind', 'run.id', 'run.attempt_id',
   'issue.number', 'project.id', 'worker.id', 'agent.provider', 'agent.adapter', 'model.id',
