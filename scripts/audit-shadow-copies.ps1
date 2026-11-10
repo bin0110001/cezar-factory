@@ -171,6 +171,10 @@ if ($status -ne 'invalid-registry') {
     }
 }
 
+$legacyPushRetirementReady = $status -eq 'complete' -and $receipt.targets.Count -gt 0 -and
+    @($receipt.targets | Where-Object { $_.migrationStatus -notin @('shared', 'migrated') }).Count -eq 0
+$receipt['legacyPushRetirementReady'] = [bool]$legacyPushRetirementReady
+
 $receiptJson = $receipt | ConvertTo-Json -Depth 8
 if (-not (Test-Json -Json $receiptJson -SchemaFile (Join-Path $repo 'schemas/shadow-audit-receipt.schema.json'))) {
     throw 'Shadow audit receipt failed schema validation.'

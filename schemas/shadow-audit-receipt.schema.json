@@ -8,6 +8,7 @@
     "status": { "enum": ["complete", "needs-target-configuration", "invalid-registry"] },
     "factoryVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "generatedAt": { "type": "string", "format": "date-time" },
+    "legacyPushRetirementReady": { "type": "boolean" },
     "targets": {
       "type": "array",
       "maxItems": 100,
@@ -16,7 +17,7 @@
     "summary": { "$ref": "#/$defs/summary" },
     "errorCode": { "const": "registry-invalid" }
   },
-  "required": ["schemaVersion", "status", "factoryVersion", "generatedAt", "targets", "summary"],
+  "required": ["schemaVersion", "status", "factoryVersion", "generatedAt", "legacyPushRetirementReady", "targets", "summary"],
   "$defs": {
     "target": {
       "type": "object",
@@ -26,7 +27,7 @@
         "projectPathHash": { "type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$" },
         "effectiveSource": { "enum": ["shared", "installed", "override", "unknown"] },
         "shadowConflict": { "enum": ["none", "identical", "modified", "unknown"] },
-        "migrationStatus": { "enum": ["shared", "shadowed", "modified", "not-installed", "unreachable", "unknown"] },
+        "migrationStatus": { "enum": ["shared", "migrated", "shadowed", "modified", "not-installed", "unreachable", "unknown"] },
         "files": {
           "type": "array",
           "maxItems": 1000,
@@ -43,7 +44,7 @@
         "sourcePath": { "type": ["string", "null"], "maxLength": 1024 },
         "effectiveSource": { "enum": ["shared", "installed", "override", "unknown"] },
         "shadowConflict": { "enum": ["none", "identical", "modified", "unknown"] },
-        "migrationStatus": { "enum": ["shared", "shadowed", "modified", "not-installed", "unreachable", "unknown"] }
+        "migrationStatus": { "enum": ["shared", "migrated", "shadowed", "modified", "not-installed", "unreachable", "unknown"] }
       },
       "required": ["path", "sourcePath", "effectiveSource", "shadowConflict", "migrationStatus"]
     },

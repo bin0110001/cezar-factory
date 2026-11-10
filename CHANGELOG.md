@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Guard legacy Factory pushes against configured active release/autodeploy locks, route shared-mode targets through automation-only sync, and record a fail-closed audit receipt gate for eventual script retirement (#279).
 - Migrate installed Factory copies only from a schema-validated shadow-audit receipt. The new workflow
   binds the receipt to the project path and compares manifest and shared-source hashes in a separate
   `origin/dev` worktree. It leaves the project's checkout untouched, preserves modified files with
