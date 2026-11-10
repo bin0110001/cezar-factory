@@ -236,6 +236,60 @@ export const codingRunSnapshotSchema = z.object({
 });
 export type CodingRunSnapshot = z.infer<typeof codingRunSnapshotSchema>;
 
+/** Permission-scoped, bounded read model used by the issue run explorer. */
+export const codingRunExplorerEntrySchema = z.object({
+  runId: identifierSchema,
+  issueNumber: z.number().int().positive(),
+  status: z.enum(['running', 'waiting', 'blocked', 'unknown', 'untested', 'flaky', 'passed', 'failed', 'cancelled']),
+  integrity: z.enum(['valid', 'incomplete', 'corrupt', 'unsupported-version']),
+  startedAt: timestampSchema.optional(),
+  finishedAt: timestampSchema.optional(),
+  worker: codingObservationSchema(workerIdentitySchema),
+  agent: codingObservationSchema(agentIdentitySchema),
+  model: codingObservationSchema(modelIdentitySchema),
+  pullRequest: codingObservationSchema(pullRequestSchema),
+  commits: z.array(shaSchema).max(100),
+  validationCount: z.number().int().nonnegative(),
+  latestValidationAt: timestampSchema.optional(),
+  attemptCount: z.number().int().nonnegative(),
+  attempts: z.array(z.object({
+    attemptId: identifierSchema, index: z.number().int().positive(),
+    status: codingAttemptStatusSchema, startedAt: timestampSchema, finishedAt: timestampSchema.optional(),
+    supersedesAttemptId: identifierSchema.optional(),
+  }).strict()).max(100),
+  eventCount: z.number().int().nonnegative(),
+  timeline: z.array(z.object({
+    eventId: identifierSchema, type: codingRunEventTypeSchema, occurredAt: timestampSchema,
+    attemptId: identifierSchema.optional(), evidenceCount: z.number().int().nonnegative(),
+  }).strict()).max(100),
+  timelineTruncated: z.boolean(),
+  evidence: z.array(z.object({
+    evidenceId: identifierSchema, kind: codingEvidenceKindSchema,
+    sha256: digestSchema.optional(), createdAt: timestampSchema.optional(), expiresAt: timestampSchema.optional(),
+    availability: z.enum(['available', 'expired', 'unknown']),
+    downloadUrl: z.string().min(1).max(2048).optional(),
+  }).strict()).max(100),
+  evidenceCount: z.number().int().nonnegative(),
+  evidenceComplete: z.boolean(),
+  trace: z.discriminatedUnion('availability', [
+    z.object({ availability: z.literal('available'), url: z.string().url(), traceId: z.string().regex(/^[a-f0-9]{32}$/i) }).strict(),
+    z.object({ availability: z.literal('unavailable'), reason: z.string().max(256) }).strict(),
+  ]),
+}).strict();
+export type CodingRunExplorerEntry = z.infer<typeof codingRunExplorerEntrySchema>;
+
+export const codingRunExplorerResponseSchema = z.object({
+  issueNumber: z.number().int().positive(),
+  runs: z.array(codingRunExplorerEntrySchema).max(50),
+  nextCursor: z.string().max(2048).optional(),
+  complete: z.boolean(),
+  unavailableReason: z.string().max(256).optional(),
+}).strict();
+export type CodingRunExplorerResponse = z.infer<typeof codingRunExplorerResponseSchema>;
+export const codingRunExplorerParamsSchema = z.object({ issueNumber: z.string().regex(/^[1-9]\d{0,14}$/), runId: identifierSchema.optional(), sha256: digestSchema.optional() });
+export const codingRunExplorerArtifactParamsSchema = z.object({ issueNumber: z.string().regex(/^[1-9]\d{0,14}$/), runId: identifierSchema, sha256: digestSchema });
+export const codingRunExplorerQuerySchema = z.object({ cursor: z.string().max(2048).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) });
+
 export type CodingRunContractParse =
   | { status: 'valid'; data: CodingRunSnapshot }
   | { status: 'invalid'; issues: z.ZodIssue[] }

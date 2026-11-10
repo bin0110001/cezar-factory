@@ -1,4 +1,4 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema } from '@open-mercato/cezar-api-client'
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent } from '@open-mercato/cezar-api-client'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
@@ -131,6 +131,7 @@ import type {
   TrackerItemResponse,
   TrackerItemsResponse,
   TrackerKind, TrackerCredentials, TrackerConnectionResponse,
+  CodingRunExplorerResponse,
 } from '@open-mercato/cezar-api-client'
 import { parseProviderStatusResponse } from '@/lib/provider-status'
 import {
@@ -1088,6 +1089,21 @@ export async function getTrackerItem(id: string, opts?: ReadOptions & { associat
     ),
     `/tracker/${encodeURIComponent(id)}`,
   )
+}
+
+export async function getCodingRunExplorer(issueNumber: number, cursor?: string, opts?: ReadOptions): Promise<CodingRunExplorerResponse> {
+  return unwrapValidated(
+    await cez.api.v1.p[':projectId'].tracker[':issueNumber']['run-explorer'].$get({
+      param: { projectId: queryScope(), issueNumber: String(issueNumber) },
+      query: { ...(cursor ? { cursor } : {}), limit: 20 },
+    }, init(opts)),
+    `/tracker/${issueNumber}/run-explorer`,
+    codingRunExplorerResponseSchema,
+  )
+}
+
+export function codingRunEvidenceUrl(issueNumber: number, runId: string, sha256: string): string {
+  return apiPath(`/p/${encodeURIComponent(queryScope())}/tracker/${issueNumber}/run-explorer/${encodeURIComponent(runId)}/${sha256}`)
 }
 
 /** Lazy PR checks glyphs for on-screen rows (#664). The list call no longer ships

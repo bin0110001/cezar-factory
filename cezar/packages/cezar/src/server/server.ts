@@ -8,6 +8,7 @@ import {
   trackerWatchInputSchema, trackerWatchParamsSchema, trackerWatchQuerySchema,
   trackerCandidatesQuerySchema, trackerListQuerySchema, trackerSearchQuerySchema, trackerItemQuerySchema, trackerReadScope,
   trackerCredentialsSchema, trackerItemParamsSchema, trackerAssociationInputSchema, type TrackerChangedEvent,
+  codingRunExplorerParamsSchema, codingRunExplorerArtifactParamsSchema, codingRunExplorerQuerySchema,
   githubRepositoryKeySchema, type GithubRepositoryKey,
   dependencyDecisionResearchDispatchResponseSchema,
   dependencyGraphHistoricalTrendsSchema,
@@ -16,6 +17,7 @@ import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
+import { readCodingRunArtifact, type CodingRunArtifactReference } from '../workspace/coding-run-artifacts.ts';
 import { TrackerWatches } from './tracker/watch.ts';
 import { readTrackerAssociation, writeTrackerAssociation, clearTrackerAssociation } from '../tracker-association.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -210,7 +212,7 @@ import {
 } from '../workspace/projects.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import { mergeWriteWorkspaceUiState, readWorkspaceUiState } from '../workspace/ui-state.ts';
-import { factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle } from '../workspace/lifecycle.ts';
+import { factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle, getCodingRunSnapshot, queryCodingRunExplorer } from '../workspace/lifecycle.ts';
 import { checkoutRepo, type CloneRunner } from './checkout.ts';
 import { ProjectContextError, ProjectContexts, type ProjectContext } from './project-context.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
@@ -5859,6 +5861,45 @@ export function createApp(deps: ServerDeps) {
       const result = await driver.getItem(c.req.valid('param').id);
       if (!result.available && result.code === 'not_found') return c.json({ error: result.reason }, 404);
       return c.json(result, 200);
+    })
+    .get('/tracker/:issueNumber/run-explorer', paramZodValidator(codingRunExplorerParamsSchema), queryZodValidator(codingRunExplorerQuerySchema), async (c) => {
+      const project = c.get('project');
+      try {
+        const query = c.req.valid('query');
+        const result = await queryCodingRunExplorer({ issue: c.req.valid('param').issueNumber,
+          ...(query.cursor ? { cursor: query.cursor } : {}), limit: query.limit, cwd: project.root });
+        const currentRuns = project.store.listRuns();
+        const runs = result.runs.map((entry) => {
+          const task = currentRuns.find((candidate) => candidate.id === entry.runId && candidate.issueNumber === entry.issueNumber);
+          return task && ['queued', 'waiting', 'review'].includes(task.status) ? { ...entry, status: 'waiting' as const } : entry;
+        });
+        return c.json({ ...result, runs }, 200);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : 'Could not read issue run history.' }, 400);
+      }
+    })
+    .get('/tracker/:issueNumber/run-explorer/:runId/:sha256', paramZodValidator(codingRunExplorerArtifactParamsSchema), async (c) => {
+      const { issueNumber, runId, sha256 } = c.req.valid('param');
+      const project = c.get('project');
+      try {
+        const snapshot = await getCodingRunSnapshot({ runId, cwd: project.root });
+        if (!snapshot || snapshot.run.source.number !== Number(issueNumber)) return c.json({ error: 'Evidence was not found for this issue.' }, 404);
+        const reference = snapshot.evidence.find((item) => item.kind === 'artifact' && item.sha256 === sha256);
+        if (!reference) return c.json({ error: 'Evidence was not found for this issue.' }, 404);
+        const result = await readCodingRunArtifact({ reference: reference as CodingRunArtifactReference });
+        if (result.status !== 'available') return c.json({ error: result.status === 'expired' ? 'Evidence has expired.' : 'Evidence is unavailable.' }, 410);
+        const body = new ArrayBuffer(result.bytes.byteLength);
+        new Uint8Array(body).set(result.bytes);
+        return new Response(body, { status: 200, headers: {
+          'content-type': result.reference.mediaType,
+          'content-length': String(result.reference.bytes),
+          'content-disposition': `attachment; filename="evidence-${encodeURIComponent(result.reference.evidenceId)}"`,
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'private, no-store',
+        } });
+      } catch {
+        return c.json({ error: 'Evidence is unavailable.' }, 404);
+      }
     });
 
   const githubRoutes = new Hono<ProjectApiEnv>()

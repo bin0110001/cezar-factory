@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add a GitHub issue run explorer backed by coding-run records, with bounded pagination, distinct execution states, Langfuse deep links, and issue-checked evidence downloads (#135).
 - Add evidence-backed Hindsight provenance, deterministic-first recall captures, version history, and explicit supersession while keeping memory advisory (#134).
 - Deploy the Langfuse v4 stack with isolated 30-day ClickHouse and event-object retention, private data services, health checks, trace links, worker correlation, an evaluation fixture, and scratch backup/upgrade guidance (#129).
 - Add digest-addressed coding-run evidence blobs with configurable expiry, integrity checks, permanent ledger references, and an explicit prune command (#130).
