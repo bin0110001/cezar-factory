@@ -2,9 +2,18 @@
   "status": "ok",
   "baseBranch": "dev",
   "mergedPullRequests": 50,
-  "openPullRequests": 1,
+  "openPullRequests": 2,
   "promoted": [],
-  "closed": [],
+  "closed": [
+    {
+      "issue": 277,
+      "pr": 388
+    },
+    {
+      "issue": 344,
+      "pr": 389
+    }
+  ],
   "skipped": [],
   "errors": []
 }

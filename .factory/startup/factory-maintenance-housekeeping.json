@@ -3,11 +3,11 @@
   "code": "READY",
   "workflow": "factory-maintenance",
   "step": "housekeeping",
-  "preparedAt": "2026-11-06T13:00:01.5821482Z",
-  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/eee7f97f-094b-4ae7-876c-84a5b4f4676f",
-  "repositoryRoot": "/projects/cezar-factory/.ai/cezar/worktrees/eee7f97f-094b-4ae7-876c-84a5b4f4676f",
-  "gitBranch": "cez/eee7f97f",
-  "factoryRuntimeRoot": "/home/cezar/.cezar/factory-runtime/3e2970df817b4590e6b487bf8973eaa7cf3a068a",
+  "preparedAt": "2026-11-10T04:00:01.7153369Z",
+  "workingDirectory": "/projects/cezar-factory/.ai/cezar/worktrees/391e40f9-b38a-41d3-a257-b228233f89a4",
+  "repositoryRoot": "/projects/cezar-factory/.ai/cezar/worktrees/391e40f9-b38a-41d3-a257-b228233f89a4",
+  "gitBranch": "cez/391e40f9",
+  "factoryRuntimeRoot": "/home/cezar/.cezar/factory-runtime/683159495772ca9d37ba81ded12596b6a0535b42",
   "requiredScripts": [
     "watchdog-automations.ps1",
     "sync-issue-delivery.ps1",
@@ -22,7 +22,8 @@
     "validate-backlog-label-audit-input.ps1",
     "apply-backlog-label-audit.ps1",
     "refresh-stale-workable.ps1",
-    "maintain-repository.ps1"
+    "maintain-repository.ps1",
+    "probe-model-endpoint.ps1"
   ],
   "tools": {
     "pwsh": true,
