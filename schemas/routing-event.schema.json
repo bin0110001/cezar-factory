@@ -14,7 +14,7 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "sequence": { "type": "integer", "minimum": 1 },
     "attempt": { "type": "integer", "minimum": 1 },
-    "state": { "enum": ["queued", "capacity-blocked", "routed", "running", "rate-limited", "retried", "completed"] },
+    "state": { "enum": ["queued", "capacity-blocked", "routed", "running", "rate-limited", "retried", "completed", "failed", "cancelled"] },
     "selected": {
       "type": "object",
       "additionalProperties": false,
@@ -26,6 +26,8 @@
     },
     "decisionReason": { "type": "string", "maxLength": 512 },
     "deferralReason": { "type": "string", "maxLength": 512 },
+    "fallback": { "type": "boolean" },
+    "forecastConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "quotaSnapshot": {
       "type": "object",
       "additionalProperties": false,

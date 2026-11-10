@@ -48,6 +48,8 @@ export function redactEvent(input: unknown): Record<string, unknown> {
     selected: selected && Object.keys(selected).length ? selected : undefined,
     decisionReason: str(e.decisionReason, 512),
     deferralReason: str(e.deferralReason, 512),
+    fallback: typeof e.fallback === 'boolean' ? e.fallback : undefined,
+    forecastConfidence: typeof e.forecastConfidence === 'number' && Number.isFinite(e.forecastConfidence) && e.forecastConfidence >= 0 && e.forecastConfidence <= 1 ? e.forecastConfidence : undefined,
     quotaSnapshot: quotaSnapshot && Object.keys(quotaSnapshot).length ? quotaSnapshot : undefined,
   });
 }

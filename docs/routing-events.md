@@ -7,9 +7,20 @@ Contract for routing observability (#94, delivered by #314). Code lives in
 ## Event
 
 Required: `schemaVersion` (1), `timestamp`, `sequence` (integer >= 1, store-assigned), `attempt` (>= 1), `state`
-(`queued | capacity-blocked | routed | running | rate-limited | retried | completed`).
+(`queued | capacity-blocked | routed | running | rate-limited | retried | completed | failed | cancelled`).
 Optional: `eventId`, `runId`, `attemptId`, `traceId`, `selected {model, tier, subscriptionAlias}`,
-`decisionReason`, `deferralReason`, `quotaSnapshot {limit, used, remaining, ratio, resetAt}`.
+`decisionReason`, `deferralReason`, `fallback`, `forecastConfidence` (0–1),
+`quotaSnapshot {limit, used, remaining, ratio, resetAt}`.
+
+## Metrics projection (#316)
+
+`computeRoutingMetrics(events)` is a pure, storage-agnostic projection over redacted event histories. It reports
+observed quota utilization, capacity-blocked durations, explicitly marked fallback frequency, terminal success
+rates by tier (completed and failed attempts; cancellations are not treated as successes or failures), and reported forecast confidence. Each numeric metric includes its sample count and returns
+`value: null` when no supporting observations exist. Blocked intervals without a following event are censored;
+events without run/attempt identity cannot contribute to duration or terminal outcome metrics. Forecast confidence
+is only averaged when a producer supplies it; it is not inferred from quota snapshots. The JSONL sink remains
+replaceable by #127's ledger adapter; this module adds no storage.
 
 ## Store
 
