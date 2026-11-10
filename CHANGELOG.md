@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Migrate installed Factory copies only from a schema-validated shadow-audit receipt. The new workflow
+  binds the receipt to the project path and compares manifest and shared-source hashes in a separate
+  `origin/dev` worktree. It leaves the project's checkout untouched, preserves modified files with
+  review diffs, records a backout before deletions, and opens a migration PR (#278).
 - Add a read-only registered-target shadow audit (`scripts/audit-shadow-copies.ps1`) with a bounded,
   schema-validated receipt, explicit unknown states for remote-only targets, and no target mutations (#277).
 - Add an event retention policy (`policies/retention.yaml`, `event_retention_days`) and a prune step

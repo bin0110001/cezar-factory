@@ -18,7 +18,7 @@ dev work -> tests/run-tests.ps1 passes -> promote-stable.ps1 -> origin/stable
 | `scripts/release/promote-stable.ps1` | The deploy gate. Requires a clean checkout, a valid automation catalog and a passing full test suite, then fast-forwards `origin/stable`. No skip switch; a failure moves nothing. |
 | `scripts/deploy/factory-autodeploy.sh` + `integrations/bazzite/factory-autodeploy.{service,timer}` | Host side. Fast-forwards the mounted checkout to `origin/stable`, verifies the container sees the same Git SHA, `VERSION`, and content digest, then runs `scripts/sync-all-automations.ps1` inside Cezar on every healthy timer tick. Never resets, stashes or overwrites: unrelated dirty or diverged state stops it (exit 20/21). For compatibility with older checkouts, the exact generated Prometheus token file is accepted only if it is a regular file whose contents match `integrations/bazzite/.env`; the next commit ignores it. |
 | `scripts/sync-all-automations.ps1` | Reconciles `[factory]` automations into every project in the host-local registry (`projectType` gates Godot-only automations). |
-| `scripts/migrate-to-shared.ps1` | Removes a project's installed Factory copy (everything in its manifest) so the shared one is used. Keeps the project-owned `factory.config.yaml`. |
+| `scripts/migrate-to-shared.ps1` | Consumes a fresh shadow-audit receipt, creates a separate migration worktree from `origin/dev`, and opens a PR containing only installed files whose manifest hash and normalized shared-source content still match. Modified files get review diffs; a backout record is committed before deletion. |
 
 ## Releasing
 
@@ -45,9 +45,15 @@ Redeploy the Cezar container once (`deploy-bazzite.sh`) so it gets the new envir
 
 ## Moving a project over
 
-`pwsh scripts/migrate-to-shared.ps1 -ProjectPath <project> -DryRun`, then without `-DryRun`, commit,
-and set `"mode": "shared"` on its registry entry so `push-factory-updates.ps1` only synchronizes
-automations for it. Until a project is migrated its installed copy shadows the shared one by name.
+Run the `factory-migrate-to-shared` workflow for a registered project. It refreshes the audit,
+then creates a migration branch and pull request from a separate worktree. The receipt binds to the
+registered project path; a mismatched checkout is refused. The project's original checkout stays
+unchanged. Only files proven identical by the receipt, manifest and current shared
+source are removed; modified files remain and receive local review-diff artifacts. The PR includes
+`.ai/factory/migration-backout.json`, which records the base SHA and restore command. After the PR is
+reviewed and merged, set `"mode": "shared"` on the project's registry entry so
+`push-factory-updates.ps1` only synchronizes automations for it. Until then its installed copy
+continues to shadow the shared one by name.
 Project-specific changes to a Factory workflow belong in the project's own
 `.ai/cezar/workflows/factory-<name>.yaml` (same `name:`), which wins over the shared copy.
 

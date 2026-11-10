@@ -1,0 +1,19 @@
+name: factory-migrate-to-shared
+description: Create a reviewed PR that removes only verified identical installed Factory files from this project.
+prompt: >
+  Prepare a safe migration of this project to the shared Factory checkout. Use the
+  registered-target audit receipt, preserve local changes and overrides, and
+  report the resulting pull request or the precise reason no migration was made.
+steps:
+  - id: startup
+    name: Prepare migration workflow
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-migrate-to-shared -Step startup -RequireGh -RequiredScripts audit-shadow-copies.ps1,migrate-to-shared.ps1
+    timeoutSeconds: 60
+  - id: audit
+    name: Refresh the registered-target shadow audit
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-shadow-copies.ps1 -RepositoryRoot $FACTORY_RUNTIME_ROOT -ReceiptPath .factory/release-reports/shadow-audit.json
+    timeoutSeconds: 300
+  - id: migrate
+    name: Create a migration branch and pull request
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/migrate-to-shared.ps1 -ProjectId "$CEZ_PROJECT_ID" -AuditReceiptPath .factory/release-reports/shadow-audit.json -FactoryPath $FACTORY_RUNTIME_ROOT -CreatePullRequest
+    timeoutSeconds: 600

@@ -51,6 +51,17 @@ function Get-ObjectValue($Object, [string]$Name) {
     $null
 }
 
+function Get-ProjectPathHash([string]$Path) {
+    if (-not $Path) { return $null }
+    $canonical = [IO.Path]::GetFullPath($Path)
+    if (Test-Path -LiteralPath $canonical -PathType Container) { $canonical = (Resolve-Path -LiteralPath $canonical).Path }
+    $canonical = $canonical.Replace('\', '/')
+    $root = [IO.Path]::GetPathRoot($canonical).Replace('\', '/')
+    if ($canonical.Length -gt $root.Length) { $canonical = $canonical.TrimEnd('/') }
+    if ([IO.Path]::DirectorySeparatorChar -eq [char]'\') { $canonical = $canonical.ToLowerInvariant() }
+    Get-TextHash $canonical
+}
+
 function New-FileFinding([string]$TargetRelativePath, [string]$ProjectRoot, [string]$Mode, $ManifestEntry) {
     $targetFull = [IO.Path]::GetFullPath((Join-Path $ProjectRoot $TargetRelativePath))
     $prefix = $ProjectRoot.TrimEnd([char[]]@('\','/')) + [IO.Path]::DirectorySeparatorChar
@@ -85,13 +96,15 @@ function Get-TargetResult($Target, [int]$Index) {
     $projectPath = Get-ObjectValue $Target 'projectPath'
     $id = if ($projectId) { [string]$projectId } else { "target-$Index" }
     if (-not $projectPath) {
-        return [pscustomobject]@{ projectId = $id; effectiveSource = 'unknown'; shadowConflict = 'unknown'; migrationStatus = 'unknown'; files = @() }
+        return [pscustomobject]@{ projectId = $id; projectPathHash = $null; effectiveSource = 'unknown'; shadowConflict = 'unknown'; migrationStatus = 'unknown'; files = @() }
     }
     $project = [IO.Path]::GetFullPath([string]$projectPath)
+    $projectPathHash = Get-ProjectPathHash $project
     if (-not (Test-Path -LiteralPath $project -PathType Container)) {
-        return [pscustomobject]@{ projectId = $id; effectiveSource = 'unknown'; shadowConflict = 'unknown'; migrationStatus = 'unreachable'; files = @() }
+        return [pscustomobject]@{ projectId = $id; projectPathHash = $projectPathHash; effectiveSource = 'unknown'; shadowConflict = 'unknown'; migrationStatus = 'unreachable'; files = @() }
     }
     $project = (Resolve-Path -LiteralPath $project).Path
+    $projectPathHash = Get-ProjectPathHash $project
     $factoryDir = Get-FactoryDir $project
     $mode = [string](Get-ObjectValue $Target 'mode')
     if ($mode -ne 'shared' -and (Test-Path -LiteralPath (Join-Path $factoryDir 'factory.config.yaml') -PathType Leaf)) {
@@ -101,9 +114,9 @@ function Get-TargetResult($Target, [int]$Index) {
     $manifest = Read-Manifest $factoryDir
     if (-not $manifest) {
         if ($mode -eq 'shared') {
-            return [pscustomobject]@{ projectId = $id; effectiveSource = 'shared'; shadowConflict = 'none'; migrationStatus = 'shared'; files = @() }
+            return [pscustomobject]@{ projectId = $id; projectPathHash = $projectPathHash; effectiveSource = 'shared'; shadowConflict = 'none'; migrationStatus = 'shared'; files = @() }
         }
-        return [pscustomobject]@{ projectId = $id; effectiveSource = 'installed'; shadowConflict = 'none'; migrationStatus = 'not-installed'; files = @() }
+        return [pscustomobject]@{ projectId = $id; projectPathHash = $projectPathHash; effectiveSource = 'installed'; shadowConflict = 'none'; migrationStatus = 'not-installed'; files = @() }
     }
     if (-not ($manifest.files -is [array]) -or $manifest.files.Count -gt 1000) { throw "Target '$id' has an invalid or over-limit manifest." }
 
@@ -114,7 +127,7 @@ function Get-TargetResult($Target, [int]$Index) {
     $source = if ($sources -contains 'override') { 'override' } elseif ($sources -contains 'installed') { 'installed' } elseif ($mode -eq 'shared') { 'shared' } else { 'installed' }
     $conflict = if ($conflicts -contains 'modified') { 'modified' } elseif ($conflicts -contains 'identical') { 'identical' } elseif ($conflicts -contains 'unknown') { 'unknown' } else { 'none' }
     $status = if ($statuses -contains 'modified') { 'modified' } elseif ($files.Count -and @($statuses | Where-Object { $_ -ne 'not-installed' }).Count -eq 0) { 'not-installed' } elseif ($files.Count) { 'shadowed' } else { 'not-installed' }
-    [pscustomobject]@{ projectId = $id; effectiveSource = $source; shadowConflict = $conflict; migrationStatus = $status; files = $files }
+    [pscustomobject]@{ projectId = $id; projectPathHash = $projectPathHash; effectiveSource = $source; shadowConflict = $conflict; migrationStatus = $status; files = $files }
 }
 
 $status = 'complete'

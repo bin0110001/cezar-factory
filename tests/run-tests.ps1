@@ -1457,13 +1457,8 @@ Copy-Item (Join-Path $PSScriptRoot 'fixtures/godot-project') $mp -Recurse
 $mcfg = Join-Path $mp '.ai/factory/factory.config.yaml'
 [IO.File]::WriteAllText($mcfg, [regex]::Replace([IO.File]::ReadAllText($mcfg), '(?m)^(\s*version:\s*)"\d+\.\d+\.\d+"', "`${1}`"$curVer`""), [Text.UTF8Encoding]::new($false))
 Assert 'migrate: fixture installs' ((Run 'install.ps1' @{ ProjectPath = $mp; FactoryPath = $factory }).Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
-Add-Content (Join-Path $mp '.ai/skills/factory-plan/SKILL.md') 'local edit'
-$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp }
-Assert 'migrate: a locally edited managed file blocks and nothing is removed' ($r.Code -ne 0 -and (Test-Path (Join-Path $mp '.ai/skills/factory-plan/SKILL.md')) -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
-$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true; DryRun = $true }
-Assert 'migrate: dry-run removes nothing' ($r.Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
-$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true }
-Assert 'migrate: removes installed workflows, skills and manifest but keeps project config' ($r.Code -eq 0 -and -not (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')) -and -not (Test-Path (Join-Path $mp '.ai/skills/factory-plan')) -and -not (Test-Path (Join-Path $mp '.ai/factory/manifest.json')) -and (Test-Path $mcfg))
+$r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; ProjectId = 'missing'; AuditReceiptPath = (Join-Path $tmp 'missing-audit.json'); FactoryPath = $factory; ReviewArtifactRoot = (Join-Path $tmp 'migration-review') }
+Assert 'migrate: missing audit receipt fails before changing the target' ($r.Code -ne 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')) -and (Test-Path $mcfg))
 
 # ---- Read-only shadow audit ---------------------------------------------
 Write-Host '== shadow audit =='
@@ -1495,7 +1490,7 @@ function Invoke-ShadowAudit([string]$Name, $Targets, [string]$RegistryOverride =
 }
 $auditCleanProject = New-AuditProject 'clean' $auditSharedContent
 $auditClean = Invoke-ShadowAudit 'clean' @([pscustomobject]@{ projectId = 'clean'; projectPath = $auditCleanProject })
-Assert 'shadow audit: identical installed copy is classified as shadowed' ($auditClean.Run.Code -eq 0 -and $auditClean.Receipt.targets[0].effectiveSource -eq 'installed' -and $auditClean.Receipt.targets[0].shadowConflict -eq 'identical' -and $auditClean.Receipt.targets[0].migrationStatus -eq 'shadowed' -and (Test-Json -Json (Get-Content -Raw $auditClean.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
+Assert 'shadow audit: identical installed copy is classified as shadowed and path-bound' ($auditClean.Run.Code -eq 0 -and $auditClean.Receipt.targets[0].effectiveSource -eq 'installed' -and $auditClean.Receipt.targets[0].shadowConflict -eq 'identical' -and $auditClean.Receipt.targets[0].migrationStatus -eq 'shadowed' -and $auditClean.Receipt.targets[0].projectPathHash -match '^[a-f0-9]{64}$' -and (Test-Json -Json (Get-Content -Raw $auditClean.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
 $auditChangedProject = New-AuditProject 'changed' $auditSharedContent
 Add-Content (Join-Path $auditChangedProject $auditTargetRel) 'local edit'
 $auditChanged = Invoke-ShadowAudit 'changed' @([pscustomobject]@{ projectId = 'changed'; projectPath = $auditChangedProject })
@@ -1517,6 +1512,73 @@ $auditRemote = Invoke-ShadowAudit 'remote' @([pscustomobject]@{ projectId = 'rem
 Assert 'shadow audit: remote-only target remains unknown' ($auditRemote.Run.Code -eq 0 -and $auditRemote.Receipt.targets[0].effectiveSource -eq 'unknown' -and $auditRemote.Receipt.targets[0].migrationStatus -eq 'unknown')
 $auditNoRegistry = Invoke-ShadowAudit 'no-registry' $null (Join-Path $auditRoot 'not-configured.json')
 Assert 'shadow audit: missing registry requests target configuration and writes a valid receipt' ($auditNoRegistry.Run.Code -eq 0 -and $auditNoRegistry.Receipt.status -eq 'needs-target-configuration' -and (Test-Json -Json (Get-Content -Raw $auditNoRegistry.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
+
+Write-Host '== shadow migration =='
+$migrationReviewRoot = Join-Path $auditRoot 'migration-review'
+$migrationPlanRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditCleanProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+$migrationPlan = $migrationPlanRun.Out | ConvertFrom-Json
+Assert 'migration dry-run plans only receipt-approved identical files and leaves target intact' ($migrationPlanRun.Code -eq 0 -and $migrationPlan.status -eq 'ready' -and $migrationPlan.removable.Count -eq 1 -and (Test-Path (Join-Path $auditCleanProject $auditTargetRel)))
+$migrationPathMismatch = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditChangedProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+Assert 'migration refuses a receipt paired with a different checkout path' ($migrationPathMismatch.Code -ne 0)
+$migrationMissingManifest = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditMissingProject; ProjectId = 'missing'; AuditReceiptPath = $auditMissing.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+Assert 'migration refuses a target without a manifest' ($migrationMissingManifest.Code -ne 0)
+$migrationModifiedRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditChangedProject; ProjectId = 'changed'; AuditReceiptPath = $auditChanged.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+$migrationModified = $migrationModifiedRun.Out | ConvertFrom-Json
+Assert 'migration keeps locally modified files and writes a review diff' ($migrationModifiedRun.Code -eq 0 -and $migrationModified.status -eq 'no-safe-files' -and $migrationModified.retained -eq 1 -and $migrationModified.reviewDiffs.Count -eq 1 -and (Test-Path $migrationModified.reviewDiffs[0].diffPath) -and (Test-Path (Join-Path $auditChangedProject $auditTargetRel)))
+$migrationOverrideRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditOverrideProject; ProjectId = 'override'; AuditReceiptPath = $auditOverride.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+$migrationOverride = $migrationOverrideRun.Out | ConvertFrom-Json
+Assert 'migration retains namespaced overrides' ($migrationOverrideRun.Code -eq 0 -and $migrationOverride.status -eq 'no-safe-files' -and $migrationOverride.retained -eq 1 -and (Get-FileTextHash $auditOverridePath) -eq $auditOverrideBefore)
+$migrationUnknownRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditRemote.ReceiptPath; ProjectId = 'remote'; AuditReceiptPath = $auditRemote.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot }
+Assert 'migration refuses remote-only targets' ($migrationUnknownRun.Code -ne 0)
+
+# Exercise the mutation path only against a local bare remote and a fake gh executable.
+$migrationOrigin = Join-Path $auditRoot 'migration-origin.git'
+& git init -q --bare $migrationOrigin
+& git -C $auditCleanProject init -q -b dev
+& git -C $auditCleanProject config user.email 'factory-test@example.invalid'
+& git -C $auditCleanProject config user.name 'Factory Test'
+New-Item -ItemType Directory -Path (Join-Path $auditCleanProject '.ai/factory') -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $auditCleanProject '.ai/factory/factory.config.yaml'), "factory:`n  source: installed`n", [Text.UTF8Encoding]::new($false))
+& git -C $auditCleanProject add -A
+& git -C $auditCleanProject commit -q -m 'Fixture base'
+& git -C $auditCleanProject remote add origin $migrationOrigin
+& git -C $auditCleanProject push -q -u origin dev
+$fakeGh = Join-Path $auditRoot 'fake-gh.cmd'
+$fakeGhBody = @(
+    '@echo off',
+    'if %FAKE_GH_FAIL%==1 (echo simulated failure& exit /b 1)',
+    'if %1==pr if %2==create (echo https://github.com/example/project/pull/1& exit /b 0)',
+    'exit /b 2'
+) -join "`r`n"
+[IO.File]::WriteAllText($fakeGh, $fakeGhBody, [Text.Encoding]::ASCII)
+$env:FAKE_GH_FAIL = '0'
+$migrationPrRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditCleanProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot; GhCommand = $fakeGh; CreatePullRequest = $true }
+$migrationPr = $migrationPrRun.Out | ConvertFrom-Json
+$baseTargetHash = Get-FileTextHash (Join-Path $auditCleanProject $auditTargetRel)
+Assert 'migration PR uses a separate branch and leaves the original checkout clean' ($migrationPrRun.Code -eq 0 -and $migrationPr.status -eq 'pr-open' -and $migrationPr.pullRequest -eq 'https://github.com/example/project/pull/1' -and (Test-Path (Join-Path $auditCleanProject $auditTargetRel)) -and -not (git -C $auditCleanProject status --porcelain))
+$migratedTreeEntry = (& git -C $auditCleanProject ls-tree $migrationPr.branch -- $auditTargetRel | Out-String).Trim()
+$backoutJson = (& git -C $auditCleanProject show "$($migrationPr.branch):.ai/factory/migration-backout.json" | Out-String)
+$backoutValid = $false
+try { $backoutValid = Test-Json -Json $backoutJson -SchemaFile (Join-Path $factory 'schemas/shadow-migration-backout.schema.json') } catch { }
+Assert 'migration branch removes only selected files and carries a valid pre-deletion backout record' (-not $migratedTreeEntry -and $backoutValid -and $migrationPr.removedFiles.Count -eq 1)
+$restoreWorktree = Join-Path $auditRoot 'migration-restore-worktree'
+& git -C $auditCleanProject worktree add -q --detach $restoreWorktree $migrationPr.branch
+$backout = $backoutJson | ConvertFrom-Json
+& git -C $restoreWorktree restore --source $backout.baseSha -- $auditTargetRel
+$restoredHash = Get-FileTextHash (Join-Path $restoreWorktree $auditTargetRel)
+& git -C $auditCleanProject worktree remove --force $restoreWorktree
+Assert 'migration backout command source restores the exact removed file hash' ($restoredHash -eq $baseTargetHash)
+$dirtyMarker = Join-Path $auditCleanProject 'untracked-local-edit.txt'
+[IO.File]::WriteAllText($dirtyMarker, 'keep me', [Text.UTF8Encoding]::new($false))
+$dirtyMigration = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditCleanProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot; GhCommand = $fakeGh; CreatePullRequest = $true }
+Assert 'migration refuses a dirty checkout without changing its managed files' ($dirtyMigration.Code -ne 0 -and (Test-Path $dirtyMarker) -and (Test-Path (Join-Path $auditCleanProject $auditTargetRel)))
+Remove-Item -LiteralPath $dirtyMarker -Force
+$env:FAKE_GH_FAIL = '1'
+$failedPrMigration = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditCleanProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot; GhCommand = $fakeGh; CreatePullRequest = $true }
+Remove-Item Env:FAKE_GH_FAIL -ErrorAction SilentlyContinue
+Assert 'migration PR failure leaves the original checkout unchanged' ($failedPrMigration.Code -ne 0 -and (Test-Path (Join-Path $auditCleanProject $auditTargetRel)) -and -not (git -C $auditCleanProject status --porcelain))
+$migrationWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/migrate-to-shared.yaml')
+Assert 'migration workflow owns the audit and migration script command steps' ($migrationWorkflow -match 'command:.*audit-shadow-copies\.ps1' -and $migrationWorkflow -match 'command:.*migrate-to-shared\.ps1' -and $migrationWorkflow -match 'CreatePullRequest')
 
 # ---- Godot upgrade -------------------------------------------------------
 Write-Host '== godot upgrade =='
