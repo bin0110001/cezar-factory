@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Factory shadow-copy audit receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["complete", "needs-target-configuration", "invalid-registry"] },
+    "factoryVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "targets": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/target" }
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "errorCode": { "const": "registry-invalid" }
+  },
+  "required": ["schemaVersion", "status", "factoryVersion", "generatedAt", "targets", "summary"],
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "effectiveSource": { "enum": ["shared", "installed", "override", "unknown"] },
+        "shadowConflict": { "enum": ["none", "identical", "modified", "unknown"] },
+        "migrationStatus": { "enum": ["shared", "shadowed", "modified", "not-installed", "unreachable", "unknown"] },
+        "files": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/file" }
+        }
+      },
+      "required": ["projectId", "effectiveSource", "shadowConflict", "migrationStatus", "files"]
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "sourcePath": { "type": ["string", "null"], "maxLength": 1024 },
+        "effectiveSource": { "enum": ["shared", "installed", "override", "unknown"] },
+        "shadowConflict": { "enum": ["none", "identical", "modified", "unknown"] },
+        "migrationStatus": { "enum": ["shared", "shadowed", "modified", "not-installed", "unreachable", "unknown"] }
+      },
+      "required": ["path", "sourcePath", "effectiveSource", "shadowConflict", "migrationStatus"]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "shared": { "type": "integer", "minimum": 0 },
+        "shadowed": { "type": "integer", "minimum": 0 },
+        "modified": { "type": "integer", "minimum": 0 },
+        "notInstalled": { "type": "integer", "minimum": 0 },
+        "unreachable": { "type": "integer", "minimum": 0 },
+        "unknown": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["total", "shared", "shadowed", "modified", "notInstalled", "unreachable", "unknown"]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "invalid-registry" } }, "required": ["status"] },
+      "then": { "required": ["errorCode"] }
+    }
+  ]
+}

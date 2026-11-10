@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add a read-only registered-target shadow audit (`scripts/audit-shadow-copies.ps1`) with a bounded,
+  schema-validated receipt, explicit unknown states for remote-only targets, and no target mutations (#277).
 - Add an event retention policy (`policies/retention.yaml`, `event_retention_days`) and a prune step
   (`scripts/prune-events.ps1`) that atomically removes JSONL events older than the window, keeps newer
   and unparseable-timestamp events byte-for-byte, rejects invalid retention, and logs one JSON line.

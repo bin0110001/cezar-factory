@@ -99,7 +99,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/audit-shadow-copies.ps1', 'schemas/shadow-audit-receipt.schema.json', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
@@ -1464,6 +1464,59 @@ $r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true; DryRun = $
 Assert 'migrate: dry-run removes nothing' ($r.Code -eq 0 -and (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')))
 $r = Run 'migrate-to-shared.ps1' @{ ProjectPath = $mp; Force = $true }
 Assert 'migrate: removes installed workflows, skills and manifest but keeps project config' ($r.Code -eq 0 -and -not (Test-Path (Join-Path $mp '.ai/cezar/workflows/factory-plan.yaml')) -and -not (Test-Path (Join-Path $mp '.ai/skills/factory-plan')) -and -not (Test-Path (Join-Path $mp '.ai/factory/manifest.json')) -and (Test-Path $mcfg))
+
+# ---- Read-only shadow audit ---------------------------------------------
+Write-Host '== shadow audit =='
+$auditRoot = Join-Path $tmp 'shadow-audit'
+New-Item -ItemType Directory -Path $auditRoot -Force | Out-Null
+$auditSourceRel = 'skills/factory-work-backlog/SKILL.md'
+$auditTargetRel = '.ai/skills/factory-work-backlog/SKILL.md'
+$auditSource = Join-Path $factory $auditSourceRel
+$auditSharedContent = New-ManagedContent $auditSource $auditSourceRel $curVer
+function New-AuditProject([string]$Name, [string]$Content, [string]$SourceRel = 'skills/factory-work-backlog/SKILL.md') {
+    $root = Join-Path $auditRoot $Name
+    $filePath = Join-Path $root $auditTargetRel
+    New-Item -ItemType Directory -Path (Split-Path -Parent $filePath) -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $root '.ai/factory') -Force | Out-Null
+    [IO.File]::WriteAllText($filePath, $Content, [Text.UTF8Encoding]::new($false))
+    $hash = Get-FileTextHash $filePath
+    $manifest = [ordered]@{ factory_version = $curVer; files = @([ordered]@{ path = $auditTargetRel; sha256 = $hash }) } | ConvertTo-Json -Depth 4
+    [IO.File]::WriteAllText((Join-Path $root '.ai/factory/manifest.json'), $manifest, [Text.UTF8Encoding]::new($false))
+    $root
+}
+function Invoke-ShadowAudit([string]$Name, $Targets, [string]$RegistryOverride = '') {
+    $registryPath = if ($RegistryOverride) { $RegistryOverride } else { Join-Path $auditRoot "$Name-targets.json" }
+    if ($Targets) { [IO.File]::WriteAllText($registryPath, ([ordered]@{ targets = @($Targets) } | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false)) }
+    $receiptPath = Join-Path $auditRoot "$Name-receipt.json"
+    $args = @{ RepositoryRoot = $factory; TargetsPath = $registryPath; ReceiptPath = $receiptPath }
+    $run = Run 'audit-shadow-copies.ps1' $args
+    $receipt = if (Test-Path -LiteralPath $receiptPath) { Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json } else { $null }
+    [pscustomobject]@{ Run = $run; Receipt = $receipt; ReceiptPath = $receiptPath }
+}
+$auditCleanProject = New-AuditProject 'clean' $auditSharedContent
+$auditClean = Invoke-ShadowAudit 'clean' @([pscustomobject]@{ projectId = 'clean'; projectPath = $auditCleanProject })
+Assert 'shadow audit: identical installed copy is classified as shadowed' ($auditClean.Run.Code -eq 0 -and $auditClean.Receipt.targets[0].effectiveSource -eq 'installed' -and $auditClean.Receipt.targets[0].shadowConflict -eq 'identical' -and $auditClean.Receipt.targets[0].migrationStatus -eq 'shadowed' -and (Test-Json -Json (Get-Content -Raw $auditClean.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
+$auditChangedProject = New-AuditProject 'changed' $auditSharedContent
+Add-Content (Join-Path $auditChangedProject $auditTargetRel) 'local edit'
+$auditChanged = Invoke-ShadowAudit 'changed' @([pscustomobject]@{ projectId = 'changed'; projectPath = $auditChangedProject })
+Assert 'shadow audit: edited managed file is classified modified' ($auditChanged.Run.Code -eq 0 -and $auditChanged.Receipt.targets[0].migrationStatus -eq 'modified' -and $auditChanged.Receipt.targets[0].shadowConflict -eq 'modified')
+$auditOverrideProject = New-AuditProject 'override' (New-ManagedContent $auditSource 'overrides/skills/factory-work-backlog/SKILL.md' $curVer) 'overrides/skills/factory-work-backlog/SKILL.md'
+$auditOverridePath = Join-Path $auditOverrideProject $auditTargetRel
+$auditOverrideBefore = (Get-FileTextHash $auditOverridePath)
+$auditOverride = Invoke-ShadowAudit 'override' @([pscustomobject]@{ projectId = 'override'; projectPath = $auditOverrideProject })
+Assert 'shadow audit: override is identified and preserved' ($auditOverride.Run.Code -eq 0 -and $auditOverride.Receipt.targets[0].effectiveSource -eq 'override' -and $auditOverride.Receipt.targets[0].migrationStatus -eq 'shadowed' -and (Get-FileTextHash $auditOverridePath) -eq $auditOverrideBefore)
+$auditMissingProject = Join-Path $auditRoot 'missing-manifest'; New-Item -ItemType Directory -Path $auditMissingProject -Force | Out-Null
+$auditMissing = Invoke-ShadowAudit 'missing-manifest' @([pscustomobject]@{ projectId = 'missing'; projectPath = $auditMissingProject })
+Assert 'shadow audit: missing manifest is not-installed' ($auditMissing.Run.Code -eq 0 -and $auditMissing.Receipt.targets[0].migrationStatus -eq 'not-installed')
+$auditSharedProject = Join-Path $auditRoot 'shared'; New-Item -ItemType Directory -Path $auditSharedProject -Force | Out-Null
+$auditShared = Invoke-ShadowAudit 'shared' @([pscustomobject]@{ projectId = 'shared'; projectPath = $auditSharedProject; mode = 'shared' })
+Assert 'shadow audit: a shared target with no installed manifest stays shared' ($auditShared.Run.Code -eq 0 -and $auditShared.Receipt.targets[0].effectiveSource -eq 'shared' -and $auditShared.Receipt.targets[0].migrationStatus -eq 'shared')
+$auditUnreachable = Invoke-ShadowAudit 'unreachable' @([pscustomobject]@{ projectId = 'unreachable'; projectPath = (Join-Path $auditRoot 'absent') })
+Assert 'shadow audit: unreachable registered path is reported without path discovery' ($auditUnreachable.Run.Code -eq 0 -and $auditUnreachable.Receipt.targets[0].migrationStatus -eq 'unreachable')
+$auditRemote = Invoke-ShadowAudit 'remote' @([pscustomobject]@{ projectId = 'remote'; mode = 'shared' })
+Assert 'shadow audit: remote-only target remains unknown' ($auditRemote.Run.Code -eq 0 -and $auditRemote.Receipt.targets[0].effectiveSource -eq 'unknown' -and $auditRemote.Receipt.targets[0].migrationStatus -eq 'unknown')
+$auditNoRegistry = Invoke-ShadowAudit 'no-registry' $null (Join-Path $auditRoot 'not-configured.json')
+Assert 'shadow audit: missing registry requests target configuration and writes a valid receipt' ($auditNoRegistry.Run.Code -eq 0 -and $auditNoRegistry.Receipt.status -eq 'needs-target-configuration' -and (Test-Json -Json (Get-Content -Raw $auditNoRegistry.ReceiptPath) -SchemaFile (Join-Path $factory 'schemas/shadow-audit-receipt.schema.json')))
 
 # ---- Godot upgrade -------------------------------------------------------
 Write-Host '== godot upgrade =='
