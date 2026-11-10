@@ -54,6 +54,7 @@ import {
   getTrackerAssociation, getTrackerConnection,
   getTrackerCandidates,
   getTrackerItem,
+  getCodingRunExplorer,
   getTrackerItems,
   getUiState,
   getWorkflows,
@@ -159,6 +160,7 @@ export const queryKeys = {
       'tracker', queryScope(), 'detail', association.kind, association.source.id,
       association.source.webUrl, association.externalId, association.connectionId ?? null, id,
     ] as const,
+    runExplorer: (issueNumber: number) => ['tracker', queryScope(), 'run-explorer', issueNumber] as const,
   },
   get health() {
     return [queryScope(), 'health'] as const
@@ -359,6 +361,18 @@ export function useTrackerItem(association: TrackerAssociation | null | undefine
       : ['tracker', queryScope(), 'detail', 'disabled'],
     queryFn: ({ signal }) => getTrackerItem(id as string, { signal, association: association ?? undefined }),
     enabled: association != null && id != null && id !== '',
+  })
+}
+
+export function useCodingRunExplorer(issueNumber: number | undefined) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.tracker.runExplorer(issueNumber ?? 0),
+    enabled: issueNumber !== undefined,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => getCodingRunExplorer(issueNumber!, pageParam, { signal }),
+    getNextPageParam: (page) => page.nextCursor,
+    staleTime: 30_000,
+    retry: false,
   })
 }
 

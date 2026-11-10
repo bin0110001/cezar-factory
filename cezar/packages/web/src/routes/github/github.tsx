@@ -59,6 +59,7 @@ import { orderSkillsByUsage } from '@/lib/skills'
 import { cn, isHttpUrl } from '@/lib/utils'
 
 import { Markdown } from '../task-thread/markdown'
+import { IssueRunExplorer } from '../task-thread/issue-run-explorer'
 import {
   allLabels,
   filterGithubItems,
@@ -941,6 +942,8 @@ function GithubDetail({
           <p className="text-soft-foreground">(no description)</p>
         )}
       </div>
+
+      {item.kind === 'issue' ? <IssueRunExplorer issueNumber={item.number} issueBlocked={item.labels.some((label) => label.toLowerCase() === 'factory:blocked')} /> : null}
 
       <GithubThread item={item} colors={colors} />
 

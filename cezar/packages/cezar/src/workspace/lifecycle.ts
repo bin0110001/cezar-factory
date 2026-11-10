@@ -17,14 +17,17 @@ import {
   type CodingRunEvent,
   type CodingRunRecord,
   type CodingRunSnapshot,
+  type CodingRunExplorerResponse,
+  codingRunExplorerResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { cezarHomeDir } from '../paths.ts';
 import { globToRegExp } from '../server/impact/manifest.ts';
-import { createChildTraceContext, createTraceContext, parseTraceparent, safeTelemetryAttributes, stableSpanId } from '../observability/trace-context.ts';
+import { createChildTraceContext, createLangfuseTraceUrl, createTraceContext, parseTraceparent, safeTelemetryAttributes, stableSpanId } from '../observability/trace-context.ts';
 import { verifyCodingAttemptManifest } from './coding-run-manifest.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
+const langfuseHealthCache = new Map<string, { healthy: boolean; expiresAt: number }>();
 
 interface Statement {
   run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
@@ -426,6 +429,139 @@ export async function getCodingRunSnapshot(options: { runId: string; cwd?: strin
     const row = db.prepare('SELECT projection_json FROM coding_runs WHERE repo_id=? AND run_id=?').get(repoId, options.runId);
     if (!row) return undefined;
     return codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
+  } finally { db.close(); }
+}
+
+interface CodingRunExplorerCursor { schemaVersion: 1; repoId: string; issue: string; updatedAt: string; runId: string }
+function decodeCodingRunExplorerCursor(value: string): CodingRunExplorerCursor {
+  if (value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('invalid coding-run explorer cursor');
+  let parsed: unknown;
+  try { parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')); }
+  catch { throw new Error('invalid coding-run explorer cursor'); }
+  if (!parsed || typeof parsed !== 'object') throw new Error('invalid coding-run explorer cursor');
+  const cursor = parsed as Record<string, unknown>;
+  if (cursor.schemaVersion !== 1 || typeof cursor.repoId !== 'string' || typeof cursor.issue !== 'string'
+    || typeof cursor.updatedAt !== 'string' || !Number.isFinite(Date.parse(cursor.updatedAt)) || typeof cursor.runId !== 'string') {
+    throw new Error('invalid coding-run explorer cursor');
+  }
+  return cursor as unknown as CodingRunExplorerCursor;
+}
+
+async function langfuseIsHealthy(host: string | undefined): Promise<boolean> {
+  if (!host) return false;
+  const now = Date.now();
+  const cached = langfuseHealthCache.get(host);
+  if (cached && cached.expiresAt > now) return cached.healthy;
+  try {
+    const base = new URL(host);
+    if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) return false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1_500);
+    let healthy = false;
+    try {
+      const response = await fetch(`${host.replace(/\/+$/, '')}/api/public/health`, { signal: controller.signal });
+      if (response.ok) {
+        const body = await response.json() as { status?: unknown };
+        healthy = body.status === 'OK';
+      }
+    } finally { clearTimeout(timer); }
+    langfuseHealthCache.set(host, { healthy, expiresAt: now + 10_000 });
+    return healthy;
+  } catch {
+    langfuseHealthCache.set(host, { healthy: false, expiresAt: now + 5_000 });
+    return false;
+  }
+}
+
+/** Bounded issue run summaries from the authoritative coding-run projection, newest first. */
+export async function queryCodingRunExplorer(options: {
+  issue: string; cursor?: string; limit?: number; cwd?: string; home?: string;
+}): Promise<CodingRunExplorerResponse> {
+  const issue = resolveIssue(options.issue);
+  const requestedLimit = Math.trunc(options.limit ?? 20);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(50, requestedLimit)) : 20;
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const cursor = options.cursor ? decodeCodingRunExplorerCursor(options.cursor) : undefined;
+    if (cursor && (cursor.repoId !== repoId || cursor.issue !== issue)) throw new Error('coding-run explorer cursor belongs to another repository or issue');
+    const rows = cursor
+      ? db.prepare(`SELECT run_id,record_json,CASE WHEN length(projection_json)<=1000000 THEN projection_json ELSE NULL END projection_json,updated_at FROM coding_runs WHERE repo_id=? AND issue_key=?
+          AND (updated_at<? OR (updated_at=? AND run_id<?)) ORDER BY updated_at DESC,run_id DESC LIMIT ?`)
+        .all(repoId, issue, cursor.updatedAt, cursor.updatedAt, cursor.runId, limit + 1)
+      : db.prepare(`SELECT run_id,record_json,CASE WHEN length(projection_json)<=1000000 THEN projection_json ELSE NULL END projection_json,updated_at FROM coding_runs WHERE repo_id=? AND issue_key=?
+          ORDER BY updated_at DESC,run_id DESC LIMIT ?`).all(repoId, issue, limit + 1);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const traceHost = process.env.LANGFUSE_HOST;
+    const traceProjectId = process.env.LANGFUSE_PROJECT_ID;
+    const traceReady = Boolean(page.length && traceHost && traceProjectId && await langfuseIsHealthy(traceHost));
+    const runs = page.map((row) => {
+      let record: CodingRunRecord | undefined;
+      let snapshot: CodingRunSnapshot | undefined;
+      let integrity: 'valid' | 'incomplete' | 'corrupt' | 'unsupported-version' = 'valid';
+      try { record = codingRunRecordSchema.parse(JSON.parse(String(row.record_json)) as unknown); }
+      catch { integrity = 'corrupt'; }
+      try {
+        if (row.projection_json === null) throw new Error('coding-run projection exceeds the explorer size bound');
+        const raw = JSON.parse(String(row.projection_json)) as unknown;
+        if (raw && typeof raw === 'object' && 'schemaVersion' in raw && (raw as { schemaVersion?: unknown }).schemaVersion !== 1) integrity = 'unsupported-version';
+        else snapshot = codingRunSnapshotSchema.parse(raw);
+      } catch (error) { if (integrity === 'valid') integrity = error instanceof Error && error.message.includes('size bound') ? 'incomplete' : 'corrupt'; }
+      if (!record) return {
+        runId: String(row.run_id), issueNumber: Number(issue), status: 'unknown' as const, integrity,
+        worker: { availability: 'unknown' as const }, agent: { availability: 'unknown' as const }, model: { availability: 'unknown' as const },
+        pullRequest: { availability: 'unknown' as const }, commits: [], validationCount: 0, attemptCount: 0, attempts: [], eventCount: 0, timeline: [], timelineTruncated: false,
+        evidence: [], evidenceCount: 0, evidenceComplete: false, trace: { availability: 'unavailable' as const, reason: 'Run metadata is unreadable.' },
+      };
+      const attempts = snapshot?.attempts ?? [];
+      const events = snapshot?.events ?? [];
+      const evidence = snapshot?.evidence ?? [];
+      const latestAttempt = [...attempts].sort((a, b) => b.index - a.index)[0];
+      const hasValidation = events.some((event) => event.type === 'validation.completed');
+      const validationEvents = events.filter((event) => event.type === 'validation.completed');
+      const status = integrity !== 'valid' ? 'unknown'
+        : record.status === 'running' ? 'running'
+          : record.status === 'failed' ? 'failed'
+            : record.status === 'cancelled' ? 'cancelled'
+              : !hasValidation ? 'untested'
+                : attempts.some((attempt) => attempt.status === 'failed' || attempt.status === 'cancelled') ? 'flaky' : 'passed';
+      const verifiedManifest = latestAttempt?.manifest ? verifyCodingAttemptManifest(latestAttempt.manifest).status === 'valid' : false;
+      const traceId = createTraceContext({ identity: record.correlationId }).traceId;
+      let trace: { availability: 'available'; url: string; traceId: string } | { availability: 'unavailable'; reason: string };
+      try {
+        if (!traceHost || !traceProjectId) throw new Error('Langfuse trace links are not configured.');
+        if (!traceReady) throw new Error('Langfuse is offline or its health check did not pass.');
+        trace = { availability: 'available', traceId, url: createLangfuseTraceUrl({ baseUrl: traceHost, projectId: traceProjectId, traceId }) };
+      } catch (error) { trace = { availability: 'unavailable', reason: error instanceof Error ? error.message.slice(0, 256) : 'Langfuse is unavailable.' }; }
+      return {
+        runId: record.runId, issueNumber: record.source.number, status, integrity,
+        ...(record.startedAt ? { startedAt: record.startedAt } : {}), ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),
+        worker: record.worker, agent: record.agent, model: record.model, pullRequest: record.pullRequest,
+        commits: [...new Set(attempts.flatMap((attempt) => {
+          const commit = attempt.manifest?.commitSha;
+          return commit?.availability === 'available' ? [commit.value] : [];
+        }))].slice(0, 100), validationCount: validationEvents.length,
+        ...(validationEvents.at(-1) ? { latestValidationAt: validationEvents.at(-1)!.occurredAt } : {}),
+        attemptCount: attempts.length,
+        attempts: attempts.slice(-100).map((attempt) => ({ attemptId: attempt.attemptId, index: attempt.index, status: attempt.status,
+          startedAt: attempt.startedAt, ...(attempt.finishedAt ? { finishedAt: attempt.finishedAt } : {}),
+          ...(attempt.supersedesAttemptId ? { supersedesAttemptId: attempt.supersedesAttemptId } : {}) })),
+        eventCount: events.length, timeline: events.slice(-100).map((event) => ({ eventId: event.eventId, type: event.type,
+          occurredAt: event.occurredAt, ...(event.attemptId ? { attemptId: event.attemptId } : {}), evidenceCount: event.evidenceIds.length })),
+        timelineTruncated: events.length > 100, evidenceCount: evidence.length,
+        evidence: evidence.slice(0, 100).map((item) => ({ evidenceId: item.evidenceId, kind: item.kind,
+          ...(item.sha256 ? { sha256: item.sha256 } : {}), ...(item.createdAt ? { createdAt: item.createdAt } : {}), ...(item.expiresAt ? { expiresAt: item.expiresAt } : {}),
+          availability: item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? 'expired' as const : 'available' as const,
+          ...(item.kind === 'artifact' && item.sha256 ? { downloadUrl: `/tracker/${issue}/run-explorer/${encodeURIComponent(record.runId)}/${item.sha256}` } : {}) })),
+        evidenceComplete: verifiedManifest && latestAttempt!.manifest!.artifacts.length > 0,
+        trace,
+      };
+    });
+    const last = page.at(-1);
+    const nextCursor = hasMore && last ? Buffer.from(JSON.stringify({ schemaVersion: 1, repoId, issue,
+      updatedAt: String(last.updated_at), runId: String(last.run_id) } satisfies CodingRunExplorerCursor)).toString('base64url') : undefined;
+    return codingRunExplorerResponseSchema.parse({ issueNumber: Number(issue), runs, ...(nextCursor ? { nextCursor } : {}), complete: !hasMore });
   } finally { db.close(); }
 }
 
