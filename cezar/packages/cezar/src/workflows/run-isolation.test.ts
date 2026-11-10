@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,8 +47,26 @@ async function waitFor(predicate: () => boolean, what: string): Promise<void> {
   throw new Error(`timed out waiting for ${what}`);
 }
 
+function deferWindowsTempCleanup(root: string): void {
+  const encodedRoot = Buffer.from(root).toString('base64');
+  const script = `const fs=require('node:fs');const p=Buffer.from('${encodedRoot}','base64').toString();const end=Date.now()+30000;function rm(){try{fs.rmSync(p,{recursive:true,force:true});process.exit(0)}catch(e){if(Date.now()<end&&['EBUSY','EPERM','ENOTEMPTY'].includes(e.code)){setTimeout(rm,100);return}process.exit(0)}}rm()`;
+  const cleanup = spawn(process.execPath, ['-e', script], {
+    cwd: tmpdir(), detached: true, stdio: 'ignore', windowsHide: true,
+  });
+  cleanup.unref();
+}
+
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+    } catch (error) {
+      // Windows can keep the completed command's working directory busy until
+      // the Vitest worker exits. A detached cleanup retries from outside it.
+      if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+      deferWindowsTempCleanup(root);
+    }
+  }
 });
 
 describe('RunManager repository-root isolation', () => {
