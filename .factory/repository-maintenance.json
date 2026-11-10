@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-06T13:00:35.0018741+00:00",
-  "workingCutoff": "2026-11-05T13:00:33.6559634+00:00",
-  "staleCutoff": "2026-09-07T13:00:33.6584201+00:00",
+  "generatedAt": "2026-11-10T09:00:58.1917143+00:00",
+  "workingCutoff": "2026-11-09T09:00:57.0545558+00:00",
+  "staleCutoff": "2026-09-11T09:00:57.0569548+00:00",
   "considered": 98,
   "movedToInvestigate": [],
   "limitations": [],
