@@ -1677,6 +1677,11 @@ $adapterOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'validation-ad
 Write-Host $adapterOutput
 Assert 'configured project validation adapters pass fixture cases' ($LASTEXITCODE -eq 0)
 
+Write-Host '== change impact collector =='
+$impactOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'collect-impact.ps1') 2>&1 | Out-String
+Write-Host $impactOutput
+Assert 'change impact collector handles merge-base diffs, ownership, renames and invalid inputs' ($LASTEXITCODE -eq 0)
+
 Write-Host '== bounded failure audit =='
 $failureAuditOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-bounds.ps1') 2>&1 | Out-String
 Write-Host $failureAuditOutput
