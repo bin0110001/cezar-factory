@@ -225,7 +225,7 @@ def exclusive_lock(path: pathlib.Path) -> Iterator[None]:
 
 
 class ReleaseController:
-    def __init__(self, repo: pathlib.Path, store: pathlib.Path, remote: str, branch: str, keep: int, minimum_age_days: int, attempts: int):
+    def __init__(self, repo: pathlib.Path, store: pathlib.Path, remote: str, branch: str, keep: int, minimum_age_days: int, attempts: int, *, initialize: bool = True):
         self.repo = repo.resolve(strict=True)
         self.store = store.resolve() if store.exists() else store.absolute()
         self.remote = remote
@@ -242,8 +242,9 @@ class ReleaseController:
         self.releases = self.store / "releases"
         self.channels = self.store / "channels"
         self.db_path = self.store / "controller.sqlite3"
-        self.store.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        if initialize:
+            self.store.mkdir(parents=True, exist_ok=True)
+            self._init_db()
 
     @contextlib.contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
@@ -643,7 +644,7 @@ class ReleaseController:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=("sync", "stage", "rollback", "verify", "protect", "unprotect"))
+    p.add_argument("command", choices=("sync", "stage", "rollback", "verify", "protect", "unprotect", "detect", "repair"))
     p.add_argument("--repo", default=os.environ.get("FACTORY_CONTROLLER_REPO", "~/cezar-factory"))
     p.add_argument("--store", default=os.environ.get("FACTORY_RELEASE_STORE", "~/.local/share/cezar-factory/release-store"))
     p.add_argument("--remote", default=os.environ.get("FACTORY_CONTROLLER_REMOTE", "origin"))
@@ -655,14 +656,34 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--reference-kind", help="Lease or other active retention reference")
     p.add_argument("--reference-id", help="Stable identifier for the retention reference")
     p.add_argument("--expires-at", help="Optional ISO-8601 expiry for the retention reference")
+    p.add_argument("--registry", help="Explicit Cezar project registry used by detect/repair")
+    p.add_argument("--api-url", default="", help="Optional Cezar API origin override for detect/repair")
+    p.add_argument("--apply", action="store_true", help="Apply safe, ledger-admitted repairs (repair is a dry run by default)")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        controller = ReleaseController(pathlib.Path(args.repo).expanduser(), pathlib.Path(args.store).expanduser(), args.remote, args.channel, args.keep, args.minimum_age_days, args.fetch_attempts)
-        if args.command == "sync":
+        if args.command == "detect" and args.apply:
+            raise ControllerError("--apply is available only with repair")
+        controller = ReleaseController(pathlib.Path(args.repo).expanduser(), pathlib.Path(args.store).expanduser(), args.remote, args.channel, args.keep, args.minimum_age_days, args.fetch_attempts, initialize=args.command != "detect")
+        if args.command in ("detect", "repair"):
+            repo_root = pathlib.Path(__file__).resolve().parents[2]
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            from scripts.release.factory_activation import ActivationCoordinator
+            from scripts.release.factory_drift_repair import DriftRepair
+
+            registry = pathlib.Path(args.registry).expanduser() if args.registry else controller.repo / "config" / "factory-projects.json"
+            coordinator = ActivationCoordinator(controller, registry, api_override=args.api_url, create_state=args.command != "detect")
+            drift = DriftRepair(controller, coordinator)
+            if args.command == "detect":
+                result = drift.detect()
+            else:
+                with exclusive_lock(controller.store / "controller.lock"):
+                    result = drift.repair(apply=args.apply)
+        elif args.command == "sync":
             with exclusive_lock(controller.store / "controller.lock"):
                 controller.recover_interrupted_attempts()
                 result = controller.sync()

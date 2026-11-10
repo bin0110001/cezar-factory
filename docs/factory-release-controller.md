@@ -22,6 +22,48 @@ API URLs and project IDs. A missing registry or unavailable target stops
 activation before the channel pointer moves. This host-local configuration is
 not committed to the Factory repository.
 
+## Drift detection and repair
+
+The controller's `detect` command is read-only. It verifies the local channel
+pointer and immutable release, compares the pointer with its SQLite checkpoint,
+checks the configured projects' release diagnostics and Factory automation
+definitions, and reports the latest failed bounded refetch. It loads targets
+only from the explicitly supplied registry (default:
+`config/factory-projects.json`); it does not scan for projects. A project serving
+a different SHA is reported as shadow drift. Read failures are reported as
+infrastructure or compatibility findings.
+
+`repair` defaults to a dry run. Applying it requires `--apply` and takes the
+same exclusive controller lock as sync and activation. Repairs are deliberately
+limited to reconciling the SQLite checkpoint from a verified on-disk pointer,
+retrying a failed refetch by staging the configured ref, and reconciling a
+listed project's Factory automation definitions to the verified channel
+release. It never switches the channel pointer or redeploys a SHA, and refuses
+automation repair for a quarantined release. Shadow/runtime, compatibility,
+unreadable-store and infrastructure findings remain open for their owning
+recovery path rather than being guessed at.
+
+Each applied attempt is admitted through `incidents.sqlite3`, which enforces
+the failure-class budget and backoff, and writes a repair receipt. The original
+probe runs again after an applied repair; a receipt says `fixed` only if that
+probe has cleared, otherwise it remains `open`. Repeating a successful repair
+is a no-op. Example commands on the host:
+
+```bash
+python3 ~/cezar-factory/scripts/release/factory_release_controller.py detect \
+  --repo ~/cezar-factory --store ~/.local/share/cezar-factory/release-store \
+  --channel stable --registry ~/cezar-factory/config/factory-projects.json
+python3 ~/cezar-factory/scripts/release/factory_release_controller.py repair \
+  --repo ~/cezar-factory --store ~/.local/share/cezar-factory/release-store \
+  --channel stable --registry ~/cezar-factory/config/factory-projects.json
+python3 ~/cezar-factory/scripts/release/factory_release_controller.py repair \
+  --repo ~/cezar-factory --store ~/.local/share/cezar-factory/release-store \
+  --channel stable --registry ~/cezar-factory/config/factory-projects.json --apply
+```
+
+Receipts are stored under `repair-receipts/`; incident attempt budgets and
+backoff are stored separately from `controller.sqlite3` in `incidents.sqlite3`.
+
 ## Local dev promotion scheduler
 
 `factory_local_scheduler.py` is the promoter described in `docs/promotion-pipeline.md`: after
