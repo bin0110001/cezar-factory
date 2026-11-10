@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Project, [Parameter(Mandatory)][string]$Bank, [Parameter(Mandatory)][string]$CandidatePath, [switch]$Approved, [string]$Workflow = '', [string]$Issue = '', [string]$Worker = '', [string]$Model = '', [string]$OutputPath = '.factory/context/memory-retention-receipt.json')
+param([Parameter(Mandatory)][string]$Project, [Parameter(Mandatory)][string]$Bank, [Parameter(Mandatory)][string]$CandidatePath, [switch]$Approved, [string]$Workflow = '', [string]$Issue = '', [string]$Worker = '', [string]$Model = '', [string]$SupersedesMemoryId = '', [string]$OutputPath = '.factory/context/memory-retention-receipt.json')
 $ErrorActionPreference = 'Stop'
 $python = Get-Command python3 -ErrorAction SilentlyContinue; if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
 if (-not $python) {
@@ -8,5 +8,7 @@ if (-not $python) {
     Write-Warning 'Python runtime unavailable; no retention attempted.'
     exit 0
 }
-$arguments = @((Join-Path $PSScriptRoot 'client.py'),'retain','--project',$Project,'--bank',$Bank,'--candidate',$CandidatePath,'--workflow',$Workflow,'--issue',$Issue,'--worker',$Worker,'--model',$Model,'--output',$OutputPath)
+$subcommand = if ($SupersedesMemoryId) { 'supersede' } else { 'retain' }
+$arguments = @((Join-Path $PSScriptRoot 'client.py'),$subcommand,'--project',$Project,'--bank',$Bank,'--candidate',$CandidatePath,'--workflow',$Workflow,'--issue',$Issue,'--worker',$Worker,'--model',$Model,'--output',$OutputPath)
+if ($SupersedesMemoryId) { $arguments += @('--old-memory-id', $SupersedesMemoryId) }
 if ($Approved) { $arguments += '--approved' }; & $python.Source @arguments; exit $LASTEXITCODE

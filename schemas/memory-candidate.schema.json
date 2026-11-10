@@ -1,7 +1,8 @@
 {
   "$schema":"https://json-schema.org/draft/2020-12/schema",
   "type":"object",
-  "required":["topic","lesson","kind","evidence"],
-  "properties":{"topic":{"type":"string","minLength":3,"maxLength":160},"lesson":{"type":"string","minLength":10,"maxLength":2000},"kind":{"enum":["architecture","recurring-failure","successful-fix","convention","environment-discovery"]},"evidence":{"type":"string","minLength":3,"maxLength":500}},
+  "required":["topic","lesson","kind","evidence","scope","claimType","evidenceLinks"],
+  "properties":{"topic":{"type":"string","minLength":3,"maxLength":160},"lesson":{"type":"string","minLength":10,"maxLength":2000},"kind":{"enum":["architecture","recurring-failure","successful-fix","convention","environment-discovery"]},"evidence":{"type":"string","minLength":3,"maxLength":500},"scope":{"enum":["repo","global"]},"claimType":{"enum":["fact","hypothesis"]},"evidenceLinks":{"type":"array","minItems":1,"maxItems":16,"items":{"$ref":"#/$defs/evidenceLink"}}},
+  "$defs":{"evidenceLink":{"type":"object","required":["kind","ref"],"properties":{"kind":{"enum":["run","issue","commit","test","file"]},"ref":{"type":"string","minLength":1,"maxLength":2048},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}},"additionalProperties":false}},
   "additionalProperties":false
 }

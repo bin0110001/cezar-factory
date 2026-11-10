@@ -67,13 +67,31 @@ source: skills/factory-learn/SKILL.md
 
 ## Output Format
 
+Every retention candidate must declare `scope` (`repo` or `global`), `claimType`
+(`fact` or `hypothesis`), and one or more `evidenceLinks` with a kind (`run`,
+`issue`, `commit`, `test`, or `file`) and a stable reference. These fields are
+reviewed with the candidate. A claimed fact without a matching validated
+deterministic run, commit, or test reference is retained as an unvalidated
+hypothesis. Never infer validation from semantic recall or from the candidate's
+own claim.
+
+When new evidence disproves a retained lesson, propose a replacement and link
+the old memory ID. Supersession requires validated deterministic evidence;
+superseded memories are excluded from default recall. Hindsight remains
+advisory, while incident counts and gates come from deterministic ledgers.
+
 ```json
 {
   "durableKnowledgeCandidates": [
     {
       "topic": "Testing pattern for async operations",
       "suggestion": "Add a project skill covering async test patterns",
-      "evidence": "Three tasks failed due to missing async waits"
+      "evidence": "Three tasks failed due to missing async waits",
+      "scope": "repo",
+      "claimType": "hypothesis",
+      "evidenceLinks": [
+        { "kind": "issue", "ref": "issue:123" }
+      ]
     }
   ],
   "recommendedUpdates": [
