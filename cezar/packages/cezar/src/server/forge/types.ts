@@ -262,11 +262,22 @@ export type DraftPrOutcome =
   | { ok: true; url: string; dryRun: boolean }
   | { ok: false; error: string };
 
+/** Verified Factory ownership for effects initiated by a scheduled coding run. */
+export interface FencedFactoryRunContext {
+  issue: string;
+  executionId: string;
+  runId: string;
+  attemptId: string;
+  fencingToken: number;
+}
+
 export interface DraftPrInput {
   repoRoot: string;
   run: RunRecord;
   /** The task's handoff.md — becomes the PR body (goal + progress skim). */
   handoffText: string;
+  /** Present only after the server verifies the run against its active workspace claim. */
+  factoryEffectContext?: FencedFactoryRunContext;
 }
 
 /** Purpose-specific creation feed; independent of open lists and relevance search. */
