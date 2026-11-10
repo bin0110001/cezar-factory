@@ -1,5 +1,16 @@
 # Operations readiness runbook
 
+## Release incident recovery
+
+The release controller's diagnosis and escalation path is host-local and does
+not depend on Cezar being reachable. Point the scheduler environment at the
+incident SQLite database and a durable local escalation receipt, then use the
+`factory-release-self-healing` workflow. Escalated incidents update a single
+fingerprint-marked issue comment; when `gh` is offline, a pending receipt is
+retained for retry. Follow the resulting evidence pointers before preparing a
+fix. Publish prepared fixes with `factory-release-fix-pr`, which targets `dev`
+and leaves the PR open for review.
+
 This document is the evidence checklist for the remaining live workplan items.
 It intentionally does not mark a runtime item complete until its command output
 or service artifact is attached to the project record.

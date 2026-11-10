@@ -53,6 +53,7 @@ try {
     $decision.pr = [string]$review.pr
     $decision.reviewedHeadSha = [string]$review.reviewedHeadSha
     $decision.reviewerIdentity = [string]$review.reviewerIdentity
+    if (-not [string]::IsNullOrWhiteSpace([string]$review.blockingFindings)) { Add-Blocker 'review result contains unresolved findings' }
     if ($decision.issue -lt 1) { Add-Blocker 'review result has no valid issue number' }
     if ($decision.pr -notmatch '^https://github\.com/([^/\s]+)/([^/\s]+)/pull/([1-9][0-9]*)/?$') { Add-Blocker 'review result has no qualified GitHub pull request URL' }
     if ($decision.reviewedHeadSha -notmatch '^[0-9a-fA-F]{40}$') { Add-Blocker 'review result is not bound to a 40-character head SHA' }
@@ -60,7 +61,7 @@ try {
     if ($decision.pr -match '^https://github\.com/([^/\s]+)/([^/\s]+)/pull/([1-9][0-9]*)/?$') {
         $owner = $Matches[1]; $repoName = $Matches[2]; $prNumber = [int]$Matches[3]
         $decision.repository = "$owner/$repoName"
-        $pr = Get-GhJson @('pr','view',$decision.pr,'--json','number,url,body,state,isDraft,baseRefName,headRefOid,author,labels,statusCheckRollup,reviews,reviewDecision')
+        $pr = Get-GhJson @('pr','view',$decision.pr,'--json','number,url,body,state,isDraft,baseRefName,headRefOid,author,labels,statusCheckRollup,reviews,reviewDecision,files')
         $decision.headSha = [string]$pr.headRefOid
         $riskLabels = @($pr.labels | ForEach-Object { [string]$_.name } | Where-Object { $_ -in @('risk:low','risk:medium','risk:high') })
         if ($riskLabels.Count -ne 1) { Add-Blocker 'PR must have exactly one recognized risk label' }
@@ -75,6 +76,17 @@ try {
             if ([string]$pr.body -match "(?im)^\s*(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s+$([regex]::Escape($ref))(?:\s|$)") { $closesIssue = $true; break }
         }
         if (-not $closesIssue) { Add-Blocker "PR body does not close issue #$($decision.issue)" }
+        $changedPaths = @($pr.files | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.path } })
+        $releaseSensitive = @($changedPaths | Where-Object { $_ -match '^(scripts/release/|scripts/release\\)' })
+        if ($releaseSensitive.Count) {
+            if ($selfReview) {
+                foreach ($section in @('Scope','Risk','Invariants','Validation evidence')) {
+                    if ([string]$pr.body -notmatch "(?ims)^\s*(?:#{1,6}\s*)?$([regex]::Escape($section))\s*:?\s*\r?\n\s*\S") { Add-Blocker "scripts/release/ changes require a nonempty structured self-review section: $section" }
+                }
+                if ([string]$pr.body -notmatch '(?im)^\s*(?:#{1,6}\s*)?Unresolved findings\s*:?\s*(?:none|no unresolved findings)[.!]?\s*$' -and [string]$pr.body -notmatch '(?im)^\s*(?:#{1,6}\s*)?Unresolved findings\s*:?\s*\r?\n\s*(?:none|no unresolved findings)[.!]?\s*$') { Add-Blocker 'scripts/release/ self-review must state that unresolved findings are none' }
+            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$review.blockingFindings)) { Add-Blocker 'scripts/release/ changes have unresolved review findings' }
+        }
 
         $repoSettings = Get-GhJson @('api',"repos/$owner/$repoName")
         if (-not $selfReview -and $repoSettings.allow_auto_merge -ne $true) { Add-Blocker 'repository auto-merge is disabled' }
@@ -110,7 +122,7 @@ try {
             }
         }
         $author = [string]$pr.author.login
-        if ($decision.reviewerIdentity -and $decision.reviewerIdentity -ieq $author) { Add-Blocker 'reviewer identity matches the PR author' }
+        if (-not $selfReview -and $decision.reviewerIdentity -and $decision.reviewerIdentity -ieq $author) { Add-Blocker 'reviewer identity matches the PR author' }
         if (-not $selfReview -and [string]$pr.reviewDecision -ne 'APPROVED') { Add-Blocker "GitHub review decision is '$($pr.reviewDecision)', not APPROVED" }
         $currentApprovals = @($pr.reviews | Where-Object { $_.state -eq 'APPROVED' -and $_.commit.oid -eq $decision.headSha -and $_.author.login -and $_.author.login -ine $author })
         if (-not $selfReview -and -not $currentApprovals.Count) { Add-Blocker 'no independent GitHub approval is bound to the current PR head' }

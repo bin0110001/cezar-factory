@@ -1,0 +1,11 @@
+name: factory-release-fix-pr
+description: Publish already prepared and locally validated release-controller changes to dev as an open PR; merging remains a separate reviewed action.
+steps:
+  - id: startup
+    name: Verify the local recovery runtime
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-release-fix-pr -Step open-pr -RequiredScripts factory_self_healing.py
+    timeoutSeconds: 60
+  - id: open-pr
+    name: Open a dev-only fix pull request
+    command: python3 $FACTORY_RUNTIME_ROOT/scripts/release/factory_self_healing.py open-fix-pr --repo-path "$FACTORY_FIX_REPOSITORY_PATH" --repository "$FACTORY_FIX_REPOSITORY" --title "$FACTORY_FIX_TITLE" --body-file "$FACTORY_FIX_BODY_FILE" --validation-receipt "$FACTORY_FIX_VALIDATION_RECEIPT"
+    timeoutSeconds: 120

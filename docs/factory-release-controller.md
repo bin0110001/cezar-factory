@@ -1,5 +1,33 @@
 # Host-local Factory release controller
 
+## Host-local diagnosis and repair PRs
+
+`factory-release-self-healing` reads the configured SQLite incident ledger in
+read-only mode, emits a deterministic report capped at 50 incidents and 24,000
+characters, and updates one issue comment per escalated fingerprint. Its state
+receipt is kept at the configured host-local path. If `gh` or network access is
+unavailable, the receipt becomes `pending`; the next run retries and searches
+for the hidden fingerprint marker before creating a comment. The workflow uses
+only the ledger and local `gh`, so it remains usable while Cezar is offline.
+
+Configure `FACTORY_INCIDENT_LEDGER`, `FACTORY_INCIDENT_REPOSITORY`,
+`FACTORY_ESCALATION_ISSUE`, and `FACTORY_ESCALATION_STATE` in the host service
+environment. Diagnosis includes class, fingerprint, bounded summary, attempt
+count, and allowlisted evidence pointers; it never initializes or mutates the
+ledger.
+
+`factory-release-fix-pr` accepts only committed changes on a non-protected task
+branch, requires an issue-closing body, and opens a PR with base `dev`. It has no
+merge operation. It verifies the local validation receipt passed on the exact
+clean `HEAD`. Configure `FACTORY_FIX_REPOSITORY_PATH`,
+`FACTORY_FIX_REPOSITORY`, `FACTORY_FIX_TITLE`, `FACTORY_FIX_BODY_FILE`, and
+`FACTORY_FIX_VALIDATION_RECEIPT` for a prepared local fix. The normal review gate
+remains required.
+For PRs touching `scripts/release/`, the merge eligibility check requires an
+independent current-head approval, or in solo-maintainer mode a structured PR
+self-review with scope, risk, invariants, validation evidence, and no unresolved
+findings. A nonempty review finding blocks eligibility.
+
 The Bazzite user service polls one explicitly configured Git branch, stages its
 commit as an immutable archive, verifies the manifest, artifact, archive paths,
 file digests and verification evidence, then runs the recoverable activation
