@@ -5,7 +5,18 @@ import { hostname } from 'node:os';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
+import {
+  CODING_RUN_EVENT_TYPES,
+  codingEvidenceReferenceSchema,
+  codingRunEventSchema,
+  codingRunRecordSchema,
+  codingRunSnapshotSchema,
+  type CodingEvidenceReference,
+  type CodingRunEvent,
+  type CodingRunRecord,
+  type CodingRunSnapshot,
+} from '@open-mercato/cezar-contract';
 import { cezarHomeDir } from '../paths.ts';
 import { globToRegExp } from '../server/impact/manifest.ts';
 
@@ -94,7 +105,7 @@ function openRegistry(commonDir: string, home = cezarHomeDir()): { db: Database;
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   const versionRow = db.prepare('PRAGMA user_version').get();
   const version = Number(versionRow?.user_version ?? 0);
-  if (version > 3) {
+  if (version > 4) {
     db.close();
     throw new Error(`Workspace lifecycle registry schema ${version} is newer than this Cezar build supports.`);
   }
@@ -160,11 +171,24 @@ function openRegistry(commonDir: string, home = cezarHomeDir()): { db: Database;
       lease_expires_at TEXT NOT NULL, PRIMARY KEY(event_id,destination),
       FOREIGN KEY(event_id,destination) REFERENCES event_outbox(event_id,destination) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS coding_runs (
+      repo_id TEXT NOT NULL, run_id TEXT NOT NULL, issue_key TEXT NOT NULL,
+      record_json TEXT NOT NULL, projection_json TEXT NOT NULL,
+      last_sequence INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+      PRIMARY KEY(repo_id,run_id)
+    );
+    CREATE TABLE IF NOT EXISTS coding_run_evidence (
+      repo_id TEXT NOT NULL, run_id TEXT NOT NULL, evidence_id TEXT NOT NULL,
+      evidence_json TEXT NOT NULL, created_at TEXT NOT NULL,
+      PRIMARY KEY(repo_id,run_id,evidence_id),
+      FOREIGN KEY(repo_id,run_id) REFERENCES coding_runs(repo_id,run_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS coding_run_history ON events(repo_id,execution_id,seq);
   `);
     if (!db.prepare('PRAGMA table_info(event_outbox)').all().some((column) => column.name === 'approved_at')) {
       db.exec('ALTER TABLE event_outbox ADD COLUMN approved_at TEXT;');
     }
-    db.exec('PRAGMA user_version = 3; COMMIT;');
+    db.exec('PRAGMA user_version = 4; COMMIT;');
   } catch (error) {
     try { db.exec('ROLLBACK;'); } catch { /* preserve the migration error */ }
     db.close();
@@ -193,6 +217,186 @@ function event(db: Database, repoId: string, issue: string, executionId: string 
     try { db.exec('ROLLBACK TO lifecycle_event; RELEASE lifecycle_event;'); } catch { /* preserve the insertion error */ }
     throw error;
   }
+}
+
+export interface AppendCodingRunEventInput {
+  runId: string;
+  type: CodingRunEvent['type'];
+  attemptId?: string;
+  supersedesAttemptId?: string;
+  causationEventId?: string;
+  eventId?: string;
+  occurredAt?: string;
+  evidenceIds?: string[];
+  evidence?: CodingEvidenceReference[];
+}
+
+function codingRunEventRows(db: Database, repoId: string, runId: string): Record<string, unknown>[] {
+  const placeholders = CODING_RUN_EVENT_TYPES.map(() => '?').join(',');
+  return db.prepare(`SELECT payload_json FROM events WHERE repo_id=? AND execution_id=? AND event_type IN (${placeholders}) ORDER BY seq`)
+    .all(repoId, runId, ...CODING_RUN_EVENT_TYPES);
+}
+
+function applyCodingRunEvent(snapshot: CodingRunSnapshot, eventRecord: CodingRunEvent): CodingRunSnapshot {
+  if (snapshot.events.length === 0 && (eventRecord.type !== 'run.started' || eventRecord.sequence !== 1)) {
+    throw new Error('coding run history must begin with run.started');
+  }
+  if (snapshot.run.status !== 'running' && eventRecord.type !== 'run.started') throw new Error('coding run is terminal and cannot accept more events');
+  const attempts = snapshot.attempts.map((attempt) => ({ ...attempt }));
+  let run = { ...snapshot.run };
+  if (eventRecord.type === 'run.started') {
+    if (snapshot.events.length !== 0 || eventRecord.occurredAt !== run.startedAt) throw new Error('run.started must be the first event at the run start time');
+  } else if (eventRecord.type === 'attempt.started') {
+    const attemptId = eventRecord.attemptId!;
+    if (attempts.some((attempt) => attempt.attemptId === attemptId)) throw new Error(`attempt already exists: ${attemptId}`);
+    if (attempts.some((attempt) => attempt.status === 'running')) throw new Error('finish the active attempt before starting another');
+    if (eventRecord.supersedesAttemptId) {
+      const previous = attempts.find((attempt) => attempt.attemptId === eventRecord.supersedesAttemptId);
+      if (!previous || previous.status === 'running') throw new Error('superseded attempt must exist and be terminal');
+    }
+    attempts.push({
+      schemaVersion: 1,
+      attemptId,
+      runId: run.runId,
+      index: attempts.length + 1,
+      ...(eventRecord.supersedesAttemptId ? { supersedesAttemptId: eventRecord.supersedesAttemptId } : {}),
+      status: 'running',
+      startedAt: eventRecord.occurredAt,
+    });
+  } else if (eventRecord.type === 'attempt.completed' || eventRecord.type === 'attempt.failed'
+    || eventRecord.type === 'attempt.cancelled' || eventRecord.type === 'attempt.superseded') {
+    const attempt = attempts.find((item) => item.attemptId === eventRecord.attemptId);
+    if (!attempt || attempt.status !== 'running') throw new Error('attempt terminal event requires an active attempt');
+    const terminalStatus: CodingRunSnapshot['attempts'][number]['status'] = eventRecord.type === 'attempt.completed' ? 'completed'
+      : eventRecord.type === 'attempt.failed' ? 'failed'
+        : eventRecord.type === 'attempt.cancelled' ? 'cancelled' : 'superseded';
+    attempt.status = terminalStatus;
+    attempt.finishedAt = eventRecord.occurredAt;
+  } else if (eventRecord.type === 'run.completed' || eventRecord.type === 'run.failed' || eventRecord.type === 'run.cancelled') {
+    if (attempts.some((attempt) => attempt.status === 'running')) throw new Error('run cannot finish while an attempt is active');
+    run.status = eventRecord.type === 'run.completed' ? 'completed' : eventRecord.type === 'run.failed' ? 'failed' : 'cancelled';
+    run.finishedAt = eventRecord.occurredAt;
+  }
+  const next = { ...snapshot, run, attempts, events: [...snapshot.events, eventRecord] };
+  return codingRunSnapshotSchema.parse(next);
+}
+
+function rebuildCodingRunProjectionInTransaction(db: Database, repoId: string, runId: string): CodingRunSnapshot {
+  const row = db.prepare('SELECT issue_key,record_json FROM coding_runs WHERE repo_id=? AND run_id=?').get(repoId, runId);
+  if (!row) throw new Error(`unknown coding run ${runId}`);
+  const run = codingRunRecordSchema.parse(JSON.parse(String(row.record_json)) as unknown);
+  const evidence = db.prepare('SELECT evidence_json FROM coding_run_evidence WHERE repo_id=? AND run_id=? ORDER BY evidence_id')
+    .all(repoId, runId).map((item) => codingEvidenceReferenceSchema.parse(JSON.parse(String(item.evidence_json)) as unknown));
+  let snapshot = codingRunSnapshotSchema.parse({ schemaVersion: 1, run, attempts: [], events: [], evidence });
+  for (const item of codingRunEventRows(db, repoId, runId)) {
+    const eventRecord = codingRunEventSchema.parse(JSON.parse(String(item.payload_json)) as unknown);
+    snapshot = applyCodingRunEvent(snapshot, eventRecord);
+  }
+  db.prepare('UPDATE coding_runs SET projection_json=?,last_sequence=?,updated_at=? WHERE repo_id=? AND run_id=?')
+    .run(JSON.stringify(snapshot), snapshot.events.length, new Date().toISOString(), repoId, runId);
+  return snapshot;
+}
+
+function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: string, input: AppendCodingRunEventInput): CodingRunSnapshot {
+  const row = db.prepare('SELECT issue_key,projection_json FROM coding_runs WHERE repo_id=? AND run_id=?').get(repoId, runId);
+  if (!row) throw new Error(`unknown coding run ${runId}`);
+  const current = codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
+  const evidence = (input.evidence ?? []).map((item) => codingEvidenceReferenceSchema.parse(item));
+  if (input.eventId) {
+    const existing = db.prepare('SELECT repo_id,execution_id,payload_json FROM events WHERE event_id=?').get(input.eventId);
+    if (existing) {
+      const previous = codingRunEventSchema.parse(JSON.parse(String(existing.payload_json)) as unknown);
+      const requestedEvidenceIds = [...(input.evidenceIds ?? []), ...evidence.map((item) => item.evidenceId)];
+      const sameIntent = String(existing.repo_id) === repoId && String(existing.execution_id) === runId
+        && previous.runId === runId && previous.type === input.type
+        && previous.attemptId === input.attemptId
+        && previous.supersedesAttemptId === input.supersedesAttemptId
+        && previous.causationEventId === input.causationEventId
+        && (!input.occurredAt || previous.occurredAt === input.occurredAt)
+        && isDeepStrictEqual(previous.evidenceIds, requestedEvidenceIds);
+      const persistedEvidence = new Map(current.evidence.map((item) => [item.evidenceId, item]));
+      const sameEvidence = evidence.every((item) => isDeepStrictEqual(persistedEvidence.get(item.evidenceId), item));
+      if (!sameIntent || !sameEvidence) throw new Error(`event id already exists with a different payload: ${input.eventId}`);
+      return current;
+    }
+  }
+  const nextEvidenceIds = new Set(current.evidence.map((item) => item.evidenceId));
+  for (const item of evidence) {
+    if (nextEvidenceIds.has(item.evidenceId)) throw new Error(`evidence id already exists: ${item.evidenceId}`);
+    nextEvidenceIds.add(item.evidenceId);
+  }
+  const eventRecord = codingRunEventSchema.parse({
+    schemaVersion: 1,
+    eventId: input.eventId ?? randomUUID(),
+    runId,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+    ...(input.supersedesAttemptId ? { supersedesAttemptId: input.supersedesAttemptId } : {}),
+    sequence: current.events.length + 1,
+    correlationId: current.run.correlationId,
+    ...(input.causationEventId ? { causationEventId: input.causationEventId } : {}),
+    type: input.type,
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+    evidenceIds: [...(input.evidenceIds ?? []), ...evidence.map((item) => item.evidenceId)],
+  });
+  const currentWithEvidence = codingRunSnapshotSchema.parse({ ...current, evidence: [...current.evidence, ...evidence] });
+  const next = applyCodingRunEvent(currentWithEvidence, eventRecord);
+  const now = new Date().toISOString();
+  for (const item of evidence) {
+    db.prepare('INSERT INTO coding_run_evidence(repo_id,run_id,evidence_id,evidence_json,created_at) VALUES(?,?,?,?,?)')
+      .run(repoId, runId, item.evidenceId, JSON.stringify(item), now);
+  }
+  db.prepare(`INSERT INTO events(event_id,repo_id,issue_key,execution_id,event_type,timestamp,payload_json)
+    VALUES(?,?,?,?,?,?,?)`).run(eventRecord.eventId, repoId, String(row.issue_key), runId, eventRecord.type, eventRecord.occurredAt, JSON.stringify(eventRecord));
+  db.prepare('UPDATE coding_runs SET projection_json=?,last_sequence=?,updated_at=? WHERE repo_id=? AND run_id=?')
+    .run(JSON.stringify(next), next.events.length, now, repoId, runId);
+  return next;
+}
+
+/** Create a coding-run record and its run.started audit event in one SQLite transaction. */
+export async function createCodingRun(options: { record: CodingRunRecord; cwd?: string; home?: string }): Promise<CodingRunSnapshot> {
+  const record = codingRunRecordSchema.parse(options.record);
+  if (record.status !== 'running' || record.finishedAt) throw new Error('new coding runs must begin in the running state');
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => {
+      const initial = { schemaVersion: 1 as const, run: record, attempts: [], events: [], evidence: [] };
+      db.prepare(`INSERT INTO coding_runs(repo_id,run_id,issue_key,record_json,projection_json,last_sequence,updated_at)
+        VALUES(?,?,?,?,?,0,?)`).run(repoId, record.runId, String(record.source.number), JSON.stringify(record), JSON.stringify(initial), record.startedAt);
+      return appendCodingRunEventInTransaction(db, repoId, record.runId, { runId: record.runId, type: 'run.started', occurredAt: record.startedAt });
+    });
+    return tx();
+  } finally { db.close(); }
+}
+
+/** Append an immutable event and update its projection atomically. */
+export async function appendCodingRunEvent(options: AppendCodingRunEventInput & { cwd?: string; home?: string }): Promise<CodingRunSnapshot> {
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => appendCodingRunEventInTransaction(db, repoId, options.runId, options));
+    return tx();
+  } finally { db.close(); }
+}
+
+/** Rebuild and persist a run projection from its canonical record and ordered audit events. */
+export async function rebuildCodingRunProjection(options: { runId: string; cwd?: string; home?: string }): Promise<CodingRunSnapshot> {
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const tx = db.transaction(() => rebuildCodingRunProjectionInTransaction(db, repoId, options.runId));
+    return tx();
+  } finally { db.close(); }
+}
+
+export async function getCodingRunSnapshot(options: { runId: string; cwd?: string; home?: string }): Promise<CodingRunSnapshot | undefined> {
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const row = db.prepare('SELECT projection_json FROM coding_runs WHERE repo_id=? AND run_id=?').get(repoId, options.runId);
+    if (!row) return undefined;
+    return codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
+  } finally { db.close(); }
 }
 
 export async function lifecycleOutbox(options: { cwd?: string; home?: string; limit?: number } = {}): Promise<{

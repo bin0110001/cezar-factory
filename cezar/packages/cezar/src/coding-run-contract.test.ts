@@ -14,7 +14,7 @@ describe('coding run contracts', () => {
     const parsed = codingRunSnapshotSchema.parse(validFixture);
     expect(parsed.run.runId).toBe('run-42');
     expect(parsed.attempts.map((attempt) => attempt.index)).toEqual([1, 2]);
-    expect(parsed.events.at(-1)).toMatchObject({ type: 'run.completed', sequence: 11 });
+    expect(parsed.events.at(-1)).toMatchObject({ type: 'run.completed', sequence: 14 });
     expect(parsed.events[4]?.evidenceIds).toContain('evidence-verification');
     expect(parsed.evidence.find((item) => item.evidenceId === 'evidence-finding')).toMatchObject({ findingId: 'finding-42', occurrenceId: 'occurrence-42', episodeId: 'episode-42' });
   });
