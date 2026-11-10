@@ -161,10 +161,21 @@ describe('resolveCapabilities — followups (#471)', () => {
       singleProject: false,
       automations: true,
       dispatch: true,
+      graphicalSessions: false,
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
     });
+  });
+});
+
+describe('resolveCapabilities — graphical sessions', () => {
+  it('is disabled by default and only an exact one opts in', () => {
+    expect(resolveCapabilities({}).graphicalSessions).toBe(false);
+    expect(resolveCapabilities({ CEZ_GRAPHICAL_SESSIONS: '1' }).graphicalSessions).toBe(true);
+    for (const value of ['0', 'true', 'yes', '', 'on']) {
+      expect(resolveCapabilities({ CEZ_GRAPHICAL_SESSIONS: value }).graphicalSessions).toBe(false);
+    }
   });
 });
 
