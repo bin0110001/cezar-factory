@@ -3,7 +3,7 @@ description: Prepare a ready issue, implement it, run verification, PR, then fac
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1,check-weakening.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1,check-weakening.ps1,collect-godot-dependencies.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -16,6 +16,10 @@ steps:
   - id: prepare
     name: Prepare issue and environment context
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/prepare-implementation.ps1 -Task "{{task}}" -OutputPath .factory/implementation-context.json
+    timeoutSeconds: 300
+  - id: collect-godot-dependencies
+    name: Collect conservative Godot dependency context
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/collect-godot-dependencies.ps1 -Optional -OutputPath .factory/godot-dependencies.json
     timeoutSeconds: 300
   - id: start
     name: Move issue to factory:working
@@ -35,6 +39,10 @@ steps:
       there. The issue and approved plan are the source of truth. Do not repeat
       broad discovery, use anonymous GitHub curl calls, guess repositories, or
       dispatch a child Cezar task.
+
+      When present, `.factory/godot-dependencies.json` is conservative impact context.
+      Treat entries in `uncertain` as unknown dependencies and inspect those areas
+      directly; the graph does not select or skip tests.
 
       The workflow already prepared the context and moved the issue to factory:working.
       Do not run Factory lifecycle, routing, or preparation scripts and do not set any
