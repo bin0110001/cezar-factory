@@ -23,6 +23,7 @@
       "additionalProperties": false,
       "properties": {
         "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "projectPathHash": { "type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$" },
         "effectiveSource": { "enum": ["shared", "installed", "override", "unknown"] },
         "shadowConflict": { "enum": ["none", "identical", "modified", "unknown"] },
         "migrationStatus": { "enum": ["shared", "shadowed", "modified", "not-installed", "unreachable", "unknown"] },
@@ -32,7 +33,7 @@
           "items": { "$ref": "#/$defs/file" }
         }
       },
-      "required": ["projectId", "effectiveSource", "shadowConflict", "migrationStatus", "files"]
+      "required": ["projectId", "projectPathHash", "effectiveSource", "shadowConflict", "migrationStatus", "files"]
     },
     "file": {
       "type": "object",
