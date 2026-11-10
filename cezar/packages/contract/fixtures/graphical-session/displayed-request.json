@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "mode": "displayed",
+  "display": { "backend": "x11", "width": 1280, "height": 720, "dpi": 96 },
+  "renderer": { "requirement": "software", "gpuRequired": false, "features": [] },
+  "appEntryPoint": "tests/gui/fixture",
+  "timeoutMs": 60000,
+  "permittedEvidence": ["screenshot", "trace", "metadata"]
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "mode": "headless",
+  "appEntryPoint": "tests/smoke/startup",
+  "timeoutMs": 30000,
+  "permittedEvidence": ["metadata"]
+}

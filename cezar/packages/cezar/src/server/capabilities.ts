@@ -42,6 +42,10 @@
  * `/runs/:id/{dispatch,report}` routes answer 409 and no task's system prompt mentions
  * dispatching; the `dispatch` field on existing run records survives the flag being off.
  *
+ * `graphicalSessions` is opt-in via `CEZ_GRAPHICAL_SESSIONS=1` and off by default. It only
+ * advertises a trusted server capability; project or run requests cannot enable it. Legacy
+ * execution without a graphicalSession request remains available while the feature is off.
+ *
  * Usage presentation: token counts and monetary cost stay visible by default.
  * `CEZ_HIDE_TOKEN_USAGE=1` and `CEZ_HIDE_COST=1` hide them independently;
  * legacy `CEZ_HIDE_TOKEN_METRICS=1` remains the master hide-all switch. None
@@ -168,6 +172,7 @@ export function resolveCapabilities(env: NodeJS.ProcessEnv = process.env, bindHo
     singleProject: env.CEZ_SINGLE_PROJECT === '1',
     automations: env.CEZ_AUTOMATIONS !== '0',
     dispatch: env.CEZ_DISPATCH !== '0',
+    graphicalSessions: env.CEZ_GRAPHICAL_SESSIONS === '1',
     tokenMetrics: tokenUsageMetrics && costMetrics,
     tokenUsageMetrics,
     costMetrics,

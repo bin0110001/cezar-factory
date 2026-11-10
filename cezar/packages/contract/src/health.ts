@@ -55,6 +55,8 @@ export const capabilitiesSchema = z.object({
    * no prompt mentions dispatching.
    */
   dispatch: z.boolean(),
+  /** Optional during the migration window; true only when CEZ_GRAPHICAL_SESSIONS=1 is trusted. */
+  graphicalSessions: z.boolean().optional(),
   /**
    * `false` means `CEZ_HIDE_TOKEN_METRICS=1` asks the browser to omit token counts and monetary
    * cost (#481). The telemetry itself still rides in run/event payloads — this is presentation
