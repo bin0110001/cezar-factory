@@ -259,6 +259,11 @@ export const verificationArtifactParamsSchema = z.object({ runId: z.string().min
 const verificationQueryRunSchema = z.object({
   id: z.string(), startedAt: z.string(), finishedAt: z.string(), status: z.string(), commitSha: z.string(), baseSha: z.string(),
   baselineRunId: z.string().nullable(),
+  projectId: z.string().optional(),
+  cezarRunId: z.string().optional(),
+  githubIssueUrl: z.string().url().optional(),
+  environment: z.record(z.string(), z.string().max(256)).optional(),
+  coverage: z.object({ selected: z.number().int().nonnegative(), passed: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), skipped: z.number().int().nonnegative(), unknown: z.number().int().nonnegative() }).strict().optional(),
   suite: z.string().optional(),
   counts: z.object({ selected: z.number().int().nonnegative(), deferred: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), episodes: z.number().int().nonnegative(), artifacts: z.number().int().nonnegative() }).strict(),
   checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, durationMs: z.number().int().nonnegative(), metrics: z.array(verificationMetricSchema), findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict()).optional(),
