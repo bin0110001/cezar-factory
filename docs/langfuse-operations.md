@@ -41,14 +41,38 @@ sets; `podman compose down -v` destroys the stored traces and is not a routine
 upgrade command. Langfuse's Compose deployment is a single-node setup without
 built-in high availability or backup orchestration.
 
-The initial project is configured for 90-day event retention through
-`LANGFUSE_INIT_PROJECT_RETENTION`. Langfuse's [data retention feature](https://langfuse.com/docs/administration/data-retention)
-is available on self-hosted Enterprise; without that entitlement, data remains
-indefinitely by default. Existing projects do not pick up the init setting and
-need an owner or admin to configure retention through project settings or the
-Organization Management API. Keep MinIO event/media objects aligned with
-Langfuse retention; bucket lifecycle deletion can break references and is not a
-substitute.
+Langfuse's built-in [project data-retention feature](https://langfuse.com/docs/administration/data-retention)
+is limited to self-hosted Enterprise. The OSS Compose stack therefore enforces
+the requested 30-day window directly: `langfuse-clickhouse-retention` applies
+ClickHouse TTLs to `traces.timestamp`, `observations.start_time`,
+`scores.timestamp`, and `event_log.created_at` after Langfuse has completed its
+migrations. ClickHouse removes expired rows during background merges, so disk
+space recovery can lag the 30-day query-retention boundary. The reconciler
+retries until all expected tables and date columns exist; keep it running and
+check its logs after deployment and each Langfuse upgrade. This follows
+Langfuse's [ClickHouse TTL guidance](https://langfuse.com/self-hosting/configuration/scaling#clickhouse-disk-usage);
+the ClickHouse schema is an internal compatibility surface, so verify the
+tables and date columns against the pinned Langfuse release before upgrading.
+
+Event-upload objects use a dedicated `langfuse-events` bucket with a 30-day
+MinIO lifecycle rule. That bucket is created before web and worker start. The
+same rule expires the legacy `events/` prefix in `langfuse`, preserving older
+event uploads without expiring its media objects. Media continues to use the
+separate `langfuse` bucket and is not lifecycle-deleted:
+Langfuse warns that expiring media independently can break trace references and
+future uploads. MinIO's lifecycle scanner can apply expiry after the configured
+age rather than at an exact wall-clock boundary; see its
+[lifecycle documentation](https://min.io/docs/minio/linux/reference/minio-mc/mc-ilm-rule-add.html).
+The Factory outbox emits no media. The 30-day OSS policy covers
+trace, observation, score, event-log, and event-upload data; audit logs,
+datasets and dataset items, user/project metadata, and manually uploaded media
+are outside this custom TTL policy. Dataset items can therefore outlive their
+source traces, as they also do with Langfuse's built-in retention.
+
+`LANGFUSE_RETENTION_DAYS` sets both custom policies and defaults to `30`.
+`LANGFUSE_INIT_PROJECT_RETENTION` is also set to 30 for future use if the
+instance is licensed for self-hosted Enterprise; the custom OSS reconciler is
+the active deletion mechanism for this deployment.
 
 The upstream sizing guide lists per-service minima of 2 CPU/4 GiB for web,
 worker, PostgreSQL, and MinIO; 2 CPU/8 GiB for ClickHouse; and 1 CPU/1.5 GiB for

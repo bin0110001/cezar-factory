@@ -11,7 +11,8 @@ x-langfuse-shared-environment: &langfuse-shared-environment
   CLICKHOUSE_URL: http://langfuse-clickhouse:8123
   CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER}
   CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
-  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
   LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
   LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER}
   LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD}
@@ -146,6 +147,8 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
+      langfuse-event-storage-init:
+        condition: service_completed_successfully
     environment:
       <<: *langfuse-shared-environment
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
@@ -154,7 +157,7 @@ services:
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      LANGFUSE_INIT_PROJECT_RETENTION: ${LANGFUSE_INIT_PROJECT_RETENTION:-90}
+      LANGFUSE_INIT_PROJECT_RETENTION: ${LANGFUSE_RETENTION_DAYS:-30}
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
@@ -180,6 +183,8 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
+      langfuse-event-storage-init:
+        condition: service_completed_successfully
     environment: *langfuse-shared-environment
 
   langfuse-postgres:
@@ -232,7 +237,7 @@ services:
     image: cgr.dev/chainguard/minio@sha256:5cfb31567972802ece1a39bb076078fda00095c7d11e82be65e762c528994608
     restart: unless-stopped
     entrypoint: ["sh", "-c"]
-    command: ["mkdir -p /data/langfuse && minio server --address :9000 --console-address :9001 /data"]
+    command: ["mkdir -p /data/langfuse /data/langfuse-events && minio server --address :9000 --console-address :9001 /data"]
     environment:
       MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER}
       MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD}
@@ -246,6 +251,62 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # The event bucket is separate so its 30-day lifecycle never deletes media.
+  # This one-shot service owns lifecycle rules for this integration-only bucket.
+  langfuse-event-storage-init:
+    image: cgr.dev/chainguard/minio@sha256:5cfb31567972802ece1a39bb076078fda00095c7d11e82be65e762c528994608
+    restart: "no"
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        days="${LANGFUSE_RETENTION_DAYS:-30}"
+        case "$${days}" in ''|*[!0-9]*) echo 'LANGFUSE_RETENTION_DAYS must be an integer' >&2; exit 2 ;; esac
+        mc alias set local http://langfuse-minio:9000 "$${LANGFUSE_MINIO_USER}" "$${LANGFUSE_MINIO_PASSWORD}"
+        mc mb --ignore-existing local/langfuse-events
+        mc ilm rule rm --all --force local/langfuse-events || true
+        mc ilm rule add --expire-days "$${days}" local/langfuse-events
+        # Retain historical event objects from the bucket used by earlier deployments.
+        mc ilm rule add --prefix events/ --expire-days "$${days}" local/langfuse
+    environment:
+      LANGFUSE_RETENTION_DAYS: ${LANGFUSE_RETENTION_DAYS:-30}
+      LANGFUSE_MINIO_USER: ${LANGFUSE_MINIO_USER}
+      LANGFUSE_MINIO_PASSWORD: ${LANGFUSE_MINIO_PASSWORD}
+
+  # OSS has no project retention worker. Set supported ClickHouse table TTLs
+  # after Langfuse has completed its migrations, then keep this reconciler alive.
+  langfuse-clickhouse-retention:
+    image: docker.io/clickhouse/clickhouse-server:${LANGFUSE_CLICKHOUSE_VERSION}
+    restart: unless-stopped
+    depends_on:
+      langfuse:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        days="${LANGFUSE_RETENTION_DAYS:-30}"
+        case "$${days}" in ''|*[!0-9]*) echo 'LANGFUSE_RETENTION_DAYS must be an integer' >&2; exit 2 ;; esac
+        while :; do
+          ready=1
+          for item in 'traces timestamp' 'observations start_time' 'scores timestamp' 'event_log created_at'; do
+            set -- $${item}
+            count="$$(clickhouse-client --host langfuse-clickhouse --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --database default --query "SELECT count() FROM system.columns WHERE database = 'default' AND table = '$${1}' AND name = '$${2}'")"
+            if [ "$${count}" != 1 ]; then ready=0; break; fi
+          done
+          if [ "$${ready}" = 1 ]; then
+            clickhouse-client --host langfuse-clickhouse --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --database default --multiquery --query "ALTER TABLE traces MODIFY TTL timestamp + INTERVAL $${days} DAY DELETE; ALTER TABLE observations MODIFY TTL start_time + INTERVAL $${days} DAY DELETE; ALTER TABLE scores MODIFY TTL timestamp + INTERVAL $${days} DAY DELETE; ALTER TABLE event_log MODIFY TTL created_at + INTERVAL $${days} DAY DELETE"
+            echo "Applied Langfuse ClickHouse retention: $${days} days"
+            sleep infinity
+          fi
+          sleep 60
+        done
+    environment:
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
+      LANGFUSE_RETENTION_DAYS: ${LANGFUSE_RETENTION_DAYS:-30}
 
   prometheus:
     image: ${PROMETHEUS_IMAGE}
