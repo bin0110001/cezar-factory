@@ -22,6 +22,17 @@ allowed capabilities, network zones, or concurrency, and can add stricter
 requirements; attempts to widen those limits or replace a profile requirement
 are rejected.
 
+`refreshGraphicalWorkerInventory` runs bounded Windows/Linux probes and records
+validated, unknown, or failed observations. It reports detected drivers, GPU
+counts, renderer/API support, virtual-display tooling, and Godot versions where
+the host tools can verify them. VRAM, safe simultaneous sessions, and capture
+remain unknown unless an injected host probe validates them. Unsupported Windows
+rendering backends are explicitly unknown, so a backend request stays
+unschedulable. Resource or runtime claims that a refresh cannot verify are
+removed instead of carried forward. Workers can use this helper at enrollment
+and provide it as `refreshInventory`; the scheduler invokes that callback when
+the snapshot expires and keeps the worker stale if probing fails.
+
 Built-in templates cover general compute, GUI, lightweight network peer, and
 read-only asset access. Profiles can be composed: hard requirements tighten,
 network zones intersect, concurrency takes the lowest limit, and policy grants

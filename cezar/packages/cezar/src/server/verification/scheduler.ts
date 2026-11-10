@@ -8,6 +8,8 @@ export interface VerificationWorker {
   /** Optional versioned inventory/policy; legacy local workers remain valid without it. */
   inventory?: WorkerInventory;
   profilePolicy?: WorkerProfilePolicy;
+  /** Enrollment probe plus refresh callback; called again when inventory expires. */
+  refreshInventory?: () => Promise<WorkerInventory>;
   activeJobs?: number;
   localTags?: string[];
   isLocal?: boolean;
@@ -62,12 +64,22 @@ export async function scheduleJob(
         if (!best || missing.length < best.length) { best = missing; bestReason = 'incompatible'; }
         continue;
       }
-      const profileMatch = matchWorkerProfile(w.inventory, job.profileRequest, w.profilePolicy, { isLocal: w.isLocal, localTags: w.localTags });
+      let inventory = w.inventory;
+      const observedAt = Date.parse(inventory.observedAt);
+      if (w.refreshInventory && (!Number.isFinite(observedAt) || Date.now() > observedAt + inventory.freshForMs)) {
+        try {
+          inventory = await w.refreshInventory();
+          w.inventory = inventory;
+        } catch {
+          // Keep the expired snapshot; the matcher will report stale and fail closed.
+        }
+      }
+      const profileMatch = matchWorkerProfile(inventory, job.profileRequest, w.profilePolicy, { isLocal: w.isLocal, localTags: w.localTags });
       if (!profileMatch.schedulable) {
         if (!best || profileMatch.missing.length < best.length) { best = profileMatch.missing; bestReason = profileMatch.reason; }
         continue;
       }
-      capable.push({ worker: w, preferenceScore: profileMatch.preferenceScore });
+      capable.push({ worker: { ...w, inventory }, preferenceScore: profileMatch.preferenceScore });
     } else {
       const lease = await locks.acquire(`${w.id}:${job.id}`, deriveLocks(job), ttlMs);
       return { status: 'scheduled', workerId: w.id, lease };

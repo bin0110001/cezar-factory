@@ -32,6 +32,7 @@ export const workerCapabilityObservationSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['reasonCode'], message: 'failed probes require a reason code' });
   }
 });
+export type WorkerCapabilityObservation = z.infer<typeof workerCapabilityObservationSchema>;
 
 const namespacedObservationsSchema = z.record(capabilityNameSchema, workerCapabilityObservationSchema).default({});
 const capabilityValuesSchema = z.record(capabilityNameSchema, capabilityValueSchema).default({});
