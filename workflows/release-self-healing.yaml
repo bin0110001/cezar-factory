@@ -1,0 +1,11 @@
+name: factory-release-self-healing
+description: Read the local incident ledger and reconcile escalated incidents to one rolling GitHub issue status, without Cezar access.
+steps:
+  - id: startup
+    name: Verify the local recovery runtime
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-release-self-healing -Step reconcile -RequiredScripts factory_self_healing.py
+    timeoutSeconds: 60
+  - id: reconcile
+    name: Diagnose and update rolling incident escalations
+    command: python3 $FACTORY_RUNTIME_ROOT/scripts/release/factory_self_healing.py reconcile --ledger "$FACTORY_INCIDENT_LEDGER" --repo "$FACTORY_INCIDENT_REPOSITORY" --issue $FACTORY_ESCALATION_ISSUE --state "$FACTORY_ESCALATION_STATE"
+    timeoutSeconds: 120
