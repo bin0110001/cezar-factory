@@ -1,0 +1,8 @@
+schemaVersion: 1
+defaultRetentionDays: 30
+maxArtifactBytes: 16777216
+maxStoreBytes: 1073741824
+pruneExpiredOnly: true
+redaction:
+  textArtifacts: redact
+  binaryArtifacts: requireCallerAssertion

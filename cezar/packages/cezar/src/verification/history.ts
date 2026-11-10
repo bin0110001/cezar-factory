@@ -13,6 +13,8 @@ import {
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
 import type { ProjectContext } from '../server/project-context.ts';
 import type { RunEvent, RunRecord } from '../runs/store.ts';
+import { getCodingRunSnapshot } from '../workspace/lifecycle.ts';
+import { verifyCodingAttemptManifest } from '../workspace/coding-run-manifest.ts';
 
 const INLINE_BYTES = 2_048;
 const EXCERPT_CHARS = 512;
@@ -21,7 +23,11 @@ const ARTIFACT_CONTENT_BYTES = 65_536;
 const REDACTED = '[REDACTED]';
 
 interface Selection { suite: string; selected: Array<{ testId: string; reason: string }>; deferred: Array<{ testId: string; reason: string }> }
-interface HistoryRecord { owner: RunRecord; event: RunEvent; result: VerificationRun; selection: Selection }
+interface CodingEvidenceSummary {
+  status: 'available' | 'not-recorded' | 'unavailable';
+  attempts: Array<{ attemptId: string; index: number; status: string; manifestStatus: 'not-recorded' | 'verified' | 'tampered' | 'invalid'; manifestDigest?: string; manifestReference: string; artifactCount: number }>;
+}
+interface HistoryRecord { owner: RunRecord; event: RunEvent; result: VerificationRun; selection: Selection; codingEvidence: CodingEvidenceSummary }
 interface QueryItem { key: { startedAt: string; runId: string; itemId: string }; body: Record<string, unknown> }
 
 function inside(root: string, target: string): boolean {
@@ -65,12 +71,38 @@ async function legacyResult(context: ProjectContext, owner: RunRecord, event: Ru
 
 async function readHistory(context: ProjectContext): Promise<HistoryRecord[]> {
   const output: HistoryRecord[] = [];
+  const evidenceByRun = new Map<string, CodingEvidenceSummary>();
   for (const owner of context.store.listRuns()) {
     for (const event of context.store.readEvents(owner.id)) {
       if (event.type !== 'verification-result') continue;
       const parsed = verificationRunSchema.safeParse(event.result);
       const result = parsed.success ? parsed.data : await legacyResult(context, owner, event);
-      if (result) output.push({ owner, event, result, selection: selectionFrom(event.selection) });
+      if (result) {
+        const cezarRunId = result.cezarRunId ?? owner.id;
+        let codingEvidence = evidenceByRun.get(cezarRunId);
+        if (!codingEvidence) {
+          try {
+            const snapshot = await getCodingRunSnapshot({ runId: cezarRunId, cwd: context.root });
+            codingEvidence = snapshot ? {
+              status: 'available',
+              attempts: snapshot.attempts.map((attempt) => {
+                const verification = attempt.manifest ? verifyCodingAttemptManifest(attempt.manifest) : undefined;
+                return {
+                  attemptId: attempt.attemptId, index: attempt.index, status: attempt.status,
+                  manifestStatus: !attempt.manifest ? 'not-recorded' as const
+                    : verification?.status === 'valid' ? 'verified' as const
+                      : verification?.status === 'tampered' ? 'tampered' as const : 'invalid' as const,
+                  ...(attempt.manifest ? { manifestDigest: attempt.manifest.manifestDigest } : {}),
+                  manifestReference: `coding-run:${cezarRunId}/attempts/${attempt.attemptId}/manifest`,
+                  artifactCount: attempt.manifest?.artifacts.length ?? 0,
+                };
+              }),
+            } : { status: 'not-recorded', attempts: [] };
+          } catch { codingEvidence = { status: 'unavailable', attempts: [] }; }
+          evidenceByRun.set(cezarRunId, codingEvidence);
+        }
+        output.push({ owner, event, result, selection: selectionFrom(event.selection), codingEvidence });
+      }
     }
   }
   output.sort((a, b) => b.result.startedAt.localeCompare(a.result.startedAt)
@@ -195,6 +227,7 @@ function makeItems(all: HistoryRecord[], query: VerificationQueryInput): QueryIt
           artifacts: refs.length,
         },
         checks: result.checks.map((check) => ({ checkId: check.checkId, status: check.status, durationMs: check.durationMs, metrics: safeMetrics(check.metrics), ...(check.findingFingerprint ? { findingFingerprint: check.findingFingerprint } : {}) })),
+        codingEvidence: record.codingEvidence,
       });
     } else if (query.kind === 'selected' || query.kind === 'deferred') {
       const selected = query.kind === 'selected';
@@ -258,6 +291,18 @@ export async function queryVerificationHistory(context: ProjectContext, query: V
     result = build(page, true);
   }
   return verificationQueryWireSchema.parse(result);
+}
+
+/** Resolve the query's content reference to the immutable manifest; tampering is a conflict, never a pass. */
+export async function readCodingAttemptManifest(context: ProjectContext, runId: string, attemptId: string) {
+  let snapshot;
+  try { snapshot = await getCodingRunSnapshot({ runId, cwd: context.root }); }
+  catch { return { status: 409 as const, body: { status: 'unavailable' as const } }; }
+  const attempt = snapshot?.attempts.find((item) => item.attemptId === attemptId);
+  if (!attempt?.manifest) return { status: 404 as const };
+  const verified = verifyCodingAttemptManifest(attempt.manifest);
+  if (verified.status !== 'valid') return { status: 409 as const, body: { status: verified.status, ...(verified.status === 'tampered' ? { expectedDigest: verified.expectedDigest, actualDigest: verified.actualDigest } : { detail: verified.detail }) } };
+  return { status: 200 as const, body: verified.manifest };
 }
 
 export async function readVerificationArtifact(context: ProjectContext, verificationId: string, id: string) {

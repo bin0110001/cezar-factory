@@ -58,6 +58,12 @@ Failure items may include `classification` (`new`, `known` or `unknown`) and `ep
 stable finding fingerprint provide the episode link; without one the query reports `unknown` rather than
 guessing from a test name.
 
+Run items may include `codingEvidence`: whether the Cezar coding-run ledger is available, with each attempt's
+status, manifest verification result, digest, artifact count and stable manifest reference. Resolve a reference
+through `GET /api/v1/verification/attempt-manifests/{runId}/{attemptId}`. The endpoint returns the exact
+manifest only after recomputing its digest; missing and tampered manifests return explicit 404/409 responses.
+Runs without a coding ledger report `not-recorded`; an unreadable or unsupported ledger reports `unavailable`.
+
 ## Response
 
 ```json

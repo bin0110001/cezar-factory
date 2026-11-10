@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/evidence-manifest.schema.json",
+  "title": "Coding attempt evidence manifest v1",
+  "description": "Immutable metadata and evidence references for one attempt. Unknown inputs are represented explicitly and manifestDigest is SHA-256 over canonical JSON without that field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "attemptId", "index", "issue", "baseSha", "workerImageDigest", "agentCliVersion", "resolvedModel", "promptSha256", "skillSha256", "templateSha256", "testPolicySha256", "artifacts", "commitSha", "pullRequest", "manifestDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "attemptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "index": { "type": "integer", "minimum": 1 },
+    "issue": {
+      "type": "object", "additionalProperties": false, "required": ["number", "revision"],
+      "properties": { "number": { "type": "integer", "minimum": 1 }, "revision": { "$ref": "#/$defs/observation" } }
+    },
+    "baseSha": { "$ref": "#/$defs/observation" },
+    "workerImageDigest": { "$ref": "#/$defs/observation" },
+    "agentCliVersion": { "$ref": "#/$defs/observation" },
+    "resolvedModel": { "$ref": "#/$defs/observation" },
+    "promptSha256": { "$ref": "#/$defs/observation" },
+    "skillSha256": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/digest" } },
+    "templateSha256": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/digest" } },
+    "testPolicySha256": { "$ref": "#/$defs/observation" },
+    "artifacts": { "type": "array", "maxItems": 10000, "items": { "type": "object", "required": ["schemaVersion", "evidenceId", "kind", "reference"], "properties": { "schemaVersion": { "const": 1 }, "evidenceId": { "type": "string", "minLength": 1, "maxLength": 256 }, "kind": { "enum": ["verification", "finding", "artifact", "commit", "diff", "review", "other"] }, "reference": { "type": "string", "minLength": 1, "maxLength": 2048 }, "sha256": { "$ref": "#/$defs/digest" }, "mediaType": { "type": "string", "minLength": 1, "maxLength": 128 }, "bytes": { "type": "integer", "minimum": 0 }, "createdAt": { "type": "string", "format": "date-time" }, "expiresAt": { "type": "string", "format": "date-time" }, "verificationId": { "type": "string", "minLength": 1, "maxLength": 256 }, "verificationRunId": { "type": "string", "minLength": 1, "maxLength": 256 }, "findingId": { "type": "string", "minLength": 1, "maxLength": 256 }, "occurrenceId": { "type": "string", "minLength": 1, "maxLength": 256 }, "episodeId": { "type": "string", "minLength": 1, "maxLength": 256 } }, "additionalProperties": false } },
+    "commitSha": { "$ref": "#/$defs/observation" },
+    "pullRequest": { "$ref": "#/$defs/observation" },
+    "manifestDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "observation": {
+      "oneOf": [
+        { "type": "object", "required": ["availability", "value"], "properties": { "availability": { "const": "available" }, "value": {} }, "additionalProperties": false },
+        { "type": "object", "required": ["availability"], "properties": { "availability": { "const": "unknown" }, "reason": { "type": "string", "maxLength": 512 } }, "additionalProperties": false },
+        { "type": "object", "required": ["availability", "reasonCode"], "properties": { "availability": { "const": "unavailable" }, "reasonCode": { "type": "string", "minLength": 1, "maxLength": 256 }, "message": { "type": "string", "maxLength": 512 } }, "additionalProperties": false }
+      ]
+    }
+  }
+}

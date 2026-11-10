@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runWorkspaceCommand } from './lifecycle-cli.ts';
 import { readCodingRunArtifact, storeCodingRunArtifact } from './coding-run-artifacts.ts';
+import { buildCodingAttemptManifest, verifyCodingAttemptManifest } from './coding-run-manifest.ts';
 import {
   appendCodingRunEvent,
   createCodingRun,
@@ -78,18 +79,21 @@ afterEach(() => {
 describe('coding run lifecycle ledger', () => {
   it('stores content-addressed attempt evidence and keeps its permanent ledger reference after expiry', async () => {
     const { root, home } = workspace();
-    await createCodingRun({ record: runRecord(), cwd: root, home });
-    await appendCodingRunEvent({ runId: 'run-1', type: 'attempt.started', attemptId: 'attempt-1', cwd: root, home, occurredAt: start });
+    const created = await createCodingRun({ record: runRecord(), cwd: root, home });
     const reference = await storeCodingRunArtifact({
       content: Buffer.from('redacted verification receipt'), mediaType: 'application/json', home,
       retentionDays: 1, now: new Date(start), evidenceId: 'receipt-1',
     });
+    const manifest = buildCodingAttemptManifest({ run: created.run, attemptId: 'attempt-1', index: 1, artifacts: [reference] });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'attempt.started', attemptId: 'attempt-1', manifest, cwd: root, home, occurredAt: start });
     const snapshot = await appendCodingRunEvent({
       runId: 'run-1', type: 'validation.completed', attemptId: 'attempt-1', evidence: [reference],
       cwd: root, home, occurredAt: '2026-11-10T12:30:00.000Z',
     });
 
     expect(snapshot.evidence).toContainEqual(reference);
+    expect(verifyCodingAttemptManifest(manifest)).toMatchObject({ status: 'valid' });
+    expect(verifyCodingAttemptManifest({ ...manifest, issue: { ...manifest.issue, number: 43 } })).toMatchObject({ status: 'tampered' });
     await expect(readCodingRunArtifact({ reference, home, now: new Date('2026-11-12T00:00:00.000Z') }))
       .resolves.toMatchObject({ status: 'expired' });
     await expect(getCodingRunSnapshot({ runId: 'run-1', cwd: root, home }))

@@ -122,7 +122,12 @@ Run evidence blobs are stored outside the audit database under
 and returns a contract-ready artifact evidence reference with byte count, media
 type, creation time, and expiry. Pass that object in the `evidence` list when
 appending the associated attempt event. Callers must redact content before
-storing it. The coding-run ledger stores only that reference and its digest; the
+storing it. Text artifacts are pattern and environment-value redacted before
+hashing; binary artifacts require an explicit `redaction: 'already-redacted'`
+assertion by the caller. The default total store bound is 1 GiB, controlled by
+`CEZ_CODING_RUN_ARTIFACT_MAX_BYTES`; `policies/evidence-retention.yaml` records
+the retention, per-blob and total-store defaults. The coding-run ledger stores
+only that reference and its digest; the
 audit events and their evidence references remain permanent when the blob
 expires.
 
@@ -139,6 +144,16 @@ When attaching a stored blob to an event, persist its `reference`, bare
 record. An expired reference remains visible in history and can be reported
 without claiming the underlying content is still available. A fresh execution
 must create a new attempt; reconstructing an event history does not rerun work.
+
+`buildCodingAttemptManifest` captures the run's issue revision, base SHA, agent
+and model identity, prompt and skill hashes, plus caller-supplied worker image,
+template, test-policy, commit, PR, and artifact references. Missing inputs are
+recorded as `unknown`, never inferred. It hashes canonical JSON without the
+digest field and validates it before `attempt.started` can be appended. The
+snapshot projection retains the exact manifest across reconstruction; a new
+execution uses a new attempt ID and may explicitly supersede a terminal attempt.
+`verifyCodingAttemptManifest` reports malformed or digest-mismatched manifests
+without treating them as valid evidence.
 
 Coding-run audit events are full-fidelity and have permanent retention; no
 trace or transcript janitor may delete them. Operational telemetry is a

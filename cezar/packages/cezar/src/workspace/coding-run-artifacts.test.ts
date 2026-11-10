@@ -60,4 +60,21 @@ describe('content-addressed coding-run artifacts', () => {
     await expect(storeCodingRunArtifact({ content: new Uint8Array(16 * 1024 * 1024 + 1), mediaType: 'application/octet-stream', home }))
       .rejects.toThrow(/no larger than/);
   });
+
+  it('redacts text by default, requires a binary redaction assertion, and enforces the store byte cap', async () => {
+    const home = await temporaryHome();
+    const unsafe = await storeCodingRunArtifact({
+      content: Buffer.from('credential ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'), mediaType: 'text/plain', home, now: start,
+    });
+    const loaded = await readCodingRunArtifact({ reference: unsafe, home, now: start });
+    expect(loaded.status).toBe('available');
+    if (loaded.status === 'available') expect(Buffer.from(loaded.bytes).toString('utf8')).not.toContain('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456');
+
+    await expect(storeCodingRunArtifact({ content: Buffer.from([1, 2]), mediaType: 'application/octet-stream', home }))
+      .rejects.toThrow(/binary artifacts require redaction/);
+    const cappedHome = await temporaryHome();
+    await storeCodingRunArtifact({ content: Buffer.from('one'), mediaType: 'text/plain', home: cappedHome, maxStoreBytes: 3 });
+    await expect(storeCodingRunArtifact({ content: Buffer.from('two'), mediaType: 'text/plain', home: cappedHome, maxStoreBytes: 3 }))
+      .rejects.toThrow(/store limit exceeded/);
+  });
 });
