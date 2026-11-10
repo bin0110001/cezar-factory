@@ -22,37 +22,23 @@ This factory provides:
 
 ## Quick start
 
-```powershell
-# 1. Configure remote Cezar targets in config/factory-projects.json
-# 2. Validate and synchronize Factory automations without a project checkout
-./scripts/push-factory-updates.ps1 -SyncAutomations
-```
+The shared Factory checkout mounted into Cezar is the default. Configure
+explicit targets from [`config/factory-projects.json.example`](config/factory-projects.json.example)
+and use the owning Cezar workflow for Factory operations. A local project
+installation is a fallback for projects that need the complete `.ai/factory`
+layer; see [project integration](docs/project-integration.md).
 
-For a first-time project integration, or when Cezar needs project-local
-workflows, skills, policies, or scripts, use the local fallback:
-
-```powershell
-./scripts/install.ps1 -ProjectPath ../my-project -ProjectType godot
-./scripts/verify.ps1 -ProjectPath ../my-project
-```
-
-Run the factory's own tests with `pwsh tests/run-tests.ps1`.
+Repository changes are validated locally with `tests/run-tests.ps1` and the
+pre-commit hook. Operational Factory scripts are invoked by workflow command
+steps, not by agent prompts.
 
 ## Deployment
 
 The supported topology is declared in `config/server-topology.env`: it assigns
-control-plane services and vLLM to hosts, and declares their network
-relationship. Copy the example first, then copy the host-local environment
-examples and run the matching deployment script:
-
-```bash
-cp config/server-topology.env.example config/server-topology.env
-./scripts/deploy/deploy-control-plane.sh
-./scripts/deploy/deploy-model-host.sh
-```
-
-Both scripts validate the service endpoints after startup. See
-`integrations/deployment/README.md` for the network and secret boundary.
+control-plane services and vLLM to hosts and declares their network
+relationship. Host-local deployment is separate from remote-only Cezar
+automation synchronization. See `integrations/deployment/README.md` for the
+deployment and secret boundary.
 
 ## Getting Started
 
@@ -75,7 +61,7 @@ example is not the issue target unless the task explicitly says it is.
 
 ## Version
 
-Current factory version: 0.3.2 (see VERSION file)
+Current factory version: 0.3.70 (see VERSION file)
 
 ## License
 

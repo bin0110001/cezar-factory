@@ -1,64 +1,55 @@
 ---
 name: factory-finish-release
-description: Finish a Factory-managed update by validating it, synchronizing every configured target, verifying Bazzite runtime parity, and preparing the reviewed dev PR for auto-merge.
+description: Apply the gates and produce a complete handoff for an explicitly requested Factory Production Run or live deployment.
 ---
 
 # Factory finish and release
 
 Use this skill only for a **Production Run** or an explicit request to deploy
-live. Ordinary troubleshooting and development uses Dev mode and proceeds to a
-reviewed PR targeting `dev`; production target, stable-promotion, and Bazzite
-parity gates must not interrupt that work.
+live. Ordinary development uses Dev mode, local validation, and a reviewed PR
+targeting `dev`. Production target, promotion, and Bazzite parity gates must
+not interrupt that work.
 
-The goal is a verified end state, not merely a source-tree change:
+This skill owns release decisions and the final report. It does not tell the
+model to run Factory scripts. A workflow's `command:` steps own Factory
+script execution, validation, Cezar synchronization, and supported host
+deployment. If no such workflow is configured, report the missing workflow
+as the remaining handoff instead of substituting direct script execution.
 
-1. Validate the changed assets and the automation catalog. Run the repository
-   test suite appropriate to the change. Stop on any failed validation; do not
-   release a failed or unresolved update.
-2. Check the diff and working tree for unrelated changes. Preserve user work;
-   never reset, clean, stash, or overwrite it without explicit instruction.
-3. Read deployment targets only from `config/factory-projects.json`. If the
-   registry is absent or empty, report that the release is ready but needs
-   target configuration and make no external changes.
-4. Run the `factory-release` skill: the shared-mount release (`promote-stable.ps1`, which runs the
-   full test suite as its gate) and, for any non-shared target, its legacy procedure,
-   which always runs `scripts/push-factory-updates.ps1 -SyncAutomations` even when the
-   Factory version appears unchanged. Never scan drives or invent targets.
-5. For Bazzite-hosted runtime changes, use the `homelab-ssh` instructions and
-   the supported Bazzite deployment flow. Verify all of the following before
-   declaring success:
-   - the host checkout `VERSION` equals the local Factory `VERSION`;
-   - every script referenced by the active Factory workflows exists in the
-     host checkout;
-   - the Cezar container bind-mounts that checkout at
-     `/projects/cezar-factory`;
-   - the same required scripts exist inside the running `cezar` container;
-   - the supported deployment validation and health checks pass.
-6. If the Bazzite checkout is dirty, on an unexpected revision, missing the
-   required runtime, or cannot be validated, stop and report the exact
-   mismatch. Do not pull, reset, copy over, or delete the remote checkout.
-7. After validation and independent review, ensure the implementation PR
-   targets `dev`. For a fix to broken code, merge it yourself with
-   `gh pr merge <number> --squash` (not `--auto`; GitHub rejects it here), after
-   confirming the PR head is your validated commit. Do not merge a failed,
-   unreviewed, unresolved, or blocked PR. If no PR exists, report the exact
-   remaining handoff rather than silently creating unrelated work.
+## Release gates
+
+1. Require passing local validation and a recorded self-review with no open
+   findings before a change is eligible to merge.
+2. Preserve unrelated working-tree changes. Never reset, clean, stash, or
+   overwrite user work to make a release appear ready.
+3. Read targets only from the host-local `config/factory-projects.json` or
+   targets explicitly supplied by the user for this Production Run. If the
+   registry is absent or empty, make no external changes and report that
+   target configuration is pending.
+4. Treat the shared mounted Factory checkout as the default. A target marked
+   `mode: shared` receives automation synchronization only. Use `projectPath`
+   only when a target still needs the full local Factory layer; it must be an
+   absolute verified path on the workflow host.
+5. Keep remote-only Cezar synchronization separate from deployment of
+   application or `integrations/` files. Bazzite service changes require the
+   configured deployment inventory and supported host flow.
+6. Require a clean, expected, version-matched Bazzite checkout, complete
+   runtime parity, and all configured review gates before declaring the
+   release successful. Never pull, reset, copy over, or delete a mismatched
+   remote checkout.
+7. The normal promotion owner is the host's `factory-local-promotion` timer;
+   it validates the exact merged `dev` commit, activates `dev`, runs canaries,
+   then advances `stable` according to policy. The host's autodeploy timer
+   reconciles `stable`. A Production Run selects the controlled posture.
+8. The legacy per-project push path is deprecated. Do not retire it until a
+   complete shadow-audit receipt reports `legacyPushRetirementReady: true`.
+   The same-host controller/autodeploy locks must cover any legacy operation.
 
 ## Required handoff
 
-Report the local version, validation result, every configured target and its
-release result, Bazzite version/mount/runtime result, PR number/base branch,
-review status, and auto-merge status. A release is complete only when all
-applicable checks pass or a concrete external blocker is reported.
-
-## Important boundaries
-
-- Remote-only Factory synchronization updates Cezar automations; it does not
-  deploy the full Factory runtime checkout or files under `integrations/`.
-- A full runtime update must use the supported Bazzite deployment flow and
-  host-local configuration. Never put a remote container path in
-  `config/factory-projects.json` as a Windows `projectPath`.
-- Do not treat an empty issue queue, a matching version string, or a successful
-  automation API response as proof that the runtime is synchronized.
-- Do not invoke this production release flow merely because a Factory-managed
-  file changed; the user must request a Production Run or live deployment.
+Report the local Factory version and tested commit, validation receipt, each
+configured target and result, Bazzite version/mount/runtime parity when
+applicable, PR number and base branch, review status, and promotion or
+deployment receipt. State any target, workflow, or host configuration that
+remains pending. A matching version or successful automation API response
+alone does not establish a complete release.

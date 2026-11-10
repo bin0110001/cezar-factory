@@ -1,64 +1,63 @@
 ---
 name: factory-release
-description: Validate and force-synchronize Factory-managed assets to every explicitly configured Cezar project and Bazzite runtime.
+description: Apply Factory release gates and report delivery state for an explicitly requested Production Run or live deployment.
 ---
 
 # Factory release
 
-Use this skill only during a **Production Run** or when the user explicitly
-asks to deploy live, after a change under `scripts/`, `skills/`, `workflows/`,
-`policies/`, `templates/`, `automations/`, or Factory versioning.
+Use this skill only for a **Production Run** or an explicit request to deploy
+live. Ordinary development and troubleshooting stays in Dev mode and ends
+with a reviewed PR to `dev`. Missing production target configuration or host
+parity must not stop Dev-mode work.
 
-Ordinary troubleshooting and development uses Dev mode. Validate and push code
-to `dev` through the normal reviewed PR flow; do not promote `stable` or touch
-production targets as a side effect. Missing production target configuration
-or a production host mismatch must not stop Dev-mode work.
+This skill defines release decisions and evidence. It does not execute Factory
+scripts. Factory operational scripts run only from workflow `command:` steps;
+the owning workflow performs validation, target synchronization, and host
+deployment. If the requested operation has no owning workflow, report that
+workflow gap rather than issuing a direct script command.
 
 ## Invariants
 
-- Read targets only from `config/factory-projects.json`; never scan for or
-  invent deployment targets.
-- Always perform the release action on every invocation, even when the Factory
-  version is unchanged. A matching version is not proof that the target is
-  synchronized.
-- Run catalog/release validation before synchronization.
-- Remote-only targets receive automation synchronization through
-  `scripts/push-factory-updates.ps1 -SyncAutomations`.
-- Bazzite-hosted runtime changes also require the supported deployment flow
-  from the Bazzite Factory checkout. Factory workflow commands run inside
-  Cezar's Linux container; `/projects/cezar-factory` is an in-container mount,
-  never a Windows path.
-- Stop on a target failure and report the exact target; do not silently skip
-  it or redirect to another project.
+- Read targets only from the host-local `config/factory-projects.json` or
+  targets explicitly supplied for this Production Run. Never scan for or
+  invent targets.
+- The shared mounted checkout is the default. A project with `mode: shared`
+  receives automation synchronization only; it does not receive managed-file
+  updates.
+- Use `projectPath` only when a project needs the complete local `.ai/factory`
+  layer. It must be an absolute, verified path on the workflow host, not a
+  Cezar container or remote Bazzite path.
+- Remote-only synchronization updates Cezar automation definitions. It does
+  not deploy application or `integrations/` files.
+- Bazzite-hosted service changes use the explicit deployment inventory and
+  supported Bazzite workflow. A dirty, mismatched, or unverified host checkout
+  is a release blocker; never overwrite it.
+- The shadow audit is read-only and reports remote-only targets as `unknown`.
+  Migration uses its fresh receipt, a separate branch, and a recorded
+  backout. Keep legacy push support until the receipt's
+  `legacyPushRetirementReady` is true.
+- A configured release or autodeploy lock must remain held across legacy
+  synchronization. If the workflow cannot access the same lock files, stop
+  and report that boundary.
 
-## Shared-mount release (default)
+## Shared delivery
 
-Projects use the Factory checkout mounted into Cezar, so releasing means promoting a tested
-commit, not copying files into projects:
+The normal delivery flow merges reviewed changes to `dev`. The host's
+`factory-local-promotion` timer validates the exact merged commit, activates
+the `dev` channel, runs canaries, and advances `stable` according to the
+promotion policy. The host's `factory-autodeploy` timer then reconciles the
+runtime to `stable`. Do not trigger manual promotion or move channel pointers
+as part of normal delivery.
 
-1. Make sure the change is committed and pushed, and the working tree is clean.
-2. `pwsh -NoProfile -File .\scripts\release\promote-stable.ps1` runs the automation catalog check
-   and the full test suite, then fast-forwards `origin/stable`. If it fails, stop and report the
-   failure; never bypass it.
-3. The Bazzite `factory-autodeploy` timer fast-forwards the mounted checkout and reconciles
-   automations within five minutes. To deploy immediately use the `homelab-ssh` instructions to run
-   `scripts/deploy/factory-autodeploy.sh --force` on the host, and report any BLOCKED exit (20 dirty,
-   21 diverged, 22 container/host version mismatch) without touching the checkout.
+A Production Run selects the controlled promotion posture, including its
+independent approval and soak requirements. A failed local validation,
+missing registry, dirty checkout, failed parity check, or missing review gate
+stops the release before the affected state changes.
 
-The procedure below is the legacy per-project path; use it only for a project whose registry entry
-is not `"mode": "shared"`.
+## Required handoff
 
-## Procedure
-
-1. Validate the changed assets and automation catalog.
-2. Run the configured remote release for all targets:
-
-   ```powershell
-   pwsh -NoProfile -File .\scripts\push-factory-updates.ps1 -SyncAutomations
-   ```
-
-3. For Bazzite service/runtime changes, run the supported deployment script
-   from the Bazzite checkout and verify the Cezar container sees
-   `/projects/cezar-factory/scripts/factory-startup.ps1`.
-4. Report successful targets and any target that failed because its Cezar
-   project folder or deployment configuration is absent.
+Report the tested commit, local validation evidence, configured targets and
+their result, Bazzite checkout/runtime parity when applicable, the PR base and
+review state, and promotion/deployment receipt state. Mark external target or
+host configuration as pending when it is missing; do not claim a release from
+a matching version string or a successful automation API response alone.
