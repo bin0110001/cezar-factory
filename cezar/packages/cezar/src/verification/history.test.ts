@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { verificationRunSchema, type VerificationRun } from '@open-mercato/cezar-contract';
 import type { ProjectContext } from '../server/project-context.ts';
 import { queryVerificationHistory, readVerificationArtifact } from './history.ts';
+import { readCodingAttemptManifest } from './history.ts';
+import { appendCodingRunEvent, createCodingRun } from '../workspace/lifecycle.ts';
+import { buildCodingAttemptManifest } from '../workspace/coding-run-manifest.ts';
+import type { CodingRunRecord } from '@open-mercato/cezar-contract';
 
 const roots: string[] = [];
 const fingerprint = 'a'.repeat(64);
@@ -13,6 +18,8 @@ const fingerprint = 'a'.repeat(64);
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'cezar verification history '));
   roots.push(root);
+  execFileSync('git', ['init', '-q', '-b', 'dev'], { cwd: root });
+  execFileSync('git', ['-c', 'user.name=History Test', '-c', 'user.email=history@example.test', 'commit', '--allow-empty', '-q', '-m', 'base'], { cwd: root });
   const records = [
     record('verify-2', '2026-11-09T10:00:00.000Z', 'failed', fingerprint),
     record('verify-1', '2026-11-08T10:00:00.000Z', 'failed', fingerprint),
@@ -78,6 +85,36 @@ function record(id: string, startedAt: string, status: 'failed' | 'passed', find
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe('verification history query', () => {
+  it('joins immutable attempt manifest references into run query output and resolves them read-only', async () => {
+    const { root, context } = await fixture();
+    const previousHome = process.env.CEZ_HOME;
+    const home = join(root, 'cezar-home');
+    process.env.CEZ_HOME = home;
+    try {
+      const run: CodingRunRecord = {
+        schemaVersion: 1, runId: 'verify-2', projectId: 'project', correlationId: 'correlation-verify-2',
+        source: { number: 42, revision: { availability: 'available', value: 'issue-rev-1' } },
+        baseSha: { availability: 'available', value: '1'.repeat(40) },
+        pullRequest: { availability: 'unknown' }, worker: { availability: 'unknown' },
+        agent: { availability: 'available', value: { provider: 'codex', adapterId: 'codex-cli', adapterVersion: '1.2.3' } },
+        model: { availability: 'available', value: { provider: 'openai', modelId: 'test-model' } },
+        promptSha256: { availability: 'available', value: 'a'.repeat(64) }, skillSha256: ['b'.repeat(64)],
+        status: 'running', startedAt: '2026-11-09T10:00:00.000Z',
+      };
+      const created = await createCodingRun({ record: run, cwd: root, home });
+      const manifest = buildCodingAttemptManifest({ run: created.run, attemptId: 'attempt-1', index: 1 });
+      await appendCodingRunEvent({ runId: run.runId, type: 'attempt.started', attemptId: 'attempt-1', manifest, cwd: root, home });
+
+      const page = await queryVerificationHistory(context, { kind: 'runs', runId: 'verify-2', pageSize: 10 });
+      expect(page).toMatchObject({ kind: 'runs', items: [{ codingEvidence: { status: 'available', attempts: [{ attemptId: 'attempt-1', manifestStatus: 'verified', manifestDigest: manifest.manifestDigest }] } }] });
+      const resolved = await readCodingAttemptManifest(context, run.runId, 'attempt-1');
+      expect(resolved).toMatchObject({ status: 200, body: manifest });
+    } finally {
+      if (previousHome === undefined) delete process.env.CEZ_HOME;
+      else process.env.CEZ_HOME = previousHome;
+    }
+  });
+
   it('uses the shared v1 envelope with per-check duration and metrics and stable pagination', async () => {
     const { context } = await fixture();
     const first = await queryVerificationHistory(context, { kind: 'runs', pageSize: 1 });

@@ -4,6 +4,7 @@
 
 - Deploy the Langfuse v4 stack with isolated 30-day ClickHouse and event-object retention, private data services, health checks, trace links, worker correlation, an evaluation fixture, and scratch backup/upgrade guidance (#129).
 - Add digest-addressed coding-run evidence blobs with configurable expiry, integrity checks, permanent ledger references, and an explicit prune command (#130).
+- Record digest-bound coding attempt manifests, redact text artifacts, cap evidence storage, and expose manifest references through verification history (#130).
 - Document channel-pinned runtime materialization, diagnostics, and the real-archive regression evidence for #64.
 - Add W3C trace context propagation and coarse, allowlisted OTLP spans for workflow attempts (#128).
 - Reconcile the contributor guide, release skills, target example, and synchronization docs with shared-checkout delivery, promotion ownership, receipt-bound migration/backout, and the guarded legacy compatibility path (#280).

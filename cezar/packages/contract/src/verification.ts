@@ -255,6 +255,7 @@ export const verificationQueryInputSchema = z.object({
   cursor: z.string().max(512).optional(),
 }).strict();
 export const verificationArtifactParamsSchema = z.object({ runId: z.string().min(1).max(128), artifactId: z.string().min(1).max(128) }).strict();
+export const verificationAttemptManifestParamsSchema = z.object({ runId: z.string().min(1).max(256), attemptId: z.string().min(1).max(256) }).strict();
 
 const verificationQueryRunSchema = z.object({
   id: z.string(), startedAt: z.string(), finishedAt: z.string(), status: z.string(), commitSha: z.string(), baseSha: z.string(),
@@ -267,6 +268,16 @@ const verificationQueryRunSchema = z.object({
   suite: z.string().optional(),
   counts: z.object({ selected: z.number().int().nonnegative(), deferred: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), episodes: z.number().int().nonnegative(), artifacts: z.number().int().nonnegative() }).strict(),
   checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, durationMs: z.number().int().nonnegative(), metrics: z.array(verificationMetricSchema), findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict()).optional(),
+  codingEvidence: z.object({
+    status: z.enum(['available', 'not-recorded', 'unavailable']),
+    attempts: z.array(z.object({
+      attemptId: z.string(), index: z.number().int().positive(), status: z.string(),
+      manifestStatus: z.enum(['not-recorded', 'verified', 'tampered', 'invalid']),
+      manifestDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+      manifestReference: z.string().max(512),
+      artifactCount: z.number().int().nonnegative(),
+    }).strict()).max(1_000),
+  }).strict().optional(),
 }).strict();
 const verificationQueryTestSchema = z.object({ runId: z.string(), testId: z.string(), reason: verificationBoundedTextSchema }).strict();
 const verificationQueryFailureSchema = z.object({

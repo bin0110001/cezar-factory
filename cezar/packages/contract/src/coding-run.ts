@@ -55,6 +55,33 @@ const modelIdentitySchema = z.object({
   subscriptionTier: identifierSchema.optional(),
 }).strict();
 
+const observationShaSchema = codingObservationSchema(shaSchema);
+const observationDigestSchema = codingObservationSchema(digestSchema);
+const observationVersionSchema = codingObservationSchema(identifierSchema);
+const observationPullRequestSchema = codingObservationSchema(pullRequestSchema);
+
+/** Immutable, digest-bound inputs and evidence references for one execution attempt. */
+export const codingAttemptManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  runId: identifierSchema,
+  attemptId: identifierSchema,
+  index: z.number().int().positive(),
+  issue: z.object({ number: z.number().int().positive(), revision: codingObservationSchema(identifierSchema) }).strict(),
+  baseSha: observationShaSchema,
+  workerImageDigest: observationDigestSchema,
+  agentCliVersion: observationVersionSchema,
+  resolvedModel: observationVersionSchema,
+  promptSha256: observationDigestSchema,
+  skillSha256: z.array(digestSchema).max(CODING_RUN_LIMITS.skills),
+  templateSha256: z.array(digestSchema).max(CODING_RUN_LIMITS.skills),
+  testPolicySha256: observationDigestSchema,
+  artifacts: z.array(z.lazy(() => codingEvidenceReferenceSchema)).max(CODING_RUN_LIMITS.evidence),
+  commitSha: observationShaSchema,
+  pullRequest: observationPullRequestSchema,
+  manifestDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+}).strict();
+export type CodingAttemptManifest = z.infer<typeof codingAttemptManifestSchema>;
+
 export const codingRunRecordSchema = z.object({
   schemaVersion: z.literal(CODING_RUN_SCHEMA_VERSION),
   runId: identifierSchema,
@@ -85,6 +112,7 @@ export const codingAttemptRecordSchema = z.object({
   index: z.number().int().positive(),
   supersedesAttemptId: identifierSchema.optional(),
   status: codingAttemptStatusSchema,
+  manifest: codingAttemptManifestSchema.optional(),
   startedAt: timestampSchema,
   finishedAt: timestampSchema.optional(),
 }).strict().superRefine((attempt, ctx) => {
@@ -136,6 +164,7 @@ export const codingRunEventSchema = z.object({
   runId: identifierSchema,
   attemptId: identifierSchema.optional(),
   supersedesAttemptId: identifierSchema.optional(),
+  manifest: codingAttemptManifestSchema.optional(),
   sequence: z.number().int().positive(),
   correlationId: identifierSchema,
   causationEventId: identifierSchema.optional(),
@@ -145,6 +174,8 @@ export const codingRunEventSchema = z.object({
 }).strict().superRefine((event, ctx) => {
   if (event.type.startsWith('attempt.') && !event.attemptId) ctx.addIssue({ code: 'custom', path: ['attemptId'], message: 'attempt events require an attempt id' });
   if (event.type !== 'attempt.started' && event.supersedesAttemptId) ctx.addIssue({ code: 'custom', path: ['supersedesAttemptId'], message: 'only attempt.started may identify a superseded attempt' });
+  if (event.type !== 'attempt.started' && event.manifest) ctx.addIssue({ code: 'custom', path: ['manifest'], message: 'only attempt.started may carry an immutable manifest' });
+  if (event.manifest && (event.manifest.runId !== event.runId || event.manifest.attemptId !== event.attemptId)) ctx.addIssue({ code: 'custom', path: ['manifest'], message: 'attempt manifest must identify its owning run and attempt' });
 });
 export type CodingRunEvent = z.infer<typeof codingRunEventSchema>;
 
@@ -171,6 +202,9 @@ export const codingRunSnapshotSchema = z.object({
     if (attempt.supersedesAttemptId) {
       const prior = attempts.get(attempt.supersedesAttemptId);
       if (!prior || prior.index >= attempt.index) ctx.addIssue({ code: 'custom', path: ['attempts'], message: 'superseded attempt must exist earlier in the run' });
+    }
+    if (attempt.manifest && (attempt.manifest.runId !== attempt.runId || attempt.manifest.attemptId !== attempt.attemptId || attempt.manifest.index !== attempt.index)) {
+      ctx.addIssue({ code: 'custom', path: ['attempts', index, 'manifest'], message: 'attempt manifest identity must match its attempt record' });
     }
   });
   const evidenceIds = new Set<string>();

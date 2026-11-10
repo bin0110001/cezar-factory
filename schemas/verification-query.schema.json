@@ -81,6 +81,22 @@
               "findingFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
             }
           }
+        },
+        "codingEvidence": {
+          "type": "object", "additionalProperties": false, "required": ["status", "attempts"],
+          "properties": {
+            "status": { "enum": ["available", "not-recorded", "unavailable"] },
+            "attempts": { "type": "array", "maxItems": 1000, "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["attemptId", "index", "status", "manifestStatus", "manifestReference", "artifactCount"],
+              "properties": {
+                "attemptId": { "type": "string" }, "index": { "type": "integer", "minimum": 1 }, "status": { "type": "string" },
+                "manifestStatus": { "enum": ["not-recorded", "verified", "tampered", "invalid"] },
+                "manifestDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                "manifestReference": { "type": "string", "pattern": "^coding-run:" }, "artifactCount": { "type": "integer", "minimum": 0 }
+              }
+            } }
+          }
         }
       }
     },

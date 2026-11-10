@@ -13,6 +13,7 @@ import {
   codingRunRecordSchema,
   codingRunSnapshotSchema,
   type CodingEvidenceReference,
+  type CodingAttemptManifest,
   type CodingRunEvent,
   type CodingRunRecord,
   type CodingRunSnapshot,
@@ -20,6 +21,7 @@ import {
 import { cezarHomeDir } from '../paths.ts';
 import { globToRegExp } from '../server/impact/manifest.ts';
 import { createChildTraceContext, createTraceContext, parseTraceparent, safeTelemetryAttributes, stableSpanId } from '../observability/trace-context.ts';
+import { verifyCodingAttemptManifest } from './coding-run-manifest.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -241,6 +243,7 @@ export interface AppendCodingRunEventInput {
   occurredAt?: string;
   evidenceIds?: string[];
   evidence?: CodingEvidenceReference[];
+  manifest?: CodingAttemptManifest;
 }
 
 function codingRunEventRows(db: Database, repoId: string, runId: string): Record<string, unknown>[] {
@@ -272,6 +275,7 @@ function applyCodingRunEvent(snapshot: CodingRunSnapshot, eventRecord: CodingRun
       runId: run.runId,
       index: attempts.length + 1,
       ...(eventRecord.supersedesAttemptId ? { supersedesAttemptId: eventRecord.supersedesAttemptId } : {}),
+      ...(eventRecord.manifest ? { manifest: eventRecord.manifest } : {}),
       status: 'running',
       startedAt: eventRecord.occurredAt,
     });
@@ -319,6 +323,13 @@ function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: 
   if (!row) throw new Error(`unknown coding run ${runId}`);
   const current = codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
   const evidence = (input.evidence ?? []).map((item) => codingEvidenceReferenceSchema.parse(item));
+  if (input.manifest) {
+    if (input.type !== 'attempt.started' || input.manifest.runId !== runId || input.manifest.attemptId !== input.attemptId) {
+      throw new Error('attempt manifest must be attached to its matching attempt.started event');
+    }
+    const verified = verifyCodingAttemptManifest(input.manifest);
+    if (verified.status !== 'valid') throw new Error(`attempt manifest ${verified.status}: ${verified.status === 'tampered' ? verified.actualDigest : verified.detail}`);
+  }
   if (input.eventId) {
     const existing = db.prepare('SELECT repo_id,execution_id,payload_json FROM events WHERE event_id=?').get(input.eventId);
     if (existing) {
@@ -329,6 +340,7 @@ function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: 
         && previous.attemptId === input.attemptId
         && previous.supersedesAttemptId === input.supersedesAttemptId
         && previous.causationEventId === input.causationEventId
+        && isDeepStrictEqual(previous.manifest, input.manifest)
         && (!input.occurredAt || previous.occurredAt === input.occurredAt)
         && isDeepStrictEqual(previous.evidenceIds, requestedEvidenceIds);
       const persistedEvidence = new Map(current.evidence.map((item) => [item.evidenceId, item]));
@@ -348,6 +360,7 @@ function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: 
     runId,
     ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     ...(input.supersedesAttemptId ? { supersedesAttemptId: input.supersedesAttemptId } : {}),
+    ...(input.manifest ? { manifest: input.manifest } : {}),
     sequence: current.events.length + 1,
     correlationId: current.run.correlationId,
     ...(input.causationEventId ? { causationEventId: input.causationEventId } : {}),
