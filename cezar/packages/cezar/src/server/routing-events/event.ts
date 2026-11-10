@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Routing event contract (#94). Mirrors schemas/routing-event.schema.json; keep both in sync. */
-export const ROUTING_STATES = ['queued', 'capacity-blocked', 'routed', 'running', 'rate-limited', 'retried', 'completed'] as const;
+export const ROUTING_STATES = ['queued', 'capacity-blocked', 'routed', 'running', 'rate-limited', 'retried', 'completed', 'failed', 'cancelled'] as const;
 export type RoutingState = (typeof ROUTING_STATES)[number];
 
 const id = z.string().min(1).max(128);
@@ -23,6 +23,8 @@ export const routingEventSchema = z.strictObject({
   }).optional(),
   decisionReason: z.string().max(512).optional(),
   deferralReason: z.string().max(512).optional(),
+  fallback: z.boolean().optional(),
+  forecastConfidence: z.number().min(0).max(1).optional(),
   quotaSnapshot: z.strictObject({
     limit: z.number().min(0).optional(),
     used: z.number().min(0).optional(),
