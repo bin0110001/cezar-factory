@@ -244,3 +244,21 @@ immutable release, and exports its path as `FACTORY_RUNTIME_ROOT` to check
 commands and agents. Queued and resumed runs revalidate the recorded SHA rather
 than following a moved channel pointer. Active runs protect their release with
 the controller's retention reference and release that reference at completion.
+The project diagnostics endpoint (`GET /api/v1/factory-release`) reports the
+effective channel, source SHA and manifest digest; a missing or invalid pointer,
+manifest, or runtime tree returns an error rather than falling back to another
+release. Materialization verifies the archived artifact against the manifest,
+extracts it into the SHA-specific runtime directory, and writes
+`.factory-runtime.json` with the source SHA and manifest digest. Existing
+materialized trees are reused only when that marker and required runtime files
+still match.
+
+The local regression coverage is in
+`cezar/packages/cezar/src/factory-release/resolver.test.ts`. In particular,
+`materializes a release built by the real controller` creates a temporary Git
+repository and release store, builds a real archive, runs the materializer,
+then checks both an extracted Factory file and the provenance marker. This
+exercises the configured-store path without relying on host release-store
+configuration. Resolver tests also cover project/channel selection, moved
+pointers for queued work, missing pointers, tampered manifests and unsupported
+runtime capabilities.
