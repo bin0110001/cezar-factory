@@ -98,6 +98,7 @@ class ActivationCoordinator:
         request: Callable[[str, str, Any | None], Any] | None = None,
         ready_seconds: int | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        create_state: bool = True,
     ):
         self.controller = controller
         self.store = controller.store
@@ -112,12 +113,13 @@ class ActivationCoordinator:
         self.journal_dir = self.store / "activations"
         self.receipt_dir = self.store / "receipts"
         self.quarantine_dir = self.store / "quarantine"
-        for directory in (self.journal_dir, self.receipt_dir, self.quarantine_dir):
-            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            try:
-                os.chmod(directory, 0o700)
-            except OSError:
-                pass
+        if create_state:
+            for directory in (self.journal_dir, self.receipt_dir, self.quarantine_dir):
+                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                try:
+                    os.chmod(directory, 0o700)
+                except OSError:
+                    pass
 
     def _http_request(self, method: str, url: str, body: Any | None = None) -> Any:
         data = None if body is None else json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
