@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createChildTraceContext, createTraceContext, parseTraceparent, safeTelemetryAttributes } from './trace-context.ts';
+import { createChildTraceContext, createLangfuseTraceUrl, createTraceContext, parseTraceparent, safeTelemetryAttributes } from './trace-context.ts';
 
 describe('W3C trace context', () => {
   it('creates stable trace IDs and distinct valid root span IDs', () => {
@@ -43,5 +43,13 @@ describe('W3C trace context', () => {
     })).toEqual({
       'workflow.step': 'validate', 'run.id': 'run-17', 'issue.number': '128', outcome: 'passed', 'model.id': 'x'.repeat(128),
     });
+  });
+
+  it('builds the supported Langfuse project trace deep link and rejects unsafe inputs', () => {
+    expect(createLangfuseTraceUrl({ baseUrl: 'https://langfuse.example/base/', projectId: 'factory project', traceId: 'a'.repeat(32) }))
+      .toBe(`https://langfuse.example/base/project/factory%20project/traces/${'a'.repeat(32)}`);
+    expect(() => createLangfuseTraceUrl({ baseUrl: 'ftp://langfuse.example', projectId: 'p', traceId: 'a'.repeat(32) })).toThrow(/HTTP\(S\)/);
+    expect(() => createLangfuseTraceUrl({ baseUrl: 'https://user:password@langfuse.example', projectId: 'p', traceId: 'a'.repeat(32) })).toThrow(/credentials/);
+    expect(() => createLangfuseTraceUrl({ baseUrl: 'https://langfuse.example', projectId: 'p', traceId: 'invalid' })).toThrow(/32-character/);
   });
 });
