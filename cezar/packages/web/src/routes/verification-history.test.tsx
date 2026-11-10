@@ -1,17 +1,32 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { VerificationQueryResponse } from '@open-mercato/cezar-api-client'
-import { getVerificationArtifact, queryVerificationHistory } from '@/api/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReliabilityAnalyticsResponse, VerificationQueryResponse } from '@open-mercato/cezar-api-client'
+import { getVerificationArtifact, queryReliabilityAnalytics, queryVerificationHistory } from '@/api/client'
 import { VerificationHistoryRoute } from './verification-history'
 
 vi.mock('@/api/client', () => ({
   getVerificationArtifact: vi.fn(),
+  queryReliabilityAnalytics: vi.fn(),
   queryVerificationHistory: vi.fn(),
 }))
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+beforeEach(() => { vi.mocked(queryReliabilityAnalytics).mockResolvedValue(reliabilityFixture()) })
+
+function reliabilityFixture(): ReliabilityAnalyticsResponse {
+  const failures = { infrastructure: 0, flaky: 1, regression: 1, unknown: 0 }
+  const pullRequests = { tracked: 2, merged: 1, rejected: 0, reverted: 0, pending: 0, unknown: 1, acceptedDurationCount: 1, medianTimeToAcceptedMs: 60_000 }
+  return {
+    schemaVersion: 1, generatedAt: '2026-11-10T12:00:00.000Z', projectId: 'shop', windowDays: 30,
+    coverage: { validationEvents: 4, unreadableValidationEvents: 0, linkedCodingRuns: 3, missingBaselineSha: 1, pullRequestReferences: 2, pullRequestStatusesAvailable: false, pullRequestStatusReason: 'GitHub offline', truncated: false, timelineTruncated: false, retentionDays: 180 },
+    summary: { validationRuns: 4, firstPass: { eligible: 3, successful: 2, rate: 2 / 3 }, boundedRepairs: { eligible: 1, successful: 1, rate: 1 }, failures, pullRequests },
+    trends: [{ date: '2026-11-10', validationRuns: 4, firstPassSuccessful: 2, repairsSuccessful: 1, failures, merged: 1, rejected: 0, reverted: 0 }],
+    segments: [{ projectId: 'shop', model: 'openai/test-model', validationRuns: 4, firstPass: { eligible: 3, successful: 2, rate: 2 / 3 }, boundedRepairs: { eligible: 1, successful: 1, rate: 1 }, failures, pullRequests }],
+    drilldowns: [{ fingerprint: 'f'.repeat(64), occurrences: 2, classification: 'regression', firstSeenAt: '2026-11-09T10:00:00.000Z', lastSeenAt: '2026-11-10T10:00:00.000Z', issueNumbers: [135], checkIds: ['unit'], sourceShas: ['a'.repeat(40)], baselineShas: ['b'.repeat(40)], evidenceIds: ['evidence-1'], verificationIds: ['verify-1', 'verify-2'] }],
+  }
+}
 
 function page(kind: VerificationQueryResponse['kind'], items: unknown[], hasMore = false): VerificationQueryResponse {
   return {
@@ -33,6 +48,19 @@ function renderRoute() {
 }
 
 describe('verification history route', () => {
+  it('shows reliability rates, outcome coverage, model segments and evidence-linked failure drilldown', async () => {
+    vi.mocked(queryVerificationHistory).mockResolvedValue(page('runs', []))
+    renderRoute()
+    const dashboard = await screen.findByTestId('reliability-analytics')
+    await waitFor(() => expect(dashboard.textContent).toContain('67%'))
+    expect(dashboard.textContent).toContain('Bounded repair success')
+    expect(dashboard.textContent).toContain('GitHub offline')
+    expect(dashboard.textContent).toContain('openai/test-model')
+    fireEvent.click(screen.getByText(/Recurring failure drilldown/))
+    expect(dashboard.textContent).toContain('evidence-1')
+    expect(queryReliabilityAnalytics).toHaveBeenCalledWith(30)
+  })
+
   it('shows run details, selection explanations, recurrence, trends and lazy artifact evidence', async () => {
     vi.mocked(queryVerificationHistory).mockImplementation(async (input) => {
       switch (input.kind) {

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add a project-scoped reliability dashboard with evidence-backed first-pass and repair metrics, conservative failure classification, PR outcomes, trend views, and explicit missing-data coverage (#136).
 - Add a GitHub issue run explorer backed by coding-run records, with bounded pagination, distinct execution states, Langfuse deep links, and issue-checked evidence downloads (#135).
 - Add evidence-backed Hindsight provenance, deterministic-first recall captures, version history, and explicit supersession while keeping memory advisory (#134).
 - Deploy the Langfuse v4 stack with isolated 30-day ClickHouse and event-object retention, private data services, health checks, trace links, worker correlation, an evaluation fixture, and scratch backup/upgrade guidance (#129).
