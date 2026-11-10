@@ -33,6 +33,11 @@
       "command": "pwsh -NoProfile -File tests/collect-impact.ps1"
     },
     {
+      "id": "godot-dependency-graph",
+      "patterns": ["scripts/collect-godot-dependencies.ps1", "tests/godot-impact.ps1"],
+      "command": "pwsh -NoProfile -File tests/godot-impact.ps1"
+    },
+    {
       "id": "cezar-web",
       "patterns": ["cezar/packages/web/**"],
       "command": "Push-Location cezar; if (-not (Test-Path node_modules)) { npm ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw 'npm ci failed in the fresh worktree.' } }; $paths = @(ConvertFrom-Json $env:FACTORY_CHANGED_PATHS | Where-Object { $_ -match '^cezar/packages/web/' } | ForEach-Object { $_ -replace '^cezar/packages/web/', '' }); $tests = @($paths | Where-Object { $_ -match '\\.(test|spec)\\.[cm]?[jt]sx?$' }); $sources = @($paths | Where-Object { $_ -match '\\.[cm]?[jt]sx?$' -and $_ -notmatch '\\.(test|spec)\\.' }); npm run typecheck -w @open-mercato/cezar-web; if ($LASTEXITCODE -ne 0) { throw 'Cezar web typecheck failed.' }; if ($tests.Count -gt 0) { npm exec --workspace @open-mercato/cezar-web -- vitest run $tests } elseif ($sources.Count -gt 0) { npm exec --workspace @open-mercato/cezar-web -- vitest related --run $sources }; if ($LASTEXITCODE -ne 0) { throw 'Cezar web focused tests failed.' }; Pop-Location"
