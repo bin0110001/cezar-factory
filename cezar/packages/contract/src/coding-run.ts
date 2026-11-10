@@ -119,24 +119,30 @@ export const codingEvidenceReferenceSchema = z.object({
 });
 export type CodingEvidenceReference = z.infer<typeof codingEvidenceReferenceSchema>;
 
-export const codingRunEventTypeSchema = z.enum([
+export const CODING_RUN_EVENT_TYPES = [
   'run.started', 'attempt.started', 'context.prepared', 'implementation.started',
   'implementation.completed', 'validation.completed', 'repair.started', 'repair.completed',
+  'attempt.completed', 'attempt.failed', 'attempt.cancelled', 'attempt.superseded',
   'delivery.opened', 'delivery.merged', 'learning.recorded', 'run.completed', 'run.failed', 'run.cancelled',
-]);
+] as const;
+export const codingRunEventTypeSchema = z.enum(CODING_RUN_EVENT_TYPES);
 
 export const codingRunEventSchema = z.object({
   schemaVersion: z.literal(CODING_RUN_SCHEMA_VERSION),
   eventId: identifierSchema,
   runId: identifierSchema,
   attemptId: identifierSchema.optional(),
+  supersedesAttemptId: identifierSchema.optional(),
   sequence: z.number().int().positive(),
   correlationId: identifierSchema,
   causationEventId: identifierSchema.optional(),
   type: codingRunEventTypeSchema,
   occurredAt: timestampSchema,
   evidenceIds: z.array(identifierSchema).max(CODING_RUN_LIMITS.eventReferences),
-}).strict();
+}).strict().superRefine((event, ctx) => {
+  if (event.type.startsWith('attempt.') && !event.attemptId) ctx.addIssue({ code: 'custom', path: ['attemptId'], message: 'attempt events require an attempt id' });
+  if (event.type !== 'attempt.started' && event.supersedesAttemptId) ctx.addIssue({ code: 'custom', path: ['supersedesAttemptId'], message: 'only attempt.started may identify a superseded attempt' });
+});
 export type CodingRunEvent = z.infer<typeof codingRunEventSchema>;
 
 export const codingRunSnapshotSchema = z.object({
