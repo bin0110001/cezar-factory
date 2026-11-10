@@ -46,6 +46,7 @@ import { runAutomationCommand } from './automations/automation-cli.ts';
 import { resolveConfiguredFactoryRelease } from './factory-release/resolver.ts';
 
 import { runTrackerConnectionsCommand } from './server/tracker/connections-cli.ts';
+import { runWorkerProfilesCommand } from './server/verification/worker-profiles-cli.ts';
 
 const HELP = `cezar — local cockpit for AI agent tasks in your repo
 
@@ -59,6 +60,7 @@ Usage:
   cezar projects            list the projects this cockpit serves
                             (also: projects add [<dir>] · projects remove <id>)
   cezar tracker-connections <list|remove ID>  inspect or delete local project credentials
+  cezar worker-profiles <list|inspect FILE>  inspect generic worker profiles and redacted inventory
   cezar server-install      interactive wizard to host cezar on a server
   cezar server-deploy       redeploy a new version (reload the service) + verify
   cezar server-uninstall    reverse a server-install
@@ -121,6 +123,10 @@ async function main(): Promise<void> {
   // whether the caller is an agent, operator, or a Factory adapter.
   if (process.argv[2] === 'workspace') {
     process.exitCode = await runWorkspaceCommand(process.argv.slice(3), { cwd: resolve(process.env.CEZ_REPO ?? process.cwd()) });
+    return;
+  }
+  if (process.argv[2] === 'worker-profiles') {
+    process.exitCode = await runWorkerProfilesCommand(process.argv.slice(3));
     return;
   }
   const { values, positionals } = parseArgs({
