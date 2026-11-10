@@ -244,7 +244,7 @@ export interface AppendCodingRunEventInput {
 
 function codingRunEventRows(db: Database, repoId: string, runId: string): Record<string, unknown>[] {
   const placeholders = CODING_RUN_EVENT_TYPES.map(() => '?').join(',');
-  return db.prepare(`SELECT payload_json FROM events WHERE repo_id=? AND execution_id=? AND event_type IN (${placeholders}) ORDER BY seq`)
+  return db.prepare(`SELECT event_id,event_type,timestamp,payload_json FROM events WHERE repo_id=? AND execution_id=? AND event_type IN (${placeholders}) ORDER BY seq`)
     .all(repoId, runId, ...CODING_RUN_EVENT_TYPES);
 }
 
@@ -292,7 +292,7 @@ function applyCodingRunEvent(snapshot: CodingRunSnapshot, eventRecord: CodingRun
   return codingRunSnapshotSchema.parse(next);
 }
 
-function rebuildCodingRunProjectionInTransaction(db: Database, repoId: string, runId: string): CodingRunSnapshot {
+function buildCodingRunProjection(db: Database, repoId: string, runId: string): CodingRunSnapshot {
   const row = db.prepare('SELECT issue_key,record_json FROM coding_runs WHERE repo_id=? AND run_id=?').get(repoId, runId);
   if (!row) throw new Error(`unknown coding run ${runId}`);
   const run = codingRunRecordSchema.parse(JSON.parse(String(row.record_json)) as unknown);
@@ -303,6 +303,11 @@ function rebuildCodingRunProjectionInTransaction(db: Database, repoId: string, r
     const eventRecord = codingRunEventSchema.parse(JSON.parse(String(item.payload_json)) as unknown);
     snapshot = applyCodingRunEvent(snapshot, eventRecord);
   }
+  return snapshot;
+}
+
+function rebuildCodingRunProjectionInTransaction(db: Database, repoId: string, runId: string): CodingRunSnapshot {
+  const snapshot = buildCodingRunProjection(db, repoId, runId);
   db.prepare('UPDATE coding_runs SET projection_json=?,last_sequence=?,updated_at=? WHERE repo_id=? AND run_id=?')
     .run(JSON.stringify(snapshot), snapshot.events.length, new Date().toISOString(), repoId, runId);
   return snapshot;
@@ -408,6 +413,119 @@ export async function getCodingRunSnapshot(options: { runId: string; cwd?: strin
     if (!row) return undefined;
     return codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
   } finally { db.close(); }
+}
+
+export interface CodingRunHistoryEvent {
+  ledgerSequence: number;
+  runId: string;
+  issue: string;
+  eventId: string;
+  type: string;
+  occurredAt: string;
+  integrity: 'valid' | 'corrupt' | 'unsupported-version';
+  event?: CodingRunEvent;
+  detail?: string;
+}
+
+interface CodingRunHistoryCursor {
+  schemaVersion: 1;
+  repoId: string;
+  runId?: string;
+  issue?: string;
+  afterSequence: number;
+  snapshotSequence: number;
+  integrityComplete: boolean;
+}
+
+function encodeCodingRunHistoryCursor(cursor: CodingRunHistoryCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function decodeCodingRunHistoryCursor(value: string): CodingRunHistoryCursor {
+  if (value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('invalid coding-run history cursor');
+  let parsed: unknown;
+  try { parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')); }
+  catch { throw new Error('invalid coding-run history cursor'); }
+  if (!parsed || typeof parsed !== 'object') throw new Error('invalid coding-run history cursor');
+  const cursor = parsed as Record<string, unknown>;
+  if (cursor.schemaVersion !== 1 || typeof cursor.repoId !== 'string'
+    || !Number.isSafeInteger(cursor.afterSequence) || Number(cursor.afterSequence) < 0
+    || !Number.isSafeInteger(cursor.snapshotSequence) || Number(cursor.snapshotSequence) < Number(cursor.afterSequence)
+    || typeof cursor.integrityComplete !== 'boolean'
+    || (cursor.runId !== undefined && typeof cursor.runId !== 'string')
+    || (cursor.issue !== undefined && typeof cursor.issue !== 'string')) {
+    throw new Error('invalid coding-run history cursor');
+  }
+  return cursor as unknown as CodingRunHistoryCursor;
+}
+
+/** Read one stable, bounded page of full-fidelity coding audit events. */
+export async function queryCodingRunHistory(options: {
+  runId?: string; issue?: string; cursor?: string; limit?: number; cwd?: string; home?: string;
+}): Promise<{ events: CodingRunHistoryEvent[]; nextCursor?: string; cursorBoundary: { afterSequence: number; snapshotSequence: number };
+  hasMore: boolean; complete: boolean; retention: typeof CODING_AUDIT_RETENTION_POLICY }> {
+  const runId = options.runId?.trim();
+  const issue = options.issue === undefined ? undefined : resolveIssue(options.issue);
+  if (!runId && !issue) throw new Error('coding-run history requires --run or --issue');
+  if (runId && (runId.length > 256 || /[\u0000-\u001f]/.test(runId))) throw new Error('invalid coding run id');
+  const limit = Math.max(1, Math.min(500, Math.trunc(options.limit ?? 100)));
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const cursor = options.cursor ? decodeCodingRunHistoryCursor(options.cursor) : undefined;
+    if (cursor && (cursor.repoId !== repoId || cursor.runId !== runId || cursor.issue !== issue)) {
+      throw new Error('coding-run history cursor belongs to another repository or filter');
+    }
+    const predicates = ['repo_id=?', `event_type IN (${CODING_RUN_EVENT_TYPES.map(() => '?').join(',')})`];
+    const params: unknown[] = [repoId, ...CODING_RUN_EVENT_TYPES];
+    if (runId) { predicates.push('execution_id=?'); params.push(runId); }
+    if (issue) { predicates.push('issue_key=?'); params.push(issue); }
+    const where = predicates.join(' AND ');
+    const snapshotSequence = cursor?.snapshotSequence ?? Number(db.prepare(`SELECT COALESCE(MAX(seq),0) AS sequence FROM events WHERE ${where}`).get(...params)?.sequence ?? 0);
+    const afterSequence = cursor?.afterSequence ?? 0;
+    const rows = db.prepare(`SELECT events.seq,events.execution_id,events.issue_key,events.event_id,events.event_type,events.timestamp,
+      events.payload_json,(SELECT COUNT(*) FROM events AS prior WHERE prior.repo_id=events.repo_id
+        AND prior.execution_id=events.execution_id AND prior.event_type IN (${CODING_RUN_EVENT_TYPES.map(() => '?').join(',')})
+        AND prior.seq<=events.seq) AS expected_sequence FROM events
+      WHERE ${where} AND events.seq>? AND events.seq<=? ORDER BY events.seq LIMIT ?`)
+      .all(...CODING_RUN_EVENT_TYPES, ...params, afterSequence, snapshotSequence, limit + 1);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).map((row): CodingRunHistoryEvent => {
+      const base = { ledgerSequence: Number(row.seq), runId: String(row.execution_id), issue: String(row.issue_key),
+        eventId: String(row.event_id), type: String(row.event_type), occurredAt: String(row.timestamp) };
+      try {
+        const raw = JSON.parse(String(row.payload_json)) as unknown;
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const version = (raw as Record<string, unknown>).schemaVersion;
+          if (unsupportedCodingSchemaVersion(version)) return { ...base, integrity: 'unsupported-version', detail: `schema version ${String(version)} is unsupported` };
+        }
+        const eventRecord = codingRunEventSchema.parse(raw);
+        if (eventRecord.eventId !== base.eventId || eventRecord.runId !== base.runId
+          || eventRecord.type !== base.type || eventRecord.occurredAt !== base.occurredAt) {
+          return { ...base, integrity: 'corrupt', detail: 'event payload does not match its ledger columns' };
+        }
+        if (eventRecord.sequence !== Number(row.expected_sequence)) {
+          return { ...base, integrity: 'corrupt', detail: 'event sequence is incomplete or out of order' };
+        }
+        return { ...base, integrity: 'valid', event: eventRecord };
+      } catch (error) {
+        return { ...base, integrity: 'corrupt', detail: error instanceof Error ? error.message.slice(0, 240) : 'invalid event payload' };
+      }
+    });
+    const integrityComplete = (cursor?.integrityComplete ?? true) && page.every((item) => item.integrity === 'valid');
+    const nextCursor = hasMore && page.length ? encodeCodingRunHistoryCursor({ schemaVersion: 1, repoId, runId, issue,
+      afterSequence: page[page.length - 1]!.ledgerSequence, snapshotSequence, integrityComplete }) : undefined;
+    return { events: page, ...(nextCursor ? { nextCursor } : {}),
+      cursorBoundary: { afterSequence: page[page.length - 1]?.ledgerSequence ?? afterSequence, snapshotSequence }, hasMore,
+      complete: !hasMore && integrityComplete, retention: CODING_AUDIT_RETENTION_POLICY };
+  } finally { db.close(); }
+}
+
+const CODING_AUDIT_RETENTION_POLICY = Object.freeze({ mode: 'permanent', automaticDeletion: false });
+const OPERATIONAL_TRACE_RETENTION_POLICY = Object.freeze({ mode: 'delivery-outbox', auditRowsAreSource: false });
+
+function unsupportedCodingSchemaVersion(value: unknown): boolean {
+  return (typeof value === 'number' || typeof value === 'string') && value !== 1;
 }
 
 export async function lifecycleOutbox(options: { cwd?: string; home?: string; limit?: number } = {}): Promise<{
@@ -1791,7 +1909,11 @@ export async function reconcileWorkspaceLifecycle(options: { cwd?: string; home?
   return { repoRoot: report.repoRoot, findings, cleaned };
 }
 
-export async function lifecycleDoctor(options: { cwd?: string; home?: string } = {}): Promise<{ repoRoot: string; registered: LifecycleRecord[]; findings: string[] }> {
+export async function lifecycleDoctor(options: { cwd?: string; home?: string } = {}): Promise<{
+  repoRoot: string; registered: LifecycleRecord[]; findings: string[];
+  codingRunHistory: { runs: number; validRuns: number; incompleteRuns: number; corruptRuns: number; unsupportedRuns: number };
+  retention: { codingAudit: typeof CODING_AUDIT_RETENTION_POLICY; operationalTrace: typeof OPERATIONAL_TRACE_RETENTION_POLICY };
+}> {
   const current = await gitTop(options.cwd ?? process.cwd());
   const treesFromCurrent = await listWorktrees(current.root);
   const root = treesFromCurrent[0]?.path ?? current.root;
@@ -1801,6 +1923,60 @@ export async function lifecycleDoctor(options: { cwd?: string; home?: string } =
     const registered = await lifecycleStatus({ cwd: root, home: options.home });
     const trees = await listWorktrees(root);
     const findings: string[] = [];
+    const codingRows = db.prepare('SELECT run_id,issue_key,record_json,projection_json,last_sequence FROM coding_runs WHERE repo_id=? ORDER BY run_id').all(repoId);
+    const history = { runs: codingRows.length, validRuns: 0, incompleteRuns: 0, corruptRuns: 0, unsupportedRuns: 0 };
+    for (const row of codingRows) {
+      const runId = String(row.run_id);
+      let unsupported = false;
+      let corrupt = false;
+      let incomplete = false;
+      let detail = '';
+      for (const [label, rawText] of [['record', row.record_json], ['projection', row.projection_json]] as const) {
+        try {
+          const raw = JSON.parse(String(rawText)) as Record<string, unknown>;
+          if (unsupportedCodingSchemaVersion(raw.schemaVersion)) { unsupported = true; detail = `${label} schema version ${String(raw.schemaVersion)} is unsupported`; break; }
+        } catch { corrupt = true; detail = `${label} JSON is malformed`; break; }
+      }
+      if (!unsupported && !corrupt) {
+        const eventRows = codingRunEventRows(db, repoId, runId);
+        for (let index = 0; index < eventRows.length; index++) {
+          try {
+            const eventRow = eventRows[index]!;
+            const raw = JSON.parse(String(eventRow.payload_json)) as Record<string, unknown>;
+            if (unsupportedCodingSchemaVersion(raw.schemaVersion)) { unsupported = true; detail = `event ${index + 1} schema version ${String(raw.schemaVersion)} is unsupported`; break; }
+            const parsed = codingRunEventSchema.parse(raw);
+            if (parsed.sequence !== index + 1) { incomplete = true; detail = `event sequence gap at ${index + 1}`; break; }
+            if (parsed.eventId !== String(eventRow.event_id) || parsed.type !== String(eventRow.event_type)
+              || parsed.occurredAt !== String(eventRow.timestamp) || parsed.runId !== runId) {
+              corrupt = true; detail = `event ${index + 1} payload does not match ledger columns`; break;
+            }
+          } catch { corrupt = true; detail = `event ${index + 1} is malformed`; break; }
+        }
+        if (!unsupported && !corrupt && !incomplete) {
+          try {
+            const rebuilt = buildCodingRunProjection(db, repoId, runId);
+            const stored = codingRunSnapshotSchema.parse(JSON.parse(String(row.projection_json)) as unknown);
+            if (Number(row.last_sequence) !== rebuilt.events.length || !isDeepStrictEqual(stored, rebuilt)) {
+              incomplete = true;
+              detail = 'stored projection or sequence watermark is incomplete';
+            }
+          } catch (error) {
+            corrupt = true;
+            detail = error instanceof Error ? error.message.slice(0, 240) : 'history cannot be rebuilt';
+          }
+        }
+      }
+      if (unsupported) {
+        history.unsupportedRuns++;
+        findings.push(`Coding run ${runId} (issue ${String(row.issue_key)}): unsupported history version; ${detail}.`);
+      } else if (corrupt) {
+        history.corruptRuns++;
+        findings.push(`Coding run ${runId} (issue ${String(row.issue_key)}): corrupt history; ${detail}.`);
+      } else if (incomplete) {
+        history.incompleteRuns++;
+        findings.push(`Coding run ${runId} (issue ${String(row.issue_key)}): incomplete history; ${detail}.`);
+      } else history.validRuns++;
+    }
     for (const record of registered) {
       if (!trees.some((tree) => resolve(tree.path) === resolve(record.workspacePath))) findings.push(`Issue ${record.issue}: registry workspace is missing (${record.workspacePath}).`);
       const expired = Date.parse(record.leaseExpiresAt) <= Date.now();
@@ -1815,7 +1991,8 @@ export async function lifecycleDoctor(options: { cwd?: string; home?: string } =
     }
     const orphaned = trees.filter((tree) => tree.path.includes(`${join('.ai', 'cezar', 'workspaces')}`));
     for (const tree of orphaned) if (!registered.some((record) => resolve(record.workspacePath) === resolve(tree.path))) findings.push(`Unregistered worktree: ${tree.path}.`);
-    return { repoRoot: root, registered, findings };
+    return { repoRoot: root, registered, findings, codingRunHistory: history,
+      retention: { codingAudit: CODING_AUDIT_RETENTION_POLICY, operationalTrace: OPERATIONAL_TRACE_RETENTION_POLICY } };
   } finally { db.close(); }
 }
 

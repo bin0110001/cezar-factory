@@ -26,6 +26,8 @@ cez workspace reconcile                retry merged PR integration and remote st
 cez workspace status [--issue 456]
 cez workspace list
 cez workspace inspect --issue 456        include recent audit and preflight events
+cez workspace history --run <id>         query a coding run's bounded audit history
+cez workspace history --issue 456 --limit 100
 cez workspace preflight --issue 456 [--json]
 cez workspace overlaps
 cez workspace doctor
@@ -94,6 +96,31 @@ conflicts, bounded repair outcomes, and telemetry backlog; absent samples are sh
 no data. The dashboard offers confirmed validation retry, blocked-work resume, safe
 lease recovery, and verified cleanup retry actions; mutations are disabled in hosted
 `CEZ_REMOTE` mode.
+
+## Coding-run audit history
+
+`cez workspace history --run <id>` or `--issue <id>` returns pages of coding-run
+events in ledger order. Pages are capped at 500 events. The first page captures
+a ledger-sequence watermark; its opaque cursor is bound to the repository and
+filters and carries that watermark forward. Appends after the first page are
+left for a later query, so a pagination session does not skip or duplicate
+events. `complete` is true only on the final page after every returned event
+has passed integrity checks. Corrupt rows and unsupported schema versions are
+included with an integrity status and keep the history incomplete.
+The response also identifies the permanent audit-retention policy, so callers
+can distinguish an empty history from data omitted by configured retention.
+
+`cez workspace doctor` checks coding-run records, event sequences, stored
+projections, and schema versions, and reports valid, incomplete, corrupt, and
+unsupported histories separately. It does not repair or rewrite history.
+
+Coding-run audit events are full-fidelity and have permanent retention; no
+trace or transcript janitor may delete them. Operational telemetry is a
+separate, optional, coarse-event outbox. The outbox contains delivery metadata,
+not source audit payloads; Langfuse or another telemetry sink owns its own
+sampling and retention. Hindsight lessons remain explicitly approved. These
+retention policies are reported by `doctor` and cannot be combined into an
+audit deletion setting.
 
 ## Local and connected boundaries
 

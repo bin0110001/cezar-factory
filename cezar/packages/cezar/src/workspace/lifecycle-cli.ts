@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
-  adoptWorkspace, approveHindsightLesson, claimWorkspace, drainLifecycleOutbox, heartbeatWorkspace, lifecycleDoctor, lifecycleEvents, lifecycleOutbox, lifecycleStatus,
+  adoptWorkspace, approveHindsightLesson, claimWorkspace, drainLifecycleOutbox, heartbeatWorkspace, lifecycleDoctor, lifecycleEvents, lifecycleOutbox, lifecycleStatus, queryCodingRunHistory,
   recordIntegrationValidationFailure, recordWorkspacePreflight, resumeBlockedWorkspace, retryLifecycleOutbox, renewReadyWorkspaceLease, finalizeIntegratedWorkspace,
   acquireIntegrationLock, completeIntegration, handoffWorkspace, pruneWorkspace, recoverWorkspace,
   releaseIntegrationLock, renewIntegrationLock, transitionWorkspace, verifiedFactoryContext, workspaceOverlaps,
@@ -33,6 +33,7 @@ const USAGE = `cez workspace <command>
   status [--issue <id>]                show current local lifecycle records
   list                                 list current local lifecycle records
   inspect --issue <id>                 inspect one issue's local lifecycle record
+  history (--run <id>|--issue <id>) [--cursor <token>] [--limit <n>] query bounded coding-run audit history
   overlaps                             show changed paths shared by active workspaces (advisory)
   hook-context --event <name>          supply verified context to a native agent lifecycle hook
   doctor                               reconcile registry records with Git worktrees
@@ -528,6 +529,13 @@ export async function runWorkspaceCommand(args: string[], opts: { cwd?: string; 
         result = { records: await lifecycleStatus({ cwd, issue }), events: await lifecycleEvents({ cwd, issue }) };
         break;
       }
+      case 'history': result = await queryCodingRunHistory({
+        cwd,
+        ...(typeof parsed.run === 'string' ? { runId: parsed.run } : {}),
+        ...(typeof parsed.issue === 'string' ? { issue: parsed.issue } : {}),
+        ...(typeof parsed.cursor === 'string' ? { cursor: parsed.cursor } : {}),
+        ...(parsed.limit === undefined ? {} : { limit: integerFlag(parsed.limit, 'limit') }),
+      }); break;
       case 'overlaps': result = await workspaceOverlaps({ cwd }); break;
       case 'impact-predict': {
         // Reserve predicted impact from a validated manifest file; the manifest is also persisted for the scheduler.
