@@ -5,10 +5,13 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { runWorkspaceCommand } from './lifecycle-cli.ts';
 import {
   appendCodingRunEvent,
   createCodingRun,
   getCodingRunSnapshot,
+  lifecycleDoctor,
+  queryCodingRunHistory,
   rebuildCodingRunProjection,
 } from './lifecycle.ts';
 import type { CodingRunRecord } from '@open-mercato/cezar-contract';
@@ -155,6 +158,107 @@ describe('coding run lifecycle ledger', () => {
     expect(snapshot?.events.map((item) => item.sequence)).toEqual([1, 2, 3]);
   });
 
+  it('paginates against a fixed sequence watermark and replays a cursor without skips or duplicates', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'context.prepared', cwd: root, home, occurredAt: '2026-11-10T08:01:00.000Z' });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'learning.recorded', cwd: root, home,
+      occurredAt: '2026-11-10T08:02:00.000Z' });
+    const first = await queryCodingRunHistory({ runId: 'run-1', limit: 2, cwd: root, home });
+    expect(first.events.map((event) => event.event?.type)).toEqual(['run.started', 'context.prepared']);
+    expect(first.nextCursor).toBeTruthy();
+    await appendCodingRunEvent({ runId: 'run-1', type: 'delivery.opened', cwd: root, home, occurredAt: '2026-11-10T08:03:00.000Z' });
+    const second = await queryCodingRunHistory({ runId: 'run-1', cursor: first.nextCursor, limit: 2, cwd: root, home });
+    const replay = await queryCodingRunHistory({ runId: 'run-1', cursor: first.nextCursor, limit: 2, cwd: root, home });
+    expect(second).toEqual(replay);
+    expect(second.events.map((event) => event.event?.type)).toEqual(['learning.recorded']);
+    expect(second.nextCursor).toBeUndefined();
+  });
+
+  it('returns an explicit empty complete history and binds cursors to their query filter', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    const empty = await queryCodingRunHistory({ issue: '43', cwd: root, home });
+    expect(empty).toMatchObject({ events: [], complete: true, cursorBoundary: { afterSequence: 0, snapshotSequence: 0 },
+      retention: { mode: 'permanent', automaticDeletion: false } });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'context.prepared', cwd: root, home });
+    const page = await queryCodingRunHistory({ runId: 'run-1', limit: 1, cwd: root, home });
+    await expect(queryCodingRunHistory({ issue: '42', cursor: page.nextCursor ?? 'invalid', cwd: root, home }))
+      .rejects.toThrow(/cursor belongs to another repository or filter|invalid coding-run history cursor/);
+  });
+
+  it('exposes paginated history through the workspace CLI as JSON', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'context.prepared', cwd: root, home });
+    const out: string[] = [];
+    const io = { log: (line: string) => out.push(line), error: (line: string) => { throw new Error(line); } };
+    const priorHome = process.env.CEZ_HOME;
+    process.env.CEZ_HOME = home;
+    try {
+      expect(await runWorkspaceCommand(['history', '--run', 'run-1', '--limit', '1', '--json'], { cwd: root, io })).toBe(0);
+      const page = JSON.parse(out.pop()!);
+      expect(page).toMatchObject({ complete: false, hasMore: true, events: [{ integrity: 'valid' }] });
+      expect(typeof page.nextCursor).toBe('string');
+      expect(await runWorkspaceCommand(['history', '--run', 'run-1', '--cursor', page.nextCursor, '--json'], { cwd: root, io })).toBe(0);
+      expect(JSON.parse(out.pop()!)).toMatchObject({ complete: true, hasMore: false, events: [{ event: { type: 'context.prepared' } }] });
+    } finally {
+      if (priorHome === undefined) delete process.env.CEZ_HOME;
+      else process.env.CEZ_HOME = priorHome;
+    }
+  });
+
+  it('reports corrupt event rows as incomplete history and includes them in doctor diagnostics', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    const db = new Database(join(home, 'workspace-lifecycle', createHash('sha256').update(
+      realpathSync(join(root, execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8' }).trim())).toLowerCase(),
+    ).digest('hex').slice(0, 24), 'registry.sqlite'));
+    db.prepare("UPDATE events SET payload_json='not-json' WHERE execution_id='run-1' AND event_type='run.started'").run();
+    db.close();
+    const history = await queryCodingRunHistory({ runId: 'run-1', cwd: root, home });
+    expect(history).toMatchObject({ complete: false, events: [{ integrity: 'corrupt' }] });
+    const doctor = await lifecycleDoctor({ cwd: root, home });
+    expect(doctor.codingRunHistory).toMatchObject({ corruptRuns: 1, validRuns: 0 });
+    expect(doctor.findings.join('\n')).toMatch(/corrupt history/i);
+  });
+
+  it('reports missing event sequences as incomplete instead of declaring a complete history', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'context.prepared', cwd: root, home });
+    await appendCodingRunEvent({ runId: 'run-1', type: 'learning.recorded', cwd: root, home });
+    const commonRaw = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8' }).trim();
+    const commonDir = realpathSync(join(root, commonRaw));
+    const repoId = createHash('sha256').update(commonDir.toLowerCase()).digest('hex').slice(0, 24);
+    const db = new Database(join(home, 'workspace-lifecycle', repoId, 'registry.sqlite'));
+    db.prepare("DELETE FROM events WHERE execution_id='run-1' AND event_type='context.prepared'").run();
+    db.close();
+    const history = await queryCodingRunHistory({ runId: 'run-1', cwd: root, home });
+    expect(history).toMatchObject({ complete: false, events: [{ integrity: 'valid' }, { integrity: 'corrupt' }] });
+    const doctor = await lifecycleDoctor({ cwd: root, home });
+    expect(doctor.codingRunHistory.incompleteRuns).toBe(1);
+    expect(doctor.findings.join('\n')).toMatch(/incomplete history/i);
+  });
+
+  it('reports unsupported history versions and keeps audit retention separate from trace delivery', async () => {
+    const { root, home } = workspace();
+    await createCodingRun({ record: runRecord(), cwd: root, home });
+    const commonRaw = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8' }).trim();
+    const commonDir = realpathSync(join(root, commonRaw));
+    const repoId = createHash('sha256').update(commonDir.toLowerCase()).digest('hex').slice(0, 24);
+    const db = new Database(join(home, 'workspace-lifecycle', repoId, 'registry.sqlite'));
+    db.prepare("UPDATE events SET payload_json=? WHERE execution_id='run-1' AND event_type='run.started'")
+      .run(JSON.stringify({ schemaVersion: 2 }));
+    db.close();
+    const history = await queryCodingRunHistory({ runId: 'run-1', cwd: root, home });
+    expect(history).toMatchObject({ complete: false, events: [{ integrity: 'unsupported-version' }] });
+    const doctor = await lifecycleDoctor({ cwd: root, home });
+    expect(doctor.codingRunHistory.unsupportedRuns).toBe(1);
+    expect(doctor.retention.codingAudit).toMatchObject({ mode: 'permanent', automaticDeletion: false });
+    expect(doctor.retention.operationalTrace).toMatchObject({ mode: 'delivery-outbox', auditRowsAreSource: false });
+  });
+
   it('migrates a v3 registry in place and rejects a registry from a newer build', async () => {
     const old = workspace();
     const oldRegistry = seedRegistryVersion(old.root, old.home, 3);
@@ -164,7 +268,7 @@ describe('coding run lifecycle ledger', () => {
     db.close();
 
     const future = workspace();
-    seedRegistryVersion(future.root, future.home, 5);
+    seedRegistryVersion(future.root, future.home, 6);
     await expect(getCodingRunSnapshot({ runId: 'run-1', cwd: future.root, home: future.home })).rejects.toThrow(/newer than this Cezar build supports/);
   });
 });

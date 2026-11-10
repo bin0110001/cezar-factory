@@ -68,7 +68,7 @@ describe('local workspace lifecycle', () => {
     db.close();
     await expect(lifecycleOutbox({ cwd: repo })).resolves.toMatchObject({ pending: 0, failed: 0, delivered: 0 });
     const migrated = new Database(join(registryDir, 'registry.sqlite'));
-    expect(migrated.prepare('PRAGMA user_version').all()[0]?.user_version).toBe(3);
+    expect(migrated.prepare('PRAGMA user_version').all()[0]?.user_version).toBe(5);
     expect(migrated.prepare('PRAGMA table_info(event_outbox)').all().some((column) => column.name === 'approved_at')).toBe(true);
     migrated.close();
   });
