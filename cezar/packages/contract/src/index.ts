@@ -28,4 +28,5 @@ export * from './tracker.ts';
 export * from './self-update.ts';
 export * from './star-count.ts';
 export * from './verification.ts';
+export * from './session-control.ts';
 export * from './dependency-graph.ts';
