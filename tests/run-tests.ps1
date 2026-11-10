@@ -95,7 +95,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/deploy/deploy-vllm-mac.sh', 'scripts/deploy/validate-deployment.sh',
 'scripts/deploy/vllm-trusted-proxy.py', 'scripts/deploy/deploy-vllm-trusted-proxy-mac.sh', 'scripts/deploy/validate-vllm-trusted-proxy-mac.sh',
 'scripts/deploy/rotate-cezar-github-token.bat', 'docs/credential-rotation.md',
-'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json',
+'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json', 'docs/hindsight-provenance.md', 'skills/factory-learn/SKILL.md', 'tests/test_hindsight_client.py',
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
@@ -113,10 +113,29 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md',
 'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
-foreach ($schemaFile in 'schemas/evidence-manifest.schema.json', 'schemas/verification-query.schema.json') {
+foreach ($schemaFile in 'schemas/evidence-manifest.schema.json', 'schemas/verification-query.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json') {
     try { Get-Content -Raw (Join-Path $factory $schemaFile) | ConvertFrom-Json | Out-Null; Assert "valid JSON $schemaFile" $true }
     catch { Assert "valid JSON $schemaFile" $false }
 }
+$legacyMemoryRecall = '{"status":"miss","banksQueried":[],"memoryIds":[],"memoryCount":0,"contextChars":0,"selected":[]}'
+$currentMemoryRecall = '{"status":"ok","banksQueried":["project-cezar"],"memoryIds":["m1"],"memoryCount":1,"contextChars":2,"selected":[{"id":"m1","excerpt":"ok","version":1,"contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","readAt":"2026-11-10T00:00:00Z","validationStatus":"unvalidated","superseded":false}],"deterministicMatches":[],"retrievalCapture":{"schemaVersion":1,"project":"cezar","readAt":"2026-11-10T00:00:00Z","deterministicMatches":[],"memories":[{"id":"m1","version":1,"contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","readAt":"2026-11-10T00:00:00Z","validationStatus":"unvalidated"}]}}'
+$memoryRecord = '{"id":"m1","project":"cezar","topic":"Startup readiness","lesson":"Use bounded readiness checks.","kind":"successful-fix","scope":"repo","claimType":"hypothesis","validationStatus":"unvalidated","evidenceLinks":[{"kind":"issue","ref":"issue:123","validationStatus":"unvalidated"}],"version":1,"contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","retainedAt":"2026-11-10T00:00:00Z","superseded":false,"supersedes":null,"supersededBy":null,"versionHistory":[]}'
+$memoryCandidate = '{"topic":"Startup readiness","lesson":"Use bounded readiness checks.","kind":"successful-fix","evidence":"The local issue records this change.","scope":"repo","claimType":"hypothesis","evidenceLinks":[{"kind":"issue","ref":"issue:123"}]}'
+$deterministicIndex = '{"schemaVersion":1,"records":[{"kind":"run","id":"run-1","ref":"run:123","verified":true}]}'
+$memoryRecallSchema = Join-Path $factory 'schemas/memory-recall.schema.json'
+$memorySchemaChecks = @(
+    (Test-Json -Json $memoryRecord -SchemaFile (Join-Path $factory 'schemas/memory-record.schema.json')),
+    (Test-Json -Json $memoryCandidate -SchemaFile (Join-Path $factory 'schemas/memory-candidate.schema.json')),
+    (Test-Json -Json $deterministicIndex -SchemaFile (Join-Path $factory 'schemas/hindsight-deterministic-index.schema.json'))
+)
+Assert 'candidate, retained-memory and deterministic-index examples validate' ($memorySchemaChecks -notcontains $false)
+try {
+    Assert 'legacy Hindsight recall artifacts remain valid' (Test-Json -Json $legacyMemoryRecall -SchemaFile $memoryRecallSchema)
+    Assert 'provenance recall artifacts validate against the additive schema' (Test-Json -Json $currentMemoryRecall -SchemaFile $memoryRecallSchema)
+} catch { Assert 'Hindsight recall artifacts validate against the additive schema' $false }
+$incidentSource = Get-Content -Raw (Join-Path $factory 'scripts/hindsight/incident.py')
+$incidentDocs = Get-Content -Raw (Join-Path $factory 'docs/hindsight-provenance.md')
+Assert 'Hindsight memory remains advisory and deterministic ledgers own incident counts and gates' ($incidentSource -match 'Nothing here decides counts, lifecycle status or gates' -and $incidentDocs -match 'incident\s+counts,\s+and gates')
 $evidenceRetention = Get-Content -Raw (Join-Path $factory 'policies/evidence-retention.yaml')
 Assert 'coding evidence retention defaults to 30 days with bounded store and redaction' ($evidenceRetention -match '(?m)^defaultRetentionDays:\s*30$' -and $evidenceRetention -match '(?m)^maxArtifactBytes:\s*16777216$' -and $evidenceRetention -match '(?m)^maxStoreBytes:\s*1073741824$' -and $evidenceRetention -match '(?m)^  textArtifacts:\s*redact$' -and $evidenceRetention -match '(?m)^  binaryArtifacts:\s*requireCallerAssertion$')
 Assert 'merge eligibility script exists' (Test-Path (Join-Path $factory 'scripts/verify-merge-eligibility.ps1'))
@@ -1350,13 +1369,13 @@ try {
 Write-Host '== shared factory =='
 $pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
-    $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_factory_*.py', '-v') }
+$pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') }
     Push-Location $factory
     try {
         $pythonOutput = & $pythonRunner @pythonArgs *>&1 | Out-String
         $pythonCode = $LASTEXITCODE
         Write-Host $pythonOutput
-        Assert 'release activation and controller unit tests pass' ($pythonCode -eq 0)
+        Assert 'Python unit tests pass, including Hindsight provenance contracts' ($pythonCode -eq 0)
     }
     finally { Pop-Location }
 } else {

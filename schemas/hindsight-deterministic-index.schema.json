@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://factory.local/schemas/hindsight-deterministic-index.schema.json",
+  "type":"object","required":["schemaVersion","records"],"properties":{
+    "schemaVersion":{"const":1},
+    "records":{"type":"array","maxItems":100000,"items":{"type":"object","required":["kind","id","ref","verified"],"properties":{"kind":{"enum":["fingerprint","test","run","commit"]},"id":{"type":"string","minLength":1},"ref":{"type":"string","minLength":1},"fingerprint":{"type":"string","pattern":"^[a-f0-9]{64}$"},"testId":{"type":"string","minLength":1},"verified":{"type":"boolean"},"status":{"enum":["passed","validated","merged","failed","unknown"]},"contentHash":{"type":"string","pattern":"^[a-f0-9]{64}$"}},"additionalProperties":false}}
+  },"additionalProperties":false
+}
