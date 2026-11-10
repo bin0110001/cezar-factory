@@ -1,5 +1,6 @@
 {
   "considered": [],
   "changed": [],
-  "skipped": []
+  "skipped": [],
+  "terminalReason": "no-unmarked-open-issues"
 }
