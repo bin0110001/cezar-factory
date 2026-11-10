@@ -103,6 +103,7 @@ import { parseTaskMarkers, stripTaskMarkers } from '../runs/task-markers.ts';
 import { autoNamingActive, generateRunName, liveTitleUpdatesEnabled, postValidateTitle } from '../runs/auto-name.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
 import { resolveProfileEnvForRoot } from '../workspace/agent-profiles.ts';
+import { resolveBashExecutable } from '../core/command-shell.ts';
 import { DEFAULT_AGENT_ACCOUNT_ID } from '../workspace/agent-accounts.ts';
 import { WorkspaceSemaphore, type AccountHolds } from '../workspace/semaphore.ts';
 import { UiEventSink } from '../runs/ui-event-sink.ts';
@@ -126,6 +127,14 @@ const CHECK_OUTPUT_CAP = 20_000;
 export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
 /** Time a command gets to exit after SIGTERM before its whole process group is killed. */
 const COMMAND_KILL_GRACE_MS = 5_000;
+
+function commandShellExecutable(): string {
+  if (process.platform !== 'win32') return 'bash';
+  let gitExecPath: string | undefined;
+  try { gitExecPath = execFileSync('git', ['--exec-path'], { encoding: 'utf8', windowsHide: true }).trim(); }
+  catch { /* Use the configured or PATH fallback when Git cannot report its install root. */ }
+  return resolveBashExecutable({ gitExecPath });
+}
 
 /** Signal the command's whole process group: `bash -lc` forks the real work (pwsh, git, ...) and
  *  a signal to bash alone would leave it running and holding the output pipes open. */
@@ -5963,7 +5972,7 @@ export class RunManager {
       // stdin is closed, not left as an open pipe: a command that reads it (PowerShell's `$input`,
       // `cat`, a prompt) gets end-of-file instead of waiting for input that never comes. A new
       // process group lets the deadline and cancellation reach grandchildren.
-      const child = spawn('bash', ['-lc', command], {
+      const child = spawn(commandShellExecutable(), ['-lc', command], {
         cwd: state.cwd,
         env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task },
         stdio: ['ignore', 'pipe', 'pipe'],
