@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import { REFERENCE_STATUS_MAX } from '@open-mercato/cezar-contract';
 import { autosaveCommit } from '../../git-worktree.ts';
+import { executeRemoteEffect } from '../../workspace/lifecycle.ts';
 import type {
   DraftPrInput,
   DraftPrOutcome,
@@ -24,6 +25,7 @@ import type {
   ForgeSearchData,
   ForgeTimelineEvent,
   ForgeTimelineEventKind,
+  FencedFactoryRunContext,
 } from './types.ts';
 
 /**
@@ -2490,6 +2492,36 @@ export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome
     return { ok: false, error: 'no git remote — add one (git remote add origin <url>) or merge the branch locally' };
   }
 
+  // Factory publication is fenced and journaled. Other cockpit tasks retain the existing path.
+  if (input.factoryEffectContext) {
+    const head = await execTool(['rev-parse', 'HEAD'], worktree, 'git');
+    const headSha = head.stdout.trim();
+    if (!head.ok || !/^[0-9a-f]{40,64}$/i.test(headSha)) {
+      return { ok: false, error: `could not resolve the publication commit — ${tail(head.stderr) || 'unknown error'}` };
+    }
+    const prBase = run.baseBranch?.replace(/^origin\//, '');
+    if (!prBase || /^[0-9a-f]{7,64}$/i.test(prBase)) {
+      return { ok: false, error: 'Factory publication requires a named base branch so recovery can identify the exact pull request' };
+    }
+    const body = factoryPrBody(buildPrBody(input.handoffText, run.task), input.factoryEffectContext.issue);
+    try {
+      const published = await publishFactoryDraftPr({
+        context: input.factoryEffectContext,
+        branch,
+        base: prBase,
+        headSha,
+        remote: remote.stdout.trim(),
+        title: run.title,
+        body,
+        adapter: createFactoryDraftPrAdapter(worktree, branch),
+      });
+      return { ok: true, url: published.url, dryRun: false };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: `Factory PR publication failed — ${tail(detail) || 'remote effect remains recoverable'}` };
+    }
+  }
+
   const push = await execTool(['push', '-u', 'origin', branch], worktree, 'git', PUSH_TIMEOUT_MS);
   if (!push.ok) {
     return { ok: false, error: `git push failed — ${tail(push.stderr) || 'unknown error'}` };
@@ -2522,6 +2554,165 @@ export async function createDraftPr(input: DraftPrInput): Promise<DraftPrOutcome
     return { ok: false, error: 'gh pr create returned no PR URL — check `gh pr list` manually' };
   }
   return { ok: true, url: match[0], dryRun: false };
+}
+
+export interface FactoryDraftPullRequest {
+  number: number;
+  url: string;
+  branch: string;
+  base: string;
+  headSha: string;
+  title: string;
+  body: string;
+}
+
+export interface FactoryDraftPrAdapter {
+  readRemoteHead(branch: string): Promise<string | null>;
+  isFastForward(remoteHead: string, requestedHead: string): Promise<boolean>;
+  pushBranch(branch: string): Promise<void>;
+  findOpenPullRequest(branch: string, base: string): Promise<FactoryDraftPullRequest | null>;
+  createPullRequest(input: Omit<FactoryDraftPullRequest, 'number' | 'url'>): Promise<FactoryDraftPullRequest>;
+  updatePullRequest(number: number, input: Pick<FactoryDraftPullRequest, 'title' | 'body'>): Promise<void>;
+}
+
+/** Replay-safe branch publication and PR creation/update for a verified Factory run. */
+export async function publishFactoryDraftPr(input: {
+  context: FencedFactoryRunContext;
+  branch: string;
+  base: string;
+  headSha: string;
+  remote: string;
+  title: string;
+  body: string;
+  adapter: FactoryDraftPrAdapter;
+  cwd?: string;
+  home?: string;
+}): Promise<FactoryDraftPullRequest> {
+  const branchKey = `branch-push:${input.branch}:${input.headSha}`;
+  const branchRequest = { remote: input.remote, branch: input.branch, headSha: input.headSha };
+  await executeRemoteEffect({
+    ...input.context,
+    cwd: input.cwd,
+    home: input.home,
+    effectKey: branchKey,
+    operation: 'git.push-branch',
+    request: branchRequest,
+    reconcile: async () => {
+      const remoteHead = await input.adapter.readRemoteHead(input.branch);
+      if (!remoteHead) return null;
+      if (remoteHead === input.headSha) return { headSha: input.headSha };
+      if (await input.adapter.isFastForward(remoteHead, input.headSha)) return null;
+      throw new Error(`Remote branch ${input.branch} has diverged from the requested commit.`);
+    },
+    perform: async () => {
+      const remoteHead = await input.adapter.readRemoteHead(input.branch);
+      if (remoteHead && remoteHead !== input.headSha && !(await input.adapter.isFastForward(remoteHead, input.headSha))) {
+        throw new Error(`Remote branch ${input.branch} has diverged from the requested commit.`);
+      }
+      await input.adapter.pushBranch(input.branch);
+      return { headSha: input.headSha };
+    },
+  });
+
+  const issue = String(input.context.issue);
+  const body = factoryPrBody(input.body, issue);
+  const prKey = `pull-request:${input.branch}:${input.base}:${input.headSha}`;
+  const request = { branch: input.branch, base: input.base, headSha: input.headSha, title: input.title, body, issue };
+  return executeRemoteEffect({
+    ...input.context,
+    cwd: input.cwd,
+    home: input.home,
+    effectKey: prKey,
+    operation: 'github.pull-request.synchronize',
+    request,
+    reconcile: async () => {
+      const existing = await input.adapter.findOpenPullRequest(input.branch, input.base);
+      if (!existing) return null;
+      assertFactoryPullRequestMatches(existing, input, issue);
+      return existing.headSha === input.headSha && existing.title === input.title && existing.body === body
+        ? existing
+        : null;
+    },
+    perform: async () => {
+      const existing = await input.adapter.findOpenPullRequest(input.branch, input.base);
+      if (!existing) return input.adapter.createPullRequest({
+        branch: input.branch, base: input.base, headSha: input.headSha, title: input.title, body,
+      });
+      assertFactoryPullRequestMatches(existing, input, issue);
+      await input.adapter.updatePullRequest(existing.number, { title: input.title, body });
+      return { ...existing, title: input.title, body };
+    },
+  });
+}
+
+function assertFactoryPullRequestMatches(existing: FactoryDraftPullRequest, requested: {
+  branch: string; base: string; headSha: string;
+}, issue: string): void {
+  if (existing.branch !== requested.branch || existing.base !== requested.base || existing.headSha !== requested.headSha) {
+    throw new Error('An open pull request exists for this branch with a different base or head; refusing to overwrite it.');
+  }
+  if (!factoryPrClosesIssue(existing.body, issue)) {
+    throw new Error(`An open pull request exists for this branch without the expected issue #${issue} marker; refusing to adopt it.`);
+  }
+}
+
+function factoryPrBody(body: string, issue: string): string {
+  return factoryPrClosesIssue(body, issue) ? body : `${body.trim()}\n\nCloses #${issue}`;
+}
+
+function factoryPrClosesIssue(body: string, issue: string): boolean {
+  const escaped = issue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const closing = new RegExp(`\\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\\s+#${escaped}\\b`, 'i');
+  return closing.test(body);
+}
+
+function createFactoryDraftPrAdapter(worktree: string, branch: string): FactoryDraftPrAdapter {
+  const readRemoteHead = async (name: string): Promise<string | null> => {
+    const result = await execTool(['ls-remote', '--heads', 'origin', `refs/heads/${name}`], worktree, 'git', PUSH_TIMEOUT_MS);
+    if (!result.ok) throw new Error(`could not inspect origin/${name} — ${tail(result.stderr) || 'unknown error'}`);
+    return result.stdout.trim().split(/\s+/)[0] || null;
+  };
+  return {
+    readRemoteHead,
+    isFastForward: async (remoteHead, requestedHead) => {
+      const fetched = await execTool(['fetch', '--no-tags', 'origin', `refs/heads/${branch}`], worktree, 'git', PUSH_TIMEOUT_MS);
+      if (!fetched.ok) throw new Error(`could not inspect remote branch history — ${tail(fetched.stderr) || 'unknown error'}`);
+      const ancestor = await execTool(['merge-base', '--is-ancestor', remoteHead, requestedHead], worktree, 'git');
+      if (ancestor.ok) return true;
+      if (ancestor.stderr.trim()) throw new Error(`could not compare remote branch history — ${tail(ancestor.stderr)}`);
+      return false;
+    },
+    pushBranch: async (name) => {
+      const result = await execTool(['push', '-u', 'origin', name], worktree, 'git', PUSH_TIMEOUT_MS);
+      if (!result.ok) throw new Error(`git push failed — ${tail(result.stderr) || 'unknown error'}`);
+    },
+    findOpenPullRequest: async (name, base) => {
+      const result = await execTool(['pr', 'list', '--state', 'open', '--head', name,
+        '--json', 'number,url,title,body,headRefOid,baseRefName'], worktree, 'gh', PUSH_TIMEOUT_MS);
+      if (!result.ok) throw new Error(`could not reconcile the open pull request — ${tail(result.stderr) || 'unknown error'}`);
+      const rows = z.array(z.object({ number: z.number().int().positive(), url: z.url(), title: z.string(), body: z.string(),
+        headRefOid: z.string(), baseRefName: z.string() })).parse(JSON.parse(result.stdout));
+      const matchingBase = rows.filter((row) => row.baseRefName === base);
+      if (matchingBase.length > 1) throw new Error(`multiple open pull requests exist for ${name} into ${base}`);
+      const row = matchingBase[0];
+      return row ? { number: row.number, url: row.url, branch: name, base: row.baseRefName,
+        headSha: row.headRefOid, title: row.title, body: row.body } : null;
+    },
+    createPullRequest: async (pr) => {
+      const result = await execTool(['pr', 'create', '--draft', '--head', pr.branch, '--base', pr.base,
+        '--title', pr.title, '--body', pr.body], worktree, 'gh', PUSH_TIMEOUT_MS);
+      if (!result.ok) throw new Error(`gh pr create failed — ${tail(result.stderr) || 'unknown error'}`);
+      const match = PR_URL_RE.exec(`${result.stdout}\n${result.stderr}`);
+      if (!match) throw new Error('gh pr create returned no URL; retry will reconcile by branch and head.');
+      const number = Number(match[0].match(/\/pull\/(\d+)/)?.[1]);
+      if (!Number.isSafeInteger(number) || number < 1) throw new Error('gh pr create returned an invalid pull request URL.');
+      return { ...pr, number, url: match[0] };
+    },
+    updatePullRequest: async (number, update) => {
+      const result = await execTool(['pr', 'edit', String(number), '--title', update.title, '--body', update.body], worktree, 'gh', PUSH_TIMEOUT_MS);
+      if (!result.ok) throw new Error(`gh pr edit failed — ${tail(result.stderr) || 'unknown error'}`);
+    },
+  };
 }
 
 /**

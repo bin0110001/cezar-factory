@@ -105,7 +105,7 @@ function openRegistry(commonDir: string, home = cezarHomeDir()): { db: Database;
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   const versionRow = db.prepare('PRAGMA user_version').get();
   const version = Number(versionRow?.user_version ?? 0);
-  if (version > 4) {
+  if (version > 5) {
     db.close();
     throw new Error(`Workspace lifecycle registry schema ${version} is newer than this Cezar build supports.`);
   }
@@ -183,12 +183,23 @@ function openRegistry(commonDir: string, home = cezarHomeDir()): { db: Database;
       PRIMARY KEY(repo_id,run_id,evidence_id),
       FOREIGN KEY(repo_id,run_id) REFERENCES coding_runs(repo_id,run_id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS remote_effects (
+      repo_id TEXT NOT NULL, issue_key TEXT NOT NULL, effect_key TEXT NOT NULL,
+      operation TEXT NOT NULL, execution_id TEXT NOT NULL, run_id TEXT NOT NULL,
+      attempt_id TEXT NOT NULL, fencing_token INTEGER NOT NULL,
+      request_hash TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('intent','completed')),
+      result_json TEXT, claim_token TEXT, claim_expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY(repo_id,issue_key,effect_key),
+      FOREIGN KEY(execution_id) REFERENCES executions(id)
+    );
+    CREATE INDEX IF NOT EXISTS remote_effect_claims ON remote_effects(repo_id,issue_key,status,claim_expires_at);
     CREATE INDEX IF NOT EXISTS coding_run_history ON events(repo_id,execution_id,seq);
   `);
     if (!db.prepare('PRAGMA table_info(event_outbox)').all().some((column) => column.name === 'approved_at')) {
       db.exec('ALTER TABLE event_outbox ADD COLUMN approved_at TEXT;');
     }
-    db.exec('PRAGMA user_version = 4; COMMIT;');
+    db.exec('PRAGMA user_version = 5; COMMIT;');
   } catch (error) {
     try { db.exec('ROLLBACK;'); } catch { /* preserve the migration error */ }
     db.close();
@@ -616,6 +627,234 @@ function getActive(db: Database, repoId: string, issue: string): LifecycleRecord
     FROM work_items w JOIN executions e ON e.id=w.active_execution_id
     JOIN workspaces s ON s.execution_id=e.id WHERE w.repo_id=? AND w.issue_key=? AND e.active=1`).get(repoId, issue);
   return row ? rowRecord(row) : null;
+}
+
+export interface FencedRemoteEffectContext {
+  issue: string | number;
+  executionId: string;
+  runId: string;
+  attemptId: string;
+  fencingToken: number;
+}
+
+export interface RemoteEffectRecord<T = unknown> {
+  effectKey: string;
+  operation: string;
+  requestHash: string;
+  status: 'intent' | 'completed';
+  result?: T;
+  claimToken?: string;
+}
+
+interface RemoteEffectRow extends Record<string, unknown> {
+  effect_key: string;
+  operation: string;
+  execution_id: string;
+  run_id: string;
+  attempt_id: string;
+  fencing_token: number;
+  request_hash: string;
+  status: 'intent' | 'completed';
+  result_json: string | null;
+  claim_token: string | null;
+  claim_expires_at: string;
+}
+
+const REMOTE_EFFECT_CLAIM_MS = 2 * 60_000;
+
+function canonicalJson(value: unknown): string {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (item && typeof item === 'object') {
+      const source = item as Record<string, unknown>;
+      return Object.fromEntries(Object.keys(source).sort().filter((key) => source[key] !== undefined)
+        .map((key) => [key, normalize(source[key])]));
+    }
+    if (typeof item === 'number' && !Number.isFinite(item)) throw new Error('Remote-effect data must contain finite numbers.');
+    if (typeof item === 'bigint' || typeof item === 'function' || typeof item === 'symbol' || item === undefined) {
+      throw new Error('Remote-effect data must be JSON serializable.');
+    }
+    return item;
+  };
+  const json = JSON.stringify(normalize(value));
+  if (json === undefined) throw new Error('Remote-effect data must be JSON serializable.');
+  return json;
+}
+
+function remoteEffectHash(request: unknown): { json: string; hash: string } {
+  const json = canonicalJson(request);
+  return { json, hash: createHash('sha256').update(json).digest('hex') };
+}
+
+function assertCurrentEffectOwner(db: Database, repoId: string, context: FencedRemoteEffectContext, now: string): LifecycleRecord {
+  const issue = resolveIssue(String(context.issue));
+  const current = getActive(db, repoId, issue);
+  if (!current || current.executionId !== context.executionId || current.fencingToken !== context.fencingToken
+    || Date.parse(current.leaseExpiresAt) <= Date.parse(now)
+    || !['working', 'validating', 'ready', 'integrating'].includes(current.state)) {
+    throw new Error('Remote effect rejected: execution is stale, inactive, expired, or fenced.');
+  }
+  if (!context.runId.trim() || !context.attemptId.trim()) throw new Error('Remote effect requires run and attempt identities.');
+  return current;
+}
+
+function remoteEffectFromRow<T>(row: RemoteEffectRow): RemoteEffectRecord<T> {
+  return {
+    effectKey: row.effect_key,
+    operation: row.operation,
+    requestHash: row.request_hash,
+    status: row.status,
+    ...(row.status === 'completed' && row.result_json !== null ? { result: JSON.parse(row.result_json) as T } : {}),
+    ...(row.claim_token ? { claimToken: row.claim_token } : {}),
+  };
+}
+
+/** Persist or reacquire an effect intent before any remote mutation. */
+export async function beginRemoteEffect<T = unknown>(options: FencedRemoteEffectContext & {
+  effectKey: string; operation: string; request: unknown; cwd?: string; home?: string; now?: number;
+}): Promise<RemoteEffectRecord<T>> {
+  const key = options.effectKey.trim();
+  const operation = options.operation.trim();
+  if (!key || key.length > 512 || !operation || operation.length > 128) throw new Error('Remote-effect key and operation must be bounded nonempty strings.');
+  const request = remoteEffectHash(options.request);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const now = new Date(options.now ?? Date.now()).toISOString();
+    const claimToken = randomUUID();
+    const claimExpiresAt = new Date(Date.parse(now) + REMOTE_EFFECT_CLAIM_MS).toISOString();
+    const tx = db.transaction(() => {
+      const current = assertCurrentEffectOwner(db, repoId, options, now);
+      const issue = resolveIssue(String(options.issue));
+      const row = db.prepare('SELECT * FROM remote_effects WHERE repo_id=? AND issue_key=? AND effect_key=?')
+        .get(repoId, issue, key) as RemoteEffectRow | undefined;
+      if (!row) {
+        db.prepare(`INSERT INTO remote_effects(repo_id,issue_key,effect_key,operation,execution_id,run_id,attempt_id,
+          fencing_token,request_hash,status,result_json,claim_token,claim_expires_at,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,'intent',NULL,?,?,?,?)`)
+          .run(repoId, issue, key, operation, current.executionId, options.runId, options.attemptId,
+            current.fencingToken, request.hash, claimToken, claimExpiresAt, now, now);
+        event(db, repoId, issue, current.executionId, 'remote_effect_intended', {
+          effectKey: key, operation, requestHash: request.hash, runId: options.runId,
+          attemptId: options.attemptId, fencingToken: current.fencingToken,
+        });
+        return { effectKey: key, operation, requestHash: request.hash, status: 'intent' as const, claimToken };
+      }
+      if (row.operation !== operation || row.request_hash !== request.hash) {
+        throw new Error(`Remote effect key was reused with a different payload: ${key}`);
+      }
+      if (row.status === 'completed') return remoteEffectFromRow<T>(row);
+      if (Date.parse(row.claim_expires_at) > Date.parse(now)) throw new Error(`Remote effect is already claimed: ${key}`);
+      if (current.fencingToken < Number(row.fencing_token)) throw new Error(`Remote effect is fenced by a newer owner: ${key}`);
+      const recovered = row.execution_id !== current.executionId || Number(row.fencing_token) !== current.fencingToken;
+      db.prepare(`UPDATE remote_effects SET execution_id=?,run_id=?,attempt_id=?,fencing_token=?,claim_token=?,
+        claim_expires_at=?,updated_at=? WHERE repo_id=? AND issue_key=? AND effect_key=? AND status='intent'`)
+        .run(current.executionId, options.runId, options.attemptId, current.fencingToken, claimToken, claimExpiresAt,
+          now, repoId, issue, key);
+      if (recovered) event(db, repoId, issue, current.executionId, 'remote_effect_recovered', {
+        effectKey: key, operation, requestHash: request.hash, runId: options.runId,
+        attemptId: options.attemptId, fencingToken: current.fencingToken,
+      });
+      return { effectKey: key, operation, requestHash: request.hash, status: 'intent' as const, claimToken };
+    });
+    return tx() as RemoteEffectRecord<T>;
+  } finally { db.close(); }
+}
+
+/** Mark a remote intent complete only while its exact execution fence and claim still own it. */
+export async function completeRemoteEffect<T = unknown>(options: FencedRemoteEffectContext & {
+  effectKey: string; requestHash: string; claimToken?: string; result: T; reconciled?: boolean;
+  cwd?: string; home?: string; now?: number;
+}): Promise<RemoteEffectRecord<T>> {
+  const resultJson = canonicalJson(options.result);
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const now = new Date(options.now ?? Date.now()).toISOString();
+    const tx = db.transaction(() => {
+      const current = assertCurrentEffectOwner(db, repoId, options, now);
+      const issue = resolveIssue(String(options.issue));
+      const row = db.prepare('SELECT * FROM remote_effects WHERE repo_id=? AND issue_key=? AND effect_key=?')
+        .get(repoId, issue, options.effectKey) as RemoteEffectRow | undefined;
+      if (!row || row.request_hash !== options.requestHash) throw new Error('Remote effect completion does not match its durable intent.');
+      if (row.status === 'completed') {
+        if (row.result_json !== resultJson) throw new Error('Remote effect already completed with a different result.');
+        return remoteEffectFromRow<T>(row);
+      }
+      if (row.execution_id !== current.executionId || row.run_id !== options.runId || row.attempt_id !== options.attemptId
+        || Number(row.fencing_token) !== current.fencingToken || row.claim_token !== options.claimToken) {
+        throw new Error('Remote effect completion rejected: intent claim is stale or fenced.');
+      }
+      db.prepare(`UPDATE remote_effects SET status='completed',result_json=?,claim_token=NULL,claim_expires_at=?,updated_at=?
+        WHERE repo_id=? AND issue_key=? AND effect_key=? AND status='intent' AND claim_token=?`)
+        .run(resultJson, now, now, repoId, issue, options.effectKey, options.claimToken);
+      event(db, repoId, issue, current.executionId, options.reconciled ? 'remote_effect_reconciled' : 'remote_effect_completed', {
+        effectKey: options.effectKey, operation: row.operation, requestHash: row.request_hash,
+        runId: options.runId, attemptId: options.attemptId, fencingToken: current.fencingToken,
+      });
+      return { effectKey: options.effectKey, operation: row.operation, requestHash: row.request_hash,
+        status: 'completed' as const, result: options.result };
+    });
+    return tx() as RemoteEffectRecord<T>;
+  } finally { db.close(); }
+}
+
+/** Release an unresolved intent for retry after reconciliation proves the remote effect absent. */
+export async function releaseRemoteEffectClaim(options: FencedRemoteEffectContext & {
+  effectKey: string; requestHash: string; claimToken: string; cwd?: string; home?: string; now?: number;
+}): Promise<void> {
+  const { commonDir } = await gitTop(options.cwd ?? process.cwd());
+  const { db, repoId } = openRegistry(commonDir, options.home);
+  try {
+    const now = new Date(options.now ?? Date.now()).toISOString();
+    const tx = db.transaction(() => {
+      const current = assertCurrentEffectOwner(db, repoId, options, now);
+      const issue = resolveIssue(String(options.issue));
+      const changed = db.prepare(`UPDATE remote_effects SET claim_token=NULL,claim_expires_at=?,updated_at=?
+        WHERE repo_id=? AND issue_key=? AND effect_key=? AND execution_id=? AND run_id=? AND attempt_id=?
+          AND fencing_token=? AND request_hash=? AND status='intent' AND claim_token=?`)
+        .run(now, now, repoId, issue, options.effectKey, current.executionId, options.runId, options.attemptId,
+          current.fencingToken, options.requestHash, options.claimToken);
+      if (!changed.changes) throw new Error('Remote effect claim could not be released because it is stale or fenced.');
+    });
+    tx();
+  } finally { db.close(); }
+}
+
+/** Run a remote mutation through intent, reconcile, perform, and fenced completion. */
+export async function executeRemoteEffect<T>(options: FencedRemoteEffectContext & {
+  effectKey: string; operation: string; request: unknown; reconcile: () => Promise<T | null>;
+  perform: () => Promise<T>; cwd?: string; home?: string; now?: number;
+}): Promise<T> {
+  const intent = await beginRemoteEffect<T>(options);
+  if (intent.status === 'completed') return intent.result as T;
+  const claimToken = intent.claimToken!;
+  const requestHash = intent.requestHash;
+  try {
+    const reconciled = await options.reconcile();
+    if (reconciled !== null) {
+      const completed = await completeRemoteEffect({ ...options, claimToken, requestHash, result: reconciled, reconciled: true });
+      return completed.result as T;
+    }
+    try {
+      const result = await options.perform();
+      const completed = await completeRemoteEffect({ ...options, claimToken, requestHash, result });
+      return completed.result as T;
+    } catch (performError) {
+      const afterFailure = await options.reconcile();
+      if (afterFailure !== null) {
+        const completed = await completeRemoteEffect({ ...options, claimToken, requestHash, result: afterFailure, reconciled: true });
+        return completed.result as T;
+      }
+      await releaseRemoteEffectClaim({ ...options, claimToken, requestHash });
+      throw performError;
+    }
+  } catch (error) {
+    // Keep an unexpired claim only when a completion failed after the remote effect. Its owner
+    // may still be alive; a subsequent recovery will reconcile after this short lease expires.
+    if (error === undefined) throw new Error('Remote effect failed without an error value.');
+    throw error;
+  }
 }
 
 function saveClaim(db: Database, repoId: string, issue: string, owner: string, workspace: string,

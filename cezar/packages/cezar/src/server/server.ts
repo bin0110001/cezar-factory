@@ -210,6 +210,7 @@ import {
 } from '../workspace/projects.ts';
 import { WorkspaceSemaphore } from '../workspace/semaphore.ts';
 import { mergeWriteWorkspaceUiState, readWorkspaceUiState } from '../workspace/ui-state.ts';
+import { factoryContextForRun, factoryWorkflowParticipatesInWorkspaceLifecycle } from '../workspace/lifecycle.ts';
 import { checkoutRepo, type CloneRunner } from './checkout.ts';
 import { ProjectContextError, ProjectContexts, type ProjectContext } from './project-context.ts';
 import { reviewGateEnabled } from '../runs/review-gate.ts';
@@ -4961,10 +4962,28 @@ export function createApp(deps: ServerDeps) {
           400,
         );
       }
+      const lifecycleWorkflow = factoryWorkflowParticipatesInWorkspaceLifecycle(run.workflow);
+      const factoryExecution = lifecycleWorkflow && run.issueNumber
+        ? factoryContextForRun(repoRoot, run.issueNumber, run.id)
+        : null;
+      if (lifecycleWorkflow && !factoryExecution) {
+        return c.json({ error: 'Factory execution is stale or its fencing context is unavailable; recover the workspace before publishing.' }, 409);
+      }
+      const currentAgentStep = [...run.steps].reverse().find((step) => step.kind === 'agent');
+      if (factoryExecution && !currentAgentStep) {
+        return c.json({ error: 'Factory execution has no recorded agent attempt; refusing an unbound publication.' }, 409);
+      }
       const outcome = await createDraftPr({
         repoRoot,
         run,
         handoffText: readHandoff(dataDir, id),
+        ...(factoryExecution && currentAgentStep ? { factoryEffectContext: {
+          issue: factoryExecution.issue,
+          executionId: factoryExecution.executionId,
+          runId: run.id,
+          attemptId: `${currentAgentStep.id}:${currentAgentStep.iterations}`,
+          fencingToken: factoryExecution.fencingToken,
+        } } : {}),
       });
       if (!outcome.ok) {
         return c.json({ error: outcome.error, manual: `git merge ${run.branch}` }, 409);
