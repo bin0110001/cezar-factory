@@ -88,12 +88,23 @@ the break-glass manual path for a Production Run or a dead promoter; it runs the
 only then fast-forwards `origin/stable`. The `factory-autodeploy` timer reconciles the host to
 `stable`. Never promote or deploy an untested commit, and never edit the Bazzite checkout by hand.
 
-The legacy per-project release pipeline is remote-only Cezar synchronization: read
-`apiUrl` and `projectId` from `config/factory-projects.json` and synchronize
-the Factory checkout's automation definitions directly to each Cezar project.
-Use a local `projectPath` only as a fallback when a project must receive the
-full `.ai/factory` installation (workflows, skills, policies, scripts, or
-project pinning).
+The shared Factory checkout mounted into Cezar is the default source of
+workflows, skills, policies, and runtime scripts. Read Cezar targets only from
+the host-local `config/factory-projects.json`; `apiUrl` and `projectId` identify
+each remote project. A target with `mode: shared` receives automation
+synchronization only and must never receive managed-file pushes.
+
+The legacy `push-factory-updates.ps1` path is deprecated. Keep it until a
+complete shadow-audit receipt reports `legacyPushRetirementReady: true` for
+every registered target. If a workflow uses that compatibility path, its
+configured controller and autodeploy locks must be the same host lock files
+used by the release services and must stay held for the whole operation.
+
+Use a local `projectPath` only as a fallback when a project needs the full
+`.ai/factory` installation (workflows, skills, policies, scripts, or pinning).
+It must be an absolute, verified path on the workflow host. The shadow audit
+reads only registered local paths; remote-only targets remain `unknown` and
+must not be discovered by scanning.
 
 Remote-only synchronization does not deploy application or infrastructure
 files from `integrations/`. For Bazzite-hosted services, use the explicit
@@ -103,11 +114,11 @@ uses its host-local bind-mounted config and must be redeployed/restarted after
 changes to `integrations/bazzite/litellm-config.yaml`.
 
 When a project needs the full Factory layer, add an absolute, verified local
-`projectPath` to its registry entry and run a dry run first. Do not put a
-remote container path in `projectPath`; the release script resolves that path
-on the Windows host. If the checkout is only on Bazzite, record its remote
-checkout and service-config paths in the deployment inventory/operations notes
-and use the host deployment flow instead.
+`projectPath` to its registry entry; the owning workflow performs the
+applicable read-only plan before any mutation. Do not put a remote container
+path in `projectPath`; it is resolved on the workflow host. If the checkout is
+only on Bazzite, record its remote checkout and service-config paths in the
+deployment inventory/operations notes and use the host deployment flow.
 
 For a Production Run, targets must be listed in the host-local
 `config/factory-projects.json` file or explicitly supplied by the user. Do not

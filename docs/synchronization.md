@@ -1,199 +1,97 @@
-# Factory Synchronization
+# Factory synchronization
 
-How the factory is synchronized to Cezar by default, with local project
-installation as a fallback. All scripts are PowerShell 7 and live in `scripts/`.
+The shared Factory checkout mounted in Cezar is the default delivery path. A
+project does not need its own copy of Factory workflows, skills, policies, or
+runtime scripts. Project-local installation remains available only when a
+project has a specific need for the full `.ai/factory` layer.
 
-## Default release pipeline
+## Target registry
 
-Every Factory-managed change must force a release attempt on every configured
-target, even when the Factory version is unchanged. A matching version does
-not prove that the target's automations, runtime mount, or service deployment
-is current.
+Release and synchronization use only the host-local
+`config/factory-projects.json` registry. A target identifies its Cezar project
+with `apiUrl` and `projectId`; `projectType` is optional. The `mode` field may
+be `shared` when Cezar loads Factory assets from the mounted checkout. Shared
+targets receive automation synchronization only through the legacy
+compatibility path.
 
-Use remote-only synchronization whenever the target project already exists in
-Cezar. Configure `apiUrl` and `projectId` in the host-local
-`config/factory-projects.json`, omit `projectPath`, and run:
+Use `projectPath` only when the project needs a full local Factory
+installation. It must be an absolute, verified path on the machine running the
+owning workflow. Never put a Cezar container path or a Bazzite-only path in
+`projectPath`. Remote-only targets remain explicit and are reported as
+`unknown` by the shadow-copy audit; the audit never searches for checkouts.
 
-```powershell
-./scripts/push-factory-updates.ps1 -SyncAutomations
-```
+The optional `deployment.mode: remote-cezar-plus-bazzite-host` marks a target
+whose Cezar synchronization also depends on the Bazzite runtime. That host's
+service and configuration paths belong in `config/server-topology.env` and
+the deployment inventory, not in a remote project path.
 
-This reads automation definitions and the Factory version from the current
-checkout and updates only the target Cezar project's `[factory]` automations.
-No application checkout is required.
+## Shared delivery and promotion
 
-Use the local installation/update flow below only when the target also needs
-the full `.ai/factory` project layer.
+Factory changes are reviewed and merged to `dev`. The Bazzite
+`factory-local-promotion` timer validates that exact merged commit, activates
+the `dev` channel, runs canaries, then advances `stable` according to
+`config/promotion-policy.json`. The `factory-autodeploy` timer reconciles the
+host checkout and Cezar runtime to `stable`. A failed gate blocks advancement
+and preserves its receipt for diagnosis. Do not move channel pointers or edit
+the Bazzite checkout by hand.
 
-## Cezar runtime registration
+The normal autonomous posture uses a passing local suite and recorded
+self-review. A Production Run selects the controlled posture, which requires
+its configured independent approval and soak gates. The manual stable
+promotion script is a break-glass path for an explicitly requested Production
+Run or a dead promoter; it is not the normal release mechanism.
 
-Factory workflows run in Cezar's isolated Git worktrees. Do **not** make a
-workflow work by disabling worktree isolation, and do not depend on ignored or
-untracked `.ai/factory` files being copied into a worktree. Cezar discovers
-project workflows before it creates the worktree and materializes registered
-skills for the agent; check steps need a separately registered runtime.
+## Shadow audit and migration
 
-The supported deployment model is a version-pinned Factory checkout mounted in
-the Cezar container and exposed as `FACTORY_RUNTIME_ROOT`. Factory automations
-execute in Cezar; OpenHands is not required or used by the active automation
-path. On the Bazzite
-Factory host, set a host-local `FACTORY_RUNTIME_HOST_DIR` to the absolute path
-of that checkout and mount it read-only at `/projects/cezar-factory`. Cezar's
-service must then set:
+The read-only shadow audit examines only registered local project paths and
+writes a schema-validated receipt. Each target is classified as shared,
+shadowed, modified, not installed, unreachable, or unknown. Remote-only targets
+remain unknown. The receipt's `legacyPushRetirementReady` field is true only
+when the audit is complete, has at least one target, and every target is
+classified `shared` or `migrated`.
 
-```text
-FACTORY_RUNTIME_ROOT=/projects/cezar-factory
-```
+The `factory-migrate-to-shared` workflow refreshes that receipt and prepares a
+separate migration branch from `origin/dev`. It removes only files proven
+identical by the receipt, installed manifest, and current shared source. It
+keeps modified files and review diffs, records a schema-validated backout
+before deletion, and leaves the original project checkout unchanged. After
+the migration PR is reviewed and merged, set the target to `mode: shared`.
+The backout record names the base SHA and per-file hashes needed to restore
+the removed files.
 
-The host checkout must contain
-`scripts/audit-backlog-labels.ps1`. Remote targets with
-`deployment.mode: remote-cezar-plus-bazzite-host` also run a mandatory Bazzite
-runtime parity/deploy phase. It refuses a dirty or version-mismatched remote
-checkout rather than syncing the automation definition to a runtime that
-cannot execute it. Use `-SkipBazziteRuntime` only for an explicit
-automation-only operation. `scripts/deploy/deploy-bazzite.sh`
-preflights that file before starting the stack, so an hourly audit fails early
-with an actionable deployment error instead of searching for scripts or
-falling back to manual issue parsing. The Cezar service receives the read-only
-runtime mount.
+The legacy `push-factory-updates.ps1` path is deprecated and remains available
+until a fresh audit receipt opens the retirement gate. Shared-mode targets do
+not receive managed-file updates. When the compatibility path is used, set
+`FACTORY_RELEASE_STORE` and `FACTORY_AUTODEPLOY_LOCK` to the lock files on the
+same host, or configure target-specific `releaseStorePath` and
+`autodeployLockPath`. It holds those locks for the whole operation and stops
+if a configured lock cannot be verified. Windows cannot inspect the host's
+POSIX autodeploy lock, so that operation must run where the lock is accessible.
 
-On Bazzite, `scripts/deploy/factory-autodeploy.sh` first reconciles the root
-`stable` branch/index in Cezar's separate persistent `.git` volume with the
-read-only mounted checkout. The reconciliation verifies every tracked file
-against the promoted commit and refuses staged changes or content conflicts.
-It updates only the root stable ref and index, preserving linked task
-worktrees, their branches, and unrelated untracked files. Autodeploy then
-requires exact source SHA, version, and deterministic content-digest parity.
-The digest uses POSIX shell syntax on both sides and includes the host-local
-target registry when present.
+## Runtime and deployment boundary
 
-The active Bazzite Cezar service uses `localhost/cezar:local` and
-`container-cezar.service`. During autodeploy,
-`scripts/deploy/deploy-cezar-runtime.sh` compares the source revision label on
-that image with the promoted checkout. It rebuilds only when files under
-`cezar/` changed, restarts the existing systemd-managed service, and requires
-both `/api/v1/health` and `/api/v1/factory-release` to respond before Factory
-activation continues. If the new image does not recover, the script restores
-the prior image tag and fails the deployment receipt for retry.
+Cezar loads workflows and skills from the read-only Factory mount configured
+by `FACTORY_RUNTIME_ROOT`. Workflow `command:` steps own Factory script
+execution. Workflow prompts and skills describe decisions and required
+evidence; they do not ask the model to invoke Factory scripts.
 
-Autodeploy selects the automation synchronization path from the running
-container's release-store configuration. Channel-managed installs require the
-verified channel pointer and use the journaled activation coordinator. Existing
-shared-mount installs without channel-pinned release storage use
-`sync-all-automations.ps1`; it reads only the explicit host registry, keeps
-existing enabled states, creates new automations paused, and leaves non-Factory
-automations untouched. A configured channel store with a missing channel
-pointer fails closed instead of falling back.
+Remote-only automation synchronization updates Cezar automation definitions.
+It does not deploy application files or assets under `integrations/`. Changes
+to Bazzite-hosted services use the supported deployment flow from the Bazzite
+Factory checkout and its explicit topology inventory. For example,
+`integrations/bazzite/litellm-config.yaml` is bind-mounted host configuration
+and requires a service deployment after a change.
 
-Factory workflow check commands call `$env:FACTORY_RUNTIME_ROOT/scripts/...`.
-They write result artifacts to the current worktree, while schemas and policies
-come from that versioned runtime. `route-state.ps1` therefore accepts the
-current directory as its project path rather than inferring it from its script
-location. A missing runtime variable is a deployment error that must fail the
-check; it is never a reason to turn worktree isolation off.
+Projects that need project-specific workflows or guidance should use project
+overrides and project-owned skills. Shared Factory workflows use the
+project's own validation commands from its isolated worktree; those commands
+must be project-owned and have bounded timeouts. See
+[`project-integration.md`](project-integration.md) for the optional local
+Factory layer and validation contract.
 
-## Where things land
+## Validation
 
-Cezar only loads workflows and skills from fixed locations, so the installer writes there:
-
-| Factory source | Project location | Why |
-| --- | --- | --- |
-| `workflows/X.yaml` | `.ai/cezar/workflows/factory-X.yaml` (workflow name `factory-X`) | Cezar's workflow directory; the prefix avoids clashing with built-in or project workflows |
-| `skills/S/SKILL.md` | `.ai/skills/S/SKILL.md` | Shared skill location, also read by other agent tooling |
-| `policies/*`, `schemas/*`, `routing/*` | `.ai/factory/policies`, `.ai/factory/schemas`, `.ai/factory/routing` | Read by the factory scripts |
-| `scripts/{validate-result,route-state,hindsight/recall}.ps1` | registered Factory runtime (`$FACTORY_RUNTIME_ROOT/scripts/`) | Called by isolated-worktree workflow checks |
-| `scripts/{sync-automations,create-labels}.ps1` | `.ai/factory/scripts/` | Operator-facing project management commands |
-| `automations/*.json` | `.ai/factory/automations/` | Declarative definitions; applied to Cezar by `sync-automations.ps1` |
-
-Written alongside: `.ai/factory/VERSION`, `.ai/factory/manifest.json` (path and SHA-256 of every managed file), `.ai/factory/gitignore.fragment`. The project-owned `.ai/factory/factory.config.yaml` is created once from the template and never overwritten.
-
-## Commands
-
-```powershell
-./scripts/install.ps1 -ProjectPath ../proj -ProjectType godot [-DryRun]   # first install
-./scripts/update.ps1  -ProjectPath ../proj -FactoryPath ../cezar-factory-0.2.0 [-DryRun]
-./scripts/push-factory-updates.ps1 -ProjectPath ../proj -ForceManagedRefresh [-SyncAutomations]
-./scripts/diff.ps1    -ProjectPath ../proj   # exit 1 on drift
-./scripts/verify.ps1  -ProjectPath ../proj   # exit 1 on any failed check
-```
-
-The remote-only command can also be run directly for one Cezar project:
-
-```powershell
-./scripts/sync-automations.ps1 -SourceOnly -FactoryPath . -ApiUrl http://cezar:PORT -ProjectId <id> -DryRun
-./scripts/sync-automations.ps1 -SourceOnly -FactoryPath . -ApiUrl http://cezar:PORT -ProjectId <id>
-```
-
-This remote-only mode updates only Cezar's `[factory]` automations. It does not
-install project workflows, skills, policies, or scripts; those still require a
-local or mounted project checkout.
-
-It also does not deploy files under `integrations/`. Those are host deployment
-assets. For the Bazzite control plane, keep `config/server-topology.env` and
-the host-local `integrations/bazzite/.env` authoritative, then run
-`scripts/deploy/deploy-bazzite.sh` from the Bazzite checkout. This recreates
-the Compose configuration and restarts the selected services. A Bazzite
-deployment may use a host-local bind-mounted config path even when no local
-Windows `projectPath` exists; do not encode that remote path as `projectPath`.
-
-For a target that needs both Cezar automation synchronization and the complete
-project Factory layer, the registry entry must include an absolute Windows
-`projectPath` pointing to a verified checkout. Use `-DryRun` before the first
-deployment and confirm the project contains `.ai/factory/factory.config.yaml`.
-
-`-FactoryPath` is a checkout of the factory at the version the project pins (default: the checkout the script runs from). The scripts refuse to run when that checkout's `VERSION` differs from the pin, so a project never follows `main` by accident.
-
-## Ownership and safety
-
-- Every managed `.md`, `.yaml` and `.ps1` file carries a managed-by header (`GENERATED BY CEZAR-FACTORY` / `managed-by: cezar-factory`) with the version and source path. JSON files are tracked through the manifest only.
-- Only paths listed in the manifest are ever overwritten or removed.
-- If a file already exists at a managed path and is not in the manifest, ownership is ambiguous: install/update refuses and writes nothing.
-- If a manifest-listed file was edited locally, update refuses and names it. Move the change into an override instead.
-- Obsolete managed files (dropped by the new version) are removed; empty directories are tidied.
-- `-DryRun` prints the full change summary and writes nothing.
-
-### Forced managed refresh
-
-`-ForceManagedRefresh` is the deliberate recovery path when a previously
-installed Factory layer has drifted so far that the normal updater refuses it.
-It archives `.ai/factory` plus only `factory-*` workflow and skill files under
-`.factory/factory-force-backups/<timestamp>`, then reinstalls the pinned
-Factory version and runs `verify.ps1`. Project-owned skills and workflows are
-not removed. Use it only after reviewing the failed normal update; a failed
-verification still blocks the release.
-
-Every `push-factory-updates.ps1` invocation writes JSON-line records to
-`.factory/release-reports/release-status.jsonl` (or `-ReportPath`). Each target
-is marked `synchronized` or `failed`; a blocked standard update sets
-`forceRefreshRequired: true` and gives the recovery command. Treat a missing
-success record as an unpushed update.
-
-## Upgrade and rollback
-
-1. Edit `factory.version` in `.ai/factory/factory.config.yaml`.
-2. Run `update.ps1` against a checkout of that version. It prints `Factory 0.1.0 -> 0.2.0` with Updated / Added / Removed lists, then runs `verify.ps1`.
-3. Review the Git diff, run project CI, commit.
-
-Rollback is the same procedure with the previous pin and the previous checkout. Old factory versions stay available as git tags.
-
-## Overrides
-
-A file at `.ai/factory/overrides/<factory source path>` fully replaces that factory file, for example `overrides/policies/retry.yaml` or `overrides/workflows/implement.yaml`. The installer renders the override into the managed location (header `source: overrides/...`), so `diff.ps1` stays clean and upgrades keep the override. `verify.ps1` rejects an override whose path does not exist in the factory. There is no patch/merge mode in v0.1. Prefer composing with project skills in `.ai/skills/` over replacing a factory skill.
-
-## Automations
-
-Cezar keeps live automations in its own gitignored store (`.ai/cezar/automations.json`) and exposes them over HTTP, so they cannot be installed as files. The factory ships definitions and `sync-automations.ps1` converges the cockpit onto them:
-
-```powershell
-$env:CEZ_API_URL = 'http://localhost:PORT'; $env:CEZ_PROJECT_ID = '<id>'   # Cezar must run with CEZ_AUTOMATIONS=1
-./.ai/factory/scripts/sync-automations.ps1 -DryRun
-./.ai/factory/scripts/sync-automations.ps1 [-Enable] [-Prune]
-```
-
-- Factory automations are named `[factory] <name>`; nothing else is ever modified.
-- Missing ones are created paused (`-Enable` creates them enabled, which baselines to now, so the backlog is not launched). Changed ones are updated with their enabled state preserved. Obsolete ones are paused, or deleted with `-Prune`.
-- The factory version is recorded in each description. Results are logged to `.factory/automation-sync.log`.
-
-## CI
-
-`tests/run-tests.ps1` is the factory's own CI, run locally by the pre-commit hook and the `promote-stable.ps1` gate (there is no GitHub workflow): static checks, plus install, drift, upgrade, rollback, override, ambiguity, result-validation, state-routing (fake `gh`) and automation-sync (mock cockpit) scenarios against the fixture projects in `tests/fixtures/`. Projects can run `diff.ps1` and `verify.ps1` in their own CI.
+Repository changes are validated on local compute with
+`tests/run-tests.ps1`, the pre-commit hook, and the applicable local release
+gate. The repository has no hosted CI. Project validation runs in the owning
+Factory workflow and records its result in a head-bound receipt.

@@ -1,18 +1,20 @@
 # Project Integration Model
 
 This document describes the optional local project integration layer. The
-default Factory release path synchronizes automations directly to Cezar and
-does not require this checkout layout.
+default Factory source is the shared checkout mounted in Cezar. A local
+`.ai/factory` installation is only needed when a project must own or pin the
+full Factory layer.
 
 ## Explicit targets and deployment boundary
 
-Release and synchronization commands resolve targets from the host-local
-`config/factory-projects.json` registry or from explicit path parameters that
-the command supports, such as `-RegistryPath` or `-ProjectPath`. They do not
-search drives or infer projects from nearby checkouts. If the selected registry
-is missing or empty and no supported explicit target was supplied, the command
-returns a `Needs target configuration` error before changing a project or
-contacting Cezar.
+The owning workflow resolves targets from the host-local
+`config/factory-projects.json` registry or explicit target parameters. It does
+not search drives or infer projects from nearby checkouts. If the selected
+registry is missing or empty and no explicit target was supplied, it returns a
+`Needs target configuration` result before changing a project or contacting
+Cezar. A target marked `mode: shared` receives automation synchronization
+only. A local `projectPath` is a fallback for a full project installation and
+must point to an absolute, verified checkout on the workflow host.
 
 `scripts/verify.ps1` checks only the project path passed to it (or the current
 directory) and does not deploy. `tests/run-tests.ps1` uses local fixtures and
@@ -58,7 +60,7 @@ Projects using the local fallback must maintain a factory configuration in
 ```yaml
 factory:
   source: cezar-factory     # Factory repository source
-  version: 0.2.0            # Pinned factory version
+  version: 0.3.70           # Pinned version for the local fallback
 
 workflows:
   - plan
@@ -131,7 +133,7 @@ explicit approval; ask whether a sanitized public issue is acceptable.
 
 ## Version Pinning
 
-Projects pin to specific factory versions to ensure reproducible builds:
+Only projects using the local fallback pin a Factory version:
 
 1. Initial Installation: Project selects a factory version
 2. Version Factories: Each factory version is immutable
@@ -259,7 +261,7 @@ Cezar uses for runtime state. Projects can include it from their root
 ```gitignore
 # Exclude Cezar runtime artifacts
 # managed-by: cezar-factory
-# factory-version: 0.3.2
+# factory-version: 0.3.70
 # source: templates/gitignore.fragment
 # DO NOT EDIT DIRECTLY
 /.ai/factory/.gitignore-fragment
@@ -273,15 +275,17 @@ setting or append its rules manually.
 
 ## Update Process
 
-To update to a new factory version:
+Shared projects follow the `stable` Factory checkout mounted into Cezar; they
+do not update a project-local version pin. The host promotion timer validates
+each reviewed `dev` merge, activates the `dev` channel, runs canaries, and
+advances `stable` according to the configured promotion posture. The
+autodeploy timer reconciles the host runtime to `stable`.
 
-1. Update VERSION file with target version
-2. Run factory update
-3. Review changes with factory diff
-4. Run factory verify to confirm installation
-5. Run project validation scripts
-6. Commit changes and create PR
-7. Merge after approval
+For the local fallback, the project's owning workflow uses the pinned Factory
+version and the project-owned validation commands. Review the resulting diff
+and receipt before merging. A migration to shared mode uses the shadow-audit
+and migration workflow, which preserves a backout record and does not mutate
+the original project checkout.
 
 ## Factory-Provided Components
 
@@ -307,8 +311,8 @@ Projects must provide:
 ## Best Practices
 
 1. Never Edit Synchronized Files: All customizations go in project directories
-2. Pin to Specific Versions: Avoid tracking factory main branch directly
-3. Test Updates: Verify updates in a branch before merging to main
+2. Shared projects follow `stable`; local fallbacks pin an explicit version.
+3. Review Factory changes in PRs to `dev`; do not follow a moving `main` branch.
 4. Document Overrides: Clearly document why project-specific changes are needed
 5. Stay Current: Regularly update to receive bug fixes and improvements
 6. Contribute Back: Share useful enhancements with the factory community
