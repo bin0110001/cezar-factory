@@ -55,9 +55,28 @@ describe('versioned verification contracts', () => {
     expect(verificationRunSchema.safeParse(partialStrategy).success).toBe(false);
   });
 
+  it('binds optional visual evidence to its exact verification run, attempt, test and artifact', async () => {
+    const visual = await read('visual-evidence-valid.json');
+    expect(verificationRunSchema.safeParse(visual).success).toBe(true);
+    const headless = await read('passing-result.json');
+    expect(verificationRunSchema.safeParse(headless).success).toBe(true);
+    expect(headless.checks[0].artifacts).toEqual([]);
+    const mixedAttempt = await read('visual-evidence-cross-attempt.json');
+    expect(verificationRunSchema.safeParse(mixedAttempt).success).toBe(false);
+    const mixedCommit = structuredClone(visual);
+    mixedCommit.checks[0].artifacts[0].visualEvidence.commitSha = 'f'.repeat(40);
+    expect(verificationRunSchema.safeParse(mixedCommit).success).toBe(false);
+    const mixedHash = structuredClone(visual);
+    mixedHash.checks[0].artifacts[0].visualEvidence.contentSha256 = 'd'.repeat(64);
+    expect(verificationRunSchema.safeParse(mixedHash).success).toBe(false);
+    const unboundRunArtifact = structuredClone(visual);
+    unboundRunArtifact.artifacts = [unboundRunArtifact.checks[0].artifacts[0]];
+    expect(verificationRunSchema.safeParse(unboundRunArtifact).success).toBe(false);
+  });
+
   it('validates fixtures with an independent Node-only consumer', async () => {
     const consumer = fileURLToPath(new URL('./fixture-consumer.mjs', import.meta.url));
     const output = execFileSync(process.execPath, [consumer, fileURLToPath(fixtures)], { encoding: 'utf8' });
-    expect(output).toContain('Verification fixtures passed (19,');
+    expect(output).toContain('Verification fixtures passed (21,');
   });
 });

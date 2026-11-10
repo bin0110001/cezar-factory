@@ -77,11 +77,46 @@ export const verificationMetricSchema = z.object({
   method: z.string().max(128).optional(),
 }).strict();
 
+export const verificationRendererFingerprintSchema = z.object({
+  os: z.string().min(1).max(128),
+  resolution: z.object({ width: z.number().int().positive().max(32_768), height: z.number().int().positive().max(32_768) }).strict(),
+  dpi: z.number().positive().max(2_400),
+  displayBackend: z.string().min(1).max(128),
+  renderer: z.enum(['software', 'opengl', 'vulkan', 'other']),
+  graphicsApi: z.string().max(128).nullable(),
+  driver: z.string().max(256).nullable(),
+  appVersion: z.string().min(1).max(256),
+  colorSettings: z.record(z.string(), z.string().max(128)),
+  renderFeatures: z.array(z.string().min(1).max(128)).max(128),
+}).strict();
+
+export const verificationVisualEvidenceSchema = z.object({
+  version: z.literal(1),
+  kind: z.enum(['png', 'video', 'trace', 'diff', 'metadata']),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  verificationId: z.string().min(1).max(128),
+  attempt: z.number().int().positive(),
+  role: z.string().min(1).max(128),
+  sessionId: z.string().min(1).max(128),
+  testId: z.string().min(1).max(128),
+  commitSha: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  policyVersion: z.string().min(1).max(128),
+  workerFingerprint: z.string().min(1).max(256),
+  capturedAt: z.string().datetime(),
+  retention: z.string().min(1).max(128),
+  accessPolicy: z.enum(['private', 'project', 'link']),
+  redactionState: z.enum(['redacted', 'unredacted', 'unknown']),
+  storageReference: relativePathSchema,
+  renderer: verificationRendererFingerprintSchema,
+}).strict();
+
 export const verificationArtifactRefSchema = z.object({
   path: relativePathSchema,
   mediaType: z.string().min(1).max(128),
   bytes: z.number().int().nonnegative(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  visualEvidence: verificationVisualEvidenceSchema.optional(),
 }).strict();
 
 export const verificationCheckRunSchema = z.object({
@@ -146,6 +181,17 @@ export const verificationRunSchema = z.object({
   for (const check of run.checks) {
     if (seen.has(check.checkId)) ctx.addIssue({ code: 'custom', path: ['checks'], message: `duplicate check result ${check.checkId}` });
     seen.add(check.checkId);
+    for (const [index, artifact] of check.artifacts.entries()) {
+      const evidence = artifact.visualEvidence;
+      if (!evidence) continue;
+      if (evidence.verificationId !== run.verificationId) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'verificationId'], message: 'visual evidence must belong to this verification run' });
+      if (evidence.attempt !== check.attempt) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'attempt'], message: 'visual evidence attempt must match its check attempt' });
+      if (evidence.testId !== check.checkId) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'testId'], message: 'visual evidence test must match its owning check' });
+      if (evidence.commitSha !== run.commitSha) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'commitSha'], message: 'visual evidence commit must match its verification run' });
+      if (evidence.manifestSha256 !== run.manifestSha256) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'manifestSha256'], message: 'visual evidence manifest must match its verification run' });
+      if (evidence.contentSha256 !== artifact.sha256) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'contentSha256'], message: 'visual evidence content hash must match its artifact' });
+      if (evidence.storageReference !== artifact.path) ctx.addIssue({ code: 'custom', path: ['checks', check.checkId, 'artifacts', index, 'visualEvidence', 'storageReference'], message: 'visual evidence storage reference must match its artifact path' });
+    }
     if (check.outputTruncated && check.status !== 'unknown') ctx.addIssue({ code: 'custom', path: ['checks'], message: 'truncated output must be unknown' });
     if (check.status === 'passed' && check.semanticExitCode !== 0) ctx.addIssue({ code: 'custom', path: ['checks'], message: `passed check ${check.checkId} must have semantic exit 0` });
     if (check.status === 'failed' && check.semanticExitCode !== 1) ctx.addIssue({ code: 'custom', path: ['checks'], message: `failed check ${check.checkId} must have semantic exit 1` });
@@ -161,6 +207,9 @@ export const verificationRunSchema = z.object({
     observed.skipped += check.coverage.skipped;
     if (check.status === 'failed') observed.failed += 1;
     if (check.status === 'unknown' || check.status === 'infrastructure-error' || check.status === 'cancelled' || check.status === 'no-tests') observed.unknown += 1;
+  }
+  if (run.artifacts.some((artifact) => artifact.visualEvidence !== undefined)) {
+    ctx.addIssue({ code: 'custom', path: ['artifacts'], message: 'visual evidence must be attached to a check so attempt and test identity can be verified' });
   }
   if (JSON.stringify(run.coverage) !== JSON.stringify(observed)) {
     ctx.addIssue({ code: 'custom', path: ['coverage'], message: 'run coverage must equal the aggregate check coverage' });
