@@ -1,8 +1,5 @@
 {
   "considered": [],
   "changed": [],
-  "skipped": [],
-  "auditRunAt": "2026-11-09T22:00:00+00:00",
-  "auditScript": "/projects/cezar-factory/scripts/audit-backlog-labels.ps1",
-  "terminalReason": "no-unmarked-open-issues"
+  "skipped": []
 }
