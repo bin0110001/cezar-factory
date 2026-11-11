@@ -69,14 +69,20 @@ function Get-Lease($Issue, [int]$Number) {
     $null
 }
 
-$allIssues = @(Invoke-Gh @('issue', 'list', '--state', 'all', '--limit', '1000', '--json', 'number,state,labels,createdAt,body,comments') | ConvertFrom-Json)
-if ($allIssues.Count -ge 1000) {
+# Two queries instead of one `--state all` listing with every body and comment: only OPEN issues use their labels, body and
+# comments (leases), while closed issues are read solely for their state (dependency checks). Pulling the comment threads of
+# every closed issue made the snapshot ~2.5 MB for ~200 issues, and the host's gh returned it truncated ("unexpected end of
+# JSON input") often enough to fail the health canary and roll back promotions.
+$openIssues = @(Invoke-Gh @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,state,labels,createdAt,body,comments') | ConvertFrom-Json)
+$closedIssues = @(Invoke-Gh @('issue', 'list', '--state', 'closed', '--limit', '1000', '--json', 'number,state') | ConvertFrom-Json)
+if ($openIssues.Count -ge 1000 -or $closedIssues.Count -ge 1000) {
     throw 'GitHub issue snapshot reached the 1000-item cap; refusing to emit a partial backlog proposal.'
 }
+$allIssues = @($closedIssues) + @($openIssues)  # open entries win in $byNumber below
 $byNumber = @{}
 foreach ($issue in $allIssues) { $byNumber[[string]$issue.number] = $issue }
 
-$open = @($allIssues | Where-Object { $_.state -eq 'OPEN' } | ForEach-Object {
+$open = @($openIssues | Where-Object { $_.state -eq 'OPEN' } | ForEach-Object {
     $labels = @(Get-LabelNames $_)
     $states = @($labels | Where-Object { $_ -in @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open') })
     $priorityLabels = @($labels | ForEach-Object {
