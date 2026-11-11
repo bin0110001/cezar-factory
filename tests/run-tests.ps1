@@ -294,7 +294,10 @@ $shipLoop = Join-Path $factory '.claude/ship/ship-loop.ps1'
 $iterDry = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow health -Task 'smoke' -DryRun 2>&1 | Out-String)
 $iterDryCode = $LASTEXITCODE
 # Show the output when it fails: these assertions used to discard it, which hid a Linux-only failure.
-if ($iterDryCode -ne 0 -or $iterDry -notmatch 'run smoke --workflow factory-health') { Write-Host "ship-loop Run -DryRun exited ${iterDryCode}:`n$iterDry" }
+if ($iterDryCode -ne 0 -or $iterDry -notmatch 'run smoke --workflow factory-health') {
+    Write-Host "ship-loop Run -DryRun exited ${iterDryCode}:`n$iterDry"
+    Write-Host ("diagnostics: toplevel=" + ((& git -C (Split-Path -Parent $shipLoop) rev-parse --show-toplevel 2>&1) | Out-String).Trim() + " pwd=$PWD git-env=" + ((Get-ChildItem Env: | Where-Object { $_.Name -like 'GIT_*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ','))
+}
 Assert 'ship-loop Run resolves a workflow by file name to its cezar name' ($iterDryCode -eq 0 -and $iterDry -match 'run smoke --workflow factory-health')
 $iterUnknown = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow no-such-workflow -Task 'x' -DryRun 2>&1 | Out-String)
 $iterUnknownCode = $LASTEXITCODE
