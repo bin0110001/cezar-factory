@@ -292,9 +292,14 @@ Assert "workflows own scripts: no prompt or skill tells the model to run one ($(
 Assert 'release skills leave operational script execution to workflow command steps' ($factoryReleaseSkill -notmatch '(?i)(pwsh|powershell)\s+.*\.ps1|run `[^`]*\.ps1' -and $factoryFinishReleaseSkill -notmatch '(?i)(pwsh|powershell)\s+.*\.ps1|run `[^`]*\.ps1')
 $shipLoop = Join-Path $factory '.claude/ship/ship-loop.ps1'
 $iterDry = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow health -Task 'smoke' -DryRun 2>&1 | Out-String)
-Assert 'ship-loop Run resolves a workflow by file name to its cezar name' ($LASTEXITCODE -eq 0 -and $iterDry -match 'run smoke --workflow factory-health')
-$null = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow no-such-workflow -Task 'x' -DryRun 2>&1 | Out-String)
-Assert 'ship-loop Run rejects an unknown workflow with exit 2' ($LASTEXITCODE -eq 2)
+$iterDryCode = $LASTEXITCODE
+# Show the output when it fails: these assertions used to discard it, which hid a Linux-only failure.
+if ($iterDryCode -ne 0 -or $iterDry -notmatch 'run smoke --workflow factory-health') { Write-Host "ship-loop Run -DryRun exited ${iterDryCode}:`n$iterDry" }
+Assert 'ship-loop Run resolves a workflow by file name to its cezar name' ($iterDryCode -eq 0 -and $iterDry -match 'run smoke --workflow factory-health')
+$iterUnknown = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow no-such-workflow -Task 'x' -DryRun 2>&1 | Out-String)
+$iterUnknownCode = $LASTEXITCODE
+if ($iterUnknownCode -ne 2) { Write-Host "ship-loop Run (unknown workflow) exited ${iterUnknownCode}:`n$iterUnknown" }
+Assert 'ship-loop Run rejects an unknown workflow with exit 2' ($iterUnknownCode -eq 2)
 $trackedScratch = @(& git -C $factory ls-files -- .factory | Where-Object { $_ -notmatch '^\.factory/(release-reports/|obot-caddy-root\.crt$)' })
 Assert "no workflow scratch is tracked under .factory/ ($($trackedScratch -join ', '))" ($trackedScratch.Count -eq 0)
 Assert 'workflow-iterate skill documents the Run action'((Get-Content -Raw (Join-Path $factory '.claude/skills/workflow-iterate/SKILL.md')) -match 'ship-loop\.ps1 -Action Run')
