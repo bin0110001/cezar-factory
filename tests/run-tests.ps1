@@ -1413,7 +1413,7 @@ try {
         Assert 'source-only sync works without a project checkout' ($LASTEXITCODE -eq 0 -and -not (Select-String -Path $log -Pattern '^(POST|PUT|DELETE)' -Quiet))
         $remoteTargets = Join-Path $tmp 'remote-targets.json'
         @(@{ apiUrl = "http://127.0.0.1:$port"; projectId = 'remote-only' }) | ConvertTo-Json -Depth 4 | Set-Content $remoteTargets
-        $remotePush = & pwsh -NoProfile -File (Join-Path $factory 'scripts/push-factory-updates.ps1') -TargetsPath $remoteTargets -SyncAutomations -DryRun *>&1 | Out-String
+        $remotePush = & pwsh -NoProfile -File (Join-Path $factory 'scripts/push-factory-updates.ps1') -TargetsPath $remoteTargets -SyncAutomations -DryRun -ReportPath (Join-Path $tmp 'remote-push-release-status.jsonl') *>&1 | Out-String
         $remotePushCode = $LASTEXITCODE
         # Show why it failed: this assertion used to discard the output, which hid a Linux-only failure.
         if ($remotePushCode -ne 0) { Write-Host "push-factory-updates exited ${remotePushCode}:`n$remotePush" }
