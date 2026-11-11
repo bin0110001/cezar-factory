@@ -36,6 +36,11 @@
     "unresolvedQuestions": {
       "type": "string"
     },
+    "decisions": {
+      "type": "array",
+      "description": "Optional structured decision requests (schemas/decision.schema.json). Provide them whenever the result asks the user to decide something; keep unresolvedQuestions as the readable summary.",
+      "items": { "type": "object" }
+    },
     "complexity": {
       "type": "string",
       "enum": ["complexity:small", "complexity:medium", "complexity:large"]

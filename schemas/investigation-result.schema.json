@@ -27,6 +27,11 @@
     },
     "automaticRetryAppropriate": {
       "type": "boolean"
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Optional structured decision requests (schemas/decision.schema.json). Provide them whenever the result asks the user to decide something; keep unresolvedQuestions as the readable summary.",
+      "items": { "type": "object" }
     }
   },
   "required": [

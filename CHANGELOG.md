@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add a Decisions screen to Cezarium that lists a project's issues waiting on a user decision with the question, details, and suggested paths, and answers them in place (comment plus return to `factory:needs-plan`). Agents can now attach structured `decisions` to plan, intake, and investigation results (`schemas/decision.schema.json`); the router embeds them in the escalation comment, and older free-text escalations still appear as an open question.
 - Cut GitHub API usage in hourly maintenance: the delivery sync reads one open-issue listing instead of one `gh issue view` per referenced issue (closed issues cost nothing) and lists labels once instead of creating four every run, and the delivery sync, stale-workable refresh, and repository maintenance share a short-lived (default 120 s, `FACTORY_GH_CACHE_TTL_SECONDS`, 0 disables) on-disk cache of that listing that writers invalidate (`scripts/gh-cache.ps1`).
 - Classify GitHub's "API rate limit already exceeded" response as an operational failure so repair jobs skip model calls during API throttling.
 - Add a project-scoped reliability dashboard with evidence-backed first-pass and repair metrics, conservative failure classification, PR outcomes, trend views, and explicit missing-data coverage (#136).

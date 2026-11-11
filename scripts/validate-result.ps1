@@ -81,6 +81,35 @@ function Substantive-List($values) {
     return $true
 }
 
+# Optional structured decision requests (schemas/decision.schema.json). Absent is fine; present
+# must be well-formed so the Cezarium decisions screen can show every path and post an answer.
+function Test-Decisions($decisions) {
+    $idPattern = '^[a-z0-9][a-z0-9-]{0,39}$'
+    $items = @($decisions)
+    $seen = @()
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        $d = $items[$i]
+        if ($d -isnot [hashtable]) { $errors.Add("decisions[$i] must be an object"); continue }
+        if ([string]$d.id -notmatch $idPattern) { $errors.Add("decisions[$i].id must be a lowercase slug such as 'storage-owner'") }
+        elseif ($seen -contains $d.id) { $errors.Add("decisions[$i].id duplicates an earlier decision") }
+        else { $seen += $d.id }
+        if (Blank $d.question) { $errors.Add("decisions[$i].question is required") }
+        $options = @($d.options)
+        if ($d.options -isnot [array] -or $options.Count -lt 2) { $errors.Add("decisions[$i].options needs at least two suggested paths"); continue }
+        $optionIds = @()
+        for ($j = 0; $j -lt $options.Count; $j++) {
+            $o = $options[$j]
+            if ($o -isnot [hashtable]) { $errors.Add("decisions[$i].options[$j] must be an object"); continue }
+            if ([string]$o.id -notmatch $idPattern) { $errors.Add("decisions[$i].options[$j].id must be a lowercase slug such as 'keep-local'") }
+            elseif ($optionIds -contains $o.id) { $errors.Add("decisions[$i].options[$j].id duplicates an earlier option") }
+            else { $optionIds += $o.id }
+            if (Blank $o.label) { $errors.Add("decisions[$i].options[$j].label is required") }
+        }
+        if ($d.ContainsKey('recommendedOptionId') -and $optionIds -notcontains $d.recommendedOptionId) { $errors.Add("decisions[$i].recommendedOptionId does not match any option id") }
+    }
+}
+if (-not $errors.Count -and $result.ContainsKey('decisions') -and $Kind -in 'intake', 'plan', 'investigation') { Test-Decisions $result.decisions }
+
 if (-not $errors.Count) {
     switch ($Kind) {
         'intake' {

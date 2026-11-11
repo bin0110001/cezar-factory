@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DecisionRequest",
+  "description": "A structured request for a user decision (version 1). Agents put an array of these in the optional `decisions` field of an intake, plan or investigation result. The router embeds them in the escalation comment as a `factory-decision:v1` marker so Cezarium can show the question, its details and the suggested paths, and post the answer back. `unresolvedQuestions` stays the human-readable summary and the fallback for consumers that predate this format.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+      "description": "Stable slug, unique within the issue (for example `storage-owner`). Answers refer to it."
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The single focused question, one sentence."
+    },
+    "context": {
+      "type": "string",
+      "description": "Observed problem and relevant evidence (Markdown). Why the repository and issue could not settle it."
+    },
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,39}$" },
+          "label": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "description": "What choosing this path means." },
+          "tradeoffs": { "type": "string", "description": "What it costs or risks, and what it makes easier." }
+        },
+        "required": ["id", "label"]
+      }
+    },
+    "recommendedOptionId": {
+      "type": "string",
+      "description": "The option id the agent recommends. Must match an entry in `options`."
+    }
+  },
+  "required": ["id", "question", "options"]
+}

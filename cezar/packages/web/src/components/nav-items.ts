@@ -9,6 +9,7 @@ import {
   ZapIcon,
   TicketIcon,
   KanbanIcon,
+  ScaleIcon,
   WaypointsIcon,
 } from 'lucide-react'
 import type { ComponentType, SVGProps } from 'react'
@@ -51,6 +52,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Tasks', icon: ListChecksIcon, match: ['/', '/tasks', '/compare'], badge: 'tasks-unread' },
   { to: '/inbox', label: 'Inbox', icon: InboxIcon, match: ['/inbox'], badge: 'inbox-count', inbox: true },
+  { to: '/decisions', label: 'Decisions', icon: ScaleIcon, match: ['/decisions'] },
   { to: '/git', label: 'Git', icon: GitBranchIcon, match: ['/git'] },
   { to: '/github', label: 'GitHub', icon: GithubIcon, match: ['/github'], forge: true },
   { to: '/tracker', label: 'Tracker', icon: TicketIcon, match: ['/tracker'], tracker: true },

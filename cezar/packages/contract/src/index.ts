@@ -33,3 +33,4 @@ export * from './graphical-session.ts';
 export * from './worker-profile.ts';
 export * from './dependency-graph.ts';
 export * from './coding-run.ts';
+export * from './decisions.ts';

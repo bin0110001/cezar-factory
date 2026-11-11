@@ -157,6 +157,41 @@ function Text($v) { if ($v -is [array]) { ($v | ForEach-Object { "- $_" }) -join
 function New-Escalation([string]$Observed, [string]$Attempts, [string]$Evidence, [string]$Hypothesis, [string]$Decision) {
     "## Factory escalation`n`n**Observed problem**`n$Observed`n`n**Attempts made**`n$Attempts`n`n**Relevant logs/artifacts**`n$Evidence`n`n**Current hypothesis**`n$Hypothesis`n`n**Recommended next step / major architectural decision**`n$Decision"
 }
+# Structured decision requests (schemas/decision.schema.json). The comment is readable on GitHub and
+# carries a `factory-decision:v1` marker that the Cezarium decisions screen parses (see
+# cezar/packages/cezar/src/server/decisions/). `>` is escaped so the JSON can never close the comment.
+function New-DecisionComment($Result) {
+    $items = @($Result.decisions | Where-Object { $_ })
+    if (-not $items.Count) { return '' }
+    $clean = foreach ($d in $items) {
+        $o = [ordered]@{ id = [string]$d.id; question = [string]$d.question }
+        if ($d.context) { $o.context = [string]$d.context }
+        $o.options = @(foreach ($opt in @($d.options)) {
+            $p = [ordered]@{ id = [string]$opt.id; label = [string]$opt.label }
+            if ($opt.summary) { $p.summary = [string]$opt.summary }
+            if ($opt.tradeoffs) { $p.tradeoffs = [string]$opt.tradeoffs }
+            $p
+        })
+        if ($d.recommendedOptionId) { $o.recommendedOptionId = [string]$d.recommendedOptionId }
+        $o
+    }
+    $bs = [string][char]92
+    $json = ([ordered]@{ version = 1; decisions = @($clean) } | ConvertTo-Json -Depth 8 -Compress).Replace('>', "${bs}u003e").Replace('<', "${bs}u003c")
+    $text = foreach ($d in $clean) {
+        $lines = @("### $($d.question)")
+        if ($d.context) { $lines += '', $d.context }
+        $lines += '', '**Suggested paths**'
+        foreach ($opt in $d.options) {
+            $star = if ($opt.id -eq $d.recommendedOptionId) { ' *(recommended)*' } else { '' }
+            $line = "- **$($opt.label)**$star"
+            if ($opt.summary) { $line += " - $($opt.summary)" }
+            if ($opt.tradeoffs) { $line += " Trade-offs: $($opt.tradeoffs)" }
+            $lines += $line
+        }
+        $lines -join "`n"
+    }
+    "## Factory decision needed`n`n$($text -join "`n`n")`n`nAnswer in Cezarium (Decisions) or reply on this issue, then relabel factory:needs-plan.`n`n<!-- factory-decision:v1 $json -->"
+}
 function Done([string]$To, [string]$Note = '') {
     Write-Output (@{ status = 'ok'; event = $Event; issue = $Issue; state = $To; note = $Note } | ConvertTo-Json -Compress)
     exit 0
@@ -168,6 +203,7 @@ switch ($Event) {
         Set-Classification ([string]$result.type) ([string]$result.risk)
         Add-Comment "## Factory intake`n`n$(Text $result.summary)`n`n**Type:** $($result.type)`n**Risk:** $($result.risk)"
         if (-not [string]::IsNullOrWhiteSpace([string]$result.unresolvedQuestions)) {
+            $decisionComment = New-DecisionComment $result; if ($decisionComment) { Add-Comment $decisionComment }
             Add-Comment (New-Escalation (Text $result.unresolvedQuestions) 'Intake classification completed.' '(see intake result)' 'The issue cannot be safely planned without an answer.' 'Answer the questions, then relabel the issue factory:needs-plan.')
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'intake question'
         }
@@ -219,6 +255,8 @@ switch ($Event) {
             Done 'factory:done' "decomposed into $($subs.Count) queued sub-issues"
         }
         if ($result.readyNotReadyStatus -ne 'ready') {
+            $decisionComment = New-DecisionComment $result
+            if ($decisionComment) { $plan = $plan + "`n`n" + $decisionComment }
             Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'
         }
@@ -311,6 +349,7 @@ switch ($Event) {
         }
         Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`n$marker")
         if ($result.failureClassification -eq 'architecture') {
+            $decisionComment = New-DecisionComment $result; if ($decisionComment) { Add-Comment $decisionComment }
             Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
         }

@@ -127,6 +127,7 @@ source: skills/factory-plan/SKILL.md
 ### 11. Route the Issue
 
 - Set `readyNotReadyStatus` to `ready` when the plan meets the Definition of Ready. Use `not-ready` only when an unresolved major architectural decision materially changes compatibility, ownership, or the system contract; record that specific choice in `unresolvedQuestions`. Risk level alone never blocks implementation.
+- When you use `not-ready`, also put each decision in the optional `decisions` array (see `schemas/decision.schema.json`) so Cezarium can show it with its details and suggested paths. Each entry has a stable lowercase `id`, one focused `question`, `context` (observed problem and evidence), at least two `options` (`id`, `label`, `summary`, `tradeoffs`), and a `recommendedOptionId`. Keep `unresolvedQuestions` as the readable summary.
 - Do **not** edit `factory:*` labels. Write the structured result to `.factory/plan-result.json` (create the directory), including the issue number in `issue`. The workflow validates it and routes the issue state.
 - The workflow posts the plan and routes ready work to `factory:ready`. Risk level alone never holds a plan for user approval. Use `factory:needs-help` only for an unresolved major architectural decision. For `decomposed`, the workflow creates and queues sub-issues, posts their dependency order, and closes the parent as a tracking record.
 
@@ -150,8 +151,23 @@ Produce a structured plan result conforming to `plan.schema.json`:
 }
 ```
 
-Use `not-ready` with the blocking questions in `unresolvedQuestions` when
-the work cannot start. Use `decomposed` with schema-valid `subIssues` when the
+Use `not-ready` with the blocking questions in `unresolvedQuestions` (and the
+matching `decisions` entries) when the work cannot start. Example `decisions`:
+
+```json
+"decisions": [{
+  "id": "state-owner",
+  "question": "Where should run state live?",
+  "context": "Two stores exist and the issue does not say which is authoritative.",
+  "options": [
+    { "id": "registry", "label": "Shared registry", "summary": "One owner for all projects.", "tradeoffs": "Needs a migration." },
+    { "id": "local", "label": "Per-project file", "summary": "No migration." }
+  ],
+  "recommendedOptionId": "registry"
+}]
+```
+
+ Use `decomposed` with schema-valid `subIssues` when the
 workflow needs to create smaller issues. Omit `subIssues` for a ready plan.
 
 ## Already-resolved issues
