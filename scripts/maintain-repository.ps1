@@ -34,6 +34,8 @@ $workingCutoff =[DateTimeOffset]::UtcNow.AddHours(-24)
 $staleCutoff = [DateTimeOffset]::UtcNow.AddDays(-60)
 $summaryTitle = 'Factory maintenance: stale open issues'
 
+. (Join-Path $PSScriptRoot 'gh-cache.ps1')
+
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
     if ($Repo) { $all += @('--repo', $Repo) }
@@ -53,8 +55,11 @@ function Write-Result($Result) {
     $Result | ConvertTo-Json -Depth 8
 }
 
-$raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,updatedAt,labels,url')
-$issues = @($raw -join "`n" | ConvertFrom-Json)
+# Same listing (and field set) as sync-issue-delivery.ps1 and refresh-stale-workable.ps1, so one
+# maintenance run pays for it once. See gh-cache.ps1.
+$listArguments = @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,createdAt,updatedAt,labels,url')
+$raw = Get-GhCachedText "$GhCommand|$Repo|$($listArguments -join ' ')" { Invoke-Gh $listArguments }
+$issues = @($raw | ConvertFrom-Json)
 
 # Latest Cezar run status per issue, so failed runs can release `factory:working` without waiting 24 hours.
 $latestRunStatus = @{}
@@ -96,6 +101,8 @@ foreach ($issue in $issues) {
     }
 }
 
+if ($moved.Count -and -not $DryRun) { Clear-GhCache }
+
 $stale = @($issues | Where-Object {
     $labels = @(Get-Labels $_)
     [DateTimeOffset]::Parse([string]$_.updatedAt) -le $staleCutoff -and $labels -notcontains 'factory:done'
@@ -114,6 +121,7 @@ if ($stale.Count) {
     } else {
         $body = "## Stale open issues`n`n" + (($stale | ForEach-Object { "- #$($_.issue) — $($_.title) (last updated $($_.updatedAt))" }) -join "`n") + "`n`nGenerated deterministically by Factory maintenance. Triage or close each item."
         $created = Invoke-Gh @('issue', 'create', '--title', $summaryTitle, '--body', $body, '--label', 'factory:new', '--label', 'type:maintenance', '--label', 'risk:low')
+        Clear-GhCache
         $summary = [ordered]@{ action = 'created'; url = ($created -join "`n").Trim(); issueCount = $stale.Count }
     }
 }

@@ -39,6 +39,8 @@ $manualOrTerminalStates = @(
 )
 $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large')
 
+. (Join-Path $PSScriptRoot 'gh-cache.ps1')
+
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
     if ($Repo) { $all += @('--repo', $Repo) }
@@ -63,8 +65,11 @@ function Write-Result($Result) {
 }
 
 $cutoff = [DateTimeOffset]::UtcNow.AddHours(-$OlderThanHours)
-$raw = Invoke-Gh @('issue','list','--state','open','--limit','1000','--json','number,title,createdAt,labels,url')
-$issues = @($raw -join "`n" | ConvertFrom-Json)
+# Same listing (and field set) as sync-issue-delivery.ps1 and maintain-repository.ps1, so one
+# maintenance run pays for it once. See gh-cache.ps1.
+$listArguments = @('issue','list','--state','open','--limit','1000','--json','number,title,createdAt,updatedAt,labels,url')
+$raw = Get-GhCachedText "$GhCommand|$Repo|$($listArguments -join ' ')" { Invoke-Gh $listArguments }
+$issues = @($raw | ConvertFrom-Json)
 $candidates = @()
 $excluded = @()
 
@@ -112,6 +117,8 @@ foreach ($candidate in $selected) {
         $failures += [ordered]@{ issue = $candidate.issue; state = $candidate.state; error = $_.Exception.Message }
     }
 }
+
+if ($refreshed.Count -or $failures.Count) { Clear-GhCache }
 
 $result = [ordered]@{
     generatedAt = [DateTimeOffset]::UtcNow.ToString('o')

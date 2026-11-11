@@ -35,6 +35,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'gh-cache.ps1')
 
 $stateLabels = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:investigate', 'factory:implemented', 'factory:pr-open')
 $prePrStates = @('factory:new', 'factory:needs-plan', 'factory:ready', 'factory:working', 'factory:implemented')
@@ -59,7 +60,7 @@ function Set-IssueStateLabel([int]$Number, [string[]]$Labels, [string]$Desired) 
     $edit = @('issue', 'edit', [string]$Number)
     if ($Labels -notcontains $Desired) { $edit += @('--add-label', $Desired) }
     if ($remove.Count) { $edit += @('--remove-label', ($remove -join ',')) }
-    if ($edit.Count -gt 3) { Invoke-Gh $edit | Out-Null }
+    if ($edit.Count -gt 3) { Invoke-Gh $edit | Out-Null; $script:mutated = $true }
 }
 
 function Get-DeliveryMap($PullRequests) {
@@ -82,15 +83,49 @@ $open = @($open | Where-Object { -not $_.isDraft } | Sort-Object { [int]$_.numbe
 $mergedBy = Get-DeliveryMap $merged
 $openBy = Get-DeliveryMap $open
 
+$mutated = $false
+
 if (-not $DryRun -and ($mergedBy.Count -or $openBy.Count)) {
-    # gh refuses to add a label that does not exist; creating is idempotent with --force.
+    # gh refuses to add a label that does not exist. One listing finds which are missing, so a run
+    # with nothing to create makes one call instead of four; creating is idempotent with --force.
+    $existingLabels = $null
+    try { $existingLabels = @((Invoke-Gh @('label', 'list', '--limit', '200', '--json', 'name') | ConvertFrom-Json) | ForEach-Object { [string]$_.name }) } catch { Write-Warning "Could not list labels: $($_.Exception.Message)" }
     foreach ($label in @(
         @('factory:pr-open', '1d76db', 'Factory: PR open against dev, awaiting merge'),
         @('factory:done', '1d76db', 'Factory: complete'),
         @('factory:implemented', '1d76db', 'Factory: work complete on a pushed branch, no PR yet'),
         @('factory:interactive', '6f42c1', 'Factory: worked in a local dev window; automations and stale sweeps skip it'))) {
+        if ($null -ne $existingLabels -and $existingLabels -contains $label[0]) { continue }
         try { Invoke-Gh @('label', 'create', $label[0], '--color', $label[1], '--description', $label[2], '--force') | Out-Null } catch { Write-Warning "Could not ensure label $($label[0]): $($_.Exception.Message)" }
     }
+}
+
+# Every referenced issue used to cost one `gh issue view`, including the many already closed by an
+# earlier run. One open-issue listing (shared with the other maintenance scripts through
+# gh-cache.ps1) answers "is it still open, and with which labels" for all of them; only an open
+# issue that may have been closed by a merge needs its comments read. This script runs first and
+# mutates, so it always reads fresh. A listing that hit its limit may be missing open issues, so
+# then an absent issue is looked up directly.
+$openIssues = @{}
+$openListComplete = $false
+if ($mergedBy.Count -or $openBy.Count) {
+    try {
+        $listArguments = @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,createdAt,updatedAt,labels,url')
+        $openList = @((Get-GhCachedText "$GhCommand|$Repo|$($listArguments -join ' ')" { Invoke-Gh $listArguments } -Refresh) | ConvertFrom-Json | Where-Object { $_ })
+        foreach ($listed in $openList) { $openIssues[[string]$listed.number] = $listed }
+        $openListComplete = $openList.Count -lt 1000
+    } catch { Write-Warning "Could not list open issues; reading each referenced issue directly: $($_.Exception.Message)" }
+}
+
+function Get-OpenIssueLabels([int]$Number) {
+    # $null: the issue is closed (or unknown). Otherwise its label names.
+    $listed = $openIssues[[string]$Number]
+    # The comma keeps an empty label set an empty array instead of unrolling to $null ("closed").
+    if ($null -ne $listed) { return , @($listed.labels | ForEach-Object { [string]$_.name }) }
+    if ($openListComplete) { return $null }
+    $issue = Invoke-Gh @('issue', 'view', [string]$Number, '--json', 'state,labels') | ConvertFrom-Json
+    if ($issue.state -ne 'OPEN') { return $null }
+    , @($issue.labels | ForEach-Object { [string]$_.name })
 }
 
 $promoted = @(); $closed = @(); $skipped = @(); $errors = @()
@@ -99,9 +134,8 @@ foreach ($key in @($openBy.Keys)) {
     $n = [int]$key; $pr = $openBy[$key]
     if ($mergedBy.Contains($key)) { continue }
     try {
-        $issue = Invoke-Gh @('issue', 'view', [string]$n, '--json', 'state,labels') | ConvertFrom-Json
-        if ($issue.state -ne 'OPEN') { continue }
-        $labels = @($issue.labels | ForEach-Object { [string]$_.name })
+        $labels = Get-OpenIssueLabels $n
+        if ($null -eq $labels) { continue }
         if ($labels -contains 'factory:tracking') { $skipped += [ordered]@{ issue = $n; pr = [int]$pr.number; reason = 'tracking-issue' }; continue }
         $states = @($labels | Where-Object { $stateLabels -contains $_ })
         if ($states -contains 'factory:pr-open') { continue }
@@ -118,10 +152,13 @@ foreach ($key in @($openBy.Keys)) {
 foreach ($key in @($mergedBy.Keys)) {
     $n = [int]$key; $pr = $mergedBy[$key]
     try {
-        $issue = Invoke-Gh @('issue', 'view', [string]$n, '--json', 'state,labels,comments,title') | ConvertFrom-Json
-        $labels = @($issue.labels | ForEach-Object { [string]$_.name })
-        if ($issue.state -ne 'OPEN') { continue }
+        $labels = Get-OpenIssueLabels $n
+        if ($null -eq $labels) { continue }
         if ($labels -contains 'factory:tracking') { $skipped += [ordered]@{ issue = $n; pr = [int]$pr.number; reason = 'tracking-issue' }; continue }
+        # Only an open, non-tracking issue needs its comments (to honour a person's reopen).
+        $issue = Invoke-Gh @('issue', 'view', [string]$n, '--json', 'state,labels,comments,title') | ConvertFrom-Json
+        if ($issue.state -ne 'OPEN') { continue }
+        $labels = @($issue.labels | ForEach-Object { [string]$_.name })
         $marker = "<!-- factory-closed-by-merge:$n -->"
         if (@($issue.comments | Where-Object { ([string]$_.body).Contains($marker) }).Count) {
             $skipped += [ordered]@{ issue = $n; pr = [int]$pr.number; reason = 'reopened-after-factory-close' }; continue
@@ -132,6 +169,7 @@ foreach ($key in @($mergedBy.Keys)) {
         Set-IssueStateLabel $n $labels 'factory:done'
         $body = "$marker`nDelivered by $($pr.url), merged into ``$BaseBranch`` at $($pr.mergedAt). Closed automatically because GitHub only closes issues on merges to the default branch. Reopen this issue if the work is incomplete."
         Invoke-Gh @('issue', 'close', [string]$n, '--reason', 'completed', '--comment', $body) | Out-Null
+        $script:mutated = $true
         $closed += [ordered]@{ issue = $n; pr = [int]$pr.number }
     }
     catch {
@@ -139,6 +177,8 @@ foreach ($key in @($mergedBy.Keys)) {
         Write-Warning "Could not close issue #${n}: $($_.Exception.Message)"
     }
 }
+
+if ($mutated) { Clear-GhCache }
 
 $result = [ordered]@{
     status = if ($errors.Count) { 'partial' } else { 'ok' }

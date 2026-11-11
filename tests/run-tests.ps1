@@ -9,6 +9,9 @@ $scripts = Join-Path $factory 'scripts'
 # fails the unmanaged-route assertions. The managed behaviour is tested explicitly by setting the token itself.
 foreach ($identity in 'FACTORY_FENCING_TOKEN', 'FACTORY_MANAGED', 'FACTORY_OWNER_ID', 'FACTORY_RUN_ID', 'FACTORY_ISSUE', 'FACTORY_WORKSPACE') { Remove-Item "Env:$identity" -ErrorAction SilentlyContinue }
 . (Join-Path $scripts 'lib.ps1')
+# Hermetic: scripts cache read-only gh listings for a couple of minutes; scenarios that reuse one fake gh with changing
+# state must see every change. The cache itself is exercised explicitly below by setting the TTL.
+$env:FACTORY_GH_CACHE_TTL_SECONDS = '0'
 
 $script:fail = 0
 function Assert([string]$Name, [bool]$Cond) {
@@ -99,7 +102,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
 'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
-'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/audit-shadow-copies.ps1', 'schemas/shadow-audit-receipt.schema.json', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
+'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/audit-shadow-copies.ps1', 'schemas/shadow-audit-receipt.schema.json', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'scripts/gh-cache.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
@@ -692,6 +695,36 @@ try {
     $closeFail = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
     $closeFailResult = Get-Content -Raw $closeOut | ConvertFrom-Json
     Assert 'one failed close is reported without stopping the remaining issues' ($closeFail.Code -eq 0 -and $closeFailResult.status -eq 'partial' -and @($closeFailResult.errors).Count -eq 1 -and @($closeFailResult.closed.issue) -contains 12)
+    # Fewer gh calls: closed issues cost no `issue view`, and labels are listed once instead of created every run.
+    $callState = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
+    $callState.prs = @(@{ number = 30; url = 'https://example/pull/30'; title = 'Calls'; mergedAt = $recent; body = 'Closes #31, closes #32' })
+    $callState.openPrs = @(); $callState.failClose = @(); $callState.calls = @(); $callState.labelsEnsured = @()
+    $callState.existingLabels = @('factory:pr-open', 'factory:done', 'factory:implemented', 'factory:interactive')
+    $callState.issues = @{ '31' = @{ state = 'CLOSED'; labels = @(); comments = @() }; '32' = @{ state = 'OPEN'; labels = @(); comments = @() } }
+    $callState | ConvertTo-Json -Depth 8 | Set-Content $closeState
+    $callRun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
+    $callAfter = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
+    Assert 'delivery sync reads no closed issue and creates no label that already exists' ($callRun.Code -eq 0 -and -not (@($callAfter.calls) -match 'issue view 31 ') -and (@($callAfter.calls) -match 'issue view 32 ').Count -eq 1 -and @($callAfter.labelsEnsured).Count -eq 0 -and $callAfter.issues['32'].state -eq 'CLOSED' -and $callAfter.issues['32'].labels -contains 'factory:done')
+
+    # gh-cache: a fresh entry serves repeat reads, expiry and -Refresh refetch, and TTL 0 disables it.
+    . (Join-Path $scripts 'gh-cache.ps1')
+    $cacheDir = Join-Path $tmp 'gh-cache'; $env:FACTORY_GH_CACHE_DIR = $cacheDir
+    $script:cacheFetches = 0; $fetch = { $script:cacheFetches++; "payload-$script:cacheFetches" }
+    $env:FACTORY_GH_CACHE_TTL_SECONDS = '0'
+    $off1 = Get-GhCachedText 'k' $fetch; $off2 = Get-GhCachedText 'k' $fetch
+    Assert 'gh cache is disabled by TTL 0 and writes nothing' ($off1 -eq 'payload-1' -and $off2 -eq 'payload-2' -and -not (Test-Path $cacheDir))
+    $env:FACTORY_GH_CACHE_TTL_SECONDS = '60'; $script:cacheFetches = 0
+    $hit1 = Get-GhCachedText 'k' $fetch; $hit2 = Get-GhCachedText 'k' $fetch; $other = Get-GhCachedText 'other' $fetch
+    Assert 'gh cache serves a fresh entry per key without refetching' ($hit1 -eq 'payload-1' -and $hit2 -eq 'payload-1' -and $other -eq 'payload-2' -and $script:cacheFetches -eq 2)
+    $refreshed = Get-GhCachedText 'k' $fetch -Refresh; $afterRefresh = Get-GhCachedText 'k' $fetch
+    Assert 'gh cache -Refresh refetches and stores the new answer' ($refreshed -eq 'payload-3' -and $afterRefresh -eq 'payload-3')
+    (Get-ChildItem $cacheDir -Filter '*.json' | Select-Object -First 1).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-10)
+    (Get-ChildItem $cacheDir -Filter '*.json' | Select-Object -Last 1).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-10)
+    $expired = Get-GhCachedText 'k' $fetch
+    Assert 'gh cache refetches an expired entry' ($expired -eq 'payload-4')
+    Clear-GhCache
+    Assert 'Clear-GhCache drops every entry' (@(Get-ChildItem $cacheDir -Filter '*.json' -ErrorAction SilentlyContinue).Count -eq 0)
+    Remove-Item Env:FACTORY_GH_CACHE_DIR; $env:FACTORY_GH_CACHE_TTL_SECONDS = '0'
     Remove-Item Env:FAKE_CLOSE_STATE
 
     $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'
