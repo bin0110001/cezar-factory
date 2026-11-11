@@ -260,15 +260,20 @@ foreach ($number in $candidateByNumber.Keys) {
         throw "Preparation receipt for candidate $number has the wrong operation type."
     }
 }
-$changed = @($proposal.changed)
-$skipped = @($proposal.skipped)
+# Strict mode throws on absent properties; a proposal with no changes (or no skips) may omit the key.
+function Get-ProposalList($Object, [string]$Name) {
+    if ($null -eq $Object -or $Object -isnot [pscustomobject] -or -not $Object.PSObject.Properties[$Name]) { return @() }
+    return @($Object.$Name)
+}
+$changed = @(Get-ProposalList $proposal 'changed')
+$skipped = @(Get-ProposalList $proposal 'skipped')
 $outcomes = @($changed) + @($skipped)
 $proposalNumbers = @($outcomes | ForEach-Object { [int]$_.issue })
 if ($proposalNumbers.Count -ne $candidateByNumber.Count -or @($proposalNumbers | Sort-Object -Unique).Count -ne $candidateByNumber.Count) {
     throw 'Proposal must contain exactly one changed or skipped outcome for every candidate.'
 }
 if (@($proposalNumbers | Where-Object { -not $candidateByNumber.ContainsKey($_) }).Count) { throw 'Proposal includes an issue outside the bounded input.' }
-$consideredNumbers = @($proposal.considered | ForEach-Object { [int]$_ })
+$consideredNumbers = @(Get-ProposalList $proposal 'considered' | ForEach-Object { [int]$_ })
 if ($consideredNumbers.Count -ne $candidateByNumber.Count -or @($consideredNumbers | Sort-Object -Unique).Count -ne $candidateByNumber.Count -or
     (@($consideredNumbers | Sort-Object) -join ',') -ne (@($candidateByNumber.Keys | Sort-Object) -join ',')) {
     throw 'Proposal considered list must exactly match the bounded candidate numbers.'

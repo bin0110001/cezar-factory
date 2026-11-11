@@ -328,6 +328,51 @@ class FailureRepairTests(unittest.TestCase):
             with self.assertRaises(repair.RepairError):
                 repair.source_context(self.root, failure(), [dict(path=".env", startLine=1, endLine=20)])
 
+    def test_tracked_run_scratch_named_in_evidence_does_not_abort_context_collection(self):
+        (self.root / "AGENTS.md").write_text("Keep the contract\n")
+        evidence = "check failed .factory/backlog-label-audit.json and workflows/maintenance.yaml"
+        with patch.object(repair, "command", return_value="AGENTS.md\0.factory/backlog-label-audit.json\0"):
+            context = repair.source_context(self.root, dict(failure(evidence), workflow="factory-maintenance"))
+        self.assertNotIn(".factory/backlog-label-audit.json", context["fileCatalog"])
+        self.assertFalse(any(s["path"].startswith(".factory/") for s in context["sources"]))
+
+    def test_model_request_for_protected_scratch_is_dropped_not_fatal(self):
+        r = result()
+        r.update(status="unresolved", files=[], patch="", requestedFiles=[
+            dict(path=".factory/backlog-label-audit.json", startLine=1, endLine=100), dict(path="source.py", startLine=1, endLine=5)])
+        out = repair.validate_result(r, self.root, verify_changes=False)
+        self.assertEqual(["source.py"], [item["path"] for item in out["requestedFiles"]])
+
+    def test_debug_mode_uses_local_model_and_changes_nothing(self):
+        repo = self.root / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        repair.git(repo, "config", "user.name", "Factory Test")
+        repair.git(repo, "config", "user.email", "test@example.invalid")
+        (repo / "source.py").write_text("before\n")
+        repair.git(repo, "add", "source.py")
+        repair.git(repo, "commit", "-qm", "baseline")
+        artifact = self.root / "artifact"
+        artifact.mkdir()
+        def fake_turn(prompt, path, timeout):
+            path.write_text(json.dumps(result()))
+        with patch.dict(os.environ, {"FACTORY_JOB_DEBUG": "1"}), \
+             patch.object(repair, "local_model_turn", side_effect=fake_turn) as turn, \
+             patch.object(repair, "source_context", return_value={}), \
+             patch.object(repair, "command", side_effect=lambda argv, *a, **k: repair.subprocess.run(argv, cwd=a[0], input=k.get("stdin"), text=True, capture_output=True, check=True).stdout.strip()):
+            outcome = repair.repair(repo, failure(), self.setting, self.history, "p", artifact)
+        self.assertEqual(1, turn.call_count)
+        self.assertEqual("debug-repaired", outcome["status"])
+        self.assertTrue(outcome["patchApplies"])
+        self.assertEqual(0, outcome["modelCalls"])  # no hosted calls
+        self.assertEqual("before\n", (repo / "source.py").read_text())  # dry check only
+        self.assertEqual(0, self.history.db.execute("SELECT COUNT(*) FROM failures").fetchone()[0])  # no budget reserved
+
+    def test_debug_mode_flag_parsing(self):
+        for value, expected in (("1", True), ("true", True), ("ON", True), ("", False), ("0", False)):
+            with patch.dict(os.environ, {"FACTORY_JOB_DEBUG": value}):
+                self.assertEqual(expected, repair.debug_mode())
+
     def test_subprocess_warnings_do_not_corrupt_machine_readable_stdout(self):
         output = repair.command([sys.executable, "-c", "import sys; print('value'); sys.stderr.write('warning')"], self.root)
         self.assertEqual("value", output)
