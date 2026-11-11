@@ -1,44 +1,89 @@
 {
-  "generatedAt": "2026-11-06T13:00:33.2451067+00:00",
-  "cutoff": "2026-11-05T13:00:25.2150853+00:00",
+  "generatedAt": "2026-11-11T16:00:58.7271429+00:00",
+  "cutoff": "2026-11-10T16:00:49.4330484+00:00",
   "olderThanHours": 24,
   "limit": 2,
   "dryRun": false,
-  "considered": 98,
-  "eligible": 56,
+  "considered": 86,
+  "eligible": 34,
   "refreshed": [
     {
-      "issue": 55,
-      "title": "Add optional Hindsight incident memory and historical repair recall",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/55",
-      "state": "factory:needs-plan",
-      "createdAt": "10/23/2026 14:03:29",
-      "ageHours": 334.9,
+      "issue": 137,
+      "title": "Model evaluation: historical coding-run dataset, routing outcomes and cost per accepted change",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/137",
+      "state": "factory:ready",
+      "createdAt": "10/29/2026 14:48:12",
+      "ageHours": 313.2,
       "labels": [
+        "type:maintenance",
         "risk:medium",
-        "factory:needs-plan",
-        "type:feature",
+        "factory:ready",
         "complexity:medium"
       ],
       "action": "refreshed"
     },
     {
-      "issue": 66,
-      "title": "Replace GitHub Actions CI with local validation and automatic dev releases",
-      "url": "https://github.com/bin0110001/cezar-factory/issues/66",
-      "state": "factory:investigate",
-      "createdAt": "10/23/2026 20:58:12",
-      "ageHours": 328.0,
+      "issue": 164,
+      "title": "Epic: Obot MCP gateway, sandbox GitHub authentication, and project-scoped skills",
+      "url": "https://github.com/bin0110001/cezar-factory/issues/164",
+      "state": "factory:ready",
+      "createdAt": "10/31/2026 15:00:59",
+      "ageHours": 265.0,
       "labels": [
-        "type:maintenance",
         "risk:medium",
-        "factory:investigate",
+        "factory:ready",
+        "type:refactor",
         "complexity:small"
       ],
       "action": "refreshed"
     }
   ],
   "excluded": [
+    {
+      "issue": 378,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 377,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 375,
+      "state": "factory:needs-help",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 372,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 364,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 351,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 320,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 306,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
+      "issue": 304,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
     {
       "issue": 228,
       "state": "factory:working",
@@ -71,37 +116,37 @@
     },
     {
       "issue": 133,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 132,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 131,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
-      "issue": 127,
-      "state": "factory:needs-plan",
-      "reason": "audit-or-tracking-marker"
-    },
-    {
-      "issue": 126,
-      "state": "factory:needs-plan",
-      "reason": "audit-or-tracking-marker"
+      "issue": 129,
+      "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
     },
     {
       "issue": 125,
-      "state": "factory:needs-plan",
-      "reason": "audit-or-tracking-marker"
+      "state": null,
+      "reason": "no-single-lifecycle-state"
     },
     {
       "issue": 116,
       "state": "factory:blocked",
+      "reason": "manual-or-terminal-state"
+    },
+    {
+      "issue": 115,
+      "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
     },
     {
@@ -115,13 +160,18 @@
       "reason": "manual-or-terminal-state"
     },
     {
+      "issue": 102,
+      "state": null,
+      "reason": "no-single-lifecycle-state"
+    },
+    {
       "issue": 100,
       "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
     },
     {
       "issue": 93,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
@@ -146,12 +196,12 @@
     },
     {
       "issue": 72,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
       "issue": 71,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
@@ -165,12 +215,12 @@
       "reason": "manual-or-terminal-state"
     },
     {
-      "issue": 65,
-      "state": "factory:blocked",
+      "issue": 66,
+      "state": "factory:needs-help",
       "reason": "manual-or-terminal-state"
     },
     {
-      "issue": 64,
+      "issue": 65,
       "state": "factory:blocked",
       "reason": "manual-or-terminal-state"
     },
@@ -186,7 +236,7 @@
     },
     {
       "issue": 51,
-      "state": "factory:needs-plan",
+      "state": "factory:ready",
       "reason": "audit-or-tracking-marker"
     },
     {
