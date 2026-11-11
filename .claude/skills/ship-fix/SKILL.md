@@ -13,6 +13,9 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
 
 ## Loop
 
+0. **Promotion health.** Run `pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Health` first. Exit 4 /
+   `SHIP_HEALTH_WARN` means candidates keep failing on the host, so a merge will not deploy: say so to the user,
+   and diagnose with `-Action Validate` (below) instead of merging more work on top.
 1. **Context.** Follow `factory-workspace`: confirm `FACTORY_MANAGED` is absent, inspect the branch and
    worktree, preserve unrelated changes (e.g. `.factory/release-reports/`). Identify the issue number and
    the Factory workflow/automation whose failure the issue describes (the issue body or failure-audit
@@ -23,7 +26,10 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
 3. **PR.** Open (or reuse) a PR into the configured base branch with `Closes #N`, add a structured
    self-review (scope, risk, invariants, validation evidence, unresolved findings), and set the issue label to
    `factory:implemented`/`factory:pr-open` per `AGENTS.md`. Run `gh` outside the sandbox.
-4. **Merge and deploy.** For a fix to broken code, merge the PR yourself (`gh pr merge <n> --squash`; never
+4. **Validate on Linux, then merge and deploy.** The suite passes on Windows and can still fail in the Linux
+   promotion container. Before merging, run `pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate`
+   (the PR head must be pushed); it runs the host's own full suite and prints `VALIDATE_FAIL` lines. Do not
+   merge on `VALIDATE_FAILED`: fix it, push, and validate again. For a fix to broken code, merge the PR yourself (`gh pr merge <n> --squash`; never
    `--auto`, GitHub rejects it here): first confirm the PR head is your pushed, validated commit and the PR is
    `MERGEABLE`/`CLEAN`, then after merging confirm the fix is on `origin/dev` (grep for the changed line). Never
    wait on or poll GitHub Actions/status checks: there is no hosted CI, and local test results are the validation.

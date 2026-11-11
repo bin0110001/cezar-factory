@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import json
 import os
@@ -93,6 +94,57 @@ class LocalPromotionSchedulerTests(unittest.TestCase):
         self.assertEqual(self.activations, [])
         self.assertEqual(self.scheduler.run_once()["status"], "unchanged")
         self.assertEqual(self.activations, [])
+
+    def test_failed_check_records_the_failing_lines_and_the_tail_of_a_long_log(self) -> None:
+        script = ("import sys\n"
+                  "print('  ok   fine')\n"
+                  "print('x' * 200000)\n"  # pushes the failure past the preview limit
+                  "print('  FAIL release supports remote-only target registry entries')\n"
+                  "print('FAILED: 1 assertion(s)')\n"
+                  "sys.exit(1)\n")
+        self._config([{"id": "suite", "when": ["**"], "command": [sys.executable, "-c", script], "required": True, "timeoutSeconds": 60}])
+        self.scheduler = LocalPromotionScheduler(self.repo, self.store, self.config, branch="dev")
+        self.scheduler._verify_reviewed_merge = lambda _sha: None
+        self.scheduler.coordinator.activate = lambda sha: self._activate(sha)
+        with self.assertRaisesRegex(SchedulerError, "required check suite failed with exit code 1: .*FAIL release supports remote-only"):
+            self.scheduler.run_once()
+        with self.scheduler._db() as db:
+            row = db.execute("SELECT record_path FROM promotions WHERE sha=?", (self.sha,)).fetchone()
+        check = json.loads(pathlib.Path(row["record_path"]).read_text(encoding="utf-8"))["checks"][0]
+        self.assertIn("FAIL release supports remote-only target registry entries", check["failureLines"])
+        self.assertTrue(check["outputTruncated"])
+        self.assertIn("FAILED: 1 assertion(s)", check["outputPreview"])  # the tail survives the cut
+
+    def _promotion(self, sha: str, status: str, finished: str, reason: str | None = None) -> None:
+        with self.scheduler._db() as db:
+            db.execute("INSERT OR REPLACE INTO promotions (sha,status,started_at,finished_at,reason) VALUES (?,?,?,?,?)", (sha, status, finished, finished, reason))
+
+    def test_health_reports_ok_degraded_and_stalled_from_the_promotion_history(self) -> None:
+        self.assertEqual("ok", self.scheduler.health()["state"])  # nothing recorded, nothing failing
+        def ago(hours: int) -> str:
+            moment = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+            return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        recent, later = ago(2), ago(1)
+        self._promotion("a" * 40, "healthy", recent)
+        health = self.scheduler.health()
+        self.assertEqual(("ok", 0, "a" * 40), (health["state"], health["failedSinceHealthy"], health["lastHealthySha"]))
+        self._promotion("b" * 40, "failed", later, "required check full-suite failed with exit code 1: FAIL x")
+        health = self.scheduler.health()
+        self.assertEqual(("degraded", 1), (health["state"], health["failedSinceHealthy"]))
+        self.assertIn("FAIL x", health["lastFailure"]["reason"])
+        self._promotion("c" * 40, "failed", later)
+        self._promotion("d" * 40, "failed", later)
+        self.assertEqual(("stalled", 3), (self.scheduler.health()["state"], self.scheduler.health()["failedSinceHealthy"]))
+
+    def test_health_is_stalled_when_nothing_has_ever_been_healthy_and_candidates_fail(self) -> None:
+        self._promotion("e" * 40, "failed", "2026-11-09T00:00:00.000Z", "boom")
+        health = self.scheduler.health()
+        self.assertEqual(("stalled", None), (health["state"], health["lastHealthySha"]))
+
+    def test_passing_check_has_no_failure_lines(self) -> None:
+        result = self.scheduler.run_once()
+        record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
+        self.assertEqual([], record["checks"][0]["failureLines"])
 
     def test_scheduler_rejects_parallel_configuration(self) -> None:
         self._config([{"id": "one", "when": ["**"], "command": [sys.executable, "-c", "pass"]}])

@@ -95,6 +95,7 @@ to other projects, or required canaries per risk class, extend the same file.
 
 ```bash
 python3 scripts/release/factory_local_scheduler.py status [--sha <sha>]   # state of a candidate and the breaker
+python3 scripts/release/factory_local_scheduler.py health                 # is promotion landing? ok | degraded | stalled
 python3 scripts/release/factory_local_scheduler.py drift                  # disagreement report
 python3 scripts/release/factory_local_scheduler.py approve --sha <sha>    # controlled mode only
 python3 scripts/release/factory_local_scheduler.py reset-breaker
@@ -106,6 +107,22 @@ All commands take the same `--repo`, `--store`, `--config`, and `--registry` as 
 defaults match the host layout. `--store` is the scheduler state root (`~/.local/share/cezar-factory`); the
 release store the controller uses is `<store>/release-store`, so never pass the release store itself. Install the units with the commands in
 `docs/factory-release-controller.md`.
+
+## Knowing it is failing
+
+A host that fails every candidate looks "up" to every other check, so three things make failure visible:
+
+- **The record says what failed.** A failed check keeps the head and the tail of its output (a suite prints its
+  failures at the end), and `failureLines` lists the `FAIL`/`FAILED`/error lines. The failure reason, and so the
+  `[promotion]` issue, carries the first few instead of only "exit code 1".
+- **`health`** reports the last healthy promotion, its age, the failures since, and a state: `degraded` is any
+  failure since the last healthy candidate, `stalled` is three or more (the breaker's threshold) or none healthy
+  for a day while candidates fail. `ship-loop.ps1 -Action Health` prints it and exits 4 when stalled; the
+  `ship-fix` skill runs it first.
+- **Linux before merge.** The suite passes on Windows and can fail in the Linux promotion container (14 candidates
+  failed for days on Linux-only problems). `ship-loop.ps1 -Action Validate` runs the host's own
+  `validate-in-container.sh` for a pushed commit in a throwaway worktree, prints the failing lines, and changes no
+  release state. `ship-fix` runs it before merging.
 
 ## Limits
 
