@@ -1413,8 +1413,11 @@ try {
         Assert 'source-only sync works without a project checkout' ($LASTEXITCODE -eq 0 -and -not (Select-String -Path $log -Pattern '^(POST|PUT|DELETE)' -Quiet))
         $remoteTargets = Join-Path $tmp 'remote-targets.json'
         @(@{ apiUrl = "http://127.0.0.1:$port"; projectId = 'remote-only' }) | ConvertTo-Json -Depth 4 | Set-Content $remoteTargets
-        & pwsh -NoProfile -File (Join-Path $factory 'scripts/push-factory-updates.ps1') -TargetsPath $remoteTargets -SyncAutomations -DryRun *>&1 | Out-Null
-        Assert 'release supports remote-only target registry entries' ($LASTEXITCODE -eq 0)
+        $remotePush = & pwsh -NoProfile -File (Join-Path $factory 'scripts/push-factory-updates.ps1') -TargetsPath $remoteTargets -SyncAutomations -DryRun -ReportPath (Join-Path $tmp 'remote-push-release-status.jsonl') *>&1 | Out-String
+        $remotePushCode = $LASTEXITCODE
+        # Show why it failed: this assertion used to discard the output, which hid a Linux-only failure.
+        if ($remotePushCode -ne 0) { Write-Host "push-factory-updates exited ${remotePushCode}:`n$remotePush" }
+        Assert 'release supports remote-only target registry entries' ($remotePushCode -eq 0)
     }
     finally { if ($srv -and -not $srv.HasExited) { $srv.Kill() } }
 
@@ -1651,14 +1654,27 @@ New-Item -ItemType Directory -Path (Join-Path $auditCleanProject '.ai/factory') 
 & git -C $auditCleanProject commit -q -m 'Fixture base'
 & git -C $auditCleanProject remote add origin $migrationOrigin
 & git -C $auditCleanProject push -q -u origin dev
-$fakeGh = Join-Path $auditRoot 'fake-gh.cmd'
-$fakeGhBody = @(
-    '@echo off',
-    'if %FAKE_GH_FAIL%==1 (echo simulated failure& exit /b 1)',
-    'if %1==pr if %2==create (echo https://github.com/example/project/pull/1& exit /b 0)',
-    'exit /b 2'
-) -join "`r`n"
-[IO.File]::WriteAllText($fakeGh, $fakeGhBody, [Text.Encoding]::ASCII)
+if ($IsWindows) {
+    $fakeGh = Join-Path $auditRoot 'fake-gh.cmd'
+    $fakeGhBody = @(
+        '@echo off',
+        'if %FAKE_GH_FAIL%==1 (echo simulated failure& exit /b 1)',
+        'if %1==pr if %2==create (echo https://github.com/example/project/pull/1& exit /b 0)',
+        'exit /b 2'
+    ) -join "`r`n"
+    [IO.File]::WriteAllText($fakeGh, $fakeGhBody, [Text.Encoding]::ASCII)
+} else {
+    # The Linux promotion container runs this suite too; a .cmd file cannot execute there.
+    $fakeGh = Join-Path $auditRoot 'fake-gh.sh'
+    $fakeGhBody = @(
+        '#!/bin/sh',
+        'if [ "$FAKE_GH_FAIL" = "1" ]; then echo "simulated failure"; exit 1; fi',
+        'if [ "$1" = "pr" ] && [ "$2" = "create" ]; then echo https://github.com/example/project/pull/1; exit 0; fi',
+        'exit 2'
+    ) -join "`n"
+    [IO.File]::WriteAllText($fakeGh, $fakeGhBody + "`n", [Text.UTF8Encoding]::new($false))
+    & chmod +x $fakeGh
+}
 $env:FAKE_GH_FAIL = '0'
 $migrationPrRun = Run 'migrate-to-shared.ps1' @{ ProjectPath = $auditCleanProject; ProjectId = 'clean'; AuditReceiptPath = $auditClean.ReceiptPath; FactoryPath = $factory; ReviewArtifactRoot = $migrationReviewRoot; GhCommand = $fakeGh; CreatePullRequest = $true }
 $migrationPr = $migrationPrRun.Out | ConvertFrom-Json

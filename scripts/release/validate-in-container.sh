@@ -37,6 +37,11 @@ if ! git -C "$root" cat-file -e "$sha^{commit}" 2>/dev/null; then
 fi
 git -C "$root" worktree add -q --detach "$work" "$sha"
 cd "$work"
+# A fresh detached worktree has no node_modules, but the suite runs TypeScript helpers through tsx (for example the
+# verification-manifest adapter behind scripts/collect-impact.ps1). Install only the cezar package's dependencies.
+echo "validate-in-container: installing cezar dependencies at ${sha:0:9}"
+# The container user's default ~/.npm is not writable, so keep a cache beside the other promotion state.
+(cd cezar && npm ci --ignore-scripts --no-audit --no-fund --cache "$base/.npm-cache" --workspace packages/cezar --include-workspace-root)
 echo "validate-in-container: running tests/run-tests.ps1 at ${sha:0:9}"
 pwsh -NoProfile -File tests/run-tests.ps1
 IN_CONTAINER
