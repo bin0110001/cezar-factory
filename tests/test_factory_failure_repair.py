@@ -56,7 +56,8 @@ class FailureRepairTests(unittest.TestCase):
             repair.latest_failure([dict(id="r", status="failed", finishedAt="yesterday")])
 
     def test_narrow_operational_signatures_and_defect_precedence(self):
-        for text in ("ECONNRESET", "HTTP 503 service unavailable", "status code: 429", "temporary failure in name resolution"):
+        for text in ("ECONNRESET", "HTTP 503 service unavailable", "status code: 429", "temporary failure in name resolution",
+                     "GraphQL: API rate limit already exceeded for user ID 50143937."):
             self.assertEqual("operational", repair.classify(text, self.rules)["classification"])
         for text in ("check timed out", "assertion failed: expected ECONNRESET", "SyntaxError at test.ts:503", "exit code 1"):
             self.assertEqual("unknown", repair.classify(text, self.rules)["classification"])
@@ -99,6 +100,13 @@ class FailureRepairTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual("skipped", receipt["status"])
         self.assertEqual("network-transport", receipt["rule"])
+        self.assertEqual(0, receipt["modelCalls"])
+
+    def test_github_api_rate_limit_skips_repair_without_configuration_or_model(self):
+        code, receipt = self.run_main(failure("GraphQL: API rate limit already exceeded for user ID 50143937."))
+        self.assertEqual(0, code)
+        self.assertEqual("skipped", receipt["status"])
+        self.assertEqual("provider-unavailable", receipt["rule"])
         self.assertEqual(0, receipt["modelCalls"])
 
     def test_handoff_narrative_cannot_trigger_operational_skip(self):
