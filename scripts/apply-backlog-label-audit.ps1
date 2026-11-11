@@ -231,6 +231,12 @@ if ($Prepare) {
 }
 
 $proposal = Read-JsonFile $ProposalPath
+# Fail with a precise contract message before any strict-mode property read: the proposal is model output.
+$proposalSchema = Join-Path $PSScriptRoot '../schemas/backlog-label-audit-proposal.schema.json'
+$schemaErrors = @()
+if (-not (Test-Json -Json (Get-Content -Raw -LiteralPath ([IO.Path]::GetFullPath($ProposalPath))) -SchemaFile $proposalSchema -ErrorAction SilentlyContinue -ErrorVariable schemaErrors)) {
+    throw "Backlog audit proposal violates schemas/backlog-label-audit-proposal.schema.json: $((@($schemaErrors | ForEach-Object { $_.Exception.Message }) -join '; '))"
+}
 $preparation = Read-JsonFile $PreparationPath
 if ($preparation.status -ne 'prepared' -or $preparation.operationKey -ne "backlog-label-audit:prepare:$batchKey") {
     throw 'Backlog audit preparation receipt is missing, stale, or for a different candidate batch.'

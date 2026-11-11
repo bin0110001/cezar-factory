@@ -651,9 +651,31 @@ def deploy_locked(root: pathlib.Path, setting: dict, history: History, project: 
     return {"status": "reconciled", "modelCalls": 0, "outcomes": outcomes}
 
 
+def probe(root: pathlib.Path, args) -> dict:
+    """Model-free, side-effect-free rehearsal of `run`: select, classify, validate settings, assemble the model context.
+
+    This is the promotion canary: it exercises every code path that precedes the model call (the part a bad release
+    breaks) without a model, a history database, git changes or publication, so it cannot be blocked by GPU health.
+    """
+    failure = load_failure(args.api_url, args.project, os.environ.get("CEZ_TASK_ID", ""))
+    if failure is None:
+        return {"status": "skipped", "reason": "no-failed-run"}
+    rules = json.loads((FACTORY / "config/known-failures.json").read_text(encoding="utf-8"))["rules"]
+    verdict = classify(failure.get("diagnostics", failure["evidence"]), rules)
+    # Host-local target configuration is allowed to be absent (a Dev host); a present one must validate.
+    configured = args.config.is_file() and args.registry.is_file()
+    if configured:
+        project_settings(json.loads(args.config.read_text(encoding="utf-8")), json.loads(args.registry.read_text(encoding="utf-8")), args.project)
+    context = source_context(root, failure)
+    skill = (FACTORY / "skills/factory-repair-latest-failure/SKILL.md").read_text(encoding="utf-8")
+    json.loads((FACTORY / "schemas/failure-repair-result.schema.json").read_text(encoding="utf-8"))
+    return {"status": "probe-ok", "runId": failure["runId"], "classification": verdict["classification"], "fingerprint": failure["fingerprint"],
+            "configuration": "valid" if configured else "absent", "sourceFiles": len(context["sources"]), "skillBytes": len(skill)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("run", "inspect", "deploy"))
+    parser.add_argument("phase", choices=("run", "inspect", "deploy", "probe"))
     parser.add_argument("--api-url", default=os.environ.get("CEZ_API_URL", os.environ.get("CEZAR_API_URL", "")))
     parser.add_argument("--project", default=os.environ.get("CEZ_PROJECT_ID", os.environ.get("CEZAR_PROJECT_ID", "")))
     source_root = pathlib.Path(os.environ.get("FACTORY_RUNTIME_SOURCE_ROOT", str(FACTORY)))
@@ -668,6 +690,9 @@ def main(argv=None) -> int:
     try:
         if not args.project or not re.fullmatch(r"[\w.-]+", args.project):
             raise RepairError("Explicit Cezar project ID is required")
+        if args.phase == "probe":
+            receipt.update(probe(root, args))
+            return 0
         common = pathlib.Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
         # Debug runs keep their own scratch history so they never consume or mask a real attempt budget.
         scratch = artifact / "debug-history.sqlite"

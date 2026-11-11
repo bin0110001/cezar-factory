@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BacklogLabelAuditProposalV1",
+  "description": "The agent-written proposal consumed by scripts/apply-backlog-label-audit.ps1. Checked before any other read so a missing key fails with a clear message instead of a strict-mode property error.",
+  "type": "object",
+  "properties": {
+    "considered": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+    "changed": { "type": "array", "items": { "$ref": "#/definitions/outcome" } },
+    "skipped": { "type": "array", "items": { "$ref": "#/definitions/outcome" } }
+  },
+  "required": ["considered"],
+  "definitions": {
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "issue": { "type": "integer", "minimum": 1 },
+        "added": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "required": ["issue", "added", "reason"]
+    }
+  }
+}

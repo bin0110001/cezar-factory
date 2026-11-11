@@ -30,6 +30,12 @@
           "timeoutSeconds": 900
         },
         {
+          "id": "repair-probe",
+          "automation": "[factory] repair probe",
+          "when": ["scripts/**", "schemas/**", "config/**", "skills/**", "workflows/**", "automations/**"],
+          "timeoutSeconds": 600
+        },
+        {
           "id": "maintenance",
           "automation": "[factory] maintenance",
           "when": ["scripts/**", "workflows/**", "automations/**", "skills/**", "policies/**", "routing/**", "cezar/**", "config/**", "VERSION"],

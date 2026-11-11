@@ -109,7 +109,7 @@ release store the controller uses is `<store>/release-store`, so never pass the 
 
 ## Limits
 
-- Canaries prove the release loads, schedules, and runs `health` and `maintenance`. They do not run an
+- Canaries prove the release loads, schedules, and runs `health`, `repair-probe` (a model-free rehearsal of the repair controller) and `maintenance`. They do not run an
   implement or review workflow: those are driven by GitHub issue and PR events, so a faithful canary needs a
   dedicated fixture issue and a sandbox repository, otherwise every promotion would create real labels and PRs.
   The implement stage's own code paths (startup preflight, changed-file selection, result validation) are

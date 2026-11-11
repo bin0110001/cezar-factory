@@ -1,0 +1,11 @@
+name: factory-repair-probe
+description: Model-free rehearsal of the repair controller (select the latest failure, classify, validate settings, assemble the model context). Spends no tokens and changes nothing; it is the promotion canary for the repair path.
+steps:
+  - id: startup
+    name: Check the repair controller runtime
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-repair-probe -Step probe -RequiredScripts repair-latest-failure.py
+    timeoutSeconds: 60
+  - id: probe
+    name: Rehearse the repair controller without a model
+    command: python3 $FACTORY_RUNTIME_ROOT/scripts/repair-latest-failure.py probe
+    timeoutSeconds: 300

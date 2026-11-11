@@ -53,3 +53,16 @@ connections/**/*
 .factory/review-result.json
 .factory/plan-result.json
 .factory/investigation-result.json
+
+# More workflow scratch (written by command steps, committed by accident via `git add -A` in the past).
+# Only .factory/release-reports/ and .factory/obot-caddy-root.crt are intentionally tracked.
+.factory/audit-reservation-recovery.json
+.factory/backlog-label-audit*.json
+.factory/execution.json
+.factory/intake-issue.json
+.factory/intake-result.json
+.factory/repository-maintenance.json
+.factory/stale-workable-refresh.json
+.factory/startup/
+.factory/sync-issue-delivery.json
+.factory/repair-latest-failure/

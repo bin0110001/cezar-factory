@@ -1,0 +1,18 @@
+{
+  "name": "[factory] repair probe",
+  "description": "Model-free rehearsal of the repair controller; the promotion canary for the repair path. Spends no tokens and changes nothing (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "schedule",
+  "schedule": {
+    "type": "daily",
+    "hour": 2,
+    "minute": 30
+  },
+  "task": {
+    "prompt": "Run the model-free repair probe for {{project}}. The workflow command does all the work; do not inspect, select, or create issues or tasks yourself.",
+    "workflow": "factory-repair-probe",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
+    "worktree": true,
+    "autonomous": true
+  }
+}
