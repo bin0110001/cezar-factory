@@ -12,7 +12,8 @@ Actions:
   Run     Run one Factory workflow headless from THIS checkout (-Workflow, -Task) with the repo's built
           cezar CLI, so an agent can edit the workflow and run it again without deploying. Each call
           restarts from the first step and is budgeted by maxRunAttempts. Prints ITER_* lines.
-          Exit 0 workflow done, 5 workflow failed, 3 budget spent.
+          Exit 0 workflow done, 5 workflow failed, 3 budget spent. -JobDebug sets FACTORY_JOB_DEBUG=1 so
+          scripts send model calls to the local model and skip push/PR/budget side effects.
 Settings come from .claude/ship/ship-loop.json (add a project entry to extend); Cezar API location
 comes from the host-local config/factory-projects.json (matching factoryProjectId) or CEZ_API_URL.
 Attempt history lives in .factory/ship-loop/<project>-<issue>.json.
@@ -33,7 +34,8 @@ param(
     [switch]$Wait,
     [int]$PollSeconds = 20,
     [string]$Sha = '',
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$JobDebug
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
@@ -223,6 +225,8 @@ switch ($Action) {
         $env:CEZ_SHARED_WORKFLOWS_DIRS = Join-Path $root 'workflows'
         $env:CEZ_SHARED_SKILL_DIRS = Join-Path $root 'skills'
         Remove-Item Env:CEZ_FACTORY_RELEASE_STORE -ErrorAction SilentlyContinue
+        # Job debug mode: command steps that call a model use the local endpoint and publish nothing.
+        if ($JobDebug) { $env:FACTORY_JOB_DEBUG = '1'; Write-Host 'ITER_DEBUG local-model job debug mode on (FACTORY_JOB_DEBUG=1)' }
         $logDir = Join-Path $root '.factory/ship-loop/logs'
         New-Item -ItemType Directory -Force $logDir | Out-Null
         $log = Join-Path $logDir ("$key-$($used + 1)-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')

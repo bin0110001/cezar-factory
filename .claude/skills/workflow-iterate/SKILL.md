@@ -20,6 +20,17 @@ pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Run -Workflow <name> -T
 - `-Target` runs it against another project checkout instead of this one.
 - Every call restarts from the first step. There is no resume; steps are expected to be idempotent.
 
+## Job debug mode (no hosted tokens)
+
+Add `-JobDebug` to run in job debug mode: it sets `FACTORY_JOB_DEBUG=1`. Scripts that make their own model call
+(today `scripts/repair-latest-failure.py`) then send it to the local vLLM endpoint instead of hosted Codex
+(`FACTORY_DEBUG_MODEL_URL` / `FACTORY_VLLM_BASE_URL`, `FACTORY_DEBUG_API_KEY` / `VLLM_API_KEY`,
+`FACTORY_DEBUG_MODEL`, default `qwen3.5-9b` on the wired Mac mini address), and skip every side effect: no
+branch reset, patch apply, commit, push, PR, or attempt-budget use (it keeps a scratch history under
+`.factory/repair-latest-failure/`). Receipts report `status: debug-*`.
+Limit: it does not reroute Cezar *agent* steps (`prompt:`/`skill:`); those still use the workflow's runner.
+Windows has `py -3`, not `python3`, so run Python controller scripts directly with `py -3` when debugging.
+
 Needs the built CLI at `cezar/packages/cezar/dist/index.js` (exit 4 otherwise: build it first).
 
 ## Output and exit codes

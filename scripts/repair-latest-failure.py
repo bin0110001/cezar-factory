@@ -21,6 +21,7 @@ import urllib.request
 WORKFLOW = "factory-repair-latest-failure"
 FACTORY = pathlib.Path(__file__).resolve().parent.parent
 PROTECTED = {"stable", "main", "master", "production", "prod"}
+PROTECTED_DIRS = (".git", ".factory", ".codex", ".agents")
 
 
 class RepairError(RuntimeError):
@@ -235,7 +236,7 @@ def project_settings(config: dict, registry: list, project: str) -> dict:
     else:
         raise RepairError("Explicit factory or commands deployment configuration is required")
     model = config.get("model", "")
-    if not re.fullmatch(r"gpt-[A-Za-z0-9_.-]+", model):
+    if not debug_mode() and not re.fullmatch(r"gpt-[A-Za-z0-9_.-]+", model):
         raise RepairError("A hosted GPT model ID is required; gateway aliases are not accepted")
     timeout = config.get("timeoutSeconds", 900)
     if not isinstance(timeout, int) or not 30 <= timeout <= 1200:
@@ -245,7 +246,7 @@ def project_settings(config: dict, registry: list, project: str) -> dict:
 
 def safe_path(root: pathlib.Path, path: str) -> pathlib.Path:
     relative = pathlib.PurePosixPath(path)
-    if not path or "\\" in path or relative.is_absolute() or ".." in relative.parts or relative.parts[0] in (".git", ".factory", ".codex", ".agents"):
+    if not path or "\\" in path or relative.is_absolute() or ".." in relative.parts or relative.parts[0] in PROTECTED_DIRS:
         raise RepairError("Protected or non-relative source path")
     target = root / path
     if not target.resolve().is_relative_to(root.resolve()):
@@ -276,13 +277,20 @@ def validate_result(value: dict, root: pathlib.Path, *, verify_changes: bool = T
     requests = value["requestedFiles"]
     if not isinstance(requests, list) or len(requests) > 8:
         raise RepairError("At most eight source ranges can be requested")
+    allowed = []
     for item in requests:
         if not isinstance(item, dict) or set(item) != {"path", "startLine", "endLine"}:
             raise RepairError("Invalid source range request")
-        safe_path(root, item["path"])
+        try:
+            safe_path(root, item["path"])
+        except RepairError:
+            # A model asking for run scratch (.factory/...) is expected; ignore the request, do not abort the repair.
+            continue
         start, end = item["startLine"], item["endLine"]
         if not isinstance(start, int) or not isinstance(end, int) or start < 1 or end < start or end - start >= 400:
             raise RepairError("Source requests are limited to 400 lines each")
+        allowed.append(item)
+    value["requestedFiles"] = allowed
     if value["status"] != "repaired" and (paths or value["patch"]):
         raise RepairError("Only a repaired result can contain a patch")
     if verify_changes and sorted(paths) != changed_files(root):
@@ -293,6 +301,9 @@ def validate_result(value: dict, root: pathlib.Path, *, verify_changes: bool = T
 def source_context(root: pathlib.Path, failure: dict, requests: list | None = None) -> dict:
     tracked = set(command(["git", "ls-files", "-z"], root, output_limit=2_097_152).split("\0"))
     tracked.discard("")
+    # Run scratch such as .factory/*.json is tracked in this repo and named by failure evidence, but safe_path
+    # forbids it; leave protected directories out of the requestable set instead of aborting the whole repair.
+    tracked = {p for p in tracked if pathlib.PurePosixPath(p).parts[0] not in PROTECTED_DIRS}
     words = set(re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", failure["evidence"] + " " + failure["workflow"]))
     ranked = sorted(tracked, key=lambda p: (-sum(word.lower() in p.lower() for word in words), p))
     catalog = "\n".join(ranked[:150])[:6000]
@@ -337,7 +348,7 @@ def source_context(root: pathlib.Path, failure: dict, requests: list | None = No
     return {"fileCatalog": catalog, "catalogPartial": len(tracked) > 150, "sources": records}
 
 
-def apply_repair(root: pathlib.Path, result: dict):
+def apply_repair(root: pathlib.Path, result: dict, check_only: bool = False):
     patch = result["patch"]
     if not patch:
         raise RepairError("Repaired result has no patch")
@@ -356,8 +367,34 @@ def apply_repair(root: pathlib.Path, result: dict):
     if sorted(paths) != sorted(result["files"]):
         raise RepairError("Patch paths do not exactly match the source manifest")
     command(["git", "apply", "--check", "--whitespace=error", "-"], root, stdin=patch)
+    if check_only:
+        return
     command(["git", "apply", "--whitespace=error", "-"], root, stdin=patch)
     validate_result(result, root)
+
+
+def debug_mode() -> bool:
+    """Job debug mode: model calls go to the local endpoint, nothing is published, no hosted tokens are spent."""
+    return os.environ.get("FACTORY_JOB_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def local_model_turn(prompt: str, result_path: pathlib.Path, timeout: int) -> None:
+    """One chat completion against the local OpenAI-compatible endpoint; writes the JSON result like `codex --output-last-message`."""
+    base = (os.environ.get("FACTORY_DEBUG_MODEL_URL") or os.environ.get("FACTORY_VLLM_BASE_URL") or "http://192.168.86.62:8000/v1").rstrip("/")
+    key = os.environ.get("FACTORY_DEBUG_API_KEY") or os.environ.get("VLLM_API_KEY") or ""
+    schema = json.loads((FACTORY / "schemas/failure-repair-result.schema.json").read_text(encoding="utf-8"))
+    body = {"model": os.environ.get("FACTORY_DEBUG_MODEL", "qwen3.5-9b"), "temperature": 0, "max_tokens": 4096,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "response_format": {"type": "json_schema", "json_schema": {"name": "failure_repair_result", "schema": schema}},
+            "messages": [{"role": "user", "content": prompt}]}
+    headers = {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})}
+    request = urllib.request.Request(f"{base}/chat/completions", data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:  # urllib raises several unrelated types; all mean "local model unavailable"
+        raise RepairError(f"Debug-mode local model call to {base} failed: {redact(str(exc))[:500]}")
+    result_path.write_text(payload["choices"][0]["message"]["content"], encoding="utf-8")
 
 
 def hosted_repair(root: pathlib.Path, failure: dict, setting: dict, artifact: pathlib.Path) -> dict:
@@ -381,7 +418,12 @@ def hosted_repair(root: pathlib.Path, failure: dict, setting: dict, artifact: pa
         if remaining < 1:
             raise RepairError("Hosted repair exhausted its shared deadline")
         (artifact / "model-calls.json").write_text(str(attempt + 1), encoding="utf-8")
-        transcript = command(argv, root, timeout=remaining, stdin=prompt + "\nSource context:\n" + json.dumps(context, ensure_ascii=False), env=env)
+        full_prompt = prompt + "\nSource context:\n" + json.dumps(context, ensure_ascii=False)
+        if debug_mode():
+            local_model_turn(full_prompt, result_path, remaining)
+            transcript = ""
+        else:
+            transcript = command(argv, root, timeout=remaining, stdin=full_prompt, env=env)
         for line in transcript.splitlines():
             try:
                 event = json.loads(line)
@@ -454,7 +496,25 @@ def publish(root: pathlib.Path, setting: dict, payload: dict, artifact: pathlib.
     return payload
 
 
+def debug_repair(root: pathlib.Path, failure: dict, setting: dict, artifact: pathlib.Path) -> dict:
+    """Local-model dry run: ask the local model, dry-check its patch, change nothing (no reset, commit, push, PR or budget use)."""
+    result = hosted_repair(root, failure, setting, artifact)
+    outcome = {"status": "debug-" + result["status"], "fingerprint": failure["fingerprint"], "modelCalls": 0,
+               "localModelCalls": int((artifact / "model-calls.json").read_text() or 0), "classification": result.get("classification"),
+               "files": result.get("files"), "resultPath": str(artifact / "result.json")}
+    if result["status"] == "repaired" and result.get("files"):
+        try:
+            apply_repair(root, result, check_only=True)
+            outcome["patchApplies"] = True
+        except RepairError as exc:
+            outcome["patchApplies"] = False
+            outcome["patchError"] = redact(str(exc))[:1000]
+    return outcome
+
+
 def repair(root: pathlib.Path, failure: dict, setting: dict, history: History, project: str, artifact: pathlib.Path):
+    if debug_mode():
+        return debug_repair(root, failure, setting, artifact)
     if changed_files(root) or git(root, "diff", "--cached", "--name-only"):
         raise RepairError("Task worktree contains source changes; refusing to overwrite unrelated work")
     branch = git(root, "branch", "--show-current")
@@ -465,7 +525,12 @@ def repair(root: pathlib.Path, failure: dict, setting: dict, history: History, p
         raise RepairError("Task origin does not match the configured repair repository")
     git(root, "fetch", "origin", setting["baseBranch"])
     if git(root, "rev-parse", "HEAD") != git(root, "rev-parse", "FETCH_HEAD"):
-        git(root, "merge", "--ff-only", "FETCH_HEAD")
+        # The task branch is cut from stable, which need not be an ancestor of the repair base branch.
+        # A clean branch with no commits of its own can safely be moved; never discard unpushed work.
+        if git(root, "rev-list", "HEAD", "--not", "--remotes"):
+            git(root, "merge", "--ff-only", "FETCH_HEAD")
+        else:
+            git(root, "reset", "--hard", "FETCH_HEAD")
     if git(root, "rev-parse", "HEAD") != git(root, "rev-parse", "FETCH_HEAD"):
         raise RepairError("Task cannot fast-forward to the configured non-stable branch head")
     # Reserve atomically immediately before the first paid call; a crashed process does not refund it.
@@ -604,7 +669,11 @@ def main(argv=None) -> int:
         if not args.project or not re.fullmatch(r"[\w.-]+", args.project):
             raise RepairError("Explicit Cezar project ID is required")
         common = pathlib.Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
-        history = History(args.history or common.parent / ".ai/cezar/failure-repair.sqlite")
+        # Debug runs keep their own scratch history so they never consume or mask a real attempt budget.
+        scratch = artifact / "debug-history.sqlite"
+        if debug_mode():
+            scratch.unlink(missing_ok=True)
+        history = History(args.history or (scratch if debug_mode() else common.parent / ".ai/cezar/failure-repair.sqlite"))
         if args.phase != "deploy":
             failure = load_failure(args.api_url, args.project, os.environ.get("CEZ_TASK_ID", ""))
             if failure is None:
