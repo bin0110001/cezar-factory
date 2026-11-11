@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Classify GitHub's "API rate limit already exceeded" response as an operational failure so repair jobs skip model calls during API throttling.
 - Add a project-scoped reliability dashboard with evidence-backed first-pass and repair metrics, conservative failure classification, PR outcomes, trend views, and explicit missing-data coverage (#136).
 - Add a GitHub issue run explorer backed by coding-run records, with bounded pagination, distinct execution states, Langfuse deep links, and issue-checked evidence downloads (#135).
 - Add evidence-backed Hindsight provenance, deterministic-first recall captures, version history, and explicit supersession while keeping memory advisory (#134).
