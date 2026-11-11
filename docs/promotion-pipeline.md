@@ -124,6 +124,18 @@ A host that fails every candidate looks "up" to every other check, so three thin
   `validate-in-container.sh` for a pushed commit in a throwaway worktree, prints the failing lines, and changes no
   release state. `ship-fix` runs it before merging.
 
+## Candidates with no changes
+
+A candidate is validated by the checks that match the paths changed since the active `dev` release. A candidate whose tree is
+identical to that release, such as a merge-only commit that reconciles history, has no changed paths, so no required check
+matches and the promoter records `no required validation check matches the candidate changes` as a failure, which also counts
+toward the circuit breaker. Land any real change after such a merge; the next candidate validates normally and, because the
+history is reconciled, can fast-forward `stable`.
+
+`stable` must stay an ancestor of `dev`. Anything committed straight to `stable` (the label-audit bot did this twice on
+2026-11-09) makes every later stable promotion fail with `Update is not a fast forward (HTTP 422)`; reconcile it by merging
+`stable` into `dev` with a merge commit (a squash merge drops the second parent and does not help).
+
 ## Limits
 
 - Canaries prove the release loads, schedules, and runs `health`, `repair-probe` (a model-free rehearsal of the repair controller) and `maintenance`. They do not run an
