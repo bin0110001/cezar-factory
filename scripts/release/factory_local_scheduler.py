@@ -55,6 +55,31 @@ from scripts.release.factory_release_controller import (  # noqa: E402
 
 SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
 MAX_OUTPUT_BYTES = 128 * 1024
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+FAILURE_LINE_RE = re.compile(r"^\s*(?:FAIL\b|FAILED\b|not ok\b)|\b(?:Exception|Error)\b.*:|exited (?:with code )?\d+")
+
+
+def failure_lines(text: str, limit: int = 12, width: int = 200) -> list[str]:
+    """The lines of a check's output that name what failed, so a record or issue says more than "exit code 1".
+
+    Only the head of a long log used to be kept, and a suite's failures are printed where they happen, so the
+    useful lines were usually past the cut. Order is kept, repeats collapse, and the count is bounded.
+    """
+    seen: list[str] = []
+    for raw in ANSI_RE.sub("", text).splitlines():
+        line = raw.strip()[:width]
+        if line and FAILURE_LINE_RE.search(line) and line not in seen:
+            seen.append(line)
+    return seen[:limit]
+
+
+def bounded_preview(output: bytes, limit: int = MAX_OUTPUT_BYTES) -> str:
+    """Head and tail of an output over the limit; a failure summary is at the end, so the tail matters most."""
+    if len(output) <= limit:
+        return output.decode("utf-8", "replace")
+    marker = b"\n[... output truncated; head and tail kept ...]\n"
+    half = (limit - len(marker)) // 2
+    return (output[:half] + marker + output[-half:]).decode("utf-8", "replace")
 
 
 class SchedulerError(RuntimeError):
@@ -281,7 +306,7 @@ class LocalPromotionScheduler:
                 output = output.encode("utf-8", "replace")
             exit_code = None
         truncated = len(output) > MAX_OUTPUT_BYTES
-        preview = output[:MAX_OUTPUT_BYTES].decode("utf-8", "replace")
+        preview = bounded_preview(output)
         pattern = re.compile(check["failureFingerprintPattern"]) if check.get("allowExistingFailures") else None
         fingerprints = pattern.findall(output.decode("utf-8", "replace")) if pattern else []
         if fingerprints and isinstance(fingerprints[0], tuple):
@@ -297,6 +322,7 @@ class LocalPromotionScheduler:
             "exitCode": exit_code, "startedAt": started, "finishedAt": now(),
             "durationMs": duration_ms, "outputPreview": preview, "outputTruncated": truncated,
             "outputDigest": "sha256:" + hashlib.sha256(output).hexdigest(),
+            "failureLines": failure_lines(output.decode("utf-8", "replace")) if status != "passed" else [],
         }
         if check.get("allowExistingFailures") and status == "failed":
             base_sha = self._active_sha()
@@ -565,6 +591,31 @@ class LocalPromotionScheduler:
         out["consecutiveFailures"] = self.breaker.failures()
         return out
 
+    def health(self) -> dict[str, Any]:
+        """Is promotion actually landing? A host that fails every candidate looks "up" to every other check.
+
+        `stalled` means three or more candidates failed since the last healthy one (the breaker's own threshold)
+        or nothing has been healthy for a day while candidates keep failing; `degraded` is any failure since.
+        """
+        with self._db() as db:
+            healthy = db.execute("SELECT sha, finished_at FROM promotions WHERE status='healthy' ORDER BY finished_at DESC LIMIT 1").fetchone()
+            since = healthy["finished_at"] if healthy else ""
+            failed = db.execute("SELECT COUNT(*) AS n FROM promotions WHERE status='failed' AND finished_at > ?", (since,)).fetchone()["n"]
+            last_failed = db.execute("SELECT sha, reason FROM promotions WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").fetchone()
+        hours = None
+        if healthy and healthy["finished_at"]:
+            hours = round((dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(healthy["finished_at"].replace("Z", "+00:00"))).total_seconds() / 3600, 1)
+        if failed >= 3 or (failed and (hours is None or hours >= 24)):
+            state = "stalled"
+        elif failed:
+            state = "degraded"
+        else:
+            state = "ok"
+        return {"state": state, "lastHealthySha": healthy["sha"] if healthy else None, "lastHealthyAt": healthy["finished_at"] if healthy else None,
+                "hoursSinceHealthy": hours, "failedSinceHealthy": failed, "breakerOpen": self.breaker.is_open(),
+                "consecutiveFailures": self.breaker.failures(),
+                "lastFailure": {"sha": last_failed["sha"], "reason": (last_failed["reason"] or "")[:600]} if last_failed else None}
+
     def run_once(self, *, retry_failed: bool = False) -> dict[str, Any]:
         with exclusive_lock(self.store / "scheduler.lock"):
             with self._db() as db:
@@ -631,7 +682,8 @@ class LocalPromotionScheduler:
                     result = self._run_check(check, worktree, sha)
                     checks.append(result)
                     if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
-                        raise SchedulerError(f"required check {result['id']} failed with exit code {result['exitCode']}")
+                        detail = "; ".join(result.get("failureLines", [])[:5])
+                        raise SchedulerError(f"required check {result['id']} failed with exit code {result['exitCode']}" + (f": {detail}" if detail else ""))
                 record["candidateState"] = "validated"
                 failure_kind = "activation"
                 staged = self.controller.stage_sha(sha)
@@ -687,7 +739,7 @@ class LocalPromotionScheduler:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=("run", "status", "approve", "drift", "reset-breaker"))
+    p.add_argument("command", choices=("run", "status", "health", "approve", "drift", "reset-breaker"))
     p.add_argument("--sha", default=None)
     p.add_argument("--repo", default=os.environ.get("FACTORY_CONTROLLER_REPO", "~/cezar-factory"))
     p.add_argument("--store", default=os.environ.get("FACTORY_PROMOTION_STORE", "~/.local/share/cezar-factory"), help="scheduler state root; the release store lives in <store>/release-store")
@@ -709,6 +761,8 @@ def main(argv: list[str] | None = None) -> int:
         scheduler = LocalPromotionScheduler(repo, pathlib.Path(args.store).expanduser(), config, remote=args.remote, branch=args.branch, registry=registry, timeout_seconds=args.timeout_seconds)
         if args.command == "status":
             result = scheduler.status(args.sha)
+        elif args.command == "health":
+            result = scheduler.health()
         elif args.command == "approve":
             result = scheduler.approve(args.sha or "")
         elif args.command == "drift":

@@ -9,6 +9,9 @@ Actions:
           canaries, stable, and the stable deploy. Never promotes by hand.
   Verify  Re-run the Factory automation that exercised the issue (budgeted by maxDeployAttempts).
   Status  Report the state of a run (optionally -Wait until it finishes).
+  Health  Is promotion landing? Last healthy promotion, age, failures since, breaker. Exit 4 when stalled.
+  Validate Run the host's Linux full-suite validation for a PUSHED commit (-Sha, -Branch) before merging.
+          Prints VALIDATE_FAIL lines; exit 0 passed, 5 failed. Changes no release state.
   Run     Run one Factory workflow headless from THIS checkout (-Workflow, -Task) with the repo's built
           cezar CLI, so an agent can edit the workflow and run it again without deploying. Each call
           restarts from the first step and is budgeted by maxRunAttempts. Prints ITER_* lines.
@@ -22,7 +25,8 @@ target not configured), 5 verification failed, 6 still running (Status without -
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Config', 'Deploy', 'Verify', 'Status', 'Run')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Config', 'Deploy', 'Verify', 'Status', 'Run', 'Health', 'Validate')][string]$Action,
+    [string]$Branch = '',
     [string]$Workflow = '',
     [string]$Task = '',
     [string]$Target = '',
@@ -145,6 +149,61 @@ switch ($Action) {
             Start-Sleep -Seconds ([int]$cfg.deploy.pollSeconds)
         } while ([DateTime]::UtcNow -lt $deadline)
         Fail 6 "promotion of $($head.Substring(0, 9)) is still in progress after $($cfg.deploy.timeoutMinutes) minutes ($last); re-run Deploy to keep watching"
+    }
+
+    'Health' {
+        # Is promotion landing at all? A host that fails every candidate looks "up" to everything else, and the only
+        # trace was a [promotion] issue nobody opened. Run this at the start of any ship session.
+        $target = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_SSH_TARGET')
+        $dir = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_FACTORY_DIR')
+        if (-not $target -or -not $dir) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET / FACTORY_CONTROL_PLANE_FACTORY_DIR missing from config/server-topology.env' }
+        $json = & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "cd '$dir' && python3 scripts/release/factory_local_scheduler.py health" 2>$null
+        $health = try { $json | ConvertFrom-Json } catch { $null }
+        if (-not $health -or -not $health.state) {
+            # A host that predates the `health` command: fall back to what `status` knows.
+            $json = & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "cd '$dir' && python3 scripts/release/factory_local_scheduler.py status" 2>$null
+            $status = try { $json | ConvertFrom-Json } catch { $null }
+            if (-not $status) { Fail 4 "could not read promotion state from $target" }
+            Write-Host "SHIP_HEALTH state=unknown (host scheduler has no health command) breakerOpen=$($status.breakerOpen) consecutiveFailures=$($status.consecutiveFailures) latest=$($status.status) reason=$($status.reason)"
+            if ($status.breakerOpen -or $status.consecutiveFailures -ge 3) { Write-Host 'SHIP_HEALTH_WARN promotion is failing repeatedly; nothing merged to dev is reaching the host'; exit 4 }
+            break
+        }
+        $age = if ($null -ne $health.hoursSinceHealthy) { "$($health.hoursSinceHealthy)h" } else { 'never' }
+        $last = if ($health.lastHealthySha) { $health.lastHealthySha.Substring(0, 9) } else { 'none' }
+        Write-Host "SHIP_HEALTH state=$($health.state) lastHealthy=$last age=$age failedSinceHealthy=$($health.failedSinceHealthy) breakerOpen=$($health.breakerOpen)"
+        if ($health.lastFailure) { Write-Host "SHIP_HEALTH_LAST_FAILURE $($health.lastFailure.sha.Substring(0, 9)): $($health.lastFailure.reason)" }
+        if ($health.state -eq 'stalled') { Write-Host 'SHIP_HEALTH_WARN promotion is stalled: candidates keep failing, so merged work is NOT reaching the host. Diagnose with -Action Validate before merging more.'; exit 4 }
+        if ($health.state -eq 'degraded') { Write-Host 'SHIP_HEALTH_WARN the latest promotion failed; check it before relying on a deploy' }
+    }
+
+    'Validate' {
+        # Run the host's own promotion validation (the full suite on LINUX, in the Cezar container) for a PUSHED commit.
+        # The suite passes on Windows and can still fail there: 14 candidates failed for days on Linux-only problems.
+        # Run this before merging; it changes no release state (a throwaway worktree in the container).
+        $target = (Get-TopologyValue 'FACTORY_CONTROL_PLANE_SSH_TARGET')
+        if (-not $target) { Fail 4 'FACTORY_CONTROL_PLANE_SSH_TARGET missing from config/server-topology.env' }
+        $sha = (& git -C $root rev-parse $(if ($Sha) { "$Sha^{commit}" } else { 'HEAD' })).Trim()
+        if ($sha -notmatch '^[0-9a-f]{40}$') { Fail 2 "could not resolve a full commit SHA (got '$sha')" }
+        if (-not $Branch) { $Branch = (& git -C $root rev-parse --abbrev-ref HEAD).Trim() }
+        & git -C $root fetch origin $Branch --quiet 2>$null
+        $pushed = @(& git -C $root branch -r --contains $sha 2>$null)
+        if (-not $pushed.Count) { Fail 2 "commit $($sha.Substring(0, 9)) is not on any remote branch; push it first (the container fetches it from GitHub)" }
+        if ($Branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$') { Fail 2 "unsafe branch name '$Branch'" }
+        $remoteScript = Join-Path $PSScriptRoot '../../scripts/release/validate-in-container.sh'
+        if ($DryRun) { Write-Host "DRYRUN would validate $($sha.Substring(0, 9)) on ${target} (branch $Branch) with $remoteScript"; break }
+        $logDir = Join-Path $root '.factory/ship-loop/logs'
+        New-Item -ItemType Directory -Force $logDir | Out-Null
+        $log = Join-Path $logDir ("validate-$($sha.Substring(0, 9))-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+        Write-Host "VALIDATE_RUN commit=$($sha.Substring(0, 9)) branch=$Branch host=$target log=$log"
+        $body = (Get-Content -Raw -LiteralPath $remoteScript) -replace "`r", ''
+        $body | & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "FACTORY_CANDIDATE_SHA=$sha FACTORY_CANDIDATE_BRANCH=$Branch FACTORY_GITHUB_REPOSITORY=$($cfg.repo) bash -s" *>&1 | Set-Content -LiteralPath $log -Encoding utf8
+        $code = $LASTEXITCODE
+        $text = (Get-Content -Raw -LiteralPath $log) -replace "\x1b\[[0-9;]*[A-Za-z]", ''
+        $failed = @($text -split "`r?`n" | Where-Object { $_ -match '^\s*(FAIL\b|FAILED\b)' } | Select-Object -Unique -First 15)
+        foreach ($line in $failed) { Write-Host "VALIDATE_FAIL $($line.Trim())" }
+        if ($code -eq 0 -and $text -match 'ALL PASSED') { Write-Host "VALIDATE_PASSED commit=$($sha.Substring(0, 9)) (Linux full suite) log=$log"; break }
+        Write-Host "VALIDATE_FAILED commit=$($sha.Substring(0, 9)) exit=$code log=$log"
+        exit 5
     }
 
     'Verify' {
