@@ -753,6 +753,13 @@ try {
     $fakeBacklogGh = Join-Path $PSScriptRoot 'fake-backlog-gh.ps1'
     $collectBacklog = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $backlogInput }
     Assert 'backlog collector writes compact open issue snapshot' ($collectBacklog.Code -eq 0 -and (Test-Path $backlogInput))
+    # The snapshot must not pull every closed issue's body and comments: that made it large enough for gh to return it truncated.
+    $env:FAKE_BACKLOG_ARGS_LOG = Join-Path $tmp 'backlog-gh-args.txt'; Remove-Item $env:FAKE_BACKLOG_ARGS_LOG -ErrorAction SilentlyContinue
+    $null = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = (Join-Path $tmp 'backlog-args-snapshot.json') }
+    $ghCalls = @(Get-Content $env:FAKE_BACKLOG_ARGS_LOG)
+    Remove-Item Env:FAKE_BACKLOG_ARGS_LOG -ErrorAction SilentlyContinue
+    $closedCall = @($ghCalls | Where-Object { $_ -match '--state closed' })
+    Assert 'backlog collector reads closed issues by number and state only, never their bodies or comments' ($ghCalls.Count -eq 2 -and $closedCall.Count -eq 1 -and $closedCall[0] -match '--json number,state( |$)' -and -not @($ghCalls | Where-Object { $_ -match '--state all' }))
     if (Test-Path $backlogInput) {
         $collected = Get-Content -Raw $backlogInput | ConvertFrom-Json
         $blockedByDependency = @($collected.issues | Where-Object { $_.number -eq 3 })[0]
@@ -780,7 +787,7 @@ try {
         $env:FAKE_BACKLOG_FAIL_FIRST = '2'
         $retryOutput = Join-Path $tmp 'retry-backlog-snapshot.json'
         $retryRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $retryOutput; RetryDelaySeconds = 0 }
-        Assert 'backlog collector retries a transient gh failure instead of failing the canary' ($retryRun.Code -eq 0 -and (Test-Path $retryOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 3)
+        Assert 'backlog collector retries a transient gh failure instead of failing the canary' ($retryRun.Code -eq 0 -and (Test-Path $retryOutput) -and [int](Get-Content -Raw $env:FAKE_BACKLOG_COUNTER) -eq 4)  # open listing: 2 failures + 1 success, then the closed listing
         Remove-Item $env:FAKE_BACKLOG_COUNTER -ErrorAction SilentlyContinue; $env:FAKE_BACKLOG_FAIL_FIRST = '9'
         $stuckOutput = Join-Path $tmp 'stuck-backlog-snapshot.json'
         $stuckRun = Run 'collect-backlog-snapshot.ps1' @{ GhCommand = $fakeBacklogGh; Repo = 'fixture/repo'; OutputPath = $stuckOutput; RetryDelaySeconds = 0 }
