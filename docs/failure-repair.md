@@ -95,3 +95,21 @@ push or deploy them.
 
 This run-failure workflow complements #105's verification-check repair loop.
 It does not change that loop's routing or create competing failure-audit issues.
+
+## Debugging without spending tokens
+
+`FACTORY_JOB_DEBUG=1` (`ship-loop.ps1 -Action Run -Workflow ... -JobDebug`) sends the controller's model call
+to the local vLLM endpoint and skips every side effect: no branch reset, patch apply, commit, push, PR, or
+attempt-budget use. Receipts report `status: debug-*`. `FACTORY_DEBUG_MODEL_URL`, `FACTORY_DEBUG_API_KEY` and
+`FACTORY_DEBUG_MODEL` override the endpoint, key and model.
+
+`repair-latest-failure.py probe` rehearses everything before the model call (select the latest failure, classify,
+validate the host-local configuration if present, assemble the model context) with no model, history database,
+git change or publication. The `factory-repair-probe` workflow runs it, and `[factory] repair probe` is a
+promotion canary (`config/promotion-policy.json`), so a release that breaks the pre-model path is rolled back.
+The model-response path is covered by the replay test `tests/test_factory_repair_replay.py`, which drives the
+controller against a recorded real failure, a fake Cezar API and a fake local model.
+
+Agent-written artifacts that scripts consume are checked against a schema first (for example
+`schemas/backlog-label-audit-proposal.schema.json`) so a missing key fails with a contract message.
+Run scratch under `.factory/` is untracked; a suite assertion fails if any is tracked again.

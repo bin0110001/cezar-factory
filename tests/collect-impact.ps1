@@ -1,5 +1,7 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
+# Decode child output as UTF-8 regardless of the host code page (non-ASCII fixture paths).
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $scriptPath = Join-Path $factory 'scripts/collect-impact.ps1'
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('factory-impact-' + [guid]::NewGuid().ToString('N'))

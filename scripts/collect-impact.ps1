@@ -10,6 +10,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# The changed-set is JSON (UTF-8 by spec). Without this, Windows pwsh emits the OEM code page and non-ASCII paths are corrupted.
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 
 function Invoke-GitText([string]$Directory, [string[]]$Arguments) {

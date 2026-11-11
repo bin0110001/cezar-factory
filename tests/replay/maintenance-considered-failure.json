@@ -1,0 +1,29 @@
+{
+  "comment": "Replay of the real 2026-11-11 factory-maintenance failure (run 5b384993): strict-mode property error in apply-backlog-label-audit.ps1. Shape matches GET /runs, /runs/<id>/history and /runs/<id>/handoff.",
+  "runs": [
+    {
+      "id": "5b384993-dd89-42e9-9db1-3fe5ac62ff0f",
+      "workflow": "factory-maintenance",
+      "status": "failed",
+      "finishedAt": "2026-11-11T13:03:26.765Z",
+      "error": "check \"backlog-label-audit-apply\" failed",
+      "steps": [
+        {"id": "backlog-label-audit-apply", "status": "failed", "error": "check \"backlog-label-audit-apply\" failed"}
+      ],
+      "workflowDef": {
+        "name": "factory-maintenance",
+        "steps": [
+          {"id": "backlog-label-audit-apply", "command": "pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json"}
+        ]
+      }
+    },
+    {"id": "older-failure", "workflow": "factory-implement", "status": "failed", "finishedAt": "2026-11-10T01:00:00Z", "steps": []},
+    {"id": "self", "workflow": "factory-repair-latest-failure", "status": "failed", "finishedAt": "2026-11-11T14:00:00Z", "steps": []}
+  ],
+  "history": {
+    "events": [
+      {"stepId": "backlog-label-audit-apply", "type": "check-output", "exitCode": 1, "text": "apply-backlog-label-audit.ps1: The property 'considered' cannot be found on this object. Verify that the property exists."}
+    ]
+  },
+  "handoff": "- 2026-11-11T13:03:26.679Z step \"backlog-label-audit-apply\" complete - status=failed\ncheck \"backlog-label-audit-apply\" failed\n"
+}
