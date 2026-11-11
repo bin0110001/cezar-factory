@@ -1,5 +1,6 @@
 import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema } from '@open-mercato/cezar-api-client'
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse } from '@open-mercato/cezar-api-client'
+import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
@@ -2592,6 +2593,15 @@ export async function readTrackerWatch(projectId: string, watchId: string, signa
 export async function refreshTrackerWatch(projectId: string, watchId: string, signal: AbortSignal) {
   return trackerWatchSnapshotSchema.parse(await unwrap(await cez.api.v1.p[':projectId'].tracker.watch[':watchId'].$post(
     { param: { projectId, watchId } }, { init: { signal } }), '/tracker/watch'))
+}
+
+/** Outstanding user decisions: Factory issues parked for a person, with the structured ask. */
+export async function getDecisions(opts?: ReadOptions): Promise<DecisionsResponse> {
+  return unwrapValidated(await cez.api.v1.p[':projectId'].decisions.$get({ param: { projectId: queryScope() } }, init(opts)), '/decisions', decisionsResponseSchema)
+}
+/** Record an answer on the issue and return it to planning (`factory:needs-plan`). */
+export async function answerDecision(number: number, body: AnswerDecisionBody): Promise<AnswerDecisionResponse> {
+  return unwrapValidated(await cez.api.v1.p[':projectId'].decisions[':number'].answer.$post({ param: { projectId: queryScope(), number: String(number) }, json: body }), '/decisions/:number/answer', answerDecisionResponseSchema)
 }
 
 export interface BacklogCardData {

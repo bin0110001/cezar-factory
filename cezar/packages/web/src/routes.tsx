@@ -79,6 +79,9 @@ const GithubRoute = lazy(() =>
 const TrackerRoute = lazy(() =>
   import('./routes/tracker/tracker').then((m) => ({ default: m.TrackerRoute })),
 )
+const DecisionsRoute = lazy(() =>
+  import('./routes/decisions').then((m) => ({ default: m.DecisionsRoute })),
+)
 const BacklogRoute = lazy(() =>
   import('./routes/backlog').then((m) => ({ default: m.BacklogRoute })),
 )
@@ -311,6 +314,7 @@ const PAGE_TITLE_ROUTES = [
   { pattern: '/tracker/*', pageLabel: 'Tracker' },
   { pattern: '/dependencies', pageLabel: 'Dependencies' },
   { pattern: '/backlog', pageLabel: 'Backlog' },
+  { pattern: '/decisions', pageLabel: 'Decisions' },
   { pattern: '/automations/*', pageLabel: 'Automations' },
   { pattern: '/skills', pageLabel: 'Skills' },
   { pattern: '/inbox', pageLabel: 'Inbox' },
@@ -459,6 +463,7 @@ export const AppRoutes = memo(function AppRoutes() {
         />
         <Route path="dependencies" element={<Suspense fallback={<ScopeResolving />}><DependencyIntelligenceRoute /></Suspense>} />
         <Route path="verification" element={<Suspense fallback={<div className="p-6 text-sm text-muted-foreground" role="status">Loading verification history…</div>}><VerificationHistoryRoute /></Suspense>} />
+        <Route path="decisions" element={<Suspense fallback={<ScopeResolving />}><DecisionsRoute /></Suspense>} />
         <Route path="backlog" element={<Suspense fallback={<ScopeResolving />}><BacklogRoute /></Suspense>} />
         <Route
           path="github/prs"

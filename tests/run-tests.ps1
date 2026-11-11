@@ -1000,6 +1000,11 @@ try {
     $bad = $plan.Clone(); $bad.Remove('issue')
     Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
+    $decisionPlan = With $plan @{ unresolvedQuestions = 'Where should state live?'; readyNotReadyStatus = 'not-ready'; decisions = @(@{ id = 'state-owner'; question = 'Where should state live?'; context = 'Two stores exist --> pick one.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Shared'; tradeoffs = 'Migration' }, @{ id = 'local'; label = 'Local file' }) }) }
+    Assert 'validate: structured decisions pass' ((Test-Validate 'plan' $decisionPlan) -eq 0)
+    Assert 'validate: decision with one option fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }) }) })) -ne 0)
+    Assert 'validate: decision with unknown recommendation fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; recommendedOptionId = 'zzz'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
+    Assert 'validate: decision with bad id fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'Bad Id'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
     $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
     $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
@@ -1139,6 +1144,15 @@ try {
     Assert 'route: risk:high plan proceeds without user approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-help')
     Set-Gh @('factory:needs-plan')
     Assert 'route: not-ready -> needs-help' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Set-Gh @('factory:needs-plan')
+    Assert 'route: structured decision -> needs-help' ((Invoke-Route 'plan-result' $decisionPlan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    $decisionBody = @((Get-Gh).comments | Where-Object { $_ -match 'factory-decision:v1' })[0]
+    $decisionJson = if ($decisionBody -match '<!-- factory-decision:v1 (.+?) -->') { $Matches[1] | ConvertFrom-Json } else { $null }
+    Assert 'route: decision marker carries parseable options and recommendation' ($decisionJson -and $decisionJson.version -eq 1 -and $decisionJson.decisions[0].id -eq 'state-owner' -and @($decisionJson.decisions[0].options).Count -eq 2 -and $decisionJson.decisions[0].recommendedOptionId -eq 'registry')
+    Assert 'route: decision marker cannot be closed by agent text' ($decisionBody -match 'pick one' -and $decisionBody -match '<!-- factory-decision:v1 ((?:(?!-->).)+) -->' -and $decisionJson.decisions[0].context -eq 'Two stores exist --> pick one.')
+    Assert 'route: decision comment is readable on GitHub' ($decisionBody -match 'Suggested paths' -and $decisionBody -match 'recommended')
+    Set-Gh @('factory:needs-plan')
+    Assert 'route: plain not-ready posts no decision marker' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-decision:v1' }).Count -eq 0)
     Set-Gh @('factory:review')
     Assert 'route: plan-result from wrong state refused' ((Invoke-Route 'plan-result' $plan) -ne 0)
     Assert 'route: wrong-state refusal leaves labels alone' (((Get-Gh).labels -join ',') -eq 'factory:review')

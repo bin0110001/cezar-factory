@@ -233,6 +233,8 @@ import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
+import { answerDecisionBodySchema } from '@open-mercato/cezar-contract';
+import { answerDecision, createGhRunner, listDecisions } from './decisions/decisions.ts';
 import { reliabilityAnalyticsQuerySchema, verificationArtifactParamsSchema, verificationAttemptManifestParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
 import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
 import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
@@ -6975,6 +6977,17 @@ export function createApp(deps: ServerDeps) {
           : c.json({ error: 'verification artifact does not match the recorded digest' }, 409);
     });
 
+  // ---- user decisions family ------------------------------------------------
+  // Issues the Factory parked for a person (`factory:needs-help` / `factory:human-review`), with the
+  // structured question and suggested paths it posted. Answering comments on the issue and returns it
+  // to `factory:needs-plan`. `gh` unavailable is `{ available: false }`, never a 5xx (zero-config rule).
+  const decisionsRoutes = new Hono<ProjectApiEnv>()
+    .get('/decisions', async (c) => c.json(await listDecisions(createGhRunner(c.get('project').root))))
+    .post('/decisions/:number/answer', paramZodValidator(z.object({ number: z.coerce.number().int().min(1) }), { message: 'invalid issue number' }), jsonZodValidator(answerDecisionBodySchema), async (c) => {
+      const result = await answerDecision(createGhRunner(c.get('project').root), c.req.valid('param').number, c.req.valid('json'));
+      return result.ok ? c.json({ number: result.number, state: result.state }) : c.json({ error: result.message }, result.status);
+    });
+
   // ---- assemble the chained families --------------------------------------
   // Every chained family is registered ONCE and mounted into the versioned table. There is no
   // second, unversioned spelling: `/api/*` was removed once the whole API was reachable under
@@ -6996,6 +7009,7 @@ export function createApp(deps: ServerDeps) {
     .route('/', automationsRoutes)
     .route('/', dispatchRoutes)
     .route('/', verificationRoutes)
+    .route('/', decisionsRoutes)
     .route('/', runsRoutes)
     .route('/', draftRoutes)
     .route('/', groupsRoutes)

@@ -165,6 +165,9 @@ export const queryKeys = {
   get health() {
     return [queryScope(), 'health'] as const
   },
+  get decisions() {
+    return [queryScope(), 'decisions'] as const
+  },
   runs: {
     get all() {
       return [queryScope(), 'runs'] as const

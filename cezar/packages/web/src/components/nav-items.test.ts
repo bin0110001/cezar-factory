@@ -69,6 +69,7 @@ describe('NAV_ITEMS', () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       'Tasks',
       'Inbox',
+      'Decisions',
       'Git',
       'GitHub',
       'Tracker',
@@ -102,7 +103,7 @@ describe('visibleNavItems', () => {
 
   it('with everything available, the full nav renders', () => {
     expect(labelsOf({ forge: true, inbox: true, automations: true, tracker: 'jira' })).toEqual([
-      'Tasks', 'Inbox', 'Git', 'GitHub', 'Jira', 'Dependencies', 'Verification', 'Backlog', 'Automations', 'Skills', 'Workflows', 'Settings',
+      'Tasks', 'Inbox', 'Decisions', 'Git', 'GitHub', 'Jira', 'Dependencies', 'Verification', 'Backlog', 'Automations', 'Skills', 'Workflows', 'Settings',
     ])
   })
 
@@ -116,6 +117,7 @@ describe('visibleNavItems', () => {
     expect(labelsOf({ forge: false, inbox: true, automations: true })).toEqual([
       'Tasks',
       'Inbox',
+      'Decisions',
       'Git',
       'Dependencies',
       'Verification',
@@ -130,6 +132,7 @@ describe('visibleNavItems', () => {
   it('without the inbox, exactly the Inbox item drops out (#471)', () => {
     expect(labelsOf({ forge: true, inbox: false, automations: true })).toEqual([
       'Tasks',
+      'Decisions',
       'Git',
       'GitHub',
       'Dependencies',
@@ -146,6 +149,7 @@ describe('visibleNavItems', () => {
     expect(labelsOf({ forge: true, inbox: true, automations: false })).toEqual([
       'Tasks',
       'Inbox',
+      'Decisions',
       'Git',
       'GitHub',
       'Dependencies',
@@ -166,6 +170,7 @@ describe('visibleNavItems', () => {
   it('drops all three when nothing is available', () => {
     expect(labelsOf({ forge: false, inbox: false, automations: false })).toEqual([
       'Tasks',
+      'Decisions',
       'Git',
       'Dependencies',
       'Verification',
