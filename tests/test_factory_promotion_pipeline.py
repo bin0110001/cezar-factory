@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 
+from scripts.release.factory_activation import ActivationError
 from scripts.release.factory_local_scheduler import LocalPromotionScheduler, SchedulerError
 from scripts.release.factory_promotion import GhRunner
 
@@ -369,6 +370,30 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual((scheduler.breaker.failures(), self.activations, self.rollbacks, self.quarantined, self.gh.issues), (0, [], [], [], []))
         flag.write_text("up", encoding="utf-8")
         self.assertEqual(scheduler.run_once()["status"], "healthy")  # the environment is back; the same SHA proceeds
+
+    def test_activation_that_hits_a_transient_github_error_is_tried_again_and_not_charged_to_the_candidate(self):
+        scheduler = self.build()
+        attempts = []
+        def flaky(sha):
+            attempts.append(sha)
+            if len(attempts) == 1:
+                raise ActivationError("cezar-factory automations are unavailable: Command failed: gh repo view --json nameWithOwner")
+            return {"status": "healthy", "activationId": "x", "targetCount": 1}
+        scheduler.coordinator.activate = flaky
+        first = scheduler.run_once()
+        self.assertEqual(first["status"], "interrupted")
+        self.assertEqual((scheduler.status(self.sha)["status"], scheduler.breaker.failures(), self.gh.issues), ("interrupted", 0, []))
+        self.assertEqual(scheduler.run_once()["status"], "healthy")
+        self.assertEqual(len(attempts), 2)
+
+    def test_activation_that_fails_for_a_real_reason_still_fails_the_candidate(self):
+        scheduler = self.build()
+        def broken(_sha):
+            raise ActivationError("manifest digest mismatch")
+        scheduler.coordinator.activate = broken
+        with self.assertRaisesRegex(Exception, "manifest digest mismatch"):
+            scheduler.run_once()
+        self.assertEqual((scheduler.status(self.sha)["status"], scheduler.breaker.failures()), ("failed", 1))
 
     def test_a_canary_that_fails_on_a_transient_github_error_is_run_once_more_before_any_rollback(self):
         cezar = FlakyCezar()

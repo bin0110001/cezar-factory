@@ -843,6 +843,14 @@ class LocalPromotionScheduler:
             record["reason"] = str(exc)[:2000]
             raise
         except Exception as exc:
+            # Activation talks to GitHub (it resolves the repository to register automations). A rate limit or a
+            # 502 there says nothing about the release, so it is retried on the next tick like a killed check,
+            # not recorded as a failed candidate. The retry budget is the same, so a real fault still fails.
+            if (failure_kind == "activation" and self.policy and self.policy["canaryTransientPattern"].search(str(exc))
+                    and self._note_interruption(sha)):
+                record["status"] = "interrupted"
+                record["reason"] = f"activation hit a transient error and will be tried again: {str(exc)[:300]}"
+                raise CheckInterrupted(record["reason"]) from exc
             record["status"] = "failed"
             record["reason"] = str(exc)[:2000]
             if failure_kind and self.policy:

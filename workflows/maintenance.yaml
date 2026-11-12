@@ -5,7 +5,7 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1,gh-cache.ps1,lifecycle-lib.ps1,sweep-lifecycle.ps1,audit-shadow-copies.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1,gh-cache.ps1,lifecycle-lib.ps1,sweep-lifecycle.ps1,assert-no-run-commits.ps1,audit-shadow-copies.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
   # Liveness backstop first, so it runs even if a later step hangs: this hourly run cancels any earlier
   # run of a bounded workflow (including a previous stuck maintenance run) that outlived 30 minutes,
@@ -131,7 +131,16 @@ steps:
       Factory state label.
       Do not read or mutate GitHub state. The following deterministic workflow step validates the
       proposal and applies effects after checking the live issue state and audit reservation.
+      Do not commit, push, create a branch or open a pull request: this run changes labels, not
+      files, and its last step fails if the run made a commit.
   - id: backlog-label-audit-apply
     name: Validate and apply backlog-label proposals
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json
     timeoutSeconds: 300
+  # A housekeeping run has nothing to commit. The agent step above once committed, pushed and opened pull
+  # requests itself every hour; this fails the run if that ever returns. (Cezar's own end-of-run autosave
+  # happens after the last step and is handled by .gitignore, not here.)
+  - id: no-run-commits
+    name: Verify the run made no commit
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits.ps1 -OutputPath .factory/run-commits.json
+    timeoutSeconds: 60
