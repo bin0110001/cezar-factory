@@ -67,14 +67,31 @@ one list and be missing from the list that would have given it a consumer.
 - [ ] **0.2 Find what committed on the root `stable` checkout** (also the cause of #427 and PR #301) and
   make it impossible: Factory runs must never commit on the root worktree, `stable`, or `main`.
   `main` already carries 3 bot commits that `dev` lacks.
-- [ ] **0.3 `health` must not say `ok` while the stable pointer lags `origin/stable`** or a stable deploy
-  is failing.
+- [x] **0.3 `health` must not say `ok` while the stable pointer lags `origin/stable`,** a stable deploy
+  is failing, or a candidate has been `blocked` at the evidence gate for hours. On 2026-11-12 it said `ok`
+  for 13 hours while nothing could be promoted.
 - [x] **0.4 Close resolved and superseded issues and stale PRs** (2026-11-11; list in the log below).
 - [x] **0.5 Fix contradictory labels** (stale `factory:auditing`, #102, #164).
 - [ ] **0.6 Bazzite `/var/home` is about 96% full** (blocks #129, and a full disk stops the promoter).
   Needs the owner: free space or move the store.
 - [ ] **0.7 After 0.1 lands on the host:** confirm the stable pointer reaches `origin/stable`, then
   `reset-breaker` (owner approval) and close #432, #377, #375.
+
+- [ ] **0.8 The delivery path cannot repair itself.** The promoter and the deployer run from the host
+  checkout on `stable`, so a fix to the gate policy, the promoter, or a deploy script has to pass through
+  the very thing it fixes. On 2026-11-12 this deadlocked twice at once: the `autonomous` policy (#436) was
+  blocked by the `controlled` policy still on the host, and the reconcile fix (#438) could not deploy
+  because the old reconcile script ran first. It was cleared by hand with `promote-stable.ps1`. Needed: a
+  blocked or failing delivery path escalates within the hour instead of waiting silently, and a documented,
+  tested recovery for each stage (gate, validation, stable ref, host deploy) that does not depend on the
+  stage that is broken.
+
+- [ ] **0.9 A deploy restart kills a validation in progress.** The promoter runs the full suite inside the
+  Cezar container with `podman exec`; autodeploy waits only for Cezar runs to be idle before it restarts the
+  container, so a restart during validation kills the suite (exit 137), and the failure is cached for that
+  SHA and counts toward the breaker. Seen on `4bb870a` at 12:55Z on 2026-11-12. The two timers need one
+  lock, or the deployer must treat a running validation as busy, and a killed check must be retried, not
+  cached.
 
 ## Phase 1: no state without an owner and a deadline
 
@@ -193,3 +210,14 @@ Then the feature backlog reopens.
 - 2026-11-11: batch 2 delivers 1.4a and 1.4b (`policies/lifecycle.json`, `scripts/lifecycle-lib.ps1`, soundness test with
   a design-gated profile) and starts 1.4c with the stale refresher. The model file is JSON with the checker as its
   validator; per-transition `when` conditions are accepted but not yet interpreted by any script (1.4e).
+- 2026-11-12: batch 2 merged (issue #439, PR #440, `4bb870a`). Found promotion deadlocked (item 0.8): the host
+  promoter read `controlled` from the `stable` checkout, so #436 and everything after it sat `blocked` at the
+  approval gate while `health` said `ok`. Owner chose the break-glass path; `promote-stable.ps1` re-ran the
+  full suite on `4bb870a` and fast-forwarded `origin/stable` to it at 12:47Z.
+- 2026-11-12 12:51Z: host deploy confirmed. Autodeploy advanced the host `de34a4c` to `4bb870a`; the new reconcile
+  script preserved the stray commit as `refs/factory/displaced/21bd05f...` and moved the container's stable
+  ref; Cezar was rebuilt and restarted healthy; the host policy now reads `autonomous`. Stable pointer, host
+  checkout and `origin/stable` agree. The `dev` channel pointer is still `de34a4c` (break-glass skips dev
+  activation) until the next candidate passes. `4bb870a` itself is recorded as failed by the promoter (item 0.9),
+  so the breaker count is 1. Still open for 0.7: close #432, #377, #375 once a candidate promotes normally.
+- 2026-11-12: batch 3 (issue #442) delivers 0.3.

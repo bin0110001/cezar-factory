@@ -171,6 +171,7 @@ switch ($Action) {
         $age = if ($null -ne $health.hoursSinceHealthy) { "$($health.hoursSinceHealthy)h" } else { 'never' }
         $last = if ($health.lastHealthySha) { $health.lastHealthySha.Substring(0, 9) } else { 'none' }
         Write-Host "SHIP_HEALTH state=$($health.state) lastHealthy=$last age=$age failedSinceHealthy=$($health.failedSinceHealthy) breakerOpen=$($health.breakerOpen)"
+        foreach ($reason in @($health.reasons | Where-Object { $_ })) { Write-Host "SHIP_HEALTH_REASON $reason" }
         if ($health.lastFailure) { Write-Host "SHIP_HEALTH_LAST_FAILURE $($health.lastFailure.sha.Substring(0, 9)): $($health.lastFailure.reason)" }
         if ($health.state -eq 'stalled') { Write-Host 'SHIP_HEALTH_WARN promotion is stalled: candidates keep failing, so merged work is NOT reaching the host. Diagnose with -Action Validate before merging more.'; exit 4 }
         if ($health.state -eq 'degraded') { Write-Host 'SHIP_HEALTH_WARN the latest promotion failed; check it before relying on a deploy' }
