@@ -95,7 +95,10 @@ foreach ($issue in $issues) {
     $labels = @(Get-LabelNames $issue)
     if ($labels -notcontains 'factory:auditing') { continue }
     $states = @($labels | Where-Object { $lifecycle -contains $_ })
-    if ($states.Count) { $skipped += [ordered]@{ issue = [int]$issue.number; reason = 'competing-lifecycle-state' }; continue }
+    # A reservation left beside a lifecycle state used to be skipped here, and every other sweep skips
+    # an issue that carries factory:auditing, so the issue had no owner at all. The marker is released
+    # on the same expiry rule either way; the lifecycle state is left exactly as it is.
+    $besideState = [bool]$states.Count
     if ($activeIssues -contains [int]$issue.number) { $skipped += [ordered]@{ issue = [int]$issue.number; reason = 'active-cezar-run' }; continue }
     $reservation = Get-Reservation ([int]$issue.number)
     $expired = $false; $reason = 'stale-without-reservation-marker'
@@ -111,7 +114,7 @@ foreach ($issue in $issues) {
         Invoke-Gh @('issue','edit',[string]$issue.number,'--remove-label','factory:auditing') | Out-Null
         Add-Comment ([int]$issue.number) "<!-- factory-audit-recovery:$($issue.number) -->`nFactory released an expired ``factory:auditing`` reservation ($reason). The next bounded maintenance audit may reconsider this issue."
     }
-    $recovered += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-release' } else { 'released' }; reason = $reason }
+    $recovered += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-release' } else { 'released' }; reason = $reason; lifecycleState = if ($besideState) { $states -join ',' } else { $null } }
 }
 
 $result = [ordered]@{ generatedAt = $now.ToString('o'); cutoff = $cutoff.ToString('o'); olderThanMinutes = $OlderThanMinutes; dryRun = [bool]$DryRun; activeRunCheck = -not [bool]$SkipRunCheck; recovered = $recovered; skipped = $skipped; terminalReason = if ($recovered.Count) { 'expired-reservations-released' } else { 'no-expired-reservations' } }

@@ -71,4 +71,17 @@ set -e
 [[ "$(git -C "$TMP/repo" rev-parse HEAD)" == "$TARGET_SHA" ]] || fail 'failed reconciliation moved the root branch'
 [[ "$(cat "$TMP/repo/tracked.txt")" == 'local conflicting data' ]] || fail 'failed reconciliation changed conflicting file data'
 
+# A commit made on the root stable branch that origin/stable does not contain must not block the
+# deploy forever: it is preserved under refs/factory/displaced/ and stable moves to the promoted SHA.
+git -C "$TMP/repo" reset --hard "$TARGET_SHA" >/dev/null
+git -C "$TMP/repo" commit --allow-empty -m 'stray commit on root stable' >/dev/null
+STRAY_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
+git -C "$TMP/repo" checkout --quiet "$CONFLICT_SHA" -- tracked.txt
+git -C "$TMP/repo" reset --quiet
+bash "$SCRIPT" "$CONFLICT_SHA" > "$TMP/displaced.log" 2>&1 || { cat "$TMP/displaced.log" >&2; fail 'a displaced root commit blocked reconciliation'; }
+[[ "$(git -C "$TMP/repo" rev-parse HEAD)" == "$CONFLICT_SHA" ]] || fail 'root stable did not move past the displaced commit'
+[[ "$(git -C "$TMP/repo" rev-parse "refs/factory/displaced/$STRAY_SHA")" == "$STRAY_SHA" ]] || fail 'displaced commit was not preserved'
+grep -q "WARNING root stable held $STRAY_SHA" "$TMP/displaced.log" || fail 'displaced commit was not reported'
+git -C "$TMP/repo" diff-index --cached --quiet HEAD -- || fail 'root index does not match the promoted SHA after displacement'
+
 echo 'Container Git metadata reconciliation tests passed.'

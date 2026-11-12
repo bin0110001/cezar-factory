@@ -79,6 +79,10 @@ a `Closes #N` issue when the PR merges into the *default* branch, and Factory PR
 | PR open | `factory:pr-open` (`factory:review` in the Factory review loop) | `sync-issue-delivery` step of `factory-maintenance` |
 | Merged to `dev` | closed, `factory:done`, comment naming the PR | `sync-issue-delivery` step of `factory-maintenance` |
 
+An issue that sits in a workable state with no activity for 24 hours is re-triggered by the hourly
+`refresh-stale-workable` step, two per run, least recently touched first, so every waiting issue gets
+its turn. `factory:new` issues are taken in whether or not they already carry a type or risk label.
+
 The sync step only promotes forward from pre-PR states. It never overwrites `factory:review`,
 `factory:changes-requested`, `factory:blocked`, `factory:human-review`,
 `factory:needs-help`, `factory:investigate`, or `factory:done`, never touches

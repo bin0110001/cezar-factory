@@ -149,5 +149,8 @@ history is reconciled, can fast-forward `stable`.
   path, which includes the Cezar container that validates each candidate.
 - Validation runs inside the live Cezar container, so a heavy suite competes with running jobs. The
   container worktree lives under `/projects/.promotion` and is removed after each run.
+- A commit made on the root `stable` checkout inside the Cezar container (a run that committed in the root worktree) does not
+  block the stable deploy: `reconcile-container-git-metadata.sh` keeps it under `refs/factory/displaced/<sha>`, warns, and moves
+  the ref to the promoted commit. Look there if work seems to have vanished from the root checkout.
 - `stable` is a git branch, so a person with push access can still move it. The drift check reports it;
   it does not prevent it.

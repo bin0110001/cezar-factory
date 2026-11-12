@@ -77,8 +77,13 @@ foreach ($issue in $issues) {
     $labels = @(Get-LabelNames $issue)
     $states = @($labels | Where-Object { $_ -like 'factory:*' -and $_ -in ($workableStates + $manualOrTerminalStates) })
     $created = [DateTimeOffset]::Parse([string]$issue.createdAt)
+    # Staleness is "nothing has happened for the cutoff", not "created long ago". A refresh edits the
+    # labels, which moves updatedAt, so a refreshed issue drops to the back of the queue and every
+    # workable issue gets its turn. Sorting by createdAt re-triggered the same two issues forever.
+    $updatedText = if ($issue.PSObject.Properties['updatedAt'] -and $issue.updatedAt) { [string]$issue.updatedAt } else { [string]$issue.createdAt }
+    $updated = [DateTimeOffset]::Parse($updatedText)
     $reason = $null
-    if ($created -gt $cutoff) { $reason = 'younger-than-cutoff' }
+    if ($updated -gt $cutoff) { $reason = 'younger-than-cutoff' }
     elseif ($states.Count -ne 1) { $reason = if ($states.Count -eq 0) { 'no-single-lifecycle-state' } else { 'multiple-lifecycle-states' } }
     elseif ($manualOrTerminalStates -contains $states[0]) { $reason = 'manual-or-terminal-state' }
     elseif ($labels -contains 'factory:auditing' -or $labels -contains 'factory:tracking') { $reason = 'audit-or-tracking-marker' }
@@ -96,12 +101,14 @@ foreach ($issue in $issues) {
         url = [string]$issue.url
         state = [string]$states[0]
         createdAt = [string]$issue.createdAt
+        updatedAt = $updated.ToString('o')
         ageHours = [Math]::Round(([DateTimeOffset]::UtcNow - $created).TotalHours, 1)
+        idleHours = [Math]::Round(([DateTimeOffset]::UtcNow - $updated).TotalHours, 1)
         labels = $labels
     }
 }
 
-$selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.createdAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
+$selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.updatedAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
 $refreshed = @()
 $failures = @()
 foreach ($candidate in $selected) {

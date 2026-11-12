@@ -53,7 +53,10 @@ $eligible = @($issues | Where-Object {
     ($labels -contains 'factory:new') -and
     ($labels -notcontains 'epic') -and
     @($excluded | Where-Object { $labels -contains $_ }).Count -eq 0 -and
-    $types.Count -eq 1 -and $risks.Count -eq 1
+    # A missing type or risk label is not a reason to ignore an issue: classify-intake.ps1 infers it
+    # and the router applies it. Promoter-filed failure issues arrive that way. Only contradictory
+    # taxonomy (two types or two risks) is left for a person.
+    $types.Count -le 1 -and $risks.Count -le 1
 } | Sort-Object @{ Expression = { [DateTimeOffset]::Parse([string]$_.createdAt) } }, @{ Expression = { [int]$_.number } })
 
 $selectedIssue = if ($null -ne $targetIssue) {
