@@ -7,9 +7,34 @@ human, delivery, terminal), owner, legal exits, deadline (`maxDwellHours`) and w
 (`onTimeout`). `scripts/lifecycle-lib.ps1` is the loader, and the suite fails when a state has no owner, no exit,
 no deadline, or no automation that consumes it. A project changes its process, for example a technical-design step
 with manual sign-off for risky work, by selecting or overriding a profile. Scripts are being moved from their own
-label lists to this file (`STABILIZATION-PLAN.md`, item 1.4); `refresh-stale-workable.ps1` is the first. Until
-the invariant sweep lands, the deadlines are the declared contract and only the re-trigger of workable states is
-enforced.
+label lists to this file (`STABILIZATION-PLAN.md`, item 1.4); the stale refresher, repository maintenance, audit
+recovery, delivery sync and the lifecycle sweep read it today.
+
+## The invariant, and what enforces it
+
+Every open issue is in exactly one state, that state has an owner, and the issue has not sat there past the
+state's deadline. The hourly `factory-maintenance` workflow enforces it in its `lifecycle-sweep` step
+(`scripts/sweep-lifecycle.ps1`), which holds no state list of its own.
+
+It repairs what is mechanical, at most five issues per run, each with a comment giving the evidence. An issue
+marked `factory:interactive` belongs to a person, so the sweep reports what it sees and changes nothing. A repair
+lands in a state the issue can stay in: an unblocked issue with no complexity label goes to planning, not to
+`factory:ready`. Reading a blocked issue's description costs a call, so five are checked per run, rotating by the
+hour so one that cannot be unblocked does not starve the others:
+
+| Finding | Repair |
+|---|---|
+| No state label | The profile's initial state, so intake classifies it |
+| A state's guard is not met (a `factory:ready` issue with no `complexity:*` label) | The guard's `otherwise` state (`factory:needs-plan`) |
+| `factory:blocked` and every issue its description names as a blocker ("Blocked by #N", "Depends on #N") is closed | The state's `onUnblocked` state (`factory:ready`) |
+| In review and its pull request conflicts with `dev` | The state's `onConflict` state (`factory:changes-requested`), so the fix automation repairs the PR |
+
+Everything it must not guess goes into one rolling issue, **Factory stall report** (labelled
+`factory:tracking`, rewritten in place and only when its content changes): several state labels, a blocked
+issue that names no blocker, work past its deadline, a draft pull request, a pull request that names no
+issue. A re-triggered state is listed after three deadlines without activity, which means its automation is
+not consuming it (paused, or refusing the issue). An empty report is the first exit criterion of the
+stabilization plan.
 
 ## States
 
@@ -22,8 +47,10 @@ enforced.
 - `factory:working` - Implementation in progress.
 - `factory:review` - Implementation submitted for review.
 - `factory:changes-requested` - Reviewer requested changes.
-- `factory:human-review` - Exceptional hold for an unresolved major architectural decision.
-- `factory:blocked` - Blocked by external dependencies.
+- `factory:human-review` - Exceptional hold for an unresolved major architectural decision. No script sets it;
+  it exists for a person to apply.
+- `factory:blocked` - Blocked by external dependencies. Set by a person or by the backlog label audit; the
+  router never sets it. The lifecycle sweep returns it to `factory:ready` once every named blocker is closed.
 - `factory:done` - Work is complete.
 - `factory:investigate` - Repeated failure awaiting classification.
 - `factory:implemented` - Work is complete on a pushed branch and has no PR yet. Inert: no automation consumes it.
@@ -72,7 +99,9 @@ stateDiagram-v2
    - Entry to `factory:needs-help` or `factory:human-review` only when a major architectural decision requires user input
    - User review after delivery is optional feedback, not a workflow gate
    - **PR ownership**: the implementation and fix automations own their PR until it merges. They merge the current `dev` into the branch, resolve conflicts themselves, and leave the PR `MERGEABLE` before handoff; a PR that turns `CONFLICTING` while waiting for review is repaired by the fix automation, never by the user (see `AGENTS.md`, "A job owns its pull request until it merges").
-4. **Blocked work resumption**: When a blocker is removed, the issue returns to `factory:working`.
+4. **Blocked work resumption**: When every blocker an issue names is closed, the lifecycle sweep returns it to
+   `factory:ready` with a comment listing them. A blocked issue must name its blockers in its description
+   ("Blocked by #N"); one that names none is listed in the stall report.
 5. **Conflicting state prevention**: An issue can only have one factory-state label at a time.
 
 ## Where is my issue? (delivery stages)
@@ -119,7 +148,7 @@ implementation automation.
 | plan-result | needs-plan, new | ready when criteria are met; needs-help only for an unresolved major architectural decision; decomposed parent closes after children are created and queued as `factory:needs-plan` |
 | implement-result | working | review; investigate if the agent reports failure |
 | review-result | review | done only after GitHub reports the approved PR merged; a denied eligibility gate or queued auto-merge remains in review; changes-requested for fixes; investigate after repeated review disagreement |
-| investigate-result | investigate, working | ready for a clear retry; needs-plan for an automatic re-plan; needs-help only for a major architectural decision; blocked for an external dependency |
+| investigate-result | investigate, working | ready for a clear retry; needs-plan for an automatic re-plan; needs-help only for a major architectural decision |
 
 Users decide only unresolved major architectural choices. A cleared external
 blocker is recorded with evidence and work resumes automatically; do not ask

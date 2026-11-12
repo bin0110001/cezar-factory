@@ -16,8 +16,9 @@ param(
     [string]$GhCommand = 'gh',
     [string]$Repo = '',
     [string]$OutputPath = '.factory/repository-maintenance.json',
-    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } else { 'http://127.0.0.1:4321' }),
-    [string]$ProjectId = $env:CEZAR_PROJECT_ID,
+    # Cezar gives a run CEZ_API_URL and CEZ_PROJECT_ID; CEZAR_* is the older spelling. Read both.
+    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } elseif ($env:CEZ_API_URL) { $env:CEZ_API_URL } else { 'http://127.0.0.1:4321' }),
+    [string]$ProjectId = $(if ($env:CEZAR_PROJECT_ID) { $env:CEZAR_PROJECT_ID } else { $env:CEZ_PROJECT_ID }),
     [switch]$DryRun
 )
 
@@ -30,7 +31,14 @@ if (-not $ProjectId -and (Get-Location).Path -match '^(?<root>.+)[\\/]\.ai[\\/]c
     $ProjectId = (Split-Path $Matches.root -Leaf).ToLowerInvariant()
 }
 
-$workingCutoff =[DateTimeOffset]::UtcNow.AddHours(-24)
+# The states a run holds while it works, and how long one may sit there, come from the lifecycle policy:
+# a state whose deadline action is `investigate` is released to its investigate exit.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$lifecycle = Get-FactoryLifecycle
+$inRunStates = @($lifecycle.States.Keys | Where-Object { $lifecycle.States[$_]['onTimeout'] -eq 'investigate' })
+$workingHours = [double](@($inRunStates | ForEach-Object { $lifecycle.States[$_]['maxDwellHours'] } | Measure-Object -Minimum).Minimum ?? 24)
+$terminalStates = @(Get-FactoryLifecycleStates $lifecycle -Kind terminal)
+$workingCutoff = [DateTimeOffset]::UtcNow.AddHours(-$workingHours)
 $staleCutoff = [DateTimeOffset]::UtcNow.AddDays(-60)
 $summaryTitle = 'Factory maintenance: stale open issues'
 
@@ -86,15 +94,16 @@ if ($ProjectId) {
 $moved = @()
 foreach ($issue in $issues) {
     $labels = @(Get-Labels $issue)
-    if ($labels -notcontains 'factory:working') { continue }
+    $held = @($labels | Where-Object { $inRunStates -contains $_ }) | Select-Object -First 1
+    if (-not $held) { continue }
     # Worked in a local dev window: a person owns it, so inactivity is not a Factory failure.
     if ($labels -contains 'factory:interactive') { continue }
     $updated = [DateTimeOffset]::Parse([string]$issue.updatedAt)
     $runFailed = $latestRunStatus[[int]$issue.number] -eq 'failed'
     if ($runFailed -or $updated -le $workingCutoff) {
-        $reason = if ($runFailed) { 'its latest Cezar run failed' } else { '24 hours without activity' }
+        $reason = if ($runFailed) { 'its latest Cezar run failed' } else { "$workingHours hours without activity" }
         if (-not $DryRun) {
-            Invoke-Gh @('issue', 'edit', [string]$issue.number, '--remove-label', 'factory:working', '--add-label', 'factory:investigate') | Out-Null
+            Invoke-Gh @('issue', 'edit', [string]$issue.number, '--remove-label', $held, '--add-label', 'factory:investigate') | Out-Null
             Invoke-Gh @('issue', 'comment', [string]$issue.number, '--body', "Factory maintenance moved this work to ``factory:investigate`` because $reason.") | Out-Null
         }
         $moved += [ordered]@{ issue = [int]$issue.number; action = if ($DryRun) { 'would-investigate' } else { 'investigated' }; reason = if ($runFailed) { 'failed-run' } else { 'inactive' }; updatedAt = [string]$issue.updatedAt }
@@ -105,7 +114,7 @@ if ($moved.Count -and -not $DryRun) { Clear-GhCache }
 
 $stale = @($issues | Where-Object {
     $labels = @(Get-Labels $_)
-    [DateTimeOffset]::Parse([string]$_.updatedAt) -le $staleCutoff -and $labels -notcontains 'factory:done'
+    [DateTimeOffset]::Parse([string]$_.updatedAt) -le $staleCutoff -and -not @($labels | Where-Object { $terminalStates -contains $_ }).Count
 } | Sort-Object { [DateTimeOffset]::Parse([string]$_.updatedAt) }, number | Select-Object -First 50 | ForEach-Object {
     [ordered]@{ issue = [int]$_.number; title = [string]$_.title; url = [string]$_.url; updatedAt = [string]$_.updatedAt }
 })

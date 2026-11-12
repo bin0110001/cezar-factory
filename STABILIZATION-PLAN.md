@@ -93,6 +93,11 @@ one list and be missing from the list that would have given it a consumer.
   lock, or the deployer must treat a running validation as busy, and a killed check must be retried, not
   cached.
 
+- [ ] **0.10 Find what exhausts the GitHub API budget.** The account's GraphQL budget was fully spent in one hour on
+  2026-11-12 (and `last_issue_error` showed rate limits earlier). When it is spent, every automation, the promoter's
+  evidence gate and issue filing all fail together. Measure calls per component per hour on the host and cut the
+  largest; the sweep, refresher and delivery sync already share one cached listing.
+
 ## Phase 1: no state without an owner and a deadline
 
 - [x] **1.1 Intake takes promoter-filed issues.** The promoter labels its issues `type:bug` and
@@ -123,23 +128,23 @@ one list and be missing from the list that would have given it a consumer.
     work, enabled by configuration alone with no script edits.
   - [ ] **1.4f Cezar reads the same model** (stall detector, backlog lanes, Decisions screen) instead of
     its own copy of the states.
-- [ ] **1.5 One invariant sweep in `factory-maintenance`** driven by that model. Repairs what is
+- [x] **1.5 One invariant sweep in `factory-maintenance`** driven by that model. Repairs what is
   mechanical (two state labels, no state label, `ready` without exactly one complexity label, `blocked`
   whose blockers all closed, `pr-open` whose PR closed unmerged) and lists everything past its deadline in
   one rolling "Factory stall report" issue. Replaces the per-slice sweeps over time.
-- [ ] **1.6 Crash recovery for `factory:working`.** Verify and fix the `CEZAR_API_URL` versus
+- [x] **1.6 Crash recovery for `factory:working`.** Verify and fix the `CEZAR_API_URL` versus
   `CEZ_API_URL` mismatch that makes "latest run failed" detection fall back to a 24-hour wait; stop
   comments from resetting the clock (use time in state).
 - [ ] **1.7 Watchdog covers issue-scoped runs** (plan, implement, review, fix, investigate), not only the
   four housekeeping workflows.
 - [ ] **1.8 `needs-help` requires a real question.** An escalation without a structured decision returns
   to `factory:needs-plan`; open decisions get a weekly digest instead of silence.
-- [ ] **1.9 PR sweep.** A `CONFLICTING` PR into `dev` routes its issue to `factory:changes-requested`;
+- [x] **1.9 PR sweep.** A `CONFLICTING` PR into `dev` routes its issue to `factory:changes-requested`;
   drafts and PRs without a closing keyword are reported.
 - [ ] **1.10 Bound the investigate, re-plan, implement loop** (today only the direct retry is capped).
 - [ ] **1.11 Re-enabling an automation reconciles existing labels** instead of baselining to "now"
   (make every automation level-triggered, as intake already is with `fullReconcileHours`).
-- [ ] **1.12 Correct `docs/lifecycle.md`** where it disagrees with `route-state.ps1` (`blocked` is never
+- [x] **1.12 Correct `docs/lifecycle.md`** where it disagrees with `route-state.ps1` (`blocked` is never
   set by the router; `human-review` has no writer).
 - [ ] **1.13 Deploy and use the stall detector from #434** (`/api/v1/dependency-graph/stalls` returns 404
   on the host until `stable` moves); teach it complexity labels and script-side gates.
@@ -232,3 +237,14 @@ Then the feature backlog reopens.
   `ok`; the breaker count reset to 0 without a manual `reset-breaker`. Closed #432, #377 and #375 (item 0.7 done).
 - 2026-11-12: batch 4 delivers 0.8, 0.9, 2.8 and 2.9 in the promoter and the deploy script, with a recovery table in
   `docs/promotion-pipeline.md`.
+- 2026-11-12 ~13:50Z: the Bazzite host stopped answering ping, SSH and the Cezar API (the gateway and the Mac mini
+  answer). It was healthy at 13:25Z. Cause unknown; needs the owner at the machine. Until it is back there is no
+  Linux validation and no promotion. PR #446 (batch 4, promoter changes) is held unmerged for that reason.
+- 2026-11-12: batch 5 delivers 1.5, 1.6, 1.9 and 1.12 and moves three more scripts to the lifecycle policy (1.4c
+  still open for `route-state.ps1`, intake selection and the label scripts; a ratchet test stops the list growing).
+  1.6 note: "time in state" still uses last activity, because the issue listing has no label timeline.
+- 2026-11-12 14:19Z: the host is back after a reboot (cause of the outage still unknown; the compose monitoring stack
+  also started at boot). At 14:22Z a `gh` call from the dev machine failed with "GraphQL: API rate limit already
+  exceeded": the shared 5,000-point hourly budget had been used up in the window 13:21Z to 14:21Z. The consumer is not
+  identified (new item below).
+

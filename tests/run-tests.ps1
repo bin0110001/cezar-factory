@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -635,6 +635,17 @@ try {
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
+# The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
+# are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
+# script that needs to know the states asks scripts/lifecycle-lib.ps1.
+$stateLiteralAllowlist = 'route-state.ps1', 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
+$stateLiteralPattern = "'(" + ((@($lifecycle.States.Keys) | ForEach-Object { [regex]::Escape($_) }) -join '|') + ")'"
+$stateLiteralFiles = @(Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match $stateLiteralPattern } | ForEach-Object { $_.Name })
+$newStateLiteralFiles = @($stateLiteralFiles | Where-Object { $stateLiteralAllowlist -notcontains $_ })
+$newStateLiteralFiles | ForEach-Object { Write-Host "    $_ names lifecycle states in code; read them from scripts/lifecycle-lib.ps1" }
+Assert 'no new script hard-codes lifecycle states (read them from the lifecycle policy)' ($newStateLiteralFiles.Count -eq 0)
+Assert 'the hard-coded lifecycle-state allowlist has no stale entries' (@($stateLiteralAllowlist | Where-Object { $stateLiteralFiles -notcontains $_ }).Count -eq 0)
+
 # Script and workflow contract (tests/workflow-contract.ps1): every script parses, and every workflow
 # command step names an existing script and passes exactly the parameters it declares. A workflow step
 # is the only caller of most scripts and first runs on the host after merge, so this is checked here.
@@ -835,6 +846,60 @@ try {
     $refresh = Get-Content -Raw $refreshOut | ConvertFrom-Json
     Assert 'stale refresher takes the least recently touched workable issues first, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '2,3')
     Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 3 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
+
+    # Lifecycle sweep: every open issue is in one state, with an owner, inside its deadline. What is
+    # mechanical is repaired with evidence; the rest goes into one rolling report issue.
+    $fresh = [DateTimeOffset]::UtcNow.AddHours(-1).ToString('o'); $longAgo = '2026-01-01T00:00:00Z'
+    @{ prs = @(); issues = @{
+            '1'  = @{ state = 'OPEN'; labels = @('type:bug'); comments = @(); title = 'no state at all'; updatedAt = $fresh }
+            '2'  = @{ state = 'OPEN'; labels = @('factory:ready'); comments = @(); title = 'ready without complexity'; updatedAt = $fresh }
+            '3'  = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); title = 'blockers closed'; body = 'Blocked by #90 and #91.'; updatedAt = $fresh }
+            '4'  = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); title = 'blocker still open'; body = 'Depends on #6'; updatedAt = $fresh }
+            '5'  = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); title = 'names no blocker'; body = 'waiting'; updatedAt = $longAgo }
+            '6'  = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small', 'factory:review'); comments = @(); title = 'two states'; updatedAt = $fresh }
+            '7'  = @{ state = 'OPEN'; labels = @('factory:needs-help'); comments = @(); title = 'waiting on a person too long'; updatedAt = $longAgo }
+            '8'  = @{ state = 'OPEN'; labels = @('factory:review'); comments = @(); title = 'PR conflicts'; updatedAt = $fresh }
+            '9'  = @{ state = 'OPEN'; labels = @('factory:tracking'); comments = @(); title = 'epic'; updatedAt = $longAgo }
+            '10' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); title = 'healthy'; updatedAt = $fresh }
+            '11' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:large'); comments = @(); title = 'never consumed'; updatedAt = $longAgo }
+            '12' = @{ state = 'OPEN'; labels = @('factory:blocked', 'factory:interactive'); comments = @(); title = 'a person owns it'; body = 'Blocked by #90'; updatedAt = $fresh }
+        }
+        openPrs = @(
+            @{ number = 50; title = 'Fix'; body = 'Closes #8'; url = 'https://example/pull/50'; isDraft = $false; mergeable = 'CONFLICTING' },
+            @{ number = 51; title = 'Draft work'; body = 'Closes #10'; url = 'https://example/pull/51'; isDraft = $true; mergeable = 'MERGEABLE' },
+            @{ number = 52; title = 'No issue named'; body = 'tidy up'; url = 'https://example/pull/52'; isDraft = $false; mergeable = 'MERGEABLE' }
+        ) } | ConvertTo-Json -Depth 8 | Set-Content $closeState
+    $sweepOut = Join-Path $tmp 'lifecycle-sweep.json'
+    $sweepRun = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut }
+    if ($sweepRun.Code -ne 0) { Write-Host $sweepRun.Out }
+    $sweep = Get-Content -Raw $sweepOut | ConvertFrom-Json
+    $sweepState = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
+    $repairKinds = @{}; foreach ($repair in @($sweep.repairs)) { $repairKinds[[string]$repair.issue] = "$($repair.kind)>$($repair.added)" }
+    $violationKinds = @{}; foreach ($violation in @($sweep.violations)) { $violationKinds[[string]$violation.issue] = [string]$violation.kind }
+    Assert 'lifecycle sweep gives an issue with no state the initial state' ($sweepRun.Code -eq 0 -and $repairKinds['1'] -eq 'no-state>factory:new' -and $sweepState.issues['1'].labels -contains 'factory:new')
+    Assert 'lifecycle sweep sends a ready issue with no complexity label back to planning' ($repairKinds['2'] -eq 'guard>factory:needs-plan' -and $sweepState.issues['2'].labels -contains 'factory:needs-plan' -and $sweepState.issues['2'].labels -notcontains 'factory:ready')
+    Assert 'lifecycle sweep unblocks an issue whose named blockers are all closed, with evidence, into a state it can stay in' ($repairKinds['3'] -eq 'unblocked>factory:needs-plan' -and $sweepState.issues['3'].labels -notcontains 'factory:blocked' -and @($sweepState.issues['3'].comments | Where-Object { $_ -match '#90, #91' }).Count -eq 1)
+    Assert 'lifecycle sweep leaves an issue blocked while a named blocker is open' (-not $repairKinds.ContainsKey('4') -and -not $violationKinds.ContainsKey('4') -and $sweepState.issues['4'].labels -contains 'factory:blocked')
+    Assert 'lifecycle sweep routes an issue in review whose pull request conflicts to the fix automation' ($repairKinds['8'] -eq 'pr-conflict>factory:changes-requested' -and $sweepState.issues['8'].labels -contains 'factory:changes-requested')
+    Assert 'lifecycle sweep reports what it must not guess: two states, no stated blocker, overdue human and automated work, draft and unlinked pull requests' ($violationKinds['6'] -eq 'multiple-states' -and $violationKinds['5'] -eq 'blocked-without-blocker' -and $violationKinds['7'] -eq 'overdue' -and $violationKinds['11'] -eq 'overdue' -and $violationKinds['51'] -eq 'draft-pr' -and $violationKinds['52'] -eq 'pr-without-issue')
+    Assert 'lifecycle sweep reports, and does not change, an issue a person owns in a dev window' (-not $repairKinds.ContainsKey('12') -and $violationKinds['12'] -eq 'unblocked' -and $sweepState.issues['12'].labels -contains 'factory:blocked')
+    Assert 'lifecycle sweep leaves healthy work and tracking epics alone' (-not $repairKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('9') -and $sweepState.issues['10'].labels.Count -eq 2)
+    $reportIssue = @($sweepState.issues.Keys | Where-Object { $sweepState.issues[$_]['title'] -eq 'Factory stall report' })
+    Assert 'lifecycle sweep writes one rolling stall report as a tracking issue' ($sweep.report.action -eq 'created' -and $reportIssue.Count -eq 1 -and $sweepState.issues[$reportIssue[0]].labels -contains 'factory:tracking' -and $sweepState.issues[$reportIssue[0]]['body'] -match '#7 \*\*overdue\*\*')
+    # The second run sees the repaired labels: nothing is left to repair, and an issue the first run handed
+    # to the fix automation is not reported as unowned. The third run changes nothing at all.
+    $sweepAgain = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut }
+    $sweepSecond = Get-Content -Raw $sweepOut | ConvertFrom-Json
+    Assert 'lifecycle sweep leaves nothing to repair after one pass and does not report work it handed to an automation' ($sweepAgain.Code -eq 0 -and @($sweepSecond.repairs).Count -eq 0 -and @($sweepSecond.violations | Where-Object { $_.issue -in 2, 3, 8 }).Count -eq 0)
+    $sweepThird = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut }
+    $sweepThirdResult = Get-Content -Raw $sweepOut | ConvertFrom-Json
+    $sweepStateAgain = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
+    Assert 'lifecycle sweep is idempotent: the report is not rewritten or duplicated when nothing changed' ($sweepThird.Code -eq 0 -and @($sweepThirdResult.repairs).Count -eq 0 -and $sweepThirdResult.report.action -eq 'unchanged' -and @($sweepStateAgain.issues.Keys | Where-Object { $sweepStateAgain.issues[$_]['title'] -eq 'Factory stall report' }).Count -eq 1)
+    $sweepScript = Get-Content -Raw (Join-Path $scripts 'sweep-lifecycle.ps1')
+    Assert 'lifecycle sweep rotates which blocked issues it reads, so one that cannot be unblocked does not starve the rest' ($sweepScript -match 'ToUnixTimeSeconds\(\) / 3600\) % \$blockerCandidates\.Count' -and $sweepScript -notmatch 'blockerBudget')
+    $dryState = Get-Content -Raw $closeState
+    $sweepDry = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut; DryRun = $true; RepairLimit = 0 }
+    Assert 'lifecycle sweep dry run changes no label and writes no comment' ($sweepDry.Code -eq 0 -and ((Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable).issues | ConvertTo-Json -Depth 8) -eq (($dryState | ConvertFrom-Json -AsHashtable).issues | ConvertTo-Json -Depth 8))
     Remove-Item Env:FAKE_CLOSE_STATE
 
     $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'

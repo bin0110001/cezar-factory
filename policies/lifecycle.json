@@ -1,6 +1,6 @@
 {
   "schemaVersion": "factory-lifecycle/v1",
-  "description": "The Factory issue lifecycle as data. A profile lists every state with its owner, legal exits, and deadline. Scripts and automations are being moved to read this file instead of their own label lists (STABILIZATION-PLAN.md, item 1.4). Until item 1.5 lands, maxDwellHours and onTimeout are the declared contract; only the retrigger of workable states is enforced.",
+  "description": "The Factory issue lifecycle as data. A profile lists every state with its owner, legal exits, and deadline. Scripts and automations are being moved to read this file instead of their own label lists (STABILIZATION-PLAN.md, item 1.4). refresh-stale-workable.ps1 re-triggers states whose onTimeout is retrigger; sweep-lifecycle.ps1 applies requires.otherwise, onUnblocked and onConflict and reports every issue past its deadline.",
   "defaultProfile": "standard",
   "markers": {
     "factory:tracking": "An epic or tracking parent. Not executable work; no state is required.",
@@ -36,9 +36,10 @@
         "factory:ready": {
           "kind": "automated",
           "owner": { "workflow": "factory-implement" },
-          "requires": { "exactlyOne": "complexity" },
+          "requires": { "exactlyOne": "complexity", "otherwise": "factory:needs-plan" },
           "exits": [
-            { "to": "factory:working", "on": "start" }
+            { "to": "factory:working", "on": "start" },
+            { "to": "factory:needs-plan", "on": "lifecycle-sweep" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
@@ -62,6 +63,7 @@
             { "to": "factory:changes-requested", "on": "review-result" },
             { "to": "factory:investigate", "on": "review-result" }
           ],
+          "onConflict": "factory:changes-requested",
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
         },
@@ -109,8 +111,9 @@
           "owner": { "role": "owner" },
           "exits": [
             { "to": "factory:working", "on": "start" },
-            { "to": "factory:ready", "on": "manual" }
+            { "to": "factory:ready", "on": "lifecycle-sweep" }
           ],
+          "onUnblocked": "factory:ready",
           "maxDwellHours": 168,
           "onTimeout": "report"
         },

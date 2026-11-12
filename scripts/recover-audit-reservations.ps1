@@ -14,8 +14,9 @@ param(
     [ValidateRange(15, 1440)][int]$OlderThanMinutes = 90,
     [string]$GhCommand = 'gh',
     [string]$Repo = '',
-    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } else { 'http://127.0.0.1:4321' }),
-    [string]$ProjectId = $env:CEZAR_PROJECT_ID,
+    # Cezar gives a run CEZ_API_URL and CEZ_PROJECT_ID; CEZAR_* is the older spelling. Read both.
+    [string]$ApiUrl = $(if ($env:CEZAR_API_URL) { $env:CEZAR_API_URL } elseif ($env:CEZ_API_URL) { $env:CEZ_API_URL } else { 'http://127.0.0.1:4321' }),
+    [string]$ProjectId = $(if ($env:CEZAR_PROJECT_ID) { $env:CEZAR_PROJECT_ID } else { $env:CEZ_PROJECT_ID }),
     [string]$OutputPath = '.factory/audit-reservation-recovery.json',
     [switch]$DryRun,
     [switch]$SkipRunCheck
@@ -30,7 +31,8 @@ if (-not $ProjectId -and (Get-Location).Path -match '^(?<root>.+)[\\/]\.ai[\\/]c
 }
 $now = [DateTimeOffset]::UtcNow
 $cutoff = $now.AddMinutes(-$OlderThanMinutes)
-$lifecycle = @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open')
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$lifecycle = @((Get-FactoryLifecycle).States.Keys)
 $reservationPrefix = '<!-- factory-audit-reservation:'
 
 function Invoke-Gh([string[]]$Arguments) {
