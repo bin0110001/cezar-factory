@@ -60,6 +60,47 @@ stabilization plan.
 - `factory:pr-open` - A non-draft PR into `dev` references the issue. Inert; the Factory review loop uses `factory:review` for the same stage.
 - `factory:interactive` - A non-lifecycle marker for work done in a local dev window. Stale-work sweeps skip it; it is not a state.
 
+## State table
+
+Rendered from `policies/lifecycle.json` (the `standard` profile); a suite test fails when it is stale. Refresh it with
+`pwsh -NoProfile -Command ". scripts/lifecycle-lib.ps1; Update-FactoryLifecycleDoc"`.
+
+<!-- lifecycle-table:begin -->
+| State | Kind | Owner | Exits | Deadline | At the deadline |
+|---|---|---|---|---|---|
+| `factory:new` | automated | `factory-intake` | `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
+| `factory:needs-plan` | automated | `factory-plan` | `factory:ready`, `factory:needs-help`, `factory:done` | 24 h | retrigger |
+| `factory:ready` | automated | `factory-implement` | `factory:working`, `factory:needs-plan` | 24 h | retrigger |
+| `factory:working` | in-run | `factory-implement` / `factory-fix-review` | `factory:review`, `factory:investigate`, `factory:implemented` | 24 h | investigate |
+| `factory:review` | automated | `factory-review` | `factory:done`, `factory:changes-requested`, `factory:investigate` | 24 h | retrigger |
+| `factory:changes-requested` | automated | `factory-fix-review` | `factory:working` | 24 h | retrigger |
+| `factory:investigate` | automated | `factory-investigate` | `factory:ready`, `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
+| `factory:needs-help` | human | a person (owner) | `factory:needs-plan`, `factory:ready` | 168 h | report |
+| `factory:human-review` | human | a person (owner) | `factory:needs-plan` | 168 h | report |
+| `factory:blocked` | human | a person (owner) | `factory:working`, `factory:ready` | 168 h | report |
+| `factory:implemented` | delivery | `factory-maintenance` | `factory:pr-open` | 72 h | report |
+| `factory:pr-open` | delivery | `factory-maintenance` | `factory:done` | 168 h | report |
+| `factory:done` | terminal | - | - | - | - |
+<!-- lifecycle-table:end -->
+
+## Profiles: changing the process by configuration
+
+A profile may `extend` another and restate only the states that differ. `risk-gated` is shipped as the worked example
+(`policies/lifecycle.json`): a completed plan for `risk:high` work goes to a human state, `factory:design-signoff`,
+instead of `factory:ready`, and the implement automation cannot start it until a person relabels it `factory:ready`
+(approve) or `factory:needs-plan` (rework). The router reads the conditional exit
+(`"when": { "risk": ["risk:high"] }`) from the policy; no script names the risk label or the new state, and
+`create-labels.ps1` creates a profile's own state labels.
+
+| To | Do |
+|---|---|
+| Use a profile for one project | Set `FACTORY_LIFECYCLE_PROFILE=risk-gated` in that project's Cezar environment, or override `policies/lifecycle.json` in the project's `.ai/factory/overrides/policies/` and set `defaultProfile` |
+| Add a gate for another risk or type | Add a conditional exit in a profile (`risk` and `type` conditions are supported) and the state it leads to |
+| Check a profile | `tests/run-tests.ps1` runs the soundness check on every profile the policy ships |
+
+Limit: Cezar's own stall detector and Decisions screen keep their own state list until plan item 1.4f, so an issue
+waiting in a profile-only state can be reported there as having no state label.
+
 ## Transitions
 
 ```mermaid

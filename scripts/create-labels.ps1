@@ -51,6 +51,16 @@ foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
     }
 }
 if (-not $labels.Count) { throw 'no labels found in policies/labels.yaml' }
+# States a lifecycle profile adds (a sign-off gate, say) need their labels too, or the router cannot apply them.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+try {
+    $profileLifecycle = Get-FactoryLifecycle -Path (Join-Path $PoliciesDir 'lifecycle.json')
+    foreach ($stateName in $profileLifecycle.States.Keys) {
+        if (@($labels | Where-Object { $_.Name -eq $stateName }).Count) { continue }
+        $stateDescription = if ($profileLifecycle.States[$stateName]['description']) { [string]$profileLifecycle.States[$stateName]['description'] } else { "Factory: $stateName" }
+        $labels.Add([pscustomobject]@{ Name = $stateName; Color = $colors['factory-state']; Description = $stateDescription })
+    }
+} catch { Write-Warning "lifecycle states not added to the label set: $($_.Exception.Message)" }
 
 # This runs in every hourly maintenance. Creating every label every time cost one GitHub call per label
 # and failed the whole run when any one of them hit a server error. Read the labels once and write only

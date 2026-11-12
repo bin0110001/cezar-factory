@@ -44,6 +44,16 @@ foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
     if ($inState -and $l -match '^\S') { break }
 }
 if (-not $stateLabels) { Fail 'could not read factory-state labels from policies/labels.yaml' }
+# The lifecycle profile may add states of its own (for example a sign-off gate); they are state labels too, so
+# setting one removes the others. A project selects its profile with FACTORY_LIFECYCLE_PROFILE.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$lifecycle = $null
+$lifecycleFile = Join-Path $PoliciesDir 'lifecycle.json'
+if (Test-Path $lifecycleFile) {
+    try { $lifecycle = Get-FactoryLifecycle -Path $lifecycleFile }
+    catch { Write-Warning "lifecycle policy ignored: $($_.Exception.Message)" }
+}
+if ($lifecycle) { $stateLabels = @(@($stateLabels) + @($lifecycle.States.Keys) | Select-Object -Unique) }
 $complexityLabels = @()
 $inComplexity = $false
 foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
@@ -262,7 +272,18 @@ switch ($Event) {
             Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
             Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'
         }
-        Add-Comment $plan; Set-State 'factory:ready'; Done 'factory:ready'
+        Add-Comment $plan
+        # A lifecycle profile can hold some plans for a person before implementation (risk-gated: risk:high). With
+        # the standard profile there is no conditional exit, so this goes to ready exactly as before.
+        $issueRisk = @($labels | Where-Object { $_ -like 'risk:*' })
+        $gate = if ($lifecycle) { Get-FactoryLifecycleConditionalExit -Lifecycle $lifecycle -State 'factory:needs-plan' -Event 'plan-result' -IssueLabels $issueRisk } else { $null }
+        if ($gate -and $gate -ne 'factory:ready') {
+            $gateDefinition = $lifecycle.States[$gate]
+            $role = if ($gateDefinition -and $gateDefinition['owner'] -and $gateDefinition['owner']['role']) { [string]$gateDefinition['owner']['role'] } else { 'a person' }
+            Add-Comment "## Factory sign-off required`n`nThis plan is complete, but the lifecycle profile ``$($lifecycle.Name)`` holds $($issueRisk -join ', ') work at ``$gate`` until $role signs it off. Review the plan above. To approve it, relabel the issue ``factory:ready``; to rework it, comment and relabel ``factory:needs-plan``."
+            Set-State $gate; Done $gate 'awaiting sign-off'
+        }
+        Set-State 'factory:ready'; Done 'factory:ready'
     }
     'implement-result' {
         # A workflow retry after a later step failed (preflight, handoff) re-runs this route step. The first
