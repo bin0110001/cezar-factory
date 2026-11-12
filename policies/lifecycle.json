@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "factory-lifecycle/v1",
+  "description": "The Factory issue lifecycle as data. A profile lists every state with its owner, legal exits, and deadline. Scripts and automations are being moved to read this file instead of their own label lists (STABILIZATION-PLAN.md, item 1.4). Until item 1.5 lands, maxDwellHours and onTimeout are the declared contract; only the retrigger of workable states is enforced.",
+  "defaultProfile": "standard",
+  "markers": {
+    "factory:tracking": "An epic or tracking parent. Not executable work; no state is required.",
+    "factory:interactive": "Work done in a local dev window. Stale-work sweeps skip it.",
+    "factory:auditing": "A temporary reservation by the backlog label audit. Released on expiry."
+  },
+  "profiles": {
+    "standard": {
+      "description": "The current process: intake, plan, implement, review, merge. People decide only unresolved major architectural questions.",
+      "initial": "factory:new",
+      "states": {
+        "factory:new": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-intake" },
+          "exits": [
+            { "to": "factory:needs-plan", "on": "intake-result" },
+            { "to": "factory:needs-help", "on": "intake-result" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:needs-plan": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-plan" },
+          "exits": [
+            { "to": "factory:ready", "on": "plan-result" },
+            { "to": "factory:needs-help", "on": "plan-result" },
+            { "to": "factory:done", "on": "plan-result" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:ready": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-implement" },
+          "requires": { "exactlyOne": "complexity" },
+          "exits": [
+            { "to": "factory:working", "on": "start" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:working": {
+          "kind": "in-run",
+          "owner": { "workflows": ["factory-implement", "factory-fix-review"] },
+          "exits": [
+            { "to": "factory:review", "on": "implement-result" },
+            { "to": "factory:investigate", "on": "implement-result" },
+            { "to": "factory:implemented", "on": "manual" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "investigate"
+        },
+        "factory:review": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-review" },
+          "exits": [
+            { "to": "factory:done", "on": "review-result" },
+            { "to": "factory:changes-requested", "on": "review-result" },
+            { "to": "factory:investigate", "on": "review-result" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:changes-requested": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-fix-review" },
+          "exits": [
+            { "to": "factory:working", "on": "start" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:investigate": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-investigate" },
+          "exits": [
+            { "to": "factory:ready", "on": "investigate-result" },
+            { "to": "factory:needs-plan", "on": "investigate-result" },
+            { "to": "factory:needs-help", "on": "investigate-result" }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:needs-help": {
+          "kind": "human",
+          "owner": { "role": "owner" },
+          "exits": [
+            { "to": "factory:needs-plan", "on": "manual" },
+            { "to": "factory:ready", "on": "manual" }
+          ],
+          "maxDwellHours": 168,
+          "onTimeout": "report"
+        },
+        "factory:human-review": {
+          "kind": "human",
+          "owner": { "role": "owner" },
+          "exits": [
+            { "to": "factory:needs-plan", "on": "manual" }
+          ],
+          "maxDwellHours": 168,
+          "onTimeout": "report"
+        },
+        "factory:blocked": {
+          "kind": "human",
+          "owner": { "role": "owner" },
+          "exits": [
+            { "to": "factory:working", "on": "start" },
+            { "to": "factory:ready", "on": "manual" }
+          ],
+          "maxDwellHours": 168,
+          "onTimeout": "report"
+        },
+        "factory:implemented": {
+          "kind": "delivery",
+          "owner": { "workflow": "factory-maintenance" },
+          "exits": [
+            { "to": "factory:pr-open", "on": "delivery-sync" }
+          ],
+          "maxDwellHours": 72,
+          "onTimeout": "report"
+        },
+        "factory:pr-open": {
+          "kind": "delivery",
+          "owner": { "workflow": "factory-maintenance" },
+          "exits": [
+            { "to": "factory:done", "on": "delivery-sync" }
+          ],
+          "maxDwellHours": 168,
+          "onTimeout": "report"
+        },
+        "factory:done": {
+          "kind": "terminal"
+        }
+      }
+    }
+  }
+}
