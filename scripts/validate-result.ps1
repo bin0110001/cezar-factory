@@ -139,6 +139,9 @@ if (-not $errors.Count) {
                     }
                 }
             }
+            if ($result.readyNotReadyStatus -notin 'ready', 'decomposed' -and (Blank $result.unresolvedQuestions) -and -not @($result.decisions | Where-Object { $_ }).Count) {
+                $errors.Add('status is not ready but neither unresolvedQuestions nor decisions says what must be answered')
+            }
             if ($result.readyNotReadyStatus -eq 'ready') {
                 # Definition of Ready: no unresolved blocking questions, criteria and breakdown present.
                 if (-not (Blank $result.unresolvedQuestions)) { $errors.Add('status is ready but unresolvedQuestions is not empty') }

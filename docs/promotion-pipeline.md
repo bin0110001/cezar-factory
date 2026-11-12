@@ -139,6 +139,18 @@ count toward the circuit breaker.
 2026-11-09) makes every later stable promotion fail with `Update is not a fast forward (HTTP 422)`; reconcile it by merging
 `stable` into `dev` with a merge commit (a squash merge drops the second parent and does not help).
 
+## Environment preflight
+
+Before any validation is spent on a candidate, the promoter runs each command in `promotion.preflight`. The shipped
+one is the model probe, run inside the Cezar container, because every canary that has an agent step needs the model
+endpoint. A failed preflight leaves the candidate `blocked` with the reason, exactly like missing review evidence: it
+is re-checked every tick, shows in `health`, opens one `factory:needs-help` issue after
+`promotion.blocked.escalateSeconds`, and the same SHA proceeds as soon as the environment is back. Nothing is
+validated, activated, rolled back or quarantined, and the breaker does not move.
+
+On 2026-11-12 a reboot left the Cezar container unable to reach LiteLLM, and two good releases were validated,
+activated, failed the `maintenance` canary's model check, and were rolled back and quarantined before anyone looked.
+
 ## Not the candidate's fault
 
 Three things used to be recorded as a failed candidate although the change was fine:
@@ -171,6 +183,7 @@ Recovery, by the stage that is stuck. Each needs the owner's approval, because i
 | Evidence gate | `status` shows `blocked` with the gate's reason | If the PR really lacks its review evidence, add it; the same SHA proceeds on the next tick. If the gate policy itself is wrong on the host, promote the fix with `scripts/release/promote-stable.ps1` from a clean checkout of the merged `origin/dev` head. |
 | Validation | `status` shows `failed` at validation | Reproduce with `ship-loop.ps1 -Action Validate`, fix on `dev`; a fix is a new SHA. `run --retry-failed` re-runs a SHA whose failure was environmental. |
 | `stable` ref | `[promotion] stable-promotion failed`, HTTP 422 | Something was committed to `stable`. Merge `stable` into `dev` with a merge commit; the next candidate fast-forwards. |
+| Environment preflight | `status` shows `blocked` with `environment preflight model-endpoint failed` | Fix the environment; nothing in the repo is wrong. If Cezar cannot reach `host.containers.internal` after a reboot, the containers started before the host had its address: `podman unshare --rootless-netns ip -4 addr` shows a `169.254.x.x` address instead of the LAN one. Stop every container that is on a Podman bridge network (other apps on the host share that namespace), then start them again. |
 | Host deploy | `journalctl --user -u factory-autodeploy.service` shows the failing step | `promote-stable.ps1` moves `origin/stable`; the next autodeploy run fast-forwards the host first and then uses the new scripts. |
 
 `promote-stable.ps1` runs the full suite and only fast-forwards, but it skips dev activation and the canaries, so the `dev`

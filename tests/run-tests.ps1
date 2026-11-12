@@ -161,6 +161,7 @@ Assert 'backlog audit skill proposes changes without applying GitHub effects' ($
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
 Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
 Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
+Assert 'maintenance watchdog covers issue runs: implement and fix runs are routed to investigate, plan, review and investigate runs are only cancelled' ($maintenanceWorkflow -match '(?s)id: watchdog-issue-runs.*-MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review [^&]*-RouteCancelledRuns && .*-MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "\$CEZ_TASK_ID";')
 Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
 Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
@@ -1236,6 +1237,7 @@ try {
     Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
     $decisionPlan = With $plan @{ unresolvedQuestions = 'Where should state live?'; readyNotReadyStatus = 'not-ready'; decisions = @(@{ id = 'state-owner'; question = 'Where should state live?'; context = 'Two stores exist --> pick one.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Shared'; tradeoffs = 'Migration' }, @{ id = 'local'; label = 'Local file' }) }) }
     Assert 'validate: structured decisions pass' ((Test-Validate 'plan' $decisionPlan) -eq 0)
+    Assert 'validate: a plan that is not ready must say what has to be answered' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = '' })) -ne 0 -and (Test-Validate 'plan' $decisionPlan) -eq 0)
     Assert 'validate: decision with one option fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }) }) })) -ne 0)
     Assert 'validate: decision with unknown recommendation fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; recommendedOptionId = 'zzz'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
     Assert 'validate: decision with bad id fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'Bad Id'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
@@ -1466,7 +1468,14 @@ try {
     Set-Gh @('factory:investigate')
     Assert 'route: low-confidence investigation re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ confidence = 'low' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:investigate')
-    Assert 'route: major architecture investigation requests user input' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    $architectureDecision = @(@{ id = 'state-owner'; question = 'Where should state live?'; options = @(@{ id = 'registry'; label = 'Registry' }, @{ id = 'ledger'; label = 'Ledger' }) })
+    Assert 'route: major architecture investigation with a stated decision requests user input' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false; decisions = $architectureDecision })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help' -and @((Get-Gh).comments | Where-Object { $_ -match 'Where should state live' }).Count -ge 1)
+    Set-Gh @('factory:investigate')
+    Assert 'route: an architecture classification that states no decision is re-planned, not parked with nothing to answer' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -notcontains 'factory:needs-help' -and @((Get-Gh).comments | Where-Object { $_ -match 'stated no decision to make' }).Count -eq 1)
+    Set-Gh @('factory:investigate') @('first <!-- factory:investigate-result:aaaaaaaaaaaaaaaa -->', 'second <!-- factory:investigate-result:bbbbbbbbbbbbbbbb -->')
+    Assert 'route: an issue investigated three times stops and asks a person to narrow, split or close it' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'implementation'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help' -and @((Get-Gh).comments | Where-Object { $_ -match 'investigated 3 times without converging' -and $_ -match 'narrow the scope, split it' }).Count -eq 1)
+    Set-Gh @('factory:investigate') @('first <!-- factory:investigate-result:aaaaaaaaaaaaaaaa -->')
+    Assert 'route: a second investigation still re-plans' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'implementation'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:investigate')
     Assert 'route: model-classified dependency without verified blocker re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'dependency'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -notcontains 'factory:blocked')
     Set-Gh @('factory:investigate')
@@ -1501,6 +1510,21 @@ try {
     Assert 'labels: all factory-state labels created' (@(@('factory:new', 'factory:ready', 'factory:investigate', 'factory:done') | Where-Object { $created -notcontains $_ }).Count -eq 0)
     Assert 'labels: tracking-parent classification created' ($created -contains 'factory:tracking')
     Assert 'labels: type, risk and agent labels created' ($created -contains 'type:bug' -and $created -contains 'risk:high' -and $created -contains 'agent:either')
+    # Hourly maintenance runs this. Labels that already match cost no call, and one server error is retried.
+    Set-Gh @()
+    $labelState = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
+    $labelState.existingLabels = @(
+        @{ name = 'factory:new'; color = '1d76db'; description = 'Factory: newly filed, not yet triaged' },
+        @{ name = 'factory:done'; color = 'ffffff'; description = 'Factory: complete' },
+        @{ name = 'risk:high'; color = 'b60205'; description = 'Factory risk label' }
+    )
+    $labelState.labelCreateFailures = 1
+    $labelState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $labelRun = & pwsh -NoProfile -File $labelScript -GhCommand $gh *>&1 | Out-String
+    $labelCode = $LASTEXITCODE
+    $created = @((Get-Gh).created)
+    Assert 'labels: a label that already matches is not written again, one that differs or is missing is' ($labelCode -eq 0 -and $created -notcontains 'factory:new' -and $created -notcontains 'risk:high' -and $created -contains 'factory:done' -and $created -contains 'factory:ready')
+    Assert 'labels: one GitHub server error is retried instead of failing the run' ($labelCode -eq 0 -and (Get-Gh).labelCreateFailures -eq 0 -and $labelRun -match 'labels ensured')
     Assert 'labels: dry-run creates nothing' ((& { Set-Gh @(); & pwsh -NoProfile -File $labelScript -GhCommand $gh -DryRun *>&1 | Out-Null; @((Get-Gh).created).Count -eq 0 }))
 
     $auditInput = Join-Path $tmp 'backlog-label-audit-input.json'

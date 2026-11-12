@@ -52,12 +52,38 @@ foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
 }
 if (-not $labels.Count) { throw 'no labels found in policies/labels.yaml' }
 
+# This runs in every hourly maintenance. Creating every label every time cost one GitHub call per label
+# and failed the whole run when any one of them hit a server error. Read the labels once and write only
+# the ones that are missing or differ; if the listing itself fails, fall back to writing them all.
+$existing = $null
+if (-not $DryRun) {
+    $listArgs = @('label', 'list', '--limit', '300', '--json', 'name,color,description')
+    if ($Repo) { $listArgs += '--repo', $Repo }
+    try {
+        $listed = & $GhCommand @listArgs 2>$null
+        if ($LASTEXITCODE -eq 0 -and $listed) {
+            $existing = @{}
+            foreach ($item in @(($listed -join "`n") | ConvertFrom-Json)) { $existing[[string]$item.name] = $item }
+        }
+    } catch { $existing = $null }
+}
+$written = 0
 foreach ($lb in $labels) {
     $args2 = @('label', 'create', $lb.Name, '--color', $lb.Color, '--description', $lb.Description, '--force')
     if ($Repo) { $args2 += '--repo', $Repo }
     if ($DryRun) { Write-Host "[DRY-RUN] gh $($args2 -join ' ')"; continue }
-    & $GhCommand @args2 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "failed to create label $($lb.Name)" }
+    if ($null -ne $existing -and $existing.ContainsKey($lb.Name)) {
+        $have = $existing[$lb.Name]
+        if (([string]$have.color).TrimStart('#') -ieq $lb.Color -and [string]$have.description -eq $lb.Description) { continue }
+    }
+    # GitHub answers 502 or 503 now and then; that is not a reason to fail a maintenance run.
+    for ($attempt = 1; ; $attempt++) {
+        & $GhCommand @args2 | Out-Null
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($attempt -ge 3) { throw "failed to create label $($lb.Name)" }
+        Start-Sleep -Seconds (2 * $attempt)
+    }
+    $written++
     Write-Host "label $($lb.Name)"
 }
-Write-Host "$($labels.Count) labels $(if ($DryRun) { 'would be ' })ensured"
+Write-Host "$($labels.Count) labels $(if ($DryRun) { 'would be ' })ensured ($written written)"

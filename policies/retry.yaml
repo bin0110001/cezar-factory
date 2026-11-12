@@ -3,6 +3,10 @@
 max_implementation_retries: 2
 max_review_fix_rounds: 2
 
+# Investigations one issue may go through (fail, investigate, re-plan, fail again) before it stops
+# and a person is asked to narrow it, split it or close it.
+max_investigations_per_issue: 3
+
 # Largest number of sub-issues one planning pass may create (decomposition).
 max_sub_issues: 40
 

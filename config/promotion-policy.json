@@ -48,6 +48,14 @@
       "deployCommand": ["bash", "scripts/deploy/factory-autodeploy.sh", "--force"],
       "deployIdleWaitSeconds": 600
     },
+    "preflight": [
+      {
+        "id": "model-endpoint",
+        "command": ["podman", "exec", "-w", "/tmp", "cezar", "pwsh", "-NoProfile", "-File", "/projects/cezar-factory/scripts/probe-model-endpoint.ps1"],
+        "timeoutSeconds": 180
+      }
+    ],
+    "blocked": { "escalateSeconds": 3600 },
     "breaker": { "maxConsecutiveFailures": 3, "pauseSeconds": 3600 },
     "issues": { "labels": ["factory:new", "type:bug", "risk:medium"], "escalationLabels": ["factory:needs-help"] },
     "drift": { "graceSeconds": 1800 }
