@@ -27,3 +27,10 @@ yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies
 The full Factory suite takes several minutes. For a quick static check while
 editing, run `pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly`; run the
 full suite and YAML lint before committing.
+
+The static check includes the script and workflow contract (`tests/workflow-contract.ps1`): every
+PowerShell script under `scripts/`, `tests/` and `.claude/` must parse, and every workflow `command:` step
+must name a script that exists and pass only parameters the script declares, including every mandatory
+one. A workflow step is the only caller of most scripts and first runs on the host after merge, so a
+renamed parameter is caught here instead of by the next scheduled run. The deploy shell tests need a POSIX
+`bash` (Git for Windows provides one); a missing `bash` fails the suite.

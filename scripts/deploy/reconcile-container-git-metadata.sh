@@ -32,8 +32,17 @@ if [[ "$current_sha" == "$SOURCE_SHA" ]]; then
   echo "reconcile-container-git-metadata: already at $SOURCE_SHA"
   exit 0
 fi
-git -C "$ROOT" merge-base --is-ancestor "$current_sha" "$SOURCE_SHA" || die "refusing non-fast-forward metadata change $current_sha -> $SOURCE_SHA"
 git -C "$ROOT" cat-file -e "$current_sha^{commit}" 2>/dev/null || die "current root commit $current_sha is unavailable"
+# A commit made on the root stable branch that origin/stable does not contain (a run that committed
+# in the root worktree) used to refuse every later deploy. origin/stable is the only authority for
+# this ref, so keep the displaced commit reachable under refs/factory/displaced/ and continue; the
+# mounted-tree check below still proves the files match the promoted commit.
+displaced_sha=''
+if ! git -C "$ROOT" merge-base --is-ancestor "$current_sha" "$SOURCE_SHA"; then
+  displaced_sha="$current_sha"
+  git -C "$ROOT" update-ref "refs/factory/displaced/$displaced_sha" "$displaced_sha" || die "could not preserve displaced root commit $displaced_sha"
+  echo "reconcile-container-git-metadata: WARNING root stable held $displaced_sha, which is not in origin/stable; preserved as refs/factory/displaced/$displaced_sha" >&2
+fi
 
 # Never discard staged root-worktree data. Unstaged differences from the old
 # root commit are expected after the host bind mount advances; the exact target
@@ -100,4 +109,4 @@ if [[ "$post_head" != "$SOURCE_SHA" || "$post_index_clean" != 1 || "$post_tree_v
   die "post-update verification failed (head=$post_head indexClean=$post_index_clean treeVerified=$post_tree_verified); restored root ref and index where possible"
 fi
 
-echo "reconcile-container-git-metadata: advanced root stable metadata $current_sha -> $SOURCE_SHA; verified $checked tree entries; preserved linked worktrees and untracked data"
+echo "reconcile-container-git-metadata: advanced root stable metadata $current_sha -> $SOURCE_SHA; verified $checked tree entries; preserved linked worktrees and untracked data${displaced_sha:+; displaced commit kept at refs/factory/displaced/$displaced_sha}"

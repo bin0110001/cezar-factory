@@ -6,7 +6,7 @@ $state['calls'] = @($state.ContainsKey('calls') ? $state['calls'] : @()) + , ($a
 if ($a[0] -eq 'pr' -and $a[1] -eq 'list') { $list = if ($a -contains 'open') { @($state.openPrs) } else { @($state.prs) }; ConvertTo-Json -InputObject @($list) -Depth 6 -Compress }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'list') { ConvertTo-Json -InputObject @(@($state.ContainsKey('existingLabels') ? $state['existingLabels'] : @()) | ForEach-Object { @{ name = $_ } }) -Depth 4 -Compress }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
-    $open = @($state.issues.Keys | Where-Object { $state.issues[$_].state -eq 'OPEN' } | Sort-Object { [int]$_ } | ForEach-Object { @{ number = [int]$_; title = 't'; createdAt = '2026-01-01T00:00:00Z'; updatedAt = '2026-01-01T00:00:00Z'; url = "https://example/issues/$_"; labels = @($state.issues[$_].labels | ForEach-Object { @{ name = $_ } }) } })
+    $open = @($state.issues.Keys | Where-Object { $state.issues[$_].state -eq 'OPEN' } | Sort-Object { [int]$_ } | ForEach-Object { @{ number = [int]$_; title = 't'; createdAt = ($state.issues[$_]['createdAt'] ?? '2026-01-01T00:00:00Z'); updatedAt = ($state.issues[$_]['updatedAt'] ?? '2026-01-01T00:00:00Z'); url = "https://example/issues/$_"; labels = @($state.issues[$_].labels | ForEach-Object { @{ name = $_ } }) } })
     ConvertTo-Json -InputObject @($open) -Depth 6 -Compress
 }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state['labelsEnsured'] = @($state.ContainsKey('labelsEnsured') ? $state['labelsEnsured'] : @()) + $a[2] }

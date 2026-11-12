@@ -49,7 +49,7 @@
       "deployIdleWaitSeconds": 600
     },
     "breaker": { "maxConsecutiveFailures": 3, "pauseSeconds": 3600 },
-    "issues": { "labels": ["factory:new"], "escalationLabels": ["factory:needs-help"] },
+    "issues": { "labels": ["factory:new", "type:bug", "risk:medium"], "escalationLabels": ["factory:needs-help"] },
     "drift": { "graceSeconds": 1800 }
   }
 }

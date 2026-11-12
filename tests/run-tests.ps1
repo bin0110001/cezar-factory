@@ -585,6 +585,40 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
     Assert "no command-shadowing functions in $($f.Name)" ($bad.Count -eq 0)
 }
 
+# Script and workflow contract (tests/workflow-contract.ps1): every script parses, and every workflow
+# command step names an existing script and passes exactly the parameters it declares. A workflow step
+# is the only caller of most scripts and first runs on the host after merge, so this is checked here.
+. (Join-Path $PSScriptRoot 'workflow-contract.ps1')
+$parseProblems = Get-ScriptParseProblems -Roots @((Join-Path $factory 'scripts'), (Join-Path $factory 'tests'), (Join-Path $factory '.claude'))
+$parseProblems | ForEach-Object { Write-Host "    $_" }
+Assert 'every PowerShell script parses without errors' ($parseProblems.Count -eq 0)
+$contractProblems = Get-WorkflowContractProblems -WorkflowsPath (Join-Path $factory 'workflows') -FactoryRoot $factory
+$contractProblems | ForEach-Object { Write-Host "    $_" }
+Assert 'every workflow command step matches its script (exists, declared parameters, mandatory parameters)' ($contractProblems.Count -eq 0)
+# Prove the checks fire: a fixture with one of each defect must report each of them.
+$contractFixture = Join-Path ([IO.Path]::GetTempPath()) "factory-contract-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $contractFixture 'scripts'), (Join-Path $contractFixture 'workflows') | Out-Null
+    'param([Parameter(Mandatory)][string]$InputPath, [string]$OutputPath)' | Set-Content (Join-Path $contractFixture 'scripts/good.ps1')
+    'param([string]$Path' | Set-Content (Join-Path $contractFixture 'scripts/broken.ps1')
+    @(
+        'steps:'
+        '  - id: ok'
+        '    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/good.ps1 -InputPath "a -Quoted b" -OutputPath out.json'
+        '  - id: renamed'
+        '    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/good.ps1 -InputPath a -ResultPath out.json'
+        '  - id: missing-mandatory'
+        '    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/good.ps1 -OutputPath out.json'
+        '  - id: deleted'
+        '    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/gone.ps1'
+    ) | Set-Content (Join-Path $contractFixture 'workflows/fixture.yaml')
+    $seededParse = Get-ScriptParseProblems -Roots @((Join-Path $contractFixture 'scripts'))
+    $seededContract = Get-WorkflowContractProblems -WorkflowsPath (Join-Path $contractFixture 'workflows') -FactoryRoot $contractFixture
+    Assert 'contract check reports a script with a syntax error' (@($seededParse | Where-Object { $_ -match 'broken\.ps1' }).Count -ge 1 -and @($seededParse | Where-Object { $_ -match 'good\.ps1' }).Count -eq 0)
+    Assert 'contract check reports an undeclared parameter, a missing mandatory parameter and a missing script, and nothing else' ($seededContract.Count -eq 3 -and @($seededContract | Where-Object { $_ -match ':5 .*-ResultPath' }).Count -eq 1 -and @($seededContract | Where-Object { $_ -match ':7 .*mandatory -InputPath' }).Count -eq 1 -and @($seededContract | Where-Object { $_ -match ':9 .*gone\.ps1 does not exist' }).Count -eq 1)
+}
+finally { Remove-Item -Recurse -Force $contractFixture -ErrorAction SilentlyContinue }
+
 if ($StaticOnly) {
     if ($script:fail) { Write-Error "$script:fail static checks failed."; exit 1 }
     Write-Host 'STATIC CHECKS PASSED'
@@ -735,6 +769,22 @@ try {
     Clear-GhCache
     Assert 'Clear-GhCache drops every entry' (@(Get-ChildItem $cacheDir -Filter '*.json' -ErrorAction SilentlyContinue).Count -eq 0)
     Remove-Item Env:FACTORY_GH_CACHE_DIR; $env:FACTORY_GH_CACHE_TTL_SECONDS = '0'
+
+    # The stale refresher rotates: the least recently touched workable issue goes first, whatever its
+    # creation date, so the same two old issues are not re-triggered forever while the rest starve.
+    @{ prs = @(); openPrs = @(); issues = @{
+            '1' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); createdAt = '2026-01-01T00:00:00Z'; updatedAt = '2026-03-03T00:00:00Z' }
+            '2' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); createdAt = '2026-01-02T00:00:00Z'; updatedAt = '2026-03-01T00:00:00Z' }
+            '3' = @{ state = 'OPEN'; labels = @('factory:needs-plan'); comments = @(); createdAt = '2026-01-03T00:00:00Z'; updatedAt = '2026-03-02T00:00:00Z' }
+            '4' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); createdAt = '2026-01-04T00:00:00Z'; updatedAt = [DateTimeOffset]::UtcNow.ToString('o') }
+            '5' = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); createdAt = '2026-01-01T00:00:00Z'; updatedAt = '2026-02-01T00:00:00Z' }
+        } } | ConvertTo-Json -Depth 8 | Set-Content $closeState
+    $refreshOut = Join-Path $tmp 'stale-refresh.json'
+    $refreshRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $refreshOut }
+    if ($refreshRun.Code -ne 0) { Write-Host $refreshRun.Out }
+    $refresh = Get-Content -Raw $refreshOut | ConvertFrom-Json
+    Assert 'stale refresher takes the least recently touched workable issues first, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '2,3')
+    Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 3 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
     Remove-Item Env:FAKE_CLOSE_STATE
 
     $backlogFeatureProject = Join-Path $tmp 'backlog-feature-project'
@@ -982,7 +1032,8 @@ try {
             @{ number = 2; title = 'ambiguous labels'; body = ''; url = 'https://github.com/x/y/issues/2'; createdAt = '2026-01-02T00:00:00Z'; labels = @('factory:new', 'type:bug', 'type:feature', 'risk:low') },
             @{ number = 3; title = 'eligible work'; body = ''; url = 'https://github.com/x/y/issues/3'; createdAt = '2026-01-03T00:00:00Z'; labels = @('factory:new', 'type:bug', 'risk:low') },
             @{ number = 4; title = 'tracking label'; body = ''; url = 'https://github.com/x/y/issues/4'; createdAt = '2026-01-04T00:00:00Z'; labels = @('factory:new', 'factory:tracking', 'type:feature', 'risk:low') },
-            @{ number = 5; title = 'new eligible work'; body = ''; url = 'https://github.com/x/y/issues/5'; createdAt = '2026-01-05T00:00:00Z'; labels = @('factory:new', 'type:feature', 'risk:low') }
+            @{ number = 5; title = 'new eligible work'; body = ''; url = 'https://github.com/x/y/issues/5'; createdAt = '2026-01-05T00:00:00Z'; labels = @('factory:new', 'type:feature', 'risk:low') },
+            @{ number = 6; title = '[promotion] canary failed'; body = ''; url = 'https://github.com/x/y/issues/6'; createdAt = '2026-01-06T00:00:00Z'; labels = @('factory:new') }
         )
     }
     $selectorState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
@@ -999,6 +1050,10 @@ try {
     $selectorTargetRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #5 (new eligible work) at https://github.com/x/y/issues/5'; OutputPath = $selectorTargetOutput }
     $selectedTargetIntake = Get-Content -Raw $selectorTargetOutput | ConvertFrom-Json
     Assert 'event intake selects its triggering issue instead of the oldest issue' ($selectorTargetRun.Code -eq 0 -and $selectedTargetIntake.issue -eq 5 -and $selectedTargetIntake.terminalReason -eq 'selected-triggered-issue')
+    $selectorUnlabelledOutput = Join-Path $tmp 'intake-unlabelled-selection.json'
+    $selectorUnlabelledRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #6 ([promotion] canary failed) at https://github.com/x/y/issues/6'; OutputPath = $selectorUnlabelledOutput }
+    $selectedUnlabelledIntake = Get-Content -Raw $selectorUnlabelledOutput | ConvertFrom-Json
+    Assert 'intake selects a factory:new issue that has no type or risk label yet (promoter-filed failures)' ($selectorUnlabelledRun.Code -eq 0 -and $selectedUnlabelledIntake.issue -eq 6)
     $selectorIneligibleOutput = Join-Path $tmp 'intake-ineligible-selection.json'
     $selectorIneligibleRun = Run 'select-intake-issue.ps1' @{ GhCommand = $gh; Task = 'GitHub issue #1 (tracking epic) at https://github.com/x/y/issues/1'; OutputPath = $selectorIneligibleOutput }
     $selectedIneligibleIntake = Get-Content -Raw $selectorIneligibleOutput | ConvertFrom-Json
@@ -1372,6 +1427,16 @@ try {
     $recovery = Get-Content -Raw $recoveryOutput | ConvertFrom-Json
     Assert 'audit recovery releases expired reservation' ($LASTEXITCODE -eq 0 -and @($recovery.recovered).Count -eq 1 -and (Get-Gh).labels -notcontains 'factory:auditing')
     Assert 'audit recovery leaves an evidence comment' (@((Get-Gh).comments | Where-Object { $_ -match 'factory-audit-recovery:5' }).Count -eq 1)
+    # A stale reservation beside a lifecycle state is released too; the state itself is untouched.
+    Set-Gh @('factory:auditing', 'factory:ready') @("<!-- factory-audit-reservation:5 -->`n$expired")
+    $recoveryState = Get-Content -Raw $env:FAKE_GH_STATE | ConvertFrom-Json -AsHashtable
+    $recoveryState.issueState = 'OPEN'
+    $recoveryState.issues = @(@{ number = 5; title = 'Stale audit beside a state'; body = 'audit fixture'; updatedAt = '2020-01-01T00:00:00Z'; labels = @(@{ name = 'factory:auditing' }, @{ name = 'factory:ready' }); url = 'https://github.com/x/y/issues/5' })
+    $recoveryState | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE
+    $recoveryLog = & pwsh -NoProfile -File $recoveryScript -GhCommand $gh -OutputPath $recoveryOutput -SkipRunCheck *>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Write-Host "  recovery diagnostic: $recoveryLog" }
+    $recovery = Get-Content -Raw $recoveryOutput | ConvertFrom-Json
+    Assert 'audit recovery releases a stale reservation left beside a lifecycle state and keeps the state' ($LASTEXITCODE -eq 0 -and @($recovery.recovered).Count -eq 1 -and $recovery.recovered[0].lifecycleState -eq 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:auditing' -and (Get-Gh).labels -contains 'factory:ready')
 
     # Project override fully replaces a factory file, and survives re-sync.
     $ovDir = Join-Path $rp '.ai/factory/overrides/policies'
@@ -1469,8 +1534,15 @@ $gitMetadataSync = Get-Content -Raw (Join-Path $factory 'scripts/deploy/reconcil
 Assert 'autodeploy repairs only root Git metadata after verifying mounted files and preserves linked worktrees' ($autodeploy -match 'reconcile-container-git-metadata\.sh' -and $gitMetadataSync -match 'git .*ls-tree -r -z' -and $gitMetadataSync -match 'git .*read-tree' -and $gitMetadataSync -match 'update-ref refs/heads/stable' -and $gitMetadataSync -match 'task worktrees')
 # The deploy shell tests exercise real control flow (idle gate, deferral, recovery). They were once left out of the
 # suite and drifted into failure unnoticed, so run them whenever a POSIX bash (not WSL's launcher) is available.
-$shellTestBash = Get-Command bash -ErrorAction SilentlyContinue
-if ($shellTestBash -and $shellTestBash.Source -notmatch 'System32') {
+$shellTestBash = @(Get-Command bash -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'System32' }) | Select-Object -First 1
+if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
+    # Git for Windows ships a POSIX bash that is often not on PATH in a plain PowerShell session.
+    $gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source -Parent) -Parent) 'bin/bash.exe'
+    if (Test-Path $gitBash) { $shellTestBash = [pscustomobject]@{ Source = $gitBash } }
+}
+# Skipping these silently is how they drifted into failure before, so a missing bash is a failure.
+Assert 'a POSIX bash is available for the deploy shell tests' ([bool]$shellTestBash)
+if ($shellTestBash) {
     foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh') {
         $shellOutput = & $shellTestBash.Source (Join-Path $factory "tests/$shellTest") 2>&1
         Assert "deploy shell test passes: $shellTest" ($LASTEXITCODE -eq 0)
