@@ -106,6 +106,16 @@ one list and be missing from the list that would have given it a consumer.
   or order both after a unit that waits for a non-link-local address). The compose monitoring stack also starts
   at boot now; decide whether it should.
 
+- [ ] **0.12 The maintenance run, and so the promotion canary, depends on the Claude 5-hour limit.** The 20:00Z and
+  21:00Z maintenance runs failed at the `backlog-label-audit` agent step with "You've hit your 5-hour limit, resets
+  11pm (UTC)". The agent steps are routed to `claude`/`sonnet` (temporary routing from 2026-11-07), so any hour in
+  which that limit is spent fails the whole run, and the promoter's `maintenance` canary uses the same automation, so
+  a candidate can be rolled back for a reason that has nothing to do with it. If the host's Claude login is the same
+  account as an interactive Claude Code session, that session spends the same limit. A step cannot be marked
+  allowed-to-fail in this Cezar version (`onFail` only retries). Options for the owner: route housekeeping agents back
+  to the local model once the codex no-op is fixed; retire the label-audit agent, since the lifecycle sweep and intake
+  now cover what it did; or give the canary a deterministic maintenance workflow with no agent step.
+
 ## Phase 1: no state without an owner and a deadline
 
 - [x] **1.1 Intake takes promoter-filed issues.** The promoter labels its issues `type:bug` and
@@ -314,3 +324,12 @@ Then the feature backlog reopens.
   parallel audit agents from the interactive session, which share the account's 5,000-point hourly budget. The odd readings
   (2,322 once, a second reset time) were not reproduced and are left unexplained. Practical rule: bulk issue and PR edits go
   through the REST API (`gh api`), which has its own budget; `ship-loop -Action Health` shows what is left.
+- 2026-11-12 22:00Z: first scheduled maintenance run on the new code (`306ac6e1`, 51 seconds, all 20 steps done),
+  with `watchdog-issue-runs`, `lifecycle-sweep` and `no-run-commits` live. The sweep created the "Factory stall report"
+  (#460) with eight findings and made no repair: #228 (working for 71 h, a person's), #129 (its blocker is closed but
+  it is a person's and waits on the disk), #116, #107 and #105 (blocked, no blocker named), #89 and #70 (waiting on a
+  person past a week) and #39 (blocked 27 days). #107, #105 and #116 were verified (every issue they name is closed)
+  and returned to `factory:ready`. The remaining items need the owner: #228, #129, #89, #70, #39.
+- 2026-11-12 21:50Z: batch 8 (`d0fcee9`) went to `stable-deployed` through the promoter with no manual step; the host
+  checkout, the policy with its preflight, the scratch-ignore rule and the sweep step are all on the host; health `ok`.
+  This is the first end-to-end proof that a fix to the delivery path reaches the host unaided.
