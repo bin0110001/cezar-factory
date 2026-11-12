@@ -157,13 +157,13 @@ one list and be missing from the list that would have given it a consumer.
   mismatch so the check is proven to fire.
 - [x] **2.2 Fail, do not skip,** when `bash` or `python` is missing, so a Windows run cannot silently drop
   the deploy shell tests.
-- [ ] **2.3 Portability lint**: ban Windows-only constructs in `scripts/` and `tests/` (`-WindowStyle`,
+- [x] **2.3 Portability lint**: ban Windows-only constructs in `scripts/` and `tests/` (`-WindowStyle`,
   `.cmd`/`.exe` shims, drive letters, `$env:LOCALAPPDATA` without a fallback).
 - [ ] **2.4 Smoke-run every workflow script** with the workflow's exact arguments against the fake `gh`,
   starting with the seven that are never executed before production.
-- [ ] **2.5 Linux receipt before merge.** `ship-loop -Action Validate` writes a receipt bound to the head
+- [x] **2.5 Linux receipt before merge.** `ship-loop -Action Validate` writes a receipt bound to the head
   SHA; the merge rule in `AGENTS.md` and the promoter evidence gate require it.
-- [ ] **2.6 Host contract test**: flags in `integrations/bazzite/*.service` `ExecStart` lines and Python
+- [x] **2.6 Host contract test**: flags in `integrations/bazzite/*.service` `ExecStart` lines and Python
   `command:` steps are checked against the scripts' argument parsers.
 - [ ] **2.7 Scratch-state test**: run the validation and handoff gates in a worktree seeded with tracked
   and untracked `.factory/` content.
@@ -247,4 +247,9 @@ Then the feature backlog reopens.
   also started at boot). At 14:22Z a `gh` call from the dev machine failed with "GraphQL: API rate limit already
   exceeded": the shared 5,000-point hourly budget had been used up in the window 13:21Z to 14:21Z. The consumer is not
   identified (new item below).
-
+- 2026-11-12: batch 4 merged (PR #446, `3bbf40f`) and batch 5 merged (PR #448, `ae948a3`), both after Windows and
+  Linux full-suite runs.
+- 2026-11-12: batch 6 delivers 2.3, 2.5 and 2.6 and starts 2.4: six of the seven never-executed scripts are started
+  as their workflow starts them (`collect-environment-state.ps1` is left out because it probes real endpoints).
+  2.4 stays open for running every workflow script against fixtures to a structured result. 2.5 is enforced by
+  the `AGENTS.md` rule and the receipt; the promoter validates on Linux itself, so its gate is unchanged.

@@ -656,6 +656,12 @@ Assert 'every PowerShell script parses without errors' ($parseProblems.Count -eq
 $contractProblems = Get-WorkflowContractProblems -WorkflowsPath (Join-Path $factory 'workflows') -FactoryRoot $factory
 $contractProblems | ForEach-Object { Write-Host "    $_" }
 Assert 'every workflow command step matches its script (exists, declared parameters, mandatory parameters)' ($contractProblems.Count -eq 0)
+$portabilityProblems = Get-PortabilityProblems -Roots @((Join-Path $factory 'scripts'), (Join-Path $factory 'tests'), (Join-Path $factory '.claude'))
+$portabilityProblems | ForEach-Object { Write-Host "    $_" }
+Assert 'no script uses a construct that only works on Windows (the Factory runs on Linux)' ($portabilityProblems.Count -eq 0)
+$hostCommandProblems = Get-HostCommandProblems -FactoryRoot $factory
+$hostCommandProblems | ForEach-Object { Write-Host "    $_" }
+Assert 'every Python entry point is started with flags and a command its argument parser defines (workflows and systemd units)' ($hostCommandProblems.Count -eq 0)
 # Prove the checks fire: a fixture with one of each defect must report each of them.
 $contractFixture = Join-Path ([IO.Path]::GetTempPath()) "factory-contract-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 try {
@@ -676,9 +682,50 @@ try {
     $seededParse = Get-ScriptParseProblems -Roots @((Join-Path $contractFixture 'scripts'))
     $seededContract = Get-WorkflowContractProblems -WorkflowsPath (Join-Path $contractFixture 'workflows') -FactoryRoot $contractFixture
     Assert 'contract check reports a script with a syntax error' (@($seededParse | Where-Object { $_ -match 'broken\.ps1' }).Count -ge 1 -and @($seededParse | Where-Object { $_ -match 'good\.ps1' }).Count -eq 0)
+    @(
+        'Start-Process pwsh -WindowStyle Hidden'
+        '$state = Join-Path $env:LOCALAPPDATA "factory"'
+        '$fallback = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:HOME }'
+        '$tool = "C:\tools\gh.exe"'
+        '& "wrapper.cmd"'
+        'Start-Process notepad -WindowStyle Hidden # windows-only'
+    ) | Set-Content (Join-Path $contractFixture 'scripts/windows.ps1')
+    $seededPortability = @((Get-PortabilityProblems -Roots @((Join-Path $contractFixture 'scripts'))) | Where-Object { $_ -match 'windows\.ps1' })
+    Assert 'portability check reports a Windows-only parameter, an unguarded Windows variable, a drive path and a command shim, and accepts a guarded or marked line' ($seededPortability.Count -eq 4 -and @($seededPortability | Where-Object { $_ -match ':1 .*-WindowStyle' }).Count -eq 1 -and @($seededPortability | Where-Object { $_ -match ':2 .*LOCALAPPDATA' }).Count -eq 1 -and @($seededPortability | Where-Object { $_ -match ':4 .*drive-letter' }).Count -eq 1 -and @($seededPortability | Where-Object { $_ -match ':5 .*shim' }).Count -eq 1)
+    New-Item -ItemType Directory -Force -Path (Join-Path $contractFixture 'scripts/release') | Out-Null
+    'p.add_argument("command", choices=("run", "status")); p.add_argument("--repo"); p.add_argument("--store")' | Set-Content (Join-Path $contractFixture 'scripts/release/tool.py')
+    @(
+        'ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/tool.py run --repo %h/x --store %h/y'
+        'ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/tool.py run --repo %h/x --state-root %h/y'
+        'ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/tool.py promote --repo %h/x'
+        'ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/absent.py run'
+    ) | Set-Content (Join-Path $contractFixture 'unit.service')
+    $seededHost = Get-HostCommandProblems -FactoryRoot $contractFixture -CommandFiles @((Join-Path $contractFixture 'unit.service'))
+    Assert 'host command check reports an undefined flag, an unknown command and a missing script, and accepts a correct unit' ($seededHost.Count -eq 3 -and @($seededHost | Where-Object { $_ -match ':2 .*--state-root' }).Count -eq 1 -and @($seededHost | Where-Object { $_ -match ":3 .*'promote'" }).Count -eq 1 -and @($seededHost | Where-Object { $_ -match ':4 .*absent\.py does not exist' }).Count -eq 1)
     Assert 'contract check reports an undeclared parameter, a missing mandatory parameter and a missing script, and nothing else' ($seededContract.Count -eq 3 -and @($seededContract | Where-Object { $_ -match ':5 .*-ResultPath' }).Count -eq 1 -and @($seededContract | Where-Object { $_ -match ':7 .*mandatory -InputPath' }).Count -eq 1 -and @($seededContract | Where-Object { $_ -match ':9 .*gone\.ps1 does not exist' }).Count -eq 1)
 }
 finally { Remove-Item -Recurse -Force $contractFixture -ErrorAction SilentlyContinue }
+
+# Start every workflow script that no other test or canary executes, exactly as its workflow step starts it.
+$startDirectory = Join-Path ([IO.Path]::GetTempPath()) "factory-start-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+try {
+    $startProblems = Get-ScriptStartProblems -FactoryRoot $factory -WorkDirectory $startDirectory -Invocations @{
+        'scripts/route-plan-or-default.ps1'        = @('-Path', '.factory/plan-result.json')
+        'scripts/prepare-implementation.ps1'       = @('-Task', 'GitHub issue #1 (smoke) at https://github.com/example/repo/issues/1', '-OutputPath', '.factory/implementation-context.json')
+        'scripts/ensure-implementation-result.ps1' = @('-Path', '.factory/implement-result.json', '-ContextPath', '.factory/implementation-context.json')
+        'scripts/ensure-pr-closes-issue.ps1'       = @('-Path', '.factory/implement-result.json')
+        'scripts/validate-reviewed-head.ps1'       = @('-ReviewPath', '.factory/review-result.json', '-Task', 'GitHub issue #1 (smoke) at https://github.com/example/repo/issues/1')
+        'scripts/hindsight/recall.ps1'             = @('-Objective', 'GitHub issue #1 (smoke)', '-TaskClass', 'investigation')
+    }
+    $startProblems | ForEach-Object { Write-Host "    $_" }
+    Assert 'workflow scripts that nothing else executes start without dying on a defect in their own code' ($startProblems.Count -eq 0)
+    New-Item -ItemType Directory -Force -Path (Join-Path $startDirectory 'seed/scripts') | Out-Null
+    'param([string]$Path) Get-Content -Raw $Path -WindowStyle Hidden' | Set-Content (Join-Path $startDirectory 'seed/scripts/defect.ps1')
+    'param([string]$Path) if (-not (Test-Path $Path)) { Write-Error "result file not found: $Path"; exit 1 }' | Set-Content (Join-Path $startDirectory 'seed/scripts/refuses.ps1')
+    $seededStart = Get-ScriptStartProblems -FactoryRoot (Join-Path $startDirectory 'seed') -WorkDirectory (Join-Path $startDirectory 'seed-work') -Invocations @{ 'scripts/defect.ps1' = @('-Path', 'x.json'); 'scripts/refuses.ps1' = @('-Path', 'x.json') }
+    Assert 'start-up smoke reports a script that dies on its own defect and accepts one that refuses its input' ($seededStart.Count -eq 1 -and $seededStart[0] -match 'defect\.ps1')
+}
+finally { Remove-Item -Recurse -Force $startDirectory -ErrorAction SilentlyContinue }
 
 if ($StaticOnly) {
     if ($script:fail) { Write-Error "$script:fail static checks failed."; exit 1 }

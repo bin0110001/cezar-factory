@@ -145,6 +145,16 @@ your branch. If the merge is refused or conflicts, resolve it and re-validate ra
 than bypassing a gate. Runs outside Dev mode still follow the production-release gates
 above.
 
+The Factory is developed on Windows and runs on Linux, and the first Linux run of a change must not be
+the promoter's, after merge. From a dev window, before merging a PR that touches `scripts/`, `tests/`,
+`workflows/`, `automations/`, `policies/` or `config/`, run
+`pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate` for the pushed PR head. It runs the
+host's own full suite for that commit in the Cezar container, changes no release state, and on success
+writes a receipt (`VALIDATE_RECEIPT`, under `.factory/ship-loop/receipts/`). Quote the `VALIDATE_PASSED`
+line for the head SHA in a PR comment; that comment is the Linux validation evidence. Do not merge on
+`VALIDATE_FAILED`. If the host cannot be reached, say so in the self-review and hold any change to
+`scripts/release/` or `scripts/deploy/` until it can: those run the delivery path itself.
+
 **A job owns its pull request until it merges.** The job that opens or updates a PR
 (implement, fix) is responsible for getting it to `dev`; the user is never the one who
 rebases or resolves conflicts for it. Before handing off, the job merges the current
