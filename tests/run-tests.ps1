@@ -313,7 +313,31 @@ $notIgnored = @('.factory/zz-brand-new-scratch.json', '.factory/gh-cache/0123abc
 Assert "new scratch under .factory/ is ignored by default ($($notIgnored -join ', '))" ($notIgnored.Count -eq 0)
 $ignoredButTracked = @('.factory/obot-caddy-root.crt', '.factory/release-reports/promote-stable.jsonl' | Where-Object { & git -C $factory check-ignore -q --no-index -- $_; $LASTEXITCODE -eq 0 })
 Assert "the deliberately tracked files under .factory/ are not ignored ($($ignoredButTracked -join ', '))" ($ignoredButTracked.Count -eq 0)
-Assert 'workflow-iterate skill documents the Run action'((Get-Content -Raw (Join-Path $factory '.claude/skills/workflow-iterate/SKILL.md')) -match 'ship-loop\.ps1 -Action Run')
+# Scratch-state gate: every `.factory/<name>` that a workflow or script mentions is created, untracked, in a clean
+# repository carrying the real .gitignore, and the checkout must still be clean. That is the condition the deploy
+# guard, the promotion gate and the end-of-run autosave all depend on. A repository without the rule is the control.
+$scratchSources = @(Get-ChildItem (Join-Path $factory 'workflows'), (Join-Path $factory 'scripts') -Recurse -File | Where-Object { $_.Extension -in '.yaml', '.ps1', '.py', '.sh' -and $_.FullName -notmatch '[\/](artifacts|__pycache__)[\/]' })
+$scratchNames = @($scratchSources | ForEach-Object { [regex]::Matches([IO.File]::ReadAllText($_.FullName), '\.factory/([A-Za-z0-9_][A-Za-z0-9_.\-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.\-]*)*)') | ForEach-Object { $_.Groups[1].Value.TrimEnd('.') } } | Where-Object { $_ -and $_ -notmatch '^(release-reports|obot-caddy-root\.crt)' } | Sort-Object -Unique)
+Assert "the factory's own code names a broad set of .factory/ scratch paths ($($scratchNames.Count))" ($scratchNames.Count -ge 30)
+function Get-ScratchDirtyCount([string]$GitignoreSource) {
+    $scratchRepo = Join-Path ([IO.Path]::GetTempPath()) "factory-scratch-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+    try {
+        New-Item -ItemType Directory -Force $scratchRepo | Out-Null
+        & git -C $scratchRepo init -q -b stable 2>&1 | Out-Null
+        if ($GitignoreSource) { Copy-Item $GitignoreSource (Join-Path $scratchRepo '.gitignore') } else { '' | Set-Content (Join-Path $scratchRepo '.gitignore') }
+        & git -C $scratchRepo add .gitignore 2>&1 | Out-Null
+        & git -C $scratchRepo -c user.name=t -c user.email=t@example.invalid commit -q -m base 2>&1 | Out-Null
+        foreach ($name in ($scratchNames | Sort-Object { $_.Length } -Descending)) {
+            $scratchPath = Join-Path $scratchRepo ".factory/$name"
+            try { New-Item -ItemType Directory -Force -Path (Split-Path $scratchPath -Parent) | Out-Null; if (-not (Test-Path $scratchPath)) { Set-Content -Path $scratchPath -Value 'scratch' } } catch { }
+        }
+        @(& git -C $scratchRepo status --porcelain --untracked-files=all)
+    }
+    finally { Remove-Item -Recurse -Force $scratchRepo -ErrorAction SilentlyContinue }
+}
+$scratchDirty = @(Get-ScratchDirtyCount (Join-Path $factory '.gitignore'))
+Assert "a checkout stays clean after every .factory/ scratch path the code mentions is written ($(@($scratchDirty | Select-Object -First 5) -join '; '))" ($scratchDirty.Count -eq 0)
+Assert 'the scratch-state gate fails without the ignore rule (control)' (@(Get-ScratchDirtyCount '').Count -gt 0)Assert 'workflow-iterate skill documents the Run action'((Get-Content -Raw (Join-Path $factory '.claude/skills/workflow-iterate/SKILL.md')) -match 'ship-loop\.ps1 -Action Run')
 # Copyable result examples must remain valid JSON and satisfy their declared
 # schema. A missing required field is a real contract failure, not just prose
 # drift; #33 will extend this to the full workflow command inventory.
@@ -714,19 +738,17 @@ try {
 }
 finally { Remove-Item -Recurse -Force $contractFixture -ErrorAction SilentlyContinue }
 
-# Start every workflow script that no other test or canary executes, exactly as its workflow step starts it.
+# Start every script a workflow runs, exactly as its workflow step starts it (table-driven from the workflows, so
+# a new step is covered the day it is written). Scripts that probe live endpoints or need a real model are left to
+# their own tests and canaries.
+$smokeSkip = 'scripts/probe-model-endpoint.ps1', 'scripts/collect-environment-state.ps1', 'scripts/factory-startup.ps1'
 $startDirectory = Join-Path ([IO.Path]::GetTempPath()) "factory-start-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 try {
-    $startProblems = Get-ScriptStartProblems -FactoryRoot $factory -WorkDirectory $startDirectory -Invocations @{
-        'scripts/route-plan-or-default.ps1'        = @('-Path', '.factory/plan-result.json')
-        'scripts/prepare-implementation.ps1'       = @('-Task', 'GitHub issue #1 (smoke) at https://github.com/example/repo/issues/1', '-OutputPath', '.factory/implementation-context.json')
-        'scripts/ensure-implementation-result.ps1' = @('-Path', '.factory/implement-result.json', '-ContextPath', '.factory/implementation-context.json')
-        'scripts/ensure-pr-closes-issue.ps1'       = @('-Path', '.factory/implement-result.json')
-        'scripts/validate-reviewed-head.ps1'       = @('-ReviewPath', '.factory/review-result.json', '-Task', 'GitHub issue #1 (smoke) at https://github.com/example/repo/issues/1')
-        'scripts/hindsight/recall.ps1'             = @('-Objective', 'GitHub issue #1 (smoke)', '-TaskClass', 'investigation')
-    }
+    $smokeInvocations = Get-WorkflowScriptInvocations -WorkflowsPath (Join-Path $factory 'workflows') -Skip $smokeSkip
+    Assert "the workflows yield start-up invocations for a broad set of scripts ($($smokeInvocations.Count))" ($smokeInvocations.Count -ge 30)
+    $startProblems = Get-ScriptStartProblems -FactoryRoot $factory -WorkDirectory $startDirectory -Invocations $smokeInvocations
     $startProblems | ForEach-Object { Write-Host "    $_" }
-    Assert 'workflow scripts that nothing else executes start without dying on a defect in their own code' ($startProblems.Count -eq 0)
+    Assert 'every workflow script starts, as its workflow starts it, without dying on a defect in its own code' ($startProblems.Count -eq 0)
     New-Item -ItemType Directory -Force -Path (Join-Path $startDirectory 'seed/scripts') | Out-Null
     'param([string]$Path) Get-Content -Raw $Path -WindowStyle Hidden' | Set-Content (Join-Path $startDirectory 'seed/scripts/defect.ps1')
     'param([string]$Path) if (-not (Test-Path $Path)) { Write-Error "result file not found: $Path"; exit 1 }' | Set-Content (Join-Path $startDirectory 'seed/scripts/refuses.ps1')

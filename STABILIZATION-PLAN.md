@@ -177,13 +177,13 @@ one list and be missing from the list that would have given it a consumer.
   the deploy shell tests.
 - [x] **2.3 Portability lint**: ban Windows-only constructs in `scripts/` and `tests/` (`-WindowStyle`,
   `.cmd`/`.exe` shims, drive letters, `$env:LOCALAPPDATA` without a fallback).
-- [ ] **2.4 Smoke-run every workflow script** with the workflow's exact arguments against the fake `gh`,
+- [x] **2.4 Smoke-run every workflow script** with the workflow's exact arguments against the fake `gh`,
   starting with the seven that are never executed before production.
 - [x] **2.5 Linux receipt before merge.** `ship-loop -Action Validate` writes a receipt bound to the head
   SHA; the merge rule in `AGENTS.md` and the promoter evidence gate require it.
 - [x] **2.6 Host contract test**: flags in `integrations/bazzite/*.service` `ExecStart` lines and Python
   `command:` steps are checked against the scripts' argument parsers.
-- [ ] **2.7 Scratch-state test**: run the validation and handoff gates in a worktree seeded with tracked
+- [x] **2.7 Scratch-state test**: run the validation and handoff gates in a worktree seeded with tracked
   and untracked `.factory/` content.
 - [x] **2.8 Canaries do not roll back on transient GitHub errors** (rate limit, truncated output):
   inconclusive, retry.
@@ -333,3 +333,6 @@ Then the feature backlog reopens.
 - 2026-11-12 21:50Z: batch 8 (`d0fcee9`) went to `stable-deployed` through the promoter with no manual step; the host
   checkout, the policy with its preflight, the scratch-ignore rule and the sweep step are all on the host; health `ok`.
   This is the first end-to-end proof that a fix to the delivery path reaches the host unaided.
+- 2026-11-12: batch 11 delivers 2.4 and 2.7. The smoke now runs all 53 workflow invocations in 28 seconds and found no
+  defect in today's scripts. 2.4 proves a script starts, not that it returns a correct result; correctness stays with the
+  behavioural tests and the canaries.

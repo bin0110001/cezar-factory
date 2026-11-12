@@ -42,10 +42,17 @@ Three more static checks cover what a Windows run cannot see by executing code:
   `scripts/`) a `.cmd`/`.bat` shim. A line that is deliberately Windows-only ends with `# windows-only`.
 - **Host commands.** Every Python entry point started by a workflow `command:` step or by a systemd unit in
   `integrations/bazzite/` must be passed only `--flags` and a first word its argument parser defines.
-- **Start-up smoke.** Workflow scripts that no other test or canary executes are started exactly as their
-  workflow step starts them, in an empty directory, with a `gh` that refuses every call. They are expected to
-  stop with their own message; dying on a missing cmdlet, parameter or property fails the suite. Add a script
-  to the list in `tests/run-tests.ps1` when a workflow gains a step nothing else exercises.
+- **Start-up smoke.** Every script a workflow runs (53 invocations of about 40 scripts today) is started exactly
+  as its workflow step starts it, in an empty directory with an empty home, a `gh` that refuses every call and
+  no reachable Cezar API, with a 60 second limit. The table is read from `workflows/*.yaml`, so a new step is
+  covered the day it is written. A script is expected to stop with its own message; dying on a missing cmdlet,
+  parameter, property or unset variable, or a syntax error, fails the suite. Scripts that probe live endpoints
+  (`probe-model-endpoint.ps1`, `collect-environment-state.ps1`) and `factory-startup.ps1` are skipped in
+  `tests/run-tests.ps1` and left to their own tests.
+- **Scratch state.** Every `.factory/<name>` path that a workflow or script mentions (51 today) is created,
+  untracked, in a clean repository that carries the real `.gitignore`, and the checkout must still be clean. The
+  deploy guard, the promotion gate and Cezar's end-of-run autosave all depend on that. A repository without the
+  ignore rule is the control, so the test is known to fail when the rule is missing.
 
 ## Linux before merge
 

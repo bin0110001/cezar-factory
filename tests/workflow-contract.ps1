@@ -171,42 +171,96 @@ function Get-HostCommandProblems {
     , @($problems)
 }
 
+function Get-WorkflowScriptInvocations {
+    # Every `pwsh -File $FACTORY_RUNTIME_ROOT/scripts/<x>.ps1 <args>` in the workflows, as the workflow starts it:
+    # key `scripts/<x>.ps1` (first use) or `scripts/<x>.ps1|<n>` (further distinct argument lists), value the
+    # argument tokens with quotes removed and the workflow's placeholders replaced by fixtures.
+    param([Parameter(Mandatory)][string]$WorkflowsPath, [string[]]$Skip = @())
+    $placeholders = @{
+        '$CEZ_API_URL' = 'http://127.0.0.1:9'; '$CEZ_PROJECT_ID' = 'smoke'; '$CEZ_TASK_ID' = 'smoke-run'
+        '$CEZAR_API_URL' = 'http://127.0.0.1:9'; '$CEZAR_PROJECT_ID' = 'smoke'
+    }
+    $result = [ordered]@{}; $seen = @{}
+    foreach ($workflow in Get-ChildItem $WorkflowsPath -Filter *.yaml | Sort-Object Name) {
+        foreach ($line in Get-Content $workflow.FullName) {
+            if ($line -notmatch '^\s+command:\s*(.*)$') { continue }
+            foreach ($match in [regex]::Matches($Matches[1], 'pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/(scripts/[A-Za-z0-9_/.\-]+\.ps1)([^;|&]*)')) {
+                $script = $match.Groups[1].Value
+                if ($Skip -contains $script) { continue }
+                $text = $match.Groups[2].Value
+                foreach ($key in $placeholders.Keys) { $text = $text.Replace($key, $placeholders[$key]) }
+                $text = $text -replace '\{\{task\}\}', 'GitHub issue #1 (smoke) at https://github.com/example/repo/issues/1'
+                $text = $text -replace '\{\{[A-Za-z_.]+\}\}', 'smoke'
+                $text = $text -replace '\$[A-Z][A-Z0-9_]+', 'smoke'
+                $tokens = @([regex]::Matches($text, '"([^"]*)"|''([^'']*)''|(\S+)') | ForEach-Object {
+                        if ($_.Groups[1].Success) { $_.Groups[1].Value } elseif ($_.Groups[2].Success) { $_.Groups[2].Value } else { $_.Groups[3].Value } })
+                # A comma list such as -RequiredScripts a.ps1,b.ps1 is one token already; a trailing quote or ';' is not.
+                $signature = "$script $($tokens -join ' ')"
+                if ($seen.ContainsKey($signature)) { continue }
+                $seen[$signature] = $true
+                $n = @($result.Keys | Where-Object { $_ -eq $script -or $_ -like "$script|*" }).Count
+                $result[$(if ($n) { "$script|$($n + 1)" } else { $script })] = $tokens
+            }
+        }
+    }
+    $result
+}
+
+function Invoke-SmokeProcess {
+    param([string]$ScriptPath, [string[]]$Arguments, [string]$WorkingDirectory, [int]$TimeoutSeconds = 60)
+    $info = [Diagnostics.ProcessStartInfo]::new('pwsh')
+    foreach ($a in @('-NoProfile', '-File', $ScriptPath) + @($Arguments)) { $info.ArgumentList.Add([string]$a) }
+    $info.WorkingDirectory = $WorkingDirectory
+    $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true; $info.UseShellExecute = $false
+    $process = [Diagnostics.Process]::Start($info)
+    $out = $process.StandardOutput.ReadToEndAsync(); $err = $process.StandardError.ReadToEndAsync()
+    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
+    if ($timedOut) { try { $process.Kill($true) } catch { } }
+    [pscustomobject]@{ Output = ($out.Result + "`n" + $err.Result); TimedOut = $timedOut }
+}
+
 function Get-ScriptStartProblems {
-    # Starts each listed script the way its workflow step does, in an empty directory, with a `gh` that
-    # refuses every call and no reachable Cezar API. The script is expected to stop with its own message
-    # (a missing result file, a refused `gh` call). What it must not do is die on a defect in its own code:
-    # a cmdlet or parameter that does not exist on this platform, a property that is not there, a syntax
-    # error. Those are the failures that used to appear on the first real run on the host.
+    # Starts each script the way its workflow step does, in an empty directory, with a `gh` that refuses every
+    # call and no reachable Cezar API. The script is expected to stop with its own message (a missing result file,
+    # a refused `gh` call). What it must not do is die on a defect in its own code: a cmdlet or parameter that does
+    # not exist on this platform, a property that is not there, an unset variable, a syntax error. Those are the
+    # failures that used to appear on the first real run on the host. Invocation keys may carry `|<n>`.
     param(
         [Parameter(Mandatory)][string]$FactoryRoot,
-        [Parameter(Mandatory)][hashtable]$Invocations,
-        [Parameter(Mandatory)][string]$WorkDirectory
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Invocations,
+        [Parameter(Mandatory)][string]$WorkDirectory,
+        [int]$TimeoutSeconds = 60
     )
     $defects = 'ParserError', 'is not recognized as a name of a cmdlet', 'is not recognized as the name of a cmdlet',
         'A parameter cannot be found that matches parameter name', 'cannot be found on this object',
-        'Cannot bind argument to parameter', 'The term ''', 'Missing an argument for parameter', 'You cannot call a method on a null-valued expression'
+        'Cannot bind argument to parameter', 'The term ''', 'Missing an argument for parameter',
+        'You cannot call a method on a null-valued expression', 'has not been set', 'Cannot index into a null array',
+        'is not recognized as an internal or external command'
     $problems = @()
     $shimDirectory = Join-Path $WorkDirectory 'bin'
     New-Item -ItemType Directory -Force -Path $shimDirectory | Out-Null
     'Write-Error "gh is not available in the start-up smoke test: $($args -join '' '')"; exit 1' | Set-Content (Join-Path $shimDirectory 'gh.ps1')
-    $saved = @{ PATH = $env:PATH; CEZ_API_URL = $env:CEZ_API_URL; CEZAR_API_URL = $env:CEZAR_API_URL; FACTORY_RUNTIME_ROOT = $env:FACTORY_RUNTIME_ROOT }
+    $saved = @{ PATH = $env:PATH; CEZ_API_URL = $env:CEZ_API_URL; CEZAR_API_URL = $env:CEZAR_API_URL; FACTORY_RUNTIME_ROOT = $env:FACTORY_RUNTIME_ROOT; HOME = $env:HOME; FACTORY_GH_CACHE_TTL_SECONDS = $env:FACTORY_GH_CACHE_TTL_SECONDS }
     try {
         $env:PATH = $shimDirectory + [IO.Path]::PathSeparator + $env:PATH
         $env:CEZ_API_URL = 'http://127.0.0.1:9'; $env:CEZAR_API_URL = 'http://127.0.0.1:9'
-        $env:FACTORY_RUNTIME_ROOT = $FactoryRoot
-        foreach ($relative in $Invocations.Keys) {
+        $env:FACTORY_RUNTIME_ROOT = $FactoryRoot; $env:FACTORY_GH_CACHE_TTL_SECONDS = '0'
+        # A script must not reach for the real home directory, and a fixture cannot write into it.
+        $env:HOME = Join-Path $WorkDirectory 'home'; New-Item -ItemType Directory -Force -Path $env:HOME | Out-Null
+        $index = 0
+        foreach ($key in $Invocations.Keys) {
+            $index++
+            $relative = ($key -split '\|')[0]
             $path = Join-Path $FactoryRoot $relative
             if (-not (Test-Path $path -PathType Leaf)) { $problems += "$relative does not exist"; continue }
-            $directory = Join-Path $WorkDirectory ([IO.Path]::GetFileNameWithoutExtension($relative))
+            $directory = Join-Path $WorkDirectory ("run$index-" + [IO.Path]::GetFileNameWithoutExtension($relative))
             New-Item -ItemType Directory -Force -Path $directory | Out-Null
-            Push-Location $directory
-            try { $output = & pwsh -NoProfile -File $path @($Invocations[$relative]) *>&1 | Out-String }
-            finally { Pop-Location }
+            $run = Invoke-SmokeProcess -ScriptPath $path -Arguments @($Invocations[$key]) -WorkingDirectory $directory -TimeoutSeconds $TimeoutSeconds
             foreach ($defect in $defects) {
-                if ($output.Contains($defect)) { $problems += "$relative dies on a code defect when started as its workflow starts it: $(($output -split "`n" | Where-Object { $_.Contains($defect) } | Select-Object -First 1).Trim())"; break }
+                if ($run.Output.Contains($defect)) { $problems += "$key dies on a code defect when started as its workflow starts it: $(($run.Output -split "`n" | Where-Object { $_.Contains($defect) } | Select-Object -First 1).Trim())"; break }
             }
         }
     }
-    finally { foreach ($key in $saved.Keys) { if ($null -eq $saved[$key]) { Remove-Item "Env:$key" -ErrorAction SilentlyContinue } else { Set-Item "Env:$key" $saved[$key] } } }
+    finally { foreach ($name in $saved.Keys) { if ($null -eq $saved[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue } else { Set-Item "Env:$name" $saved[$name] } } }
     , @($problems)
 }

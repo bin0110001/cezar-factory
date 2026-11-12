@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The start-up smoke is table-driven and covers every workflow script (`STABILIZATION-PLAN.md` items 2.4 and 2.7). It reads `workflows/*.yaml`, so each of the 53 script invocations is started as its step starts it (empty directory and home, refusing `gh`, no Cezar API, 60 second limit) and a new step is covered the day it is written; unset variables and null-array indexing now count as code defects. A new scratch-state gate creates every `.factory/<name>` path the Factory's code mentions (51 today) in a clean repository with the real `.gitignore` and requires the checkout to stay clean, with a repository that lacks the rule as the control.
+
 - `ship-loop.ps1 -Action Health` prints the remaining GitHub API budget (`SHIP_HEALTH_GITHUB`) and warns below 500 points, because an exhausted budget makes promotion, activation and issue filing fail together and looks like a release defect (`STABILIZATION-PLAN.md` item 0.10). The plan records what was measured: one dependency-graph page costs 3 points, and the consumer is not yet attributed.
 
 - Stop the stray commits (`STABILIZATION-PLAN.md` item 0.2). Two things were committing to `cez/<id>` branches, `main` and once the root `stable` checkout: the label-audit agent step, which committed, pushed and opened pull requests itself every hour (ended when #425 untracked its scratch file), and Cezar's end-of-run autosave, which commits whatever scratch is not ignored and is still doing so (`.factory/gh-cache/` entries and `shadow-audit.json` on the host today). Everything under `.factory/` is now ignored unless deliberately tracked (`release-reports/`, `obot-caddy-root.crt`), with a suite test, so a new scratch file cannot start a new stream of commits. Maintenance also ends with `assert-no-run-commits.ps1`, which fails a run whose own steps committed, and the agent step is told not to commit. A transient GitHub error while activating a candidate (the 20:35Z `gh repo view` failure of `5536a9b`) is now retried on the next tick like a killed check instead of being counted as a failure.
@@ -274,6 +276,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+- The start-up smoke is table-driven and covers every workflow script (`STABILIZATION-PLAN.md` items 2.4 and 2.7). It reads `workflows/*.yaml`, so each of the 53 script invocations is started as its step starts it (empty directory and home, refusing `gh`, no Cezar API, 60 second limit) and a new step is covered the day it is written; unset variables and null-array indexing now count as code defects. A new scratch-state gate creates every `.factory/<name>` path the Factory's code mentions (51 today) in a clean repository with the real `.gitignore` and requires the checkout to stay clean, with a repository that lacks the rule as the control.
 
 - `ship-loop.ps1 -Action Health` prints the remaining GitHub API budget (`SHIP_HEALTH_GITHUB`) and warns below 500 points, because an exhausted budget makes promotion, activation and issue filing fail together and looks like a release defect (`STABILIZATION-PLAN.md` item 0.10). The plan records what was measured: one dependency-graph page costs 3 points, and the consumer is not yet attributed.
 
