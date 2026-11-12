@@ -77,8 +77,9 @@ dev, and what Cezar actually serves against the channel pointer. Drift that pers
 
 ## Modes are data
 
-`config/promotion-policy.json` carries both postures; `promotion.mode` selects one. This Production Run
-selects `controlled` in the reviewed config. There is no code path that forks on the mode outside policy
+`config/promotion-policy.json` carries both postures; `promotion.mode` selects one. The default is
+`autonomous` (a solo-maintainer repo cannot produce an independent approval); a Production Run switches
+the reviewed config to `controlled`. There is no code path that forks on the mode outside policy
 loading and the review decision.
 
 | | `autonomous` | `controlled` |
