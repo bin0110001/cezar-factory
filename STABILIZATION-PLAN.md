@@ -77,7 +77,7 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **0.7 After 0.1 lands on the host:** confirm the stable pointer reaches `origin/stable`, then
   `reset-breaker` (owner approval) and close #432, #377, #375.
 
-- [ ] **0.8 The delivery path cannot repair itself.** The promoter and the deployer run from the host
+- [x] **0.8 The delivery path cannot repair itself.** The promoter and the deployer run from the host
   checkout on `stable`, so a fix to the gate policy, the promoter, or a deploy script has to pass through
   the very thing it fixes. On 2026-11-12 this deadlocked twice at once: the `autonomous` policy (#436) was
   blocked by the `controlled` policy still on the host, and the reconcile fix (#438) could not deploy
@@ -86,7 +86,7 @@ one list and be missing from the list that would have given it a consumer.
   tested recovery for each stage (gate, validation, stable ref, host deploy) that does not depend on the
   stage that is broken.
 
-- [ ] **0.9 A deploy restart kills a validation in progress.** The promoter runs the full suite inside the
+- [x] **0.9 A deploy restart kills a validation in progress.** The promoter runs the full suite inside the
   Cezar container with `podman exec`; autodeploy waits only for Cezar runs to be idle before it restarts the
   container, so a restart during validation kills the suite (exit 137), and the failure is cached for that
   SHA and counts toward the breaker. Seen on `4bb870a` at 12:55Z on 2026-11-12. The two timers need one
@@ -162,9 +162,9 @@ one list and be missing from the list that would have given it a consumer.
   `command:` steps are checked against the scripts' argument parsers.
 - [ ] **2.7 Scratch-state test**: run the validation and handoff gates in a worktree seeded with tracked
   and untracked `.factory/` content.
-- [ ] **2.8 Canaries do not roll back on transient GitHub errors** (rate limit, truncated output):
+- [x] **2.8 Canaries do not roll back on transient GitHub errors** (rate limit, truncated output):
   inconclusive, retry.
-- [ ] **2.9 A candidate with no changed paths is not a failure** and does not count toward the breaker.
+- [x] **2.9 A candidate with no changed paths is not a failure** and does not count toward the breaker.
 - [ ] **2.10 Fixture canary for plan, implement, review** against a sandbox repository, the largest
   remaining blind spot.
 
@@ -230,3 +230,5 @@ Then the feature backlog reopens.
 - Next up, in order: 0.9, 0.2, 1.4c (remaining scripts), 1.5, 2.4, 2.5.
 - 2026-11-12 13:25Z: confirmed. `450faf8` is `healthy` at stage `stable-deployed`; drift has no findings; `health` is
   `ok`; the breaker count reset to 0 without a manual `reset-breaker`. Closed #432, #377 and #375 (item 0.7 done).
+- 2026-11-12: batch 4 delivers 0.8, 0.9, 2.8 and 2.9 in the promoter and the deploy script, with a recovery table in
+  `docs/promotion-pipeline.md`.

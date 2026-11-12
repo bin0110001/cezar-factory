@@ -178,4 +178,23 @@ restarts_before="$(cat "$TMP/state/restarts")"
 FACTORY_AUTODEPLOY_STATE_DIR="$TMP/not-a-dir/state" FACTORY_ACTIVE_RUNS_COMMAND='echo 0' bash "$SCRIPT" "$UNWRITABLE_SHA" > "$TMP/unwritable.log" 2>&1 || fail 'an unwritable state directory aborted the deploy'
 [[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'an unwritable state directory prevented the restart'
 
+# A candidate validation in progress (the promoter's suite running inside the container) counts as busy even
+# when no Cezar run is active; a marker left by a dead process does not.
+printf 'RUN validation-busy\n' >> "$TMP/repo/cezar/Dockerfile"
+git -C "$TMP/repo" add cezar/Dockerfile
+git -C "$TMP/repo" commit -m 'change Cezar source for validation marker' >/dev/null
+VALIDATING_SHA="$(git -C "$TMP/repo" rev-parse HEAD)"
+mkdir -p "$TMP/promotion-store"
+printf '%s %s\n' "$$" "$VALIDATING_SHA" > "$TMP/promotion-store/validation-in-progress"
+restarts_before="$(cat "$TMP/state/restarts")"
+set +e
+FACTORY_PROMOTION_STORE="$TMP/promotion-store" FACTORY_ACTIVE_RUNS_COMMAND='echo 0' bash "$SCRIPT" "$VALIDATING_SHA" > "$TMP/validating.log" 2>&1
+code=$?
+set -e
+[[ "$code" == 25 ]] || { cat "$TMP/validating.log" >&2; fail "a running candidate validation did not defer the restart (got $code)"; }
+[[ "$(cat "$TMP/state/restarts")" == "$restarts_before" ]] || fail 'Cezar was restarted during a candidate validation'
+printf '999999999 %s\n' "$VALIDATING_SHA" > "$TMP/promotion-store/validation-in-progress"
+FACTORY_PROMOTION_STORE="$TMP/promotion-store" FACTORY_ACTIVE_RUNS_COMMAND='echo 0' bash "$SCRIPT" "$VALIDATING_SHA" > "$TMP/stale-marker.log" 2>&1 || { cat "$TMP/stale-marker.log" >&2; fail 'a stale validation marker blocked the deploy'; }
+[[ "$(cat "$TMP/state/restarts")" -gt "$restarts_before" ]] || fail 'a stale validation marker prevented the restart'
+
 echo 'Cezar runtime deployment tests passed.'

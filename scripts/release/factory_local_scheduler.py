@@ -86,6 +86,16 @@ class SchedulerError(RuntimeError):
     pass
 
 
+class CheckInterrupted(SchedulerError):
+    """A required check was killed from outside (a container restart, the OOM killer), not failed by the candidate."""
+
+
+# Exit codes of a process ended by SIGKILL or SIGTERM, as a shell reports them (128 + signal).
+KILLED_EXIT_CODES = (137, 143)
+MAX_INTERRUPTED_RETRIES = 2
+DRIFT_ISSUE_REPEAT_SECONDS = 6 * 3600
+
+
 def now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -418,6 +428,12 @@ class LocalPromotionScheduler:
         results = []
         for canary in selected:
             result = runner.run(canary)
+            # A canary is a real run against live GitHub. A rate limit or a dropped connection says nothing
+            # about the release, so it earns one more run before the release is rolled back and quarantined.
+            first_reason = str(result.get("reason") or "")
+            if result["status"] != "passed" and self.policy["canaryTransientPattern"].search(first_reason):
+                result = runner.run(canary)
+                result["retriedAfter"] = first_reason[:300]
             results.append(result)
             if result["status"] != "passed":
                 break
@@ -450,6 +466,45 @@ class LocalPromotionScheduler:
                            f"{self.policy['breakerMax']} consecutive candidates failed; automatic promotion is paused for "
                            f"{self.policy['breakerPauseSeconds']}s or until `factory_local_scheduler.py reset-breaker`.\n\nLatest: {reason[:800]}",
                            self.policy["escalationLabels"], fingerprint("breaker", "pipeline", "open"))
+        except (PolicyError, OSError, subprocess.SubprocessError) as exc:
+            self._state_put("last_issue_error", str(exc)[:500])
+
+    @contextlib.contextmanager
+    def _validation_marker(self, sha: str) -> Iterator[None]:
+        """Tell the deployer a suite is running in the Cezar container, so it does not restart it underneath us."""
+        marker = self.store / "validation-in-progress"
+        try:
+            marker.write_text(f"{os.getpid()} {sha}\n", encoding="utf-8")
+        except OSError:
+            pass  # the marker is a courtesy to the deployer; never fail a candidate over it
+        try:
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                marker.unlink()
+
+    def _note_interruption(self, sha: str) -> bool:
+        """Count a killed check for this SHA; False once it has been killed too often to call it bad luck."""
+        key = f"interrupted:{sha}"
+        count = int(self._state_get(key, "0") or 0) + 1
+        self._state_put(key, str(count))
+        return count <= MAX_INTERRUPTED_RETRIES
+
+    def _escalate_blocked(self, sha: str, reason: str, since: str | None) -> None:
+        """A candidate waiting at the evidence gate is not a failure, so nothing else reports it. Ask once."""
+        if not self.policy or not since or self._state_get(f"blocked_escalated:{sha}"):
+            return
+        waited = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(since.replace("Z", "+00:00"))).total_seconds()
+        if waited < self.policy["blockedEscalationSeconds"]:
+            return
+        body = (f"`{sha}` has waited {int(waited // 60)} minutes at the evidence gate and nothing merged after it can be promoted.\n\n"
+                f"```\n{reason[:1500]}\n```\n\nPipeline mode: `{self.policy['mode']}`. If the gate itself is what needs changing "
+                "(the policy on the host is read from the `stable` checkout), see \"When the pipeline cannot fix itself\" in "
+                "`docs/promotion-pipeline.md`.")
+        try:
+            file_issue(self.gh, self.github_repo, "[promotion] candidate blocked at the evidence gate", body,
+                       self.policy["escalationLabels"], fingerprint("blocked", "pipeline", reason))
+            self._state_put(f"blocked_escalated:{sha}", now())
         except (PolicyError, OSError, subprocess.SubprocessError) as exc:
             self._state_put("last_issue_error", str(exc)[:500])
 
@@ -573,10 +628,16 @@ class LocalPromotionScheduler:
             self._state_put("drift_since", str(time.time()))
         elif time.time() - since > self.policy["driftGraceSeconds"]:
             summary = "; ".join(report["findings"])
+            # The same finding used to add a comment every tick (hundreds on one issue). Report a finding when
+            # it first appears or changes, then only as a reminder.
+            last_summary, _, last_at = self._state_get("drift_issue_last", "").rpartition("|")
+            if last_summary == summary and time.time() - float(last_at or 0) < DRIFT_ISSUE_REPEAT_SECONDS:
+                return report
             try:
                 file_issue(self.gh, self.github_repo, "[promotion] release drift persists",
                            f"Drift has persisted past {self.policy['driftGraceSeconds']}s:\n\n{summary}", self.policy["issueLabels"],
                            fingerprint("drift", "pipeline", summary))
+                self._state_put("drift_issue_last", f"{summary}|{time.time()}")
             except (PolicyError, OSError, subprocess.SubprocessError) as exc:
                 self._state_put("last_issue_error", str(exc)[:500])
         return report
@@ -650,7 +711,10 @@ class LocalPromotionScheduler:
             with self._db() as db:
                 db.execute("UPDATE promotions SET status='interrupted',finished_at=?,reason='scheduler process exited before recording a result' WHERE status='running'", (now(),))
             sha = self._fetch_candidate()
-            result = self._run_candidate(sha, retry_failed=retry_failed)
+            try:
+                result = self._run_candidate(sha, retry_failed=retry_failed)
+            except CheckInterrupted as exc:
+                result = {"status": "interrupted", "sourceSha": sha, "reason": str(exc)}
             if self.policy and result["status"] != "paused":
                 result["drift"] = self._drift_watch()["status"]
             return result
@@ -674,6 +738,7 @@ class LocalPromotionScheduler:
         except SchedulerError as exc:
             reason = str(exc)[:2000]
             if existing and existing["status"] == "blocked" and existing["reason"] == reason:
+                self._escalate_blocked(sha, reason, existing["finished_at"])
                 return {"status": "blocked", "sourceSha": sha, "reason": reason}
             with self._db() as db:
                 db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'running', ?) ON CONFLICT(sha) DO UPDATE SET status='running',started_at=excluded.started_at,finished_at=NULL,reason=NULL", (sha, now()))
@@ -704,15 +769,25 @@ class LocalPromotionScheduler:
             else:
                 paths = self._changed_paths(sha)
                 record["changedPaths"] = paths
-                selected = self._selected_checks(paths)
+                # A candidate whose tree is identical to the active dev release (a merge-only commit that
+                # reconciles history) changed nothing, so there is nothing to validate: the same tree already
+                # passed. It is still staged and activated so the pointers follow the branch. Treating it as
+                # "no required check matches" used to fail it and count toward the breaker.
+                selected = self._selected_checks(paths) if paths or not self._active_sha() else []
+                if not selected:
+                    record["validation"] = "skipped: no path differs from the active dev release"
                 subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "--detach", str(worktree), sha], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=True)
                 failure_kind = "validation"
-                for check in selected:
-                    result = self._run_check(check, worktree, sha)
-                    checks.append(result)
-                    if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
-                        detail = "; ".join(result.get("failureLines", [])[:5])
-                        raise SchedulerError(f"required check {result['id']} failed with exit code {result['exitCode']}" + (f": {detail}" if detail else ""))
+                with self._validation_marker(sha):
+                    for check in selected:
+                        result = self._run_check(check, worktree, sha)
+                        checks.append(result)
+                        if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
+                            code = result["exitCode"]
+                            if code is not None and (code in KILLED_EXIT_CODES or code < 0) and self._note_interruption(sha):
+                                raise CheckInterrupted(f"required check {result['id']} was killed (exit code {code}); the candidate will be validated again")
+                            detail = "; ".join(result.get("failureLines", [])[:5])
+                            raise SchedulerError(f"required check {result['id']} failed with exit code {code}" + (f": {detail}" if detail else ""))
                 record["candidateState"] = "validated"
                 failure_kind = "activation"
                 staged = self.controller.stage_sha(sha)
@@ -735,6 +810,11 @@ class LocalPromotionScheduler:
                 raise SchedulerError(f"{reason}; {record['rollback']}")
             record["status"] = "healthy"
             record["reason"] = None
+        except CheckInterrupted as exc:
+            # The candidate is not at fault: no breaker count, no issue, and the next tick validates it again.
+            record["status"] = "interrupted"
+            record["reason"] = str(exc)[:2000]
+            raise
         except Exception as exc:
             record["status"] = "failed"
             record["reason"] = str(exc)[:2000]

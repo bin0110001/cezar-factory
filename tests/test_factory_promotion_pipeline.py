@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from scripts.release.factory_local_scheduler import LocalPromotionScheduler, SchedulerError
@@ -62,6 +63,15 @@ class FakeCezar:
         if url.endswith("/factory-release"):
             return {"channel": "dev", "sourceSha": self.served_sha}
         raise AssertionError(f"unexpected {method} {url}")
+
+
+class FlakyCezar(FakeCezar):
+    """The first canary run fails on a GitHub rate limit; a second run of the same canary passes."""
+
+    def __call__(self, method, url, body):
+        if "/runs/" in url and self.runs == 1:
+            return {"status": "failed", "steps": [{"id": "collect-backlog", "status": "failed", "error": "gh: API rate limit exceeded (HTTP 403)"}]}
+        return super().__call__(method, url, body)
 
 
 class PipelineTests(unittest.TestCase):
@@ -277,6 +287,90 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.gh.patched, [])
 
     # -- drift ------------------------------------------------------------------------------------
+    # -- stopping without failing, and failing without being at fault ---------------------------------
+    def test_a_check_killed_from_outside_is_retried_not_cached_or_counted(self):
+        scheduler = self.build()
+        attempts = pathlib.Path(self.tmp.name) / "attempts"
+        marker = scheduler.store / "validation-in-progress"
+        script = (f"import pathlib,sys;p=pathlib.Path(r'{attempts}');n=int(p.read_text()) if p.exists() else 0;p.write_text(str(n+1));"
+                  f"sys.exit(5 if not pathlib.Path(r'{marker}').exists() else 137 if n == 0 else 0)")
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", script]
+        first = scheduler.run_once()
+        self.assertEqual(first["status"], "interrupted")
+        self.assertEqual(scheduler.status(self.sha)["status"], "interrupted")
+        self.assertEqual((scheduler.breaker.failures(), self.gh.issues, self.activations), (0, [], []))
+        self.assertFalse(marker.exists())  # the deployer is only told to wait while a suite is running
+        self.assertEqual(scheduler.run_once()["status"], "healthy")  # same SHA, validated again
+        self.assertEqual(attempts.read_text(), "2")
+
+    def test_a_check_that_is_killed_every_time_fails_after_the_retry_budget(self):
+        scheduler = self.build()
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", "raise SystemExit(137)"]
+        self.assertEqual(scheduler.run_once()["status"], "interrupted")
+        self.assertEqual(scheduler.run_once()["status"], "interrupted")
+        with self.assertRaisesRegex(SchedulerError, "failed with exit code 137"):
+            scheduler.run_once()
+        self.assertEqual(scheduler.status(self.sha)["status"], "failed")
+
+    def test_a_candidate_with_no_changed_paths_is_activated_without_validation_and_is_not_a_failure(self):
+        git(self.repo, "commit", "--allow-empty", "-m", "merge-only commit that reconciles history")
+        subprocess.run(["git", "-C", str(self.repo), "push", "-f", "origin", "HEAD:refs/heads/dev"], check=True, capture_output=True)
+        merge_only = git(self.repo, "rev-parse", "HEAD")
+        scheduler = self.build(gh=FakeGh(merge_only))
+        (scheduler.controller.channels / "dev.json").write_text(json.dumps({"schemaVersion": "factory-release-channel-pointer/v1", "channel": "dev", "currentSha": self.sha}), encoding="utf-8")
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", "raise SystemExit(9)"]  # must not run
+        result = scheduler.run_once()
+        self.assertEqual(result["status"], "healthy")
+        self.assertEqual(self.activations, [merge_only])
+        self.assertEqual(scheduler.breaker.failures(), 0)
+        record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
+        self.assertEqual((record["changedPaths"], record["checks"]), ([], []))
+        self.assertIn("skipped", record["validation"])
+
+    def test_a_candidate_blocked_past_the_limit_asks_for_help_once(self):
+        scheduler = self.build(gh=FakeGh(self.sha, pr_body="no evidence"), promotion={"blocked": {"escalateSeconds": 600}})
+        with self.assertRaisesRegex(SchedulerError, "self-review gate"):
+            scheduler.run_once()
+        self.assertEqual(scheduler.run_once()["status"], "blocked")
+        self.assertEqual(self.gh.issues, [])  # a short wait is normal
+        with scheduler._db() as db:
+            db.execute("UPDATE promotions SET finished_at=? WHERE sha=?", ("2020-01-01T00:00:00.000Z", self.sha))
+        self.assertEqual(scheduler.run_once()["status"], "blocked")
+        self.assertEqual(len(self.gh.issues), 1)
+        self.assertIn("[promotion] candidate blocked at the evidence gate", self.gh.issues[0])
+        self.assertIn("factory:needs-help", self.gh.issues[0])
+        self.assertEqual(scheduler.run_once()["status"], "blocked")
+        self.assertEqual(len(self.gh.issues), 1)  # asked once per candidate, not every tick
+
+    def test_a_canary_that_fails_on_a_transient_github_error_is_run_once_more_before_any_rollback(self):
+        cezar = FlakyCezar()
+        scheduler = self.build(cezar=cezar)
+        result = scheduler.run_once()
+        self.assertEqual(result["status"], "healthy")
+        self.assertEqual((cezar.runs, self.rollbacks, self.quarantined), (2, [], []))
+        record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
+        self.assertIn("rate limit", record["canaries"][0]["retriedAfter"])
+
+    def test_a_canary_that_fails_for_a_real_reason_is_not_retried(self):
+        cezar = FakeCezar("failed")
+        scheduler = self.build(cezar=cezar)
+        with self.assertRaisesRegex(SchedulerError, "canary health failed"):
+            scheduler.run_once()
+        self.assertEqual((cezar.runs, self.rollbacks), (1, [self.base_sha]))
+
+    def test_persistent_drift_is_reported_when_it_changes_and_then_only_as_a_reminder(self):
+        subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
+        scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
+        (scheduler.controller.channels / "stable.json").write_text(json.dumps({"currentSha": self.base_sha}), encoding="utf-8")
+        scheduler._state_put("drift_since", str(time.time() - 99999))
+        for _ in range(3):
+            self.assertEqual(scheduler._drift_watch()["status"], "drift")
+        self.assertEqual(len(self.gh.issues), 1)  # one report, not one per tick
+        summary = scheduler._state_get("drift_issue_last").rpartition("|")[0]
+        scheduler._state_put("drift_issue_last", f"{summary}|{time.time() - 7 * 3600}")
+        scheduler._drift_watch()
+        self.assertEqual(len(self.gh.issues), 2)  # a reminder after six hours
+
     def test_drift_reports_a_stable_pointer_that_lags_origin(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
         scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
