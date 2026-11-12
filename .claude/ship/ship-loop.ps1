@@ -173,6 +173,17 @@ switch ($Action) {
         Write-Host "SHIP_HEALTH state=$($health.state) lastHealthy=$last age=$age failedSinceHealthy=$($health.failedSinceHealthy) breakerOpen=$($health.breakerOpen)"
         foreach ($reason in @($health.reasons | Where-Object { $_ })) { Write-Host "SHIP_HEALTH_REASON $reason" }
         if ($health.lastFailure) { Write-Host "SHIP_HEALTH_LAST_FAILURE $($health.lastFailure.sha.Substring(0, 9)): $($health.lastFailure.reason)" }
+        # The GitHub API budget is shared by every tool and automation on this account. When it is spent the
+        # promoter's evidence gate, activation and issue filing fail together, which looks like a broken
+        # release. Say how much is left so that cause can be ruled in or out first.
+        try {
+            $budget = & gh api rate_limit --jq '[.resources.graphql.remaining, .resources.graphql.limit, .resources.core.remaining, .resources.core.limit, (.resources.graphql.reset | strftime("%H:%M:%SZ"))] | @tsv' 2>$null
+            $parts = @("$budget" -split "`t")
+            if ($LASTEXITCODE -eq 0 -and $parts.Count -eq 5) {
+                Write-Host "SHIP_HEALTH_GITHUB graphql=$($parts[0])/$($parts[1]) core=$($parts[2])/$($parts[3]) graphqlResets=$($parts[4])"
+                if ([int]$parts[0] -lt 500 -or [int]$parts[2] -lt 500) { Write-Host 'SHIP_HEALTH_WARN the GitHub API budget is nearly spent; promotion, activation and issue filing will fail until it resets. This is not a release defect.' }
+            }
+        } catch { }
         if ($health.state -eq 'stalled') { Write-Host 'SHIP_HEALTH_WARN promotion is stalled: candidates keep failing, so merged work is NOT reaching the host. Diagnose with -Action Validate before merging more.'; exit 4 }
         if ($health.state -eq 'degraded') { Write-Host 'SHIP_HEALTH_WARN the latest promotion failed; check it before relying on a deploy' }
     }

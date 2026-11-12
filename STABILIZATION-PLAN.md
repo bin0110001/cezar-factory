@@ -93,7 +93,7 @@ one list and be missing from the list that would have given it a consumer.
   lock, or the deployer must treat a running validation as busy, and a killed check must be retried, not
   cached.
 
-- [ ] **0.10 Find what exhausts the GitHub API budget.** The account's GraphQL budget was fully spent in one hour on
+- [ ] **0.10 Find what exhausts the GitHub API budget (measured, not yet attributed).** The account's GraphQL budget was fully spent in one hour on
   2026-11-12 (and `last_issue_error` showed rate limits earlier). When it is spent, every automation, the promoter's
   evidence gate and issue filing all fail together. Measure calls per component per hour on the host and cut the
   largest; the sweep, refresher and delivery sync already share one cached listing.
@@ -154,7 +154,7 @@ one list and be missing from the list that would have given it a consumer.
   (make every automation level-triggered, as intake already is with `fullReconcileHours`).
 - [x] **1.12 Correct `docs/lifecycle.md`** where it disagrees with `route-state.ps1` (`blocked` is never
   set by the router; `human-review` has no writer).
-- [ ] **1.13 Deploy and use the stall detector from #434** (`/api/v1/dependency-graph/stalls` returns 404
+- [x] **1.13 Deploy and use the stall detector from #434** (`/api/v1/dependency-graph/stalls` returns 404
   on the host until `stable` moves); teach it complexity labels and script-side gates.
 
 ## Phase 2: breakage is caught before merge
@@ -198,7 +198,7 @@ one list and be missing from the list that would have given it a consumer.
   human touch.
 - [ ] **3.4 Decide the parked issues that need a person**: #115 (use an in-repo fixture as the non-Godot
   pilot?) and #39 (do the registered targets have validation adapters?).
-- [ ] **3.5 Verify-then-close the inferred-delivered issues**: #25, #37, #65, #17.
+- [x] **3.5 Verify-then-close the inferred-delivered issues**: #25, #37, #65, #17.
 
 ## Exit criteria
 
@@ -295,3 +295,16 @@ Then the feature backlog reopens.
 - 2026-11-12 20:35Z: batch 7 (`5536a9b`) cleared the evidence gate and the environment preflight, then failed at activation on
   `gh repo view` (a transient GitHub error; the command works now). Batch 8 retries a transient activation error on the next
   tick instead of failing the candidate. The next merge is promoted as a new candidate regardless.
+- 2026-11-12 21:40Z: 3.5 done. Verified against the code and closed with evidence: #25, #65 (delivered), #37
+  (superseded by the sweep, the refresher and intake reconciliation), and their tracking parents #20 and #17.
+- 2026-11-12 21:40Z: 1.13 done in part. The stall detector from #434 is live on the host
+  (`/api/v1/p/cezar-factory/dependency-graph/stalls`, revision 2,062). Its verdict before the closes above: 8 issues can
+  progress and 59 are stuck, of which 43 are `no-consumer` (the `factory:ready` work whose implement automations are
+  disabled, item 3.1), 12 `stale-blocked-label` (the sweep unblocks these gradually), 4 `no-state-label` (the sweep
+  repairs these) and 4 waiting on a person. Teaching it complexity labels and script-side gates moves to 1.4f.
+- 2026-11-12 21:40Z: 0.10 measured. One dependency-graph page query costs 3 GraphQL points (measured with
+  `rateLimit { cost }`), so that sync is not the consumer. Usage reads about 850 to 2,300 points inside the same
+  quarter hour, with two different reset times (21:41Z and 22:25Z) and a counter that went down between samples, so
+  more than one credential or bucket is sharing this account; the container and this machine report the same
+  figure. Attribution needs the consumers instrumented (calls per component per hour). `ship-loop -Action Health` now
+  prints the remaining budget and warns below 500, so an exhausted budget is no longer mistaken for a release defect.
