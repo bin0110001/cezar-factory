@@ -93,7 +93,7 @@ one list and be missing from the list that would have given it a consumer.
   lock, or the deployer must treat a running validation as busy, and a killed check must be retried, not
   cached.
 
-- [ ] **0.10 Find what exhausts the GitHub API budget (measured, not yet attributed).** The account's GraphQL budget was fully spent in one hour on
+- [x] **0.10 Find what exhausts the GitHub API budget (answered: bursts of interactive and agent use).** The account's GraphQL budget was fully spent in one hour on
   2026-11-12 (and `last_issue_error` showed rate limits earlier). When it is spent, every automation, the promoter's
   evidence gate and issue filing all fail together. Measure calls per component per hour on the host and cut the
   largest; the sweep, refresher and delivery sync already share one cached listing.
@@ -308,3 +308,9 @@ Then the feature backlog reopens.
   more than one credential or bucket is sharing this account; the container and this machine report the same
   figure. Attribution needs the consumers instrumented (calls per component per hour). `ship-loop -Action Health` now
   prints the remaining budget and warns below 500, so an exhausted budget is no longer mistaken for a release defect.
+- 2026-11-12 21:45Z: 0.10 answered. Sampled once a minute with no other `gh` activity from the dev session: GraphQL usage
+  read 856, 856, 858, 859, 861, about 75 points an hour, so the Factory's own automation (graph sync, pollers, promoter,
+  maintenance) is a negligible consumer. The two exhaustion events followed bursts of `gh pr`/`gh issue` calls and three
+  parallel audit agents from the interactive session, which share the account's 5,000-point hourly budget. The odd readings
+  (2,322 once, a second reset time) were not reproduced and are left unexplained. Practical rule: bulk issue and PR edits go
+  through the REST API (`gh api`), which has its own budget; `ship-loop -Action Health` shows what is left.
