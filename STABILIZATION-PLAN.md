@@ -138,9 +138,9 @@ one list and be missing from the list that would have given it a consumer.
     label lists script by script (`route-state`, the refresher, maintenance, intake selection, delivery
     sync, audit recovery, reconciler), each behind the existing tests. A test fails on any new
     hard-coded `factory:*` state list outside the policy.
-  - [ ] **1.4d Generate, do not hand-write,** the `automations/*.json` filters and the state table in
+  - [x] **1.4d Generate, do not hand-write,** the `automations/*.json` filters and the state table in
     `docs/lifecycle.md` from the model, so a consumer cannot be missing for a state the model declares.
-  - [ ] **1.4e Profiles and per-project overrides.** A project selects a profile and may override it in
+  - [x] **1.4e Profiles and per-project overrides.** A project selects a profile and may override it in
     its registry entry; steps can be conditional on risk or type. Prove it with a second profile:
     `factory:tech-design` followed by a manual sign-off gate before `factory:ready` for `risk:high`
     work, enabled by configuration alone with no script edits.
@@ -336,3 +336,9 @@ Then the feature backlog reopens.
 - 2026-11-12: batch 11 delivers 2.4 and 2.7. The smoke now runs all 53 workflow invocations in 28 seconds and found no
   defect in today's scripts. 2.4 proves a script starts, not that it returns a correct result; correctness stays with the
   behavioural tests and the canaries.
+- 2026-11-12: batch 12 delivers 1.4d and 1.4e. The state table in `docs/lifecycle.md` is rendered from the model. The
+  `automations/*.json` filters are checked against the model (every automated state has a consuming automation) rather than
+  generated, because they also carry the runner and model of each tier, which is not lifecycle data. `risk-gated` is the worked
+  example of a process change by configuration: a plan for risk:high work waits at `factory:design-signoff` for a person.
+  It is not a separate design step with its own agent workflow; a design workflow would be one more state with an owner
+  workflow and no script change.

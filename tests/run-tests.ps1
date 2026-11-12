@@ -630,6 +630,24 @@ foreach ($l in Get-Content (Join-Path $factory 'policies/labels.yaml')) {
     if ($inTaxonomy -and $l -match '^\S') { break }
 }
 $automationDefinitions = @(Get-ChildItem (Join-Path $factory 'automations') -Filter *.json | ForEach-Object { Get-Content -Raw $_.FullName | ConvertFrom-Json })
+# Every profile the policy ships must be sound, not only the default. A profile that extends another is resolved
+# first; the label taxonomy must be covered by it, and equal to it for the default profile.
+$shippedProfiles = @((Get-Content -Raw (Join-Path $factory 'policies/lifecycle.json') | ConvertFrom-Json -AsHashtable).profiles.Keys)
+Assert "the policy ships the standard profile and at least one variant ($($shippedProfiles -join ', '))" ($shippedProfiles -contains 'standard' -and $shippedProfiles.Count -ge 2)
+foreach ($shippedProfile in $shippedProfiles) {
+    $shippedLifecycle = Get-FactoryLifecycle -Profile $shippedProfile
+    $shippedTaxonomy = @(); if ($shippedProfile -eq $lifecycle.Name) { $shippedTaxonomy = $taxonomyStates }
+    $shippedProblems = Test-FactoryLifecycle -Lifecycle $shippedLifecycle -StateLabels $shippedTaxonomy -Automations $automationDefinitions
+    $shippedProblems += @($taxonomyStates | Where-Object { $shippedLifecycle.States.Keys -notcontains $_ } | ForEach-Object { "profile $shippedProfile lacks the taxonomy state $_" })
+    $shippedProblems | ForEach-Object { Write-Host "    $_" }
+    Assert "lifecycle profile '$shippedProfile' is sound" ($shippedProblems.Count -eq 0)
+}
+$riskGated = Get-FactoryLifecycle -Profile 'risk-gated'
+Assert 'the risk-gated profile extends standard: it inherits every state and adds a human sign-off gate' (@($lifecycle.States.Keys | Where-Object { $riskGated.States.Keys -notcontains $_ }).Count -eq 0 -and $riskGated.States['factory:design-signoff']['kind'] -eq 'human' -and $riskGated.States['factory:design-signoff']['owner']['role'] -eq 'tech-lead')
+Assert 'a conditional exit applies only to the labels it names' ((Get-FactoryLifecycleConditionalExit -Lifecycle $riskGated -State 'factory:needs-plan' -Event 'plan-result' -IssueLabels @('risk:high')) -eq 'factory:design-signoff' -and $null -eq (Get-FactoryLifecycleConditionalExit -Lifecycle $riskGated -State 'factory:needs-plan' -Event 'plan-result' -IssueLabels @('risk:medium')) -and $null -eq (Get-FactoryLifecycleConditionalExit -Lifecycle $lifecycle -State 'factory:needs-plan' -Event 'plan-result' -IssueLabels @('risk:high')))
+$lifecycleDoc = (Get-Content -Raw (Join-Path $factory 'docs/lifecycle.md')).Replace("`r`n", "`n")
+$tableBlock = [regex]::Match($lifecycleDoc, '(?s)<!-- lifecycle-table:begin -->\n(.*?)\n<!-- lifecycle-table:end -->')
+Assert 'docs/lifecycle.md carries the state table rendered from the standard profile (refresh: pwsh -Command ". scripts/lifecycle-lib.ps1; Update-FactoryLifecycleDoc")' ($tableBlock.Success -and $tableBlock.Groups[1].Value.Trim() -eq (Format-FactoryLifecycleTable -Lifecycle (Get-FactoryLifecycle -Profile 'standard')).Trim())
 $lifecycleProblems = Test-FactoryLifecycle -Lifecycle $lifecycle -StateLabels $taxonomyStates -Automations $automationDefinitions
 $lifecycleProblems | ForEach-Object { Write-Host "    $_" }
 Assert 'shipped lifecycle profile is sound: every state has an owner, an exit, a deadline and a consumer' ($lifecycleProblems.Count -eq 0)
@@ -664,6 +682,15 @@ try {
     Assert 'lifecycle check reports a state with no exit, no deadline, an undefined target and no owner' (@($brokenProblems | Where-Object { $_ -match 'factory:blocked has no exit' }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match 'factory:needs-help has no deadline' }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match "factory:review exits to undefined state 'factory:nowhere'" }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match 'factory:investigate has no owning workflow' }).Count -eq 1)
     $unknownProfile = $false; try { Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'missing' | Out-Null } catch { $unknownProfile = $_.Exception.Message -match "profile 'missing' is not defined" }
     Assert 'lifecycle loader refuses an undefined profile' $unknownProfile
+    # A malformed condition and a profile that extends something that does not exist are both reported.
+    $badWhen = $custom.profiles.standard | ConvertTo-Json -Depth 12 | ConvertFrom-Json -AsHashtable
+    $badWhen.states['factory:needs-plan'].exits += @{ to = 'factory:ready'; on = 'plan-result'; when = @{ colour = @('red'); risk = @('high') } }
+    $custom.profiles['bad-when'] = $badWhen
+    $custom.profiles['orphan'] = @{ extends = 'nothing'; states = @{} }
+    $custom | ConvertTo-Json -Depth 14 | Set-Content $lifecycleFixture
+    $badWhenProblems = Test-FactoryLifecycle -Lifecycle (Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'bad-when') -StateLabels $taxonomyStates -Automations $automationDefinitions
+    $orphanMessage = ''; try { Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'orphan' | Out-Null } catch { $orphanMessage = $_.Exception.Message }
+    Assert 'lifecycle check reports an unknown condition and a condition that is not a label of its kind; a profile extending a missing profile is refused' (@($badWhenProblems | Where-Object { $_ -match "unknown condition 'colour'" }).Count -eq 1 -and @($badWhenProblems | Where-Object { $_ -match "condition 'risk' must list risk:" }).Count -eq 1 -and $orphanMessage -match "extends 'nothing', which is not defined")
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
@@ -1424,6 +1451,18 @@ try {
     Set-Gh @('factory:needs-plan', 'type:bug')
     Assert 'route: plan ready -> factory:ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'complexity:medium')
     Assert 'route: plan posted as comment' (@((Get-Gh).comments).Count -eq 1)
+    # A lifecycle profile can hold a completed plan for a person before implementation. The router reads that from
+    # the policy; nothing in it names risk:high or the sign-off state.
+    $env:FACTORY_LIFECYCLE_PROFILE = 'risk-gated'
+    try {
+        Set-Gh @('factory:needs-plan', 'type:bug', 'risk:high')
+        Assert 'route (risk-gated profile): a completed plan for risk:high work waits for sign-off, not for implementation' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:design-signoff' -and (Get-Gh).labels -notcontains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-plan' -and @((Get-Gh).comments | Where-Object { $_ -match 'Factory sign-off required' -and $_ -match 'tech-lead' }).Count -eq 1)
+        Assert 'route (risk-gated profile): work that waits for sign-off cannot be started by the implement automation' ((Invoke-Route 'start' $null 7) -ne 0)
+        Set-Gh @('factory:needs-plan', 'type:bug', 'risk:medium')
+        Assert 'route (risk-gated profile): risk:medium work still goes straight to ready' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:design-signoff')
+    } finally { Remove-Item Env:FACTORY_LIFECYCLE_PROFILE -ErrorAction SilentlyContinue }
+    Set-Gh @('factory:needs-plan', 'type:bug', 'risk:high')
+    Assert 'route (standard profile): risk:high work still goes to ready, so the default process is unchanged' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:design-signoff')
     Set-Gh @('factory:needs-plan', 'risk:high')
     Assert 'route: risk:high plan proceeds without user approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-help')
     Set-Gh @('factory:needs-plan')
@@ -1557,6 +1596,14 @@ try {
     $created = @((Get-Gh).created)
     Assert 'labels: all factory-state labels created' (@(@('factory:new', 'factory:ready', 'factory:investigate', 'factory:done') | Where-Object { $created -notcontains $_ }).Count -eq 0)
     Assert 'labels: tracking-parent classification created' ($created -contains 'factory:tracking')
+    Assert 'labels: the standard profile adds no state label of its own' ($created -notcontains 'factory:design-signoff')
+    Set-Gh @()
+    $env:FACTORY_LIFECYCLE_PROFILE = 'risk-gated'
+    try { & pwsh -NoProfile -File $labelScript -GhCommand $gh *>&1 | Out-Null } finally { Remove-Item Env:FACTORY_LIFECYCLE_PROFILE -ErrorAction SilentlyContinue }
+    Assert "labels: a lifecycle profile's own states get their labels (factory:design-signoff)" (@((Get-Gh).created) -contains 'factory:design-signoff')
+    Set-Gh @()
+    & pwsh -NoProfile -File $labelScript -GhCommand $gh *>&1 | Out-Null
+    $created = @((Get-Gh).created)
     Assert 'labels: type, risk and agent labels created' ($created -contains 'type:bug' -and $created -contains 'risk:high' -and $created -contains 'agent:either')
     # Hourly maintenance runs this. Labels that already match cost no call, and one server error is retried.
     Set-Gh @()

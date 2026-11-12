@@ -139,6 +139,35 @@
           "kind": "terminal"
         }
       }
+    },
+    "risk-gated": {
+      "extends": "standard",
+      "description": "The standard process, except that a completed plan for risk:high work waits for a person to sign it off before it can be implemented. Select it with FACTORY_LIFECYCLE_PROFILE=risk-gated, or make it defaultProfile in a project's override of this file.",
+      "states": {
+        "factory:needs-plan": {
+          "kind": "automated",
+          "owner": { "workflow": "factory-plan" },
+          "exits": [
+            { "to": "factory:ready", "on": "plan-result" },
+            { "to": "factory:needs-help", "on": "plan-result" },
+            { "to": "factory:done", "on": "plan-result" },
+            { "to": "factory:design-signoff", "on": "plan-result", "when": { "risk": ["risk:high"] } }
+          ],
+          "maxDwellHours": 24,
+          "onTimeout": "retrigger"
+        },
+        "factory:design-signoff": {
+          "kind": "human",
+          "owner": { "role": "tech-lead" },
+          "description": "Factory: plan complete, waiting for a person to sign it off before implementation",
+          "exits": [
+            { "to": "factory:ready", "on": "manual" },
+            { "to": "factory:needs-plan", "on": "manual" }
+          ],
+          "maxDwellHours": 72,
+          "onTimeout": "escalate"
+        }
+      }
     }
   }
 }
