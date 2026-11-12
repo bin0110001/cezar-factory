@@ -231,6 +231,7 @@ import { admitWithRefresh } from './dependency-graph/admission.ts';
 import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts';
 import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
+import { consumedStateLabels, diagnoseStalls, stuckFingerprint } from './dependency-graph/stalls.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
 import { answerDecisionBodySchema } from '@open-mercato/cezar-contract';
@@ -6276,6 +6277,16 @@ export function createApp(deps: ServerDeps) {
         return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'dependency health unavailable' }, 503);
       }
     })
+    .get('/dependency-graph/stalls', async (c) => {
+      try {
+        const project = c.get('project');
+        const service = dependencyGraphService(project.root);
+        const repository = await service.repositoryKey();
+        return c.json(diagnoseStalls({ snapshot: service.read(repository), consumedLabels: consumedStateLabels(project.automationStore.list()) }));
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'stall analysis unavailable' }, 503);
+      }
+    })
     .get('/dependency-graph/events', queryZodValidator(z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), before: z.coerce.number().int().positive().optional() })), async (c) => {
       try {
         const { limit, before } = c.req.valid('query');
@@ -7390,10 +7401,42 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
   // Keep the projection fresh independently of discovery (which needs localHandoff and runs every
   // six hours): scheduler admission fails closed on a stale graph, so a missing sync would
   // otherwise defer every issue event. Read-only against GitHub and single-flight per project.
+  // Stall guard: after every sync, ask whether work can still move. A dependency cycle is repaired at once
+  // (the replan agent's own attempt budget and cooldown throttle it) instead of waiting for the six-hour
+  // discovery pass; everything stuck is logged loudly and audited whenever the set of stuck issues changes.
+  // Waiting on a person, decision or outside information is an acceptable stop and is never escalated.
+  const stallGuardSeen = new Map<string, string>();
+  const runStallGuard = async (projectId: string, project: { root: string }): Promise<void> => {
+    const service = graphServiceForScheduler(project.root);
+    const repository = await service.repositoryKey();
+    const snapshot = service.read(repository);
+    if (snapshot.source.status !== 'fresh') return;
+    const bootId = deps.bootProjectId ?? 'default';
+    const isBoot = projectId === bootId || project.root === deps.repoRoot;
+    const context = isBoot ? undefined : await sharedContexts.context(projectId).catch(() => undefined);
+    const automationStore = isBoot ? deps.automationStore : context?.automationStore;
+    const report = diagnoseStalls({ snapshot, ...(automationStore ? { consumedLabels: consumedStateLabels(automationStore.list()) } : {}) });
+    const fingerprint = report.counts.stuck > 0 ? `${report.verdict}|${stuckFingerprint(report)}` : '';
+    if (stallGuardSeen.get(repository) !== fingerprint) {
+      stallGuardSeen.set(repository, fingerprint);
+      if (fingerprint) {
+        console.warn(`[stall-guard] ${repository} ${report.verdict}: ${report.summary} stuck=${report.items.filter((item) => item.class === 'stuck').map((item) => `#${item.number}(${item.reason})`).join(' ')}`);
+        await service.recordAuditEvent(repository, snapshot.revision, 'stall-detected', report.verdict, { verdict: report.verdict, summary: report.summary, counts: report.counts, cycles: report.cycles.length }, 'stall-guard').catch(() => undefined);
+      } else console.info(`[stall-guard] ${repository} clear`);
+    }
+    if (report.cycles.length === 0 || !resolveCapabilities(process.env, deps.bindHost).localHandoff) return;
+    const manager = isBoot ? deps.manager : context?.manager;
+    if (!manager) return;
+    for (const candidate of planCycleRepairs(snapshot, 10).candidates) {
+      const dispatch = await dispatchCycleReplan({ service, manager, repository: snapshot.repository, expectedGraphRevision: snapshot.revision, candidateId: candidate.id });
+      if (dispatch.status === 'started') { console.warn(`[stall-guard] ${repository} dispatched cycle replan run ${dispatch.runId}`); break; }
+    }
+  };
   const runDependencySync = async (): Promise<void> => {
-    for (const project of automationProjects.values()) {
+    for (const [projectId, project] of automationProjects.entries()) {
       if (!project.github) continue;
       try { await graphServiceForScheduler(project.root).refreshIfNeeded({ maxAgeMs: 5 * 60_000 }); } catch { /* admission retries on demand and reports the reason */ }
+      try { await runStallGuard(projectId, project); } catch (error) { console.warn(`[stall-guard] ${project.root} check failed: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}`); }
     }
   };
   const backlogSyncRun = (): void => { void runBacklogSyncOnce([...automationProjects.values()].map((p) => ({ root: p.root, github: p.github })), { log: (m) => console.info(m) }).catch(() => undefined); };

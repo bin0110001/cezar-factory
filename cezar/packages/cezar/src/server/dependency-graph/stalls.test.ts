@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dependencyNodeId, type DependencyGraphEdge, type DependencyGraphSnapshot } from '@open-mercato/cezar-contract';
-import { diagnoseStalls } from './stalls.ts';
+import { consumedStateLabels, diagnoseStalls } from './stalls.ts';
 
 const at = '2026-10-30T12:00:00.000Z';
 const repository = 'acme/work';
@@ -88,5 +88,17 @@ describe('diagnoseStalls', () => {
     const report = diagnoseStalls({ snapshot: snap(nodes, edges), consumedLabels: CONSUMED });
     expect(report.counts).toMatchObject({ runnable: 1, blocked: count - 1, stuck: 0 });
     expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe('consumedStateLabels', () => {
+  it('lists factory labels of ENABLED github automations only', () => {
+    const labels = consumedStateLabels([
+      { enabled: true, kind: 'github', filters: { allLabels: ['factory:ready', 'complexity:small'], changedLabels: ['factory:ready'] } },
+      { enabled: false, kind: 'github', filters: { allLabels: ['factory:needs-plan'] } },
+      { enabled: true, kind: 'schedule' },
+      { enabled: true, kind: 'github', filters: { changedLabels: ['factory:new'] } },
+    ]);
+    expect([...labels].sort()).toEqual(['factory:new', 'factory:ready']);
   });
 });

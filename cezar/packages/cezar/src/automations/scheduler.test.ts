@@ -90,6 +90,23 @@ describe('ProjectAutomationScheduler', () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it('does not apply the implementation lane gate to automations that drain Inbox/Refinement (enforce-mode deadlock)', async () => {
+    const { store } = await setup();
+    const intake = store.create({ name: 'Intake', enabled: true, events: ['issue.labeled'], intervalSeconds: 300, filters: { lookbackDays: 7, maxRecords: 25, changedLabels: ['factory:new'], allLabels: ['factory:new'] }, task: { prompt: 'Intake' } }, 'intake') as GithubAutomationDefinition;
+    const launch = vi.fn(async () => ({ runId: 'run-intake' }));
+    const backlogAdmit = vi.fn(async () => ({ allow: false, reason: 'not-ready: lane is Inbox, not Ready', shadow: false }));
+    const labeled = { ...candidate, event: 'issue.labeled' as const, eventId: 'labeled', labels: ['factory:new'] };
+    const handle: ProjectAutomationHandle = {
+      projectId: 'p', timeZone: 'UTC', store,
+      github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [labeled], truncated: false, pages: 1 }) } as never },
+      admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }),
+      backlogAdmit, launch,
+    };
+    await new ProjectAutomationScheduler(handle).check(intake);
+    expect(backlogAdmit).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
   it('admits at most maxAdmissionsPerCycle new issues, highest priority first, and defers the rest durably', async () => {
     const { store, definition } = await setup();
     const capped = { ...definition, filters: { ...definition.filters, maxAdmissionsPerCycle: 1 } } satisfies GithubAutomationDefinition;

@@ -195,3 +195,25 @@ export function diagnoseStalls({ snapshot, consumedLabels }: StallVerdictInput):
 
   return { revision: snapshot.revision, verdict, summary, counts, items, cycles };
 }
+
+/** The slice of an automation definition the consumer check needs; structural so the store type is not imported here. */
+export interface AutomationLike { enabled: boolean; kind: string; filters?: { allLabels?: string[]; changedLabels?: string[]; anyLabels?: string[] } }
+
+/**
+ * `factory:*` labels an ENABLED GitHub automation fires on. Complexity routing (`complexity:small|medium|large`)
+ * is deliberately not modelled: a lane counts as consumed when any enabled automation targets its label.
+ */
+export function consumedStateLabels(automations: readonly AutomationLike[]): Set<string> {
+  const labels = new Set<string>();
+  for (const automation of automations) {
+    if (!automation.enabled || automation.kind !== 'github') continue;
+    const { allLabels = [], changedLabels = [], anyLabels = [] } = automation.filters ?? {};
+    for (const label of [...allLabels, ...changedLabels, ...anyLabels]) if (label.startsWith('factory:')) labels.add(label);
+  }
+  return labels;
+}
+
+/** Cycle members plus everything stuck beneath them, in a form the guard can log and audit. */
+export function stuckFingerprint(report: StallReport): string {
+  return report.items.filter((item) => item.class === 'stuck').map((item) => `${item.number}:${item.reason}`).join(',');
+}

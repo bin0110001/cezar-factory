@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { AlertTriangleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { BacklogDependencyMap } from '@/components/backlog-dependency-map'
 import { editBacklogIssue, getAutomations, getBacklog, getBacklogRecommendation, type BacklogCardData } from '@/api/client'
 
 const key = ['backlog'] as const
@@ -92,6 +94,7 @@ function LaneDispatchPreview({ lane, automationQuery }: {
 export function BacklogRoute() {
   const client = useQueryClient()
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'board' | 'map'>('board')
   const overview = useQuery({ queryKey: key, queryFn: () => getBacklog(), staleTime: 15_000 })
   const recommendation = useQuery({ queryKey: [...key, 'recommendation'], queryFn: () => getBacklogRecommendation(5), staleTime: 15_000 })
   const automations = useQuery({ queryKey: ['automations'], queryFn: () => getAutomations(), staleTime: 15_000 })
@@ -114,7 +117,14 @@ export function BacklogRoute() {
       </header>
       {error && <p role="alert" className="text-sm text-destructive"><AlertTriangleIcon className="mr-1 inline size-4" />{error}</p>}
       {overview.isError && <p role="alert" className="text-sm text-destructive">Backlog is unavailable: {(overview.error as Error).message}</p>}
-      {recommendation.data && (
+      <Tabs value={tab} onValueChange={(value) => setTab(value === 'map' ? 'map' : 'board')}>
+        <TabsList aria-label="Backlog views">
+          <TabsTrigger value="board">Board</TabsTrigger>
+          <TabsTrigger value="map">Dependency map</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {tab === 'map' && <BacklogDependencyMap />}
+      {tab === 'board' && recommendation.data && (
         <section aria-label="Next up" className="rounded-md border p-3 text-sm">
           <h2 className="font-medium">Next up for implementation</h2>
           {recommendation.data.next
@@ -126,7 +136,7 @@ export function BacklogRoute() {
           )}
         </section>
       )}
-      {view && (
+      {tab === 'board' && view && (
         <>
           <div className="grid min-w-0 gap-3 md:grid-cols-4 xl:grid-cols-7">
             {view.lanes.map((lane) => (
