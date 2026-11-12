@@ -280,10 +280,18 @@ Then the feature backlog reopens.
   "exited non-zero", so the transient retry from batch 4 had nothing to match. Batch 7 adds the step output to the
   reason and makes label creation write only what differs. Also found: item 2.11.
 - 2026-11-12: batch 7 merged (PR #455, `5536a9b`) after Windows and Linux full-suite runs.
-- 2026-11-12: 0.2 answered from history. The commits were made by the label-audit agent step of hourly maintenance
-  ("Factory Investigator", a different improvised message each hour): it committed `.factory/backlog-label-audit.json`,
-  tracked at the time, pushed a `cez/<id>` branch, and sometimes opened a pull request to `main` (#380 and #419 were
-  merged there; #301 was closed in the triage). They stopped when #425 untracked the scratch: the newest such branch
-  is from 2026-11-11 18:04Z. How one reached the root `stable` ref is not established; the reconcile step now handles
-  that case. Batch 8 adds a final maintenance step that fails a run that committed. Left for the owner: 126 of 132
-  `origin/cez/*` branches carry such commits and can be deleted, and `main` has 3 bot commits that `dev` lacks.
+- 2026-11-12: 0.2 answered from history, and corrected the same day. There were two sources of commits. (1) The
+  label-audit agent step committed, pushed a `cez/<id>` branch and sometimes opened a pull request to `main`
+  (#380 and #419 were merged there; #301 was closed in the triage), with an improvised message each hour. That
+  stopped when #425 untracked its scratch file. (2) Cezar's end-of-run autosave ("cezar autosave (run finalize)",
+  author "Factory Investigator") commits whatever scratch is not ignored, after the last workflow step. It is still
+  happening: each maintenance run on the host ends with one such commit (`.factory/gh-cache/*.json` and
+  `.factory/release-reports/shadow-audit.json`), and my batch 5 added two more unignored files
+  (`lifecycle-sweep.json`, `run-commits.json`) that would have joined them. Batch 8 inverts the ignore rule so
+  everything under `.factory/` is ignored unless deliberately tracked, with a suite test. How one reached the root
+  `stable` ref is still not established; the reconcile step handles it. Left for the owner: the host's container has
+  1,741 local `cez/*` branches and 13 worktrees (507 MB of worktrees, disk at 97%), `origin` has 132 `cez/*` branches
+  of which 126 carry such commits, and `main` has 3 bot commits that `dev` lacks.
+- 2026-11-12 20:35Z: batch 7 (`5536a9b`) cleared the evidence gate and the environment preflight, then failed at activation on
+  `gh repo view` (a transient GitHub error; the command works now). Batch 8 retries a transient activation error on the next
+  tick instead of failing the candidate. The next merge is promoted as a new candidate regardless.

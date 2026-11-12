@@ -66,3 +66,11 @@ connections/**/*
 .factory/startup/
 .factory/sync-issue-delivery.json
 .factory/repair-latest-failure/
+
+# Everything under .factory/ is run scratch except what is deliberately tracked. Cezar's end-of-run
+# autosave commits whatever is not ignored (this once put gh-cache entries, then a scratch audit file,
+# into a `cez/<id>` branch every hour), so a new scratch file must be ignored by default, not by name.
+.factory/*
+!.factory/release-reports/
+!.factory/obot-caddy-root.crt
+.factory/release-reports/shadow-audit.json

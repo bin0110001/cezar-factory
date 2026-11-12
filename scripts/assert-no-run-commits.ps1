@@ -4,14 +4,17 @@
 Fails a housekeeping run that made a commit.
 
 .DESCRIPTION
-A housekeeping workflow (maintenance, health) reads and labels; it has nothing to commit. In November 2026
-the label-audit agent step committed a scratch file every hour, pushed a `cez/<id>` branch each time,
-opened pull requests against `main`, and one such commit ended up on the root `stable` checkout and blocked
-every stable deploy. The scratch file is no longer tracked, so today there is nothing to commit; this step
-makes sure a later change cannot quietly bring that back.
+A housekeeping run (maintenance, health) reads and labels; it has nothing to commit. Two things have put
+commits on `cez/<id>` branches, on `main`, and once on the root `stable` checkout:
+
+  - Cezar's end-of-run autosave ("cezar autosave (run finalize)") commits whatever scratch is not ignored.
+    That is closed by `.gitignore` (everything under `.factory/` is ignored unless deliberately tracked) and
+    by a suite test; this step cannot see it, because the autosave happens after the last step.
+  - An agent step that commits, pushes and opens a pull request itself, with an improvised message. In
+    November 2026 the label-audit step did this every hour. This step is the check for that.
 
 The run's branch was created when the run started, so the first entry in the branch's reflog is the commit
-it started from. Anything between that commit and HEAD was committed by this run.
+it started from. Anything between that commit and HEAD was committed by this run's own steps.
 #>
 [CmdletBinding()]
 param(

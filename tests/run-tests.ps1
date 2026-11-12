@@ -307,6 +307,12 @@ if ($iterUnknownCode -ne 2) { Write-Host "ship-loop Run (unknown workflow) exite
 Assert 'ship-loop Run rejects an unknown workflow with exit 2' ($iterUnknownCode -eq 2)
 $trackedScratch = @(& git -C $factory ls-files -- .factory | Where-Object { $_ -notmatch '^\.factory/(release-reports/|obot-caddy-root\.crt$)' })
 Assert "no workflow scratch is tracked under .factory/ ($($trackedScratch -join ', '))" ($trackedScratch.Count -eq 0)
+# Cezar autosaves whatever is not ignored at the end of every run. Any new scratch name under .factory/ must
+# already be ignored, so a step that writes a new file cannot start a stream of commits.
+$notIgnored = @('.factory/zz-brand-new-scratch.json', '.factory/gh-cache/0123abcd.json', '.factory/lifecycle-sweep.json', '.factory/run-commits.json', '.factory/release-reports/shadow-audit.json', '.factory/nested/anything.txt' | Where-Object { & git -C $factory check-ignore -q -- $_; $LASTEXITCODE -ne 0 })
+Assert "new scratch under .factory/ is ignored by default ($($notIgnored -join ', '))" ($notIgnored.Count -eq 0)
+$ignoredButTracked = @('.factory/obot-caddy-root.crt', '.factory/release-reports/promote-stable.jsonl' | Where-Object { & git -C $factory check-ignore -q --no-index -- $_; $LASTEXITCODE -eq 0 })
+Assert "the deliberately tracked files under .factory/ are not ignored ($($ignoredButTracked -join ', '))" ($ignoredButTracked.Count -eq 0)
 Assert 'workflow-iterate skill documents the Run action'((Get-Content -Raw (Join-Path $factory '.claude/skills/workflow-iterate/SKILL.md')) -match 'ship-loop\.ps1 -Action Run')
 # Copyable result examples must remain valid JSON and satisfy their declared
 # schema. A missing required field is a real contract failure, not just prose

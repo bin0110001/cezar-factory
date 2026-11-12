@@ -137,8 +137,9 @@ steps:
     name: Validate and apply backlog-label proposals
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json
     timeoutSeconds: 300
-  # A housekeeping run has nothing to commit. The agent step above once committed its scratch file every
-  # hour, pushed a branch each time and opened pull requests; this fails the run if that ever returns.
+  # A housekeeping run has nothing to commit. The agent step above once committed, pushed and opened pull
+  # requests itself every hour; this fails the run if that ever returns. (Cezar's own end-of-run autosave
+  # happens after the last step and is handled by .gitignore, not here.)
   - id: no-run-commits
     name: Verify the run made no commit
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits.ps1 -OutputPath .factory/run-commits.json
