@@ -74,7 +74,7 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **0.5 Fix contradictory labels** (stale `factory:auditing`, #102, #164).
 - [ ] **0.6 Bazzite `/var/home` is about 96% full** (blocks #129, and a full disk stops the promoter).
   Needs the owner: free space or move the store.
-- [ ] **0.7 After 0.1 lands on the host:** confirm the stable pointer reaches `origin/stable`, then
+- [x] **0.7 After 0.1 lands on the host:** confirm the stable pointer reaches `origin/stable`, then
   `reset-breaker` (owner approval) and close #432, #377, #375.
 
 - [ ] **0.8 The delivery path cannot repair itself.** The promoter and the deployer run from the host
@@ -228,3 +228,5 @@ Then the feature backlog reopens.
   confirm the stable pointer reached `450faf8` and health returned to `ok`, then finish 0.7 (close #432, #377,
   #375; the breaker count is 1 from item 0.9 and resets on a successful stable deploy).
 - Next up, in order: 0.9, 0.2, 1.4c (remaining scripts), 1.5, 2.4, 2.5.
+- 2026-11-12 13:25Z: confirmed. `450faf8` is `healthy` at stage `stable-deployed`; drift has no findings; `health` is
+  `ok`; the breaker count reset to 0 without a manual `reset-breaker`. Closed #432, #377 and #375 (item 0.7 done).
