@@ -130,14 +130,51 @@ A host that fails every candidate looks "up" to every other check, so three thin
 ## Candidates with no changes
 
 A candidate is validated by the checks that match the paths changed since the active `dev` release. A candidate whose tree is
-identical to that release, such as a merge-only commit that reconciles history, has no changed paths, so no required check
-matches and the promoter records `no required validation check matches the candidate changes` as a failure, which also counts
-toward the circuit breaker. Land any real change after such a merge; the next candidate validates normally and, because the
-history is reconciled, can fast-forward `stable`.
+identical to that release, such as a merge-only commit that reconciles history, has no changed paths: there is nothing to
+validate because the same tree already passed. It is staged and activated so the pointers follow the branch, its record says
+`validation: skipped`, and it goes on to the canaries and `stable` like any other candidate. It is not a failure and does not
+count toward the circuit breaker.
 
 `stable` must stay an ancestor of `dev`. Anything committed straight to `stable` (the label-audit bot did this twice on
 2026-11-09) makes every later stable promotion fail with `Update is not a fast forward (HTTP 422)`; reconcile it by merging
 `stable` into `dev` with a merge commit (a squash merge drops the second parent and does not help).
+
+## Not the candidate's fault
+
+Three things used to be recorded as a failed candidate although the change was fine:
+
+- **A check killed from outside** (exit 137 or 143: a container restart, the OOM killer). The candidate is `interrupted`, not
+  `failed`: no breaker count, no issue, and the next tick validates the same SHA again, up to twice. While a suite runs the
+  promoter keeps its PID in `<store>/validation-in-progress`, and `deploy-cezar-runtime.sh` counts that as a busy Cezar, so a
+  deploy defers its restart instead of killing the suite.
+- **A canary that hits a transient GitHub error** (rate limit, 502/503/504, a dropped connection, truncated JSON; the pattern is
+  `promotion.canaries.transientPattern`). The canary is run once more before the release is rolled back and quarantined; the
+  record keeps the first reason in `retriedAfter`.
+- **A candidate with no changed paths** (above).
+
+## When the pipeline cannot fix itself
+
+The promoter and the deployer run from the host checkout, which is on `stable`. A fix to the gate policy, the promoter, or a
+deploy script therefore has to pass through the thing it fixes. On 2026-11-12 the `autonomous` policy could not be promoted
+because the host still enforced `controlled`, and a fix to the reconcile step could not deploy because the old step ran first;
+`health` said `ok` the whole time.
+
+Detection is automatic now. `health` is `degraded` after an hour of a blocked candidate or of drift and `stalled` after six, and
+a candidate blocked longer than `promotion.blocked.escalateSeconds` (default one hour) opens one `factory:needs-help` issue,
+`[promotion] candidate blocked at the evidence gate`. Drift is reported when it appears or changes and then every six hours,
+not on every tick.
+
+Recovery, by the stage that is stuck. Each needs the owner's approval, because it is a manual action on shared state:
+
+| Stuck at | How to tell | Recovery that does not depend on the broken stage |
+|---|---|---|
+| Evidence gate | `status` shows `blocked` with the gate's reason | If the PR really lacks its review evidence, add it; the same SHA proceeds on the next tick. If the gate policy itself is wrong on the host, promote the fix with `scripts/release/promote-stable.ps1` from a clean checkout of the merged `origin/dev` head. |
+| Validation | `status` shows `failed` at validation | Reproduce with `ship-loop.ps1 -Action Validate`, fix on `dev`; a fix is a new SHA. `run --retry-failed` re-runs a SHA whose failure was environmental. |
+| `stable` ref | `[promotion] stable-promotion failed`, HTTP 422 | Something was committed to `stable`. Merge `stable` into `dev` with a merge commit; the next candidate fast-forwards. |
+| Host deploy | `journalctl --user -u factory-autodeploy.service` shows the failing step | `promote-stable.ps1` moves `origin/stable`; the next autodeploy run fast-forwards the host first and then uses the new scripts. |
+
+`promote-stable.ps1` runs the full suite and only fast-forwards, but it skips dev activation and the canaries, so the `dev`
+pointer lags until the next candidate passes. Use it to get a fix to the delivery path onto the host, not as a routine.
 
 ## Limits
 

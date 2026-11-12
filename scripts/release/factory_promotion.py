@@ -25,6 +25,7 @@ MODES = ("autonomous", "controlled")
 REVIEW_KINDS = ("self-review", "approval")
 STABLE_KINDS = ("auto", "approval")
 DEFAULT_SELF_REVIEW = r"(?im)^\s{0,3}#{1,6}\s*self[- ]review\b"
+DEFAULT_CANARY_TRANSIENT = r"rate limit|HTTP 50[234]|\b50[234] (?:Bad Gateway|Service Unavailable|Gateway Time-?out)|unexpected end of JSON|connection reset|ECONNRESET|temporarily unavailable|Cezar API unavailable"
 TERMINAL_RUN = {"done": "passed", "failed": "failed", "cancelled": "failed"}
 WAITING_RUN = {"queued", "pending", "waiting"}
 
@@ -99,7 +100,12 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
     breaker = raw.get("breaker", {}) or {}
     issues = raw.get("issues", {}) or {}
     drift = raw.get("drift", {}) or {}
+    blocked = raw.get("blocked", {}) or {}
     deploy = stable.get("deployCommand")
+    try:
+        transient_re = re.compile(canaries.get("transientPattern", DEFAULT_CANARY_TRANSIENT), re.IGNORECASE)
+    except (re.error, TypeError) as exc:
+        raise PolicyError(f"promotion.canaries.transientPattern is invalid: {exc}") from exc
     return {
         "mode": mode,
         "review": posture["review"],
@@ -110,6 +116,8 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
         "canaryProject": canaries.get("projectId", "cezar-factory"),
         "canaryReadySeconds": _int(canaries.get("readySeconds"), "canaries.readySeconds", 0, 3600, 180),
         "canaries": items,
+        "canaryTransientPattern": transient_re,
+        "blockedEscalationSeconds": _int(blocked.get("escalateSeconds"), "blocked.escalateSeconds", 60, 7 * 24 * 3600, 3600),
         "stableBranch": stable.get("branch", "stable"),
         "deployCommand": _argv(deploy, "stable.deployCommand") if deploy is not None else None,
         "deployIdleWaitSeconds": _int(stable.get("deployIdleWaitSeconds"), "stable.deployIdleWaitSeconds", 0, 3600, 600),

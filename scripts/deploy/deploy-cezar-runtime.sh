@@ -41,6 +41,17 @@ print(busy)
 COUNT_RUNS
 }
 
+# The promoter validates a candidate by running the full suite inside this container (podman exec), which
+# is not a Cezar run. It records its PID in VALIDATION_MARKER for the duration; a restart then would kill the
+# suite and the candidate would be recorded as failed. A marker whose process is gone is stale and ignored.
+VALIDATION_MARKER="${FACTORY_PROMOTION_STORE:-${HOME:-/tmp}/.local/share/cezar-factory}/validation-in-progress"
+validation_busy() {
+  local pid=''
+  [[ -f "$VALIDATION_MARKER" ]] || { echo 0; return; }
+  read -r pid _ < "$VALIDATION_MARKER" 2>/dev/null || true
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then echo 1; else echo 0; fi
+}
+
 # A restart interrupts running work, so wait for an idle Cezar. After IDLE_WAIT seconds defer (exit 25) and let the
 # next tick retry; after MAX_DEFER seconds of continuous deferral restart anyway so a busy queue cannot starve a deploy.
 wait_for_idle() {
@@ -48,7 +59,7 @@ wait_for_idle() {
   # An unwritable state dir only disables the starvation timer; it must never abort a deploy.
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   while :; do
-    busy="$(active_runs)"
+    busy=$(( $(active_runs) + $(validation_busy) ))
     if [[ "$busy" == 0 ]]; then rm -f "$DEFER_FILE"; return 0; fi
     now="$(date +%s)"
     [[ -f "$DEFER_FILE" ]] || echo "$now" > "$DEFER_FILE" 2>/dev/null || true
@@ -59,7 +70,7 @@ wait_for_idle() {
       return 0
     fi
     if (( waited >= IDLE_WAIT )); then
-      log "DEFERRED: $busy Cezar run(s) active; not restarting until idle"
+      log "DEFERRED: $busy Cezar run(s) or candidate validation active; not restarting until idle"
       exit 25
     fi
     sleep 15
