@@ -1,1 +1,34 @@
-{"name":"[factory] needs-plan-medium","description":"Plan medium issues with Claude Sonnet (managed by cezar-factory; do not edit in the cockpit)","kind":"github","events":["issue.labeled"],"intervalSeconds":300,"filters":{"changedLabels":["factory:needs-plan"],"allLabels":["factory:needs-plan","complexity:medium"],"excludeLabels":["factory:blocked"],"maxRecords":1},"task":{"prompt":"GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}","workflow":"factory-plan","runner":"claude","model":"sonnet","worktree":true,"autonomous":true}}
+{
+  "name": "[factory] needs-plan-medium",
+  "description": "Plan medium issues with Claude Sonnet (managed by cezar-factory; do not edit in the cockpit)",
+  "kind": "github",
+  "events": [
+    "issue.labeled"
+  ],
+  "intervalSeconds": 300,
+  "filters": {
+    "changedLabels": [
+      "factory:needs-plan"
+    ],
+    "allLabels": [
+      "factory:needs-plan",
+      "complexity:medium"
+    ],
+    "excludeLabels": [
+      "factory:blocked"
+    ],
+    "maxRecords": 25,
+    "lookbackDays": 30,
+    "maxAdmissionsPerCycle": 1,
+    "fullReconcileHours": 24,
+    "initialSync": "eligible"
+  },
+  "task": {
+    "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
+    "workflow": "factory-plan",
+    "runner": "claude",
+    "model": "sonnet",
+    "worktree": true,
+    "autonomous": true
+  }
+}

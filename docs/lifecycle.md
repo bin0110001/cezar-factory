@@ -101,6 +101,17 @@ instead of `factory:ready`, and the implement automation cannot start it until a
 Limit: Cezar's own stall detector and Decisions screen keep their own state list until plan item 1.4f, so an issue
 waiting in a profile-only state can be reported there as having no state label.
 
+## Level-triggered consumers
+
+Cezar's GitHub automations fire on a label event, once. Every `issue.labeled` automation here also sets
+`fullReconcileHours: 24`: once a day it re-lists the open issues that still carry its label and recovers any labeling
+the poller missed (it was paused, down, or never saw the event), and `maxAdmissionsPerCycle: 1` lets one new launch
+through per poll so a recovered backlog drains slowly instead of starting at once. Intake always worked this way; the
+planning, investigation and review automations now do too. The implement and fix automations deliberately do not
+replay existing issues when they are enabled (`initialSync` is not `eligible`), so enabling one still baselines to now
+and never launches the backlog; `fullReconcileHours` then recovers only events missed after that point. An event that
+was seen and then failed is not recovered here; the stale refresher re-triggers it.
+
 ## Transitions
 
 ```mermaid
