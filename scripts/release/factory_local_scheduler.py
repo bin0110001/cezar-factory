@@ -591,17 +591,33 @@ class LocalPromotionScheduler:
         out["consecutiveFailures"] = self.breaker.failures()
         return out
 
+    STALL_HOURS = 6.0  # a blocked candidate or unresolved drift this old means promotion has stopped
+
     def health(self) -> dict[str, Any]:
         """Is promotion actually landing? A host that fails every candidate looks "up" to every other check.
 
         `stalled` means three or more candidates failed since the last healthy one (the breaker's own threshold)
         or nothing has been healthy for a day while candidates keep failing; `degraded` is any failure since.
+
+        Failing is not the only way to stop. A candidate that waits at the evidence gate is `blocked`, not
+        `failed`, and a stable deploy that never lands shows only as drift; both once left promotion stopped
+        for half a day while this reported `ok`. So a candidate blocked for an hour, or drift past its grace
+        period, is `degraded`, and either lasting `STALL_HOURS` is `stalled`. `reasons` says which.
         """
         with self._db() as db:
             healthy = db.execute("SELECT sha, finished_at FROM promotions WHERE status='healthy' ORDER BY finished_at DESC LIMIT 1").fetchone()
             since = healthy["finished_at"] if healthy else ""
             failed = db.execute("SELECT COUNT(*) AS n FROM promotions WHERE status='failed' AND finished_at > ?", (since,)).fetchone()["n"]
             last_failed = db.execute("SELECT sha, reason FROM promotions WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").fetchone()
+            blocked = db.execute("SELECT sha, reason, finished_at FROM promotions WHERE status='blocked' AND finished_at > ? ORDER BY finished_at ASC LIMIT 1", (since,)).fetchone()
+        current = dt.datetime.now(dt.timezone.utc)
+        reasons: list[str] = []
+        blocked_hours = None
+        if blocked and blocked["finished_at"]:
+            blocked_hours = round((current - dt.datetime.fromisoformat(blocked["finished_at"].replace("Z", "+00:00"))).total_seconds() / 3600, 1)
+        drift_since = float(self._state_get("drift_since", "0") or 0)
+        drift_hours = round((time.time() - drift_since) / 3600, 1) if drift_since else None
+        drift_grace_hours = (self.policy["driftGraceSeconds"] if self.policy else 1800) / 3600
         hours = None
         if healthy and healthy["finished_at"]:
             hours = round((dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(healthy["finished_at"].replace("Z", "+00:00"))).total_seconds() / 3600, 1)
@@ -611,7 +627,20 @@ class LocalPromotionScheduler:
             state = "degraded"
         else:
             state = "ok"
-        return {"state": state, "lastHealthySha": healthy["sha"] if healthy else None, "lastHealthyAt": healthy["finished_at"] if healthy else None,
+        if failed:
+            reasons.append(f"{failed} candidate(s) failed since the last healthy promotion")
+        waiting = [(blocked_hours, 1.0, f"candidate {blocked['sha'][:9]} has been blocked for {blocked_hours}h: {(blocked['reason'] or '')[:300]}") if blocked_hours is not None else None,
+                   (drift_hours, drift_grace_hours, f"release drift has persisted for {drift_hours}h (the host is not on the promoted release)") if drift_hours is not None else None]
+        for item in waiting:
+            if item is None or item[0] < item[1]:
+                continue
+            reasons.append(item[2])
+            if item[0] >= self.STALL_HOURS:
+                state = "stalled"
+            elif state == "ok":
+                state = "degraded"
+        return {"state": state, "reasons": reasons, "blockedHours": blocked_hours, "driftHours": drift_hours,
+                "lastHealthySha": healthy["sha"] if healthy else None, "lastHealthyAt": healthy["finished_at"] if healthy else None,
                 "hoursSinceHealthy": hours, "failedSinceHealthy": failed, "breakerOpen": self.breaker.is_open(),
                 "consecutiveFailures": self.breaker.failures(),
                 "lastFailure": {"sha": last_failed["sha"], "reason": (last_failed["reason"] or "")[:600]} if last_failed else None}

@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from scripts.release.factory_local_scheduler import LocalPromotionScheduler, SchedulerError
@@ -140,6 +141,34 @@ class LocalPromotionSchedulerTests(unittest.TestCase):
         self._promotion("e" * 40, "failed", "2026-11-09T00:00:00.000Z", "boom")
         health = self.scheduler.health()
         self.assertEqual(("stalled", None), (health["state"], health["lastHealthySha"]))
+
+    def test_health_is_not_ok_while_a_candidate_waits_blocked_or_drift_persists(self) -> None:
+        def ago(hours: float) -> str:
+            moment = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+            return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        self._promotion("a" * 40, "healthy", ago(20))
+        self._promotion("b" * 40, "blocked", ago(0.2), "no merged dev PR satisfying the approval gate")
+        self.assertEqual(("ok", []), (self.scheduler.health()["state"], self.scheduler.health()["reasons"]))  # a short wait is normal
+        self._promotion("b" * 40, "blocked", ago(2), "no merged dev PR satisfying the approval gate")
+        health = self.scheduler.health()
+        self.assertEqual(("degraded", 2.0), (health["state"], health["blockedHours"]))
+        self.assertIn("approval gate", health["reasons"][0])
+        self._promotion("b" * 40, "blocked", ago(13), "no merged dev PR satisfying the approval gate")
+        self.assertEqual("stalled", self.scheduler.health()["state"])
+        # A later healthy promotion supersedes an old blocked candidate.
+        self._promotion("c" * 40, "healthy", ago(1))
+        self.assertEqual(("ok", None), (self.scheduler.health()["state"], self.scheduler.health()["blockedHours"]))
+        # Drift that outlives its grace period means the host is not on the promoted release.
+        self.scheduler._state_put("drift_since", str(time.time() - 600))
+        self.assertEqual("ok", self.scheduler.health()["state"])
+        self.scheduler._state_put("drift_since", str(time.time() - 2 * 3600))
+        health = self.scheduler.health()
+        self.assertEqual("degraded", health["state"])
+        self.assertIn("release drift", health["reasons"][0])
+        self.scheduler._state_put("drift_since", str(time.time() - 8 * 3600))
+        self.assertEqual("stalled", self.scheduler.health()["state"])
+        self.scheduler._state_put("drift_since", "0")
+        self.assertEqual("ok", self.scheduler.health()["state"])
 
     def test_passing_check_has_no_failure_lines(self) -> None:
         result = self.scheduler.run_once()

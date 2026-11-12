@@ -118,7 +118,9 @@ A host that fails every candidate looks "up" to every other check, so three thin
   `[promotion]` issue, carries the first few instead of only "exit code 1".
 - **`health`** reports the last healthy promotion, its age, the failures since, and a state: `degraded` is any
   failure since the last healthy candidate, `stalled` is three or more (the breaker's threshold) or none healthy
-  for a day while candidates fail. `ship-loop.ps1 -Action Health` prints it and exits 4 when stalled; the
+  for a day while candidates fail. Stopping without failing counts too: a candidate `blocked` at the evidence gate
+  for an hour, or drift past its grace period (the host is not on the promoted release), is `degraded`, and either
+  lasting six hours is `stalled`. `reasons` names the cause. `ship-loop.ps1 -Action Health` prints it and exits 4 when stalled; the
   `ship-fix` skill runs it first.
 - **Linux before merge.** The suite passes on Windows and can fail in the Linux promotion container (14 candidates
   failed for days on Linux-only problems). `ship-loop.ps1 -Action Validate` runs the host's own
