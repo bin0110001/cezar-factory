@@ -589,6 +589,14 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'automations') -Filter *.json) 
         if ($d.events -contains 'issue.labeled') { Assert "automation $($f.Name) changedLabels" ([bool]$d.filters.changedLabels) }
     }
     else { Assert "automation $($f.Name) schedule" ([bool]$d.schedule) }
+    # Level-triggered: an issue.labeled automation also re-lists open issues that still carry its label, so an event
+    # it never saw is recovered, and it admits one new launch per poll so a backlog cannot start all at once.
+    if ($d.kind -eq 'github' -and @($d.events) -contains 'issue.labeled') {
+        Assert "automation $($f.Name) reconciles existing labels (fullReconcileHours) and admits one launch per poll" ($d.filters.fullReconcileHours -ge 1 -and $d.filters.fullReconcileHours -le 24 -and $d.filters.maxAdmissionsPerCycle -eq 1 -and $d.filters.maxRecords -ge 10)
+        $initialSyncProperty = $d.filters.PSObject.Properties['initialSync']
+        $initialSync = if ($initialSyncProperty) { [string]$initialSyncProperty.Value } else { '' }
+        Assert "automation $($f.Name) never replays history on creation if it starts or fixes work" (($d.task.workflow -notin 'factory-implement', 'factory-fix-review') -or $initialSync -ne 'eligible')
+    }
 }
 # Workflows must satisfy Cezar's schema: unique ids, agent XOR check steps, onFail.retry -> earlier step.
 foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {

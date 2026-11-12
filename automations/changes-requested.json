@@ -16,7 +16,10 @@
     "excludeLabels": [
       "factory:blocked"
     ],
-    "maxRecords": 1
+    "maxRecords": 25,
+    "lookbackDays": 30,
+    "maxAdmissionsPerCycle": 1,
+    "fullReconcileHours": 24
   },
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",

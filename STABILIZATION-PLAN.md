@@ -160,7 +160,7 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **1.9 PR sweep.** A `CONFLICTING` PR into `dev` routes its issue to `factory:changes-requested`;
   drafts and PRs without a closing keyword are reported.
 - [x] **1.10 Bound the investigate, re-plan, implement loop** (today only the direct retry is capped).
-- [ ] **1.11 Re-enabling an automation reconciles existing labels** instead of baselining to "now"
+- [x] **1.11 Re-enabling an automation reconciles existing labels** instead of baselining to "now"
   (make every automation level-triggered, as intake already is with `fullReconcileHours`).
 - [x] **1.12 Correct `docs/lifecycle.md`** where it disagrees with `route-state.ps1` (`blocked` is never
   set by the router; `human-review` has no writer).
@@ -191,7 +191,7 @@ one list and be missing from the list that would have given it a consumer.
 - [ ] **2.10 Fixture canary for plan, implement, review** against a sandbox repository, the largest
   remaining blind spot.
 
-- [ ] **2.11 A canary runs the new scripts with the old workflow definition.** The maintenance canary for `941134a`
+- [ ] **2.11 A canary runs the new scripts with the old workflow definition (root cause found; needs the owner).** The maintenance canary for `941134a`
   ran scripts from the candidate's runtime (`factory-runtime/941134a`) but its step list was the one on `stable`:
   it had no `lifecycle-sweep` step. A change to a workflow file is therefore never canaried, and a script whose
   parameters change is canaried against the old command line. Make a canary run the candidate's own workflow
@@ -342,3 +342,15 @@ Then the feature backlog reopens.
   example of a process change by configuration: a plan for risk:high work waits at `factory:design-signoff` for a person.
   It is not a separate design step with its own agent workflow; a design workflow would be one more state with an owner
   workflow and no script change.
+- 2026-11-12: batch 13 delivers 1.11 by configuration: Cezar's pollers already supported `fullReconcileHours`,`n  `initialSync` and `maxAdmissionsPerCycle` and only intake used them. Now all ten `issue.labeled` automations do, with the
+  implement and fix automations excluded from replaying history so that enabling one still never launches the backlog.
+  When the owner enables the implement automations (3.1), `fullReconcileHours` recovers events missed after the baseline and
+  the `priority:<n>` label orders what is admitted (3.2).
+- 2026-11-12 23:05Z: 2.11 root cause. Cezar loads a project's own `.ai/cezar/workflows` before a release's workflows
+  (`workflows/load.ts`: the repo's files shadow shared ones of the same name). On the host,
+  `/projects/cezar-factory/.ai/cezar/workflows` is a symlink (created 2024-10-24) to the checkout's own `workflows/`, which is
+  `stable`. So for the Factory project itself every run, canaries included, uses `stable`'s workflow files with the
+  candidate's scripts, and a change to a workflow file is first exercised by the first scheduled run after `stable` moves.
+  The fix is on the host, not in the repo: remove that symlink so the release's own `workflows/` is used (reversible with
+  `ln -s ../../workflows .ai/cezar/workflows`; check first that Cezar does not recreate it on restart). The workflow
+  contract test and the table-driven smoke cover a workflow change before merge in the meantime.
