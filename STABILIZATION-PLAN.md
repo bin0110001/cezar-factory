@@ -64,7 +64,7 @@ one list and be missing from the list that would have given it a consumer.
   ref sits on `21bd05f`, a label-audit bot commit that is not in `origin/stable`, so
   `reconcile-container-git-metadata.sh` refuses the non-fast-forward. Make the script preserve a displaced
   local commit under `refs/factory/displaced/*` and continue, instead of failing forever.
-- [ ] **0.2 Find what committed on the root `stable` checkout** (also the cause of #427 and PR #301) and
+- [x] **0.2 Find what committed on the root `stable` checkout** (also the cause of #427 and PR #301) and
   make it impossible: Factory runs must never commit on the root worktree, `stable`, or `main`.
   `main` already carries 3 bot commits that `dev` lacks.
 - [x] **0.3 `health` must not say `ok` while the stable pointer lags `origin/stable`,** a stable deploy
@@ -279,3 +279,11 @@ Then the feature backlog reopens.
   opened. Cause: GitHub answered HTTP 502 while `create-labels.ps1` re-created a label; the canary's reason only said
   "exited non-zero", so the transient retry from batch 4 had nothing to match. Batch 7 adds the step output to the
   reason and makes label creation write only what differs. Also found: item 2.11.
+- 2026-11-12: batch 7 merged (PR #455, `5536a9b`) after Windows and Linux full-suite runs.
+- 2026-11-12: 0.2 answered from history. The commits were made by the label-audit agent step of hourly maintenance
+  ("Factory Investigator", a different improvised message each hour): it committed `.factory/backlog-label-audit.json`,
+  tracked at the time, pushed a `cez/<id>` branch, and sometimes opened a pull request to `main` (#380 and #419 were
+  merged there; #301 was closed in the triage). They stopped when #425 untracked the scratch: the newest such branch
+  is from 2026-11-11 18:04Z. How one reached the root `stable` ref is not established; the reconcile step now handles
+  that case. Batch 8 adds a final maintenance step that fails a run that committed. Left for the owner: 126 of 132
+  `origin/cez/*` branches carry such commits and can be deleted, and `main` has 3 bot commits that `dev` lacks.

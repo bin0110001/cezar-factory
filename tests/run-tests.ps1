@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -162,6 +162,7 @@ $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenan
 Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
 Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'maintenance watchdog covers issue runs: implement and fix runs are routed to investigate, plan, review and investigate runs are only cancelled' ($maintenanceWorkflow -match '(?s)id: watchdog-issue-runs.*-MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review [^&]*-RouteCancelledRuns && .*-MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "\$CEZ_TASK_ID";')
+Assert 'maintenance ends by verifying the run made no commit, and tells the agent step not to' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$' -and $maintenanceWorkflow -match 'Do not commit, push, create a branch or open a pull request')
 Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
 Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
@@ -894,6 +895,25 @@ try {
     $refresh = Get-Content -Raw $refreshOut | ConvertFrom-Json
     Assert 'stale refresher takes the least recently touched workable issues first, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '2,3')
     Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 3 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
+
+    # A housekeeping run must leave no commit. The run branch is created when the run starts, so anything
+    # after the branch's first reflog entry was committed by the run.
+    $runRepo = Join-Path $tmp 'run-commits'
+    New-Item -ItemType Directory -Force -Path $runRepo | Out-Null
+    & git -C $runRepo init -q -b stable 2>&1 | Out-Null
+    & git -C $runRepo config user.name 'Factory Test'; & git -C $runRepo config user.email 'factory-test@example.invalid'
+    'base' | Set-Content (Join-Path $runRepo 'tracked.txt'); & git -C $runRepo add tracked.txt; & git -C $runRepo commit -q -m 'base' 2>&1 | Out-Null
+    & git -C $runRepo switch -q -c 'cez/run-under-test' 2>&1 | Out-Null
+    $runCommitsOut = Join-Path $tmp 'run-commits.json'
+    $cleanRun = Run 'assert-no-run-commits.ps1' @{ OutputPath = $runCommitsOut; RepositoryPath = $runRepo }
+    Assert 'a housekeeping run that made no commit passes' ($cleanRun.Code -eq 0 -and (Get-Content -Raw $runCommitsOut | ConvertFrom-Json).status -eq 'clean')
+    'scratch' | Set-Content (Join-Path $runRepo 'audit.json'); & git -C $runRepo add audit.json; & git -C $runRepo commit -q -m 'factory: backlog label audit - no candidates to process' 2>&1 | Out-Null
+    $dirtyRun = Run 'assert-no-run-commits.ps1' @{ OutputPath = $runCommitsOut; RepositoryPath = $runRepo }
+    $dirtyResult = Get-Content -Raw $runCommitsOut | ConvertFrom-Json
+    Assert 'a housekeeping run that committed fails and names the commit' ($dirtyRun.Code -ne 0 -and $dirtyResult.status -eq 'commits-found' -and @($dirtyResult.commits).Count -eq 1 -and $dirtyResult.commits[0] -match 'backlog label audit' -and $dirtyRun.Out -match 'must not commit')
+    & git -C $runRepo switch -q --detach 2>&1 | Out-Null
+    $detachedRun = Run 'assert-no-run-commits.ps1' @{ OutputPath = $runCommitsOut; RepositoryPath = $runRepo }
+    Assert 'a checkout with no branch is reported as unknown, not guessed at' ($detachedRun.Code -eq 0 -and (Get-Content -Raw $runCommitsOut | ConvertFrom-Json).status -eq 'unknown')
 
     # Lifecycle sweep: every open issue is in one state, with an owner, inside its deadline. What is
     # mechanical is repaired with evidence; the rest goes into one rolling report issue.
