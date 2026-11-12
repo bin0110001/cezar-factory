@@ -13,7 +13,7 @@
     }
   ],
   "promotion": {
-    "mode": "controlled",
+    "mode": "autonomous",
     "modes": {
       "autonomous": { "review": "self-review", "stable": "auto", "soakSeconds": 0 },
       "controlled": { "review": "approval", "stable": "approval", "soakSeconds": 3600 }
