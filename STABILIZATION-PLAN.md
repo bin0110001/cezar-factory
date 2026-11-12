@@ -60,7 +60,7 @@ one list and be missing from the list that would have given it a consumer.
 
 ## Phase 0: unstick what is broken today
 
-- [ ] **0.1 Stable deploy refuses every candidate (#432, #377, #375).** The container's root `stable`
+- [x] **0.1 Stable deploy refuses every candidate (#432, #377, #375).** The container's root `stable`
   ref sits on `21bd05f`, a label-audit bot commit that is not in `origin/stable`, so
   `reconcile-container-git-metadata.sh` refuses the non-fast-forward. Make the script preserve a displaced
   local commit under `refs/factory/displaced/*` and continue, instead of failing forever.
@@ -78,20 +78,20 @@ one list and be missing from the list that would have given it a consumer.
 
 ## Phase 1: no state without an owner and a deadline
 
-- [ ] **1.1 Intake takes promoter-filed issues.** The promoter labels its issues `type:bug` and
+- [x] **1.1 Intake takes promoter-filed issues.** The promoter labels its issues `type:bug` and
   `risk:medium`; intake selection no longer silently drops a `factory:new` issue that lacks a type or risk
   label (it is selected and classified, or reported, never ignored).
-- [ ] **1.2 Fair stale refresher.** Rotate by least-recently-updated instead of always the 2 oldest by
+- [x] **1.2 Fair stale refresher.** Rotate by least-recently-updated instead of always the 2 oldest by
   creation date, so every workable issue is re-triggered in turn.
-- [ ] **1.3 Stale `factory:auditing` marker is cleared** when it sits beside a lifecycle state past the
+- [x] **1.3 Stale `factory:auditing` marker is cleared** when it sits beside a lifecycle state past the
   reservation timeout.
 - [ ] **1.4 The lifecycle is configuration, not code.** This is the foundation for the rest of the
   phase; items 1.5 to 1.10 are built on it instead of adding more hard-coded lists.
-  - [ ] **1.4a Define the model** in `policies/lifecycle.json` with a schema: for every state its kind
+  - [x] **1.4a Define the model** in `policies/lifecycle.json` with a schema: for every state its kind
     (automated, human gate, marker, terminal), owner (which workflow, or which human role), legal exits
     with the event that causes each, maximum dwell, and what happens on timeout (re-trigger, escalate,
     report). Guards on a transition are data too (for example "requires exactly one `complexity:*`").
-  - [ ] **1.4b Ship the current process as the default profile**, with no behaviour change, and a
+  - [x] **1.4b Ship the current process as the default profile**, with no behaviour change, and a
     static test that the model is sound: every non-terminal state has an owner, an exit, and a deadline;
     every exit targets a defined state; every automated state has an automation that consumes it.
   - [ ] **1.4c One loader** (`scripts/lifecycle-lib.ps1`) that every script uses. Replace the literal
@@ -129,11 +129,11 @@ one list and be missing from the list that would have given it a consumer.
 
 ## Phase 2: breakage is caught before merge
 
-- [ ] **2.1 Static contract test** in `tests/run-tests.ps1`: every `.ps1` parses (recursive, errors
+- [x] **2.1 Static contract test** in `tests/run-tests.ps1`: every `.ps1` parses (recursive, errors
   fail), every `.py` compiles, every `.sh` passes `bash -n`, and every workflow `command:` step names an
   existing script and passes only declared parameters, including all mandatory ones. Includes a seeded
   mismatch so the check is proven to fire.
-- [ ] **2.2 Fail, do not skip,** when `bash` or `python` is missing, so a Windows run cannot silently drop
+- [x] **2.2 Fail, do not skip,** when `bash` or `python` is missing, so a Windows run cannot silently drop
   the deploy shell tests.
 - [ ] **2.3 Portability lint**: ban Windows-only constructs in `scripts/` and `tests/` (`-WindowStyle`,
   `.cmd`/`.exe` shims, drive letters, `$env:LOCALAPPDATA` without a fallback).
@@ -182,10 +182,14 @@ Then the feature backlog reopens.
   #80, #74, #44 (branches kept). Removed stale `factory:auditing` from #133, #132, #131, #93, #72, #71,
   #51, #92, #91, #73; #102 keeps `risk:high` only; #164 is now `factory:tracking`. Left open on purpose:
   #432, #377, #375 (live until 0.7), and the inferred ones in 3.5.
-- 2026-11-11: batch 1 (issue #437) covers 0.1, 1.1, 1.2, 1.3, 2.1, 2.2. Tick them when its PR merges.
+- 2026-11-11: batch 1 (issue #437, PR #438, `e0c68bf`) delivered 0.1, 1.1, 1.2, 1.3, 2.1, 2.2. Windows and Linux
+  full suites passed on the merged commit. 0.1 is the code fix only; 0.7 confirms it on the host.
 - 2026-11-11: owner direction: the lifecycle must be configurable (added cause 3 and item 1.4a-f).
 - Noted for 1.6: `maintain-repository.ps1` and `recover-audit-reservations.ps1` read `CEZAR_API_URL`
   and `CEZAR_PROJECT_ID`; the maintenance workflow only has `CEZ_API_URL` and `CEZ_PROJECT_ID`.
 - Noted for 0.2: `[factory] backlog-label-audit` is disabled on the host, so no new root commits are
   expected, but the cause of the earlier ones is not established.
 - Residual from #28: `scripts/release/promote-stable.ps1` still accepts `-TestScript`.
+- 2026-11-11: batch 2 delivers 1.4a and 1.4b (`policies/lifecycle.json`, `scripts/lifecycle-lib.ps1`, soundness test with
+  a design-gated profile) and starts 1.4c with the stale refresher. The model file is JSON with the checker as its
+  validator; per-transition `when` conditions are accepted but not yet interpreted by any script (1.4e).

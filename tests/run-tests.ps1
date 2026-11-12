@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -584,6 +584,56 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1) {
     $bad = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in 'gh', 'git', 'uv', 'npm', 'pwsh', 'node' }, $true))
     Assert "no command-shadowing functions in $($f.Name)" ($bad.Count -eq 0)
 }
+
+# Lifecycle as data (policies/lifecycle.json, scripts/lifecycle-lib.ps1). The shipped profile must be
+# sound: every state has an owner, an exit and a deadline, agrees with the label taxonomy, and every
+# automated state has an automation that consumes it. A state missing from one hard-coded list was
+# how work ended up where nothing picked it up.
+. (Join-Path $factory 'scripts/lifecycle-lib.ps1')
+$lifecycle = Get-FactoryLifecycle
+$taxonomyStates = @(); $inTaxonomy = $false
+foreach ($l in Get-Content (Join-Path $factory 'policies/labels.yaml')) {
+    if ($l -match '^factory-state:') { $inTaxonomy = $true; continue }
+    if ($inTaxonomy -and $l -match '^\s+-\s+(\S+)') { $taxonomyStates += $Matches[1]; continue }
+    if ($inTaxonomy -and $l -match '^\S') { break }
+}
+$automationDefinitions = @(Get-ChildItem (Join-Path $factory 'automations') -Filter *.json | ForEach-Object { Get-Content -Raw $_.FullName | ConvertFrom-Json })
+$lifecycleProblems = Test-FactoryLifecycle -Lifecycle $lifecycle -StateLabels $taxonomyStates -Automations $automationDefinitions
+$lifecycleProblems | ForEach-Object { Write-Host "    $_" }
+Assert 'shipped lifecycle profile is sound: every state has an owner, an exit, a deadline and a consumer' ($lifecycleProblems.Count -eq 0)
+Assert 'lifecycle loader answers which states are automated and which wait for a person' ((Get-FactoryLifecycleStates $lifecycle -Kind automated) -contains 'factory:ready' -and (Get-FactoryLifecycleStates $lifecycle -Kind human) -contains 'factory:needs-help' -and @(Get-FactoryLifecycleStates $lifecycle -Kind terminal).Count -eq 1)
+$lifecycleFixture = Join-Path ([IO.Path]::GetTempPath()) "factory-lifecycle-$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
+try {
+    # A second profile changes the process by configuration alone: risky work passes a technical
+    # design step and a manual sign-off before it is ready.
+    $custom = Get-Content -Raw (Join-Path $factory 'policies/lifecycle.json') | ConvertFrom-Json -AsHashtable
+    $gated = $custom.profiles.standard | ConvertTo-Json -Depth 12 | ConvertFrom-Json -AsHashtable
+    $gated.states['factory:needs-plan'].exits += @{ to = 'factory:tech-design'; on = 'plan-result'; when = @{ risk = @('risk:high') } }
+    $gated.states['factory:tech-design'] = @{ kind = 'automated'; owner = @{ workflow = 'factory-tech-design' }; exits = @(@{ to = 'factory:design-signoff'; on = 'design-result' }); maxDwellHours = 24; onTimeout = 'retrigger' }
+    $gated.states['factory:design-signoff'] = @{ kind = 'human'; owner = @{ role = 'tech-lead' }; exits = @(@{ to = 'factory:ready'; on = 'manual' }, @{ to = 'factory:needs-plan'; on = 'manual' }); maxDwellHours = 72; onTimeout = 'escalate' }
+    $custom.profiles['design-gated'] = $gated
+    $custom | ConvertTo-Json -Depth 14 | Set-Content $lifecycleFixture
+    $gatedLifecycle = Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'design-gated'
+    $gatedAutomations = $automationDefinitions + [pscustomobject]@{ kind = 'github'; filters = [pscustomobject]@{ allLabels = @('factory:tech-design') }; task = [pscustomobject]@{ workflow = 'factory-tech-design' } }
+    $gatedProblems = Test-FactoryLifecycle -Lifecycle $gatedLifecycle -StateLabels ($taxonomyStates + 'factory:tech-design', 'factory:design-signoff') -Automations $gatedAutomations
+    $gatedProblems | ForEach-Object { Write-Host "    $_" }
+    Assert 'a profile can add a technical-design step with manual sign-off by configuration alone' ($gatedProblems.Count -eq 0 -and (Get-FactoryLifecycleStates $gatedLifecycle -Kind human) -contains 'factory:design-signoff')
+    $withoutConsumer = Test-FactoryLifecycle -Lifecycle $gatedLifecycle -StateLabels ($taxonomyStates + 'factory:tech-design', 'factory:design-signoff') -Automations $automationDefinitions
+    Assert 'lifecycle check rejects an automated state that no automation consumes' (@($withoutConsumer | Where-Object { $_ -match 'factory:tech-design is automated but no automation' }).Count -eq 1)
+    # Seeded defects: each must be reported.
+    $broken = $custom.profiles.standard | ConvertTo-Json -Depth 12 | ConvertFrom-Json -AsHashtable
+    $broken.states['factory:blocked'].exits = @()
+    $broken.states['factory:needs-help'].Remove('maxDwellHours')
+    $broken.states['factory:review'].exits += @{ to = 'factory:nowhere'; on = 'review-result' }
+    $broken.states['factory:investigate'].Remove('owner')
+    $custom.profiles['broken'] = $broken
+    $custom | ConvertTo-Json -Depth 14 | Set-Content $lifecycleFixture
+    $brokenProblems = Test-FactoryLifecycle -Lifecycle (Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'broken') -StateLabels $taxonomyStates -Automations $automationDefinitions
+    Assert 'lifecycle check reports a state with no exit, no deadline, an undefined target and no owner' (@($brokenProblems | Where-Object { $_ -match 'factory:blocked has no exit' }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match 'factory:needs-help has no deadline' }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match "factory:review exits to undefined state 'factory:nowhere'" }).Count -eq 1 -and @($brokenProblems | Where-Object { $_ -match 'factory:investigate has no owning workflow' }).Count -eq 1)
+    $unknownProfile = $false; try { Get-FactoryLifecycle -Path $lifecycleFixture -Profile 'missing' | Out-Null } catch { $unknownProfile = $_.Exception.Message -match "profile 'missing' is not defined" }
+    Assert 'lifecycle loader refuses an undefined profile' $unknownProfile
+}
+finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
 # Script and workflow contract (tests/workflow-contract.ps1): every script parses, and every workflow
 # command step names an existing script and passes exactly the parameters it declares. A workflow step

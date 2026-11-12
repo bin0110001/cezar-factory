@@ -21,22 +21,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$workableStates = @(
-    'factory:needs-plan',
-    'factory:ready',
-    'factory:review',
-    'factory:changes-requested',
-    'factory:investigate'
-)
-$manualOrTerminalStates = @(
-    'factory:needs-help',
-    'factory:working',
-    'factory:human-review',
-    'factory:blocked',
-    'factory:done',
-    'factory:implemented',
-    'factory:pr-open'
-)
+# Which states are re-triggered comes from the lifecycle policy, not from a list in this script: a
+# state is workable when its deadline action is `retrigger`. The initial state is left to the
+# scheduled intake pull. Every other state belongs to a run in progress, a person, or delivery.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$lifecycle = Get-FactoryLifecycle
+$workableStates = @($lifecycle.States.Keys | Where-Object { $_ -ne $lifecycle.Initial -and $lifecycle.States[$_]['onTimeout'] -eq 'retrigger' })
+$manualOrTerminalStates = @($lifecycle.States.Keys | Where-Object { $_ -ne $lifecycle.Initial -and $workableStates -notcontains $_ })
+# States whose consumer needs exactly one complexity label (the policy's `requires.exactlyOne`).
+$complexityGuardedStates = @($workableStates | Where-Object { $lifecycle.States[$_]['requires'] -and $lifecycle.States[$_]['requires']['exactlyOne'] -eq 'complexity' })
 $complexityLabels = @('complexity:small', 'complexity:medium', 'complexity:large')
 
 . (Join-Path $PSScriptRoot 'gh-cache.ps1')
@@ -87,7 +80,7 @@ foreach ($issue in $issues) {
     elseif ($states.Count -ne 1) { $reason = if ($states.Count -eq 0) { 'no-single-lifecycle-state' } else { 'multiple-lifecycle-states' } }
     elseif ($manualOrTerminalStates -contains $states[0]) { $reason = 'manual-or-terminal-state' }
     elseif ($labels -contains 'factory:auditing' -or $labels -contains 'factory:tracking') { $reason = 'audit-or-tracking-marker' }
-    elseif ($states[0] -eq 'factory:ready' -and @($labels | Where-Object { $complexityLabels -contains $_ }).Count -ne 1) { $reason = 'ready-without-one-complexity-label' }
+    elseif ($complexityGuardedStates -contains $states[0] -and @($labels | Where-Object { $complexityLabels -contains $_ }).Count -ne 1) { $reason = 'ready-without-one-complexity-label' }
 
     if ($reason) {
         if ($reason -notin @('younger-than-cutoff')) {

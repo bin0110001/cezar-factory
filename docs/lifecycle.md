@@ -2,6 +2,15 @@
 
 This document defines the state transitions for issues in the Cezar factory.
 
+The lifecycle is data: `policies/lifecycle.json` lists every state of a profile with its kind (automated, in-run,
+human, delivery, terminal), owner, legal exits, deadline (`maxDwellHours`) and what happens at the deadline
+(`onTimeout`). `scripts/lifecycle-lib.ps1` is the loader, and the suite fails when a state has no owner, no exit,
+no deadline, or no automation that consumes it. A project changes its process, for example a technical-design step
+with manual sign-off for risky work, by selecting or overriding a profile. Scripts are being moved from their own
+label lists to this file (`STABILIZATION-PLAN.md`, item 1.4); `refresh-stale-workable.ps1` is the first. Until
+the invariant sweep lands, the deadlines are the declared contract and only the re-trigger of workable states is
+enforced.
+
 ## States
 
 - `factory:new` - Initial state when an issue is created.
