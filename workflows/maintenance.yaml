@@ -5,7 +5,7 @@ steps:
     name: Prepare workflow environment
     # Runs inside Cezar's Linux container. FACTORY_RUNTIME_ROOT is the mounted
     # container checkout, not a Windows host path.
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1,gh-cache.ps1,lifecycle-lib.ps1,audit-shadow-copies.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-maintenance -Step housekeeping -RequireGh -RequiredScripts watchdog-automations.ps1,sync-issue-delivery.ps1,select-intake-issue.ps1,classify-intake.ps1,validate-intake-or-no-work.ps1,route-intake-or-no-work.ps1,validate-result.ps1,route-state.ps1,recover-audit-reservations.ps1,audit-backlog-labels.ps1,validate-backlog-label-audit-input.ps1,apply-backlog-label-audit.ps1,refresh-stale-workable.ps1,maintain-repository.ps1,gh-cache.ps1,lifecycle-lib.ps1,sweep-lifecycle.ps1,audit-shadow-copies.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
   # Liveness backstop first, so it runs even if a later step hangs: this hourly run cancels any earlier
   # run of a bounded workflow (including a previous stuck maintenance run) that outlived 30 minutes,
@@ -48,6 +48,12 @@ steps:
   - id: repository-maintenance
     name: Run deterministic repository maintenance
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/maintain-repository.ps1 -OutputPath .factory/repository-maintenance.json
+    timeoutSeconds: 300
+  # Last deterministic step: check every open issue against policies/lifecycle.json (one state, an owner,
+  # inside its deadline), repair what is mechanical, and keep the "Factory stall report" issue current.
+  - id: lifecycle-sweep
+    name: Check every open issue against the lifecycle policy
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/sweep-lifecycle.ps1 -OutputPath .factory/lifecycle-sweep.json
     timeoutSeconds: 300
   - id: audit-shadow-copies
     name: Audit registered project Factory shadows without modifying targets

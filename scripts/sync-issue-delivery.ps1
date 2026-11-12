@@ -37,7 +37,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'gh-cache.ps1')
 
-$stateLabels = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:investigate', 'factory:implemented', 'factory:pr-open')
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$stateLabels = @((Get-FactoryLifecycle).States.Keys)
 $prePrStates = @('factory:new', 'factory:needs-plan', 'factory:ready', 'factory:working', 'factory:implemented')
 $closingPattern = '(?im)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d{1,9})\b'
 

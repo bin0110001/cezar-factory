@@ -74,6 +74,16 @@ function Test-FactoryLifecycle {
             if ($names -notcontains [string]$exit['to']) { $problems += "$name exits to undefined state '$($exit['to'])'" }
             if (-not $exit['on']) { $problems += "$name -> $($exit['to']) does not name the event that causes it" }
         }
+        # Where the sweep may move an issue is part of the state: it must be one of the state's own exits.
+        $repairTargets = @{
+            'requires.otherwise' = if ($state['requires']) { $state['requires']['otherwise'] } else { $null }
+            'onUnblocked'        = $state['onUnblocked']
+            'onConflict'         = $state['onConflict']
+        }
+        foreach ($key in $repairTargets.Keys) {
+            $target = $repairTargets[$key]
+            if ($target -and @($exits | ForEach-Object { [string]$_['to'] }) -notcontains [string]$target) { $problems += "$name $key points at '$target', which is not one of its exits" }
+        }
         if (-not ($state['maxDwellHours'] -gt 0)) { $problems += "$name has no deadline (maxDwellHours)" }
         if ($timeouts -notcontains [string]$state['onTimeout']) { $problems += "$name does not say what happens at its deadline (onTimeout: $($timeouts -join ', '))" }
         $workflows = @(Get-FactoryLifecycleOwnerWorkflows $state)
