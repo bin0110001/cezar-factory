@@ -40,7 +40,10 @@ stabilization plan.
 
 - `factory:new` - Initial state when an issue is created.
 - `factory:needs-plan` - Ready for planning.
-- `factory:needs-help` - Paused only for an unresolved major architectural decision.
+- `factory:needs-help` - Paused only for an unresolved major architectural decision. An issue enters it only
+  with a question a person can answer: a structured decision, the plan's unresolved questions, or the
+  "narrow, split or close" choice after three investigations. A result that says "architectural decision"
+  without stating one is re-planned instead, and a plan that is not ready must say what has to be answered.
 - `factory:tracking` - A non-lifecycle marker for an epic or tracking parent;
   it is not executable work and does not require human intervention.
 - `factory:ready` - Planning complete, ready for implementation.
@@ -148,7 +151,7 @@ implementation automation.
 | plan-result | needs-plan, new | ready when criteria are met; needs-help only for an unresolved major architectural decision; decomposed parent closes after children are created and queued as `factory:needs-plan` |
 | implement-result | working | review; investigate if the agent reports failure |
 | review-result | review | done only after GitHub reports the approved PR merged; a denied eligibility gate or queued auto-merge remains in review; changes-requested for fixes; investigate after repeated review disagreement |
-| investigate-result | investigate, working | ready for a clear retry; needs-plan for an automatic re-plan; needs-help only for a major architectural decision |
+| investigate-result | investigate, working | ready for a clear retry; needs-plan for an automatic re-plan; needs-help for a major architectural decision that the result states, or after `max_investigations_per_issue` (3) investigations of the same issue |
 
 Users decide only unresolved major architectural choices. A cleared external
 blocker is recorded with evidence and work resumes automatically; do not ask

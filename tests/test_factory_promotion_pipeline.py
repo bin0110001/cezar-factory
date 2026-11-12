@@ -60,6 +60,8 @@ class FakeCezar:
         if "/runs/" in url:
             failed = [{"id": "repair", "status": "failed", "error": "boom"}] if self.outcome == "failed" else []
             return {"status": self.outcome, "steps": failed}
+        if url.endswith("/history"):
+            return {"items": getattr(self, "history", [])}
         if url.endswith("/factory-release"):
             return {"channel": "dev", "sourceSha": self.served_sha}
         raise AssertionError(f"unexpected {method} {url}")
@@ -69,8 +71,20 @@ class FlakyCezar(FakeCezar):
     """The first canary run fails on a GitHub rate limit; a second run of the same canary passes."""
 
     def __call__(self, method, url, body):
-        if "/runs/" in url and self.runs == 1:
+        if "/runs/" in url and not url.endswith("/history") and self.runs == 1:
             return {"status": "failed", "steps": [{"id": "collect-backlog", "status": "failed", "error": "gh: API rate limit exceeded (HTTP 403)"}]}
+        return super().__call__(method, url, body)
+
+
+class StepOutputCezar(FakeCezar):
+    """Cezar says only that a check step exited non-zero; why is in the step's output (the 2026-11-12 failure)."""
+
+    def __call__(self, method, url, body):
+        if url.endswith("/history"):
+            text = "label factory:done\nHTTP 502: Server Error (https://api.github.com/repos/o/r/labels/factory:investigate)\n\x1b[31;1mException: \x1b[0mfailed to create label factory:investigate"
+            return {"items": [{"type": "step-start", "stepId": "prepare"}, {"type": "check-output", "stepId": "prepare", "text": text, "exitCode": 1}]}
+        if "/runs/" in url and self.runs == 1:
+            return {"status": "failed", "steps": [{"id": "prepare", "status": "failed", "error": "`pwsh -File apply.ps1 -Prepare` exited non-zero"}]}
         return super().__call__(method, url, body)
 
 
@@ -337,10 +351,24 @@ class PipelineTests(unittest.TestCase):
             db.execute("UPDATE promotions SET finished_at=? WHERE sha=?", ("2020-01-01T00:00:00.000Z", self.sha))
         self.assertEqual(scheduler.run_once()["status"], "blocked")
         self.assertEqual(len(self.gh.issues), 1)
-        self.assertIn("[promotion] candidate blocked at the evidence gate", self.gh.issues[0])
+        self.assertIn("[promotion] candidate blocked before validation", self.gh.issues[0])
         self.assertIn("factory:needs-help", self.gh.issues[0])
         self.assertEqual(scheduler.run_once()["status"], "blocked")
         self.assertEqual(len(self.gh.issues), 1)  # asked once per candidate, not every tick
+
+    def test_a_broken_environment_blocks_the_candidate_before_validation_and_is_not_a_failure(self):
+        flag = pathlib.Path(self.tmp.name) / "environment-ok"
+        probe = [sys.executable, "-c", f"import pathlib,sys;ok=pathlib.Path(r'{flag}').exists();print('MODEL_UNREACHABLE - no answer at 2026-11-12T18:02:45.1Z' if not ok else 'ok');sys.exit(0 if ok else 1)"]
+        scheduler = self.build(promotion={"preflight": [{"id": "model-endpoint", "command": probe, "timeoutSeconds": 30}]})
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", f"import pathlib;assert pathlib.Path(r'{flag}').exists(), 'validated in a broken environment'"]
+        with self.assertRaisesRegex(SchedulerError, "environment preflight model-endpoint failed .exit 1.: MODEL_UNREACHABLE - no answer at <time>"):
+            scheduler.run_once()
+        self.assertEqual(scheduler.status(self.sha)["status"], "blocked")
+        self.assertEqual(scheduler.run_once()["status"], "blocked")  # same reason: not re-recorded, not re-raised
+        self.assertEqual(len(list((self.store / "promotion-records").iterdir())), 1)
+        self.assertEqual((scheduler.breaker.failures(), self.activations, self.rollbacks, self.quarantined, self.gh.issues), (0, [], [], [], []))
+        flag.write_text("up", encoding="utf-8")
+        self.assertEqual(scheduler.run_once()["status"], "healthy")  # the environment is back; the same SHA proceeds
 
     def test_a_canary_that_fails_on_a_transient_github_error_is_run_once_more_before_any_rollback(self):
         cezar = FlakyCezar()
@@ -350,6 +378,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual((cezar.runs, self.rollbacks, self.quarantined), (2, [], []))
         record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
         self.assertIn("rate limit", record["canaries"][0]["retriedAfter"])
+
+    def test_a_canary_whose_step_output_shows_a_github_server_error_is_retried_not_rolled_back(self):
+        cezar = StepOutputCezar()
+        scheduler = self.build(cezar=cezar)
+        result = scheduler.run_once()
+        self.assertEqual(result["status"], "healthy")
+        self.assertEqual((cezar.runs, self.rollbacks, self.quarantined), (2, [], []))
+        record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
+        self.assertIn("exited non-zero | output:", record["canaries"][0]["retriedAfter"])
+        self.assertIn("HTTP 502", record["canaries"][0]["retriedAfter"])
 
     def test_a_canary_that_fails_for_a_real_reason_is_not_retried(self):
         cezar = FakeCezar("failed")

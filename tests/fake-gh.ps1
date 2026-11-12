@@ -42,7 +42,17 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'create') {
     $state.issues = @($state.issues | Where-Object { $_ }) + @{ number = $n; title = $a[$a.IndexOf('--title') + 1]; body = $body; labels = $a[$a.IndexOf('--label') + 1] }
     "https://github.com/x/y/issues/$n"
 }
-elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') { $state.created = @($state.created) + $a[2] }
+elseif ($a[0] -eq 'label' -and $a[1] -eq 'create') {
+    # labelCreateFailures: how many more `label create` calls answer with a server error before one succeeds.
+    if ($state.labelCreateFailures -gt 0) { $state.labelCreateFailures = [int]$state.labelCreateFailures - 1; $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_GH_STATE; [Console]::Error.WriteLine('HTTP 502: Server Error'); exit 1 }
+    $state.created = @($state.created) + $a[2]
+}
+elseif ($a[0] -eq 'label' -and $a[1] -eq 'list') {
+    # Only a state that declares existingLabels answers the listing; otherwise the call fails, as it does
+    # for a caller that predates it, and create-labels falls back to writing every label.
+    if ($null -eq $state.existingLabels) { Write-Error 'fake gh: label list not configured'; exit 2 }
+    ConvertTo-Json -InputObject @($state.existingLabels) -Depth 4 -Compress
+}
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'merge') { $state.prMerged = $true; $state.prMergeArgs = @($a) }
 elseif ($a[0] -eq 'pr' -and $a[1] -eq 'view') {
     $pr = @($state.prs | Where-Object { [string]$_.url -eq [string]$a[2] -or [string]$_.number -eq [string]$a[2] }) | Select-Object -First 1

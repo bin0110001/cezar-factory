@@ -483,6 +483,31 @@ class LocalPromotionScheduler:
             with contextlib.suppress(OSError):
                 marker.unlink()
 
+    def _preflight(self) -> None:
+        """Is the environment a candidate needs actually there? Checked before any validation is spent.
+
+        A release cannot pass its canaries when, say, the model endpoint is unreachable from Cezar, and that
+        says nothing about the release. Without this the candidate was validated, activated, failed its canary,
+        rolled back and quarantined, and the next one did the same until the breaker opened. A failed preflight
+        leaves the candidate `blocked` with the reason, exactly like missing review evidence: re-checked every
+        tick, visible in `health`, escalated once, and promoted as soon as the environment is back.
+        """
+        for check in (self.policy or {}).get("preflight", []):
+            try:
+                result = subprocess.run(check["command"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        timeout=check["timeoutSeconds"], check=False, env=self._safe_environment())
+                code, output = result.returncode, (result.stdout or b"").decode("utf-8", "replace")
+            except subprocess.TimeoutExpired:
+                code, output = None, f"timed out after {check['timeoutSeconds']}s"
+            except OSError as exc:
+                code, output = None, str(exc)
+            if code == 0:
+                continue
+            lines = [line.strip() for line in ANSI_RE.sub("", output).splitlines() if line.strip()]
+            # The reason must be the same from tick to tick, or the ledger would grow a record every five minutes.
+            detail = re.sub(r"\d{4}-\d\d-\d\dT[\d:.]+Z?", "<time>", lines[-1])[:300] if lines else "no output"
+            raise SchedulerError(f"environment preflight {check['id']} failed (exit {code}): {detail}")
+
     def _note_interruption(self, sha: str) -> bool:
         """Count a killed check for this SHA; False once it has been killed too often to call it bad luck."""
         key = f"interrupted:{sha}"
@@ -491,18 +516,19 @@ class LocalPromotionScheduler:
         return count <= MAX_INTERRUPTED_RETRIES
 
     def _escalate_blocked(self, sha: str, reason: str, since: str | None) -> None:
-        """A candidate waiting at the evidence gate is not a failure, so nothing else reports it. Ask once."""
+        """A candidate waiting before validation (review evidence or environment) is not a failure. Ask once."""
         if not self.policy or not since or self._state_get(f"blocked_escalated:{sha}"):
             return
         waited = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(since.replace("Z", "+00:00"))).total_seconds()
         if waited < self.policy["blockedEscalationSeconds"]:
             return
-        body = (f"`{sha}` has waited {int(waited // 60)} minutes at the evidence gate and nothing merged after it can be promoted.\n\n"
+        body = (f"`{sha}` has waited {int(waited // 60)} minutes before validation (review evidence or an environment preflight) "
+                "and nothing merged after it can be promoted.\n\n"
                 f"```\n{reason[:1500]}\n```\n\nPipeline mode: `{self.policy['mode']}`. If the gate itself is what needs changing "
                 "(the policy on the host is read from the `stable` checkout), see \"When the pipeline cannot fix itself\" in "
                 "`docs/promotion-pipeline.md`.")
         try:
-            file_issue(self.gh, self.github_repo, "[promotion] candidate blocked at the evidence gate", body,
+            file_issue(self.gh, self.github_repo, "[promotion] candidate blocked before validation", body,
                        self.policy["escalationLabels"], fingerprint("blocked", "pipeline", reason))
             self._state_put(f"blocked_escalated:{sha}", now())
         except (PolicyError, OSError, subprocess.SubprocessError) as exc:
@@ -735,6 +761,7 @@ class LocalPromotionScheduler:
         # and written to the ledger once per distinct reason.
         try:
             self._verify_reviewed_merge(sha)
+            self._preflight()
         except SchedulerError as exc:
             reason = str(exc)[:2000]
             if existing and existing["status"] == "blocked" and existing["reason"] == reason:

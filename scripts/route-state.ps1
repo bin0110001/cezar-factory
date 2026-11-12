@@ -58,6 +58,8 @@ if (-not $complexityLabels) { $complexityLabels = @('complexity:small', 'complex
 $retryText = Get-Content -Raw (Join-Path $PoliciesDir 'retry.yaml')
 $maxRounds = if ($retryText -match 'max_review_fix_rounds:\s*(\d+)') { [int]$Matches[1] } else { 2 }
 $maxInvestigateRetries = 1
+# How many investigations one issue may go through before a person is asked what to do with it.
+$maxInvestigations = if ($retryText -match 'max_investigations_per_issue:\s*(\d+)') { [int]$Matches[1] } else { 3 }
 
 # --- input ----------------------------------------------------------------
 $result = $null
@@ -349,9 +351,22 @@ switch ($Event) {
         }
         Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`n$marker")
         if ($result.failureClassification -eq 'architecture') {
-            $decisionComment = New-DecisionComment $result; if ($decisionComment) { Add-Comment $decisionComment }
-            Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
+            # A person can only answer a question that was asked. An investigation that says "architectural
+            # decision" without stating one used to park the issue in factory:needs-help with nothing to answer.
+            $decisionComment = New-DecisionComment $result
+            if ($decisionComment) {
+                Add-Comment $decisionComment
+                Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
+                Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
+            }
+            Add-Comment 'The investigation classified this as an architectural decision but stated no decision to make, so there is nothing for a person to answer. Returning the issue to planning; the plan must name the question and its options before anyone is asked.'
+        }
+        # An issue that keeps failing, being investigated and re-planned is not converging. After the limit a
+        # person decides what to do with it, and is told exactly what the choice is.
+        $investigations = @($comments | Where-Object { $_ -match '<!-- factory:investigate-result:' }).Count + 1
+        if ($investigations -ge $maxInvestigations) {
+            Add-Comment (New-Escalation "This issue has failed and been investigated $investigations times without converging." 'Automatic retry and re-planning are exhausted for this issue.' '(see the investigation comments above)' 'The issue as written is not converging; another automatic attempt is unlikely to end differently.' 'Decide one: narrow the scope, split it into smaller issues, or close it. Then relabel factory:needs-plan.')
+            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'investigation limit reached'
         }
         # An agent's classification is not proof of an external blocker. Only
         # deterministic operational gates or an explicit operator action may

@@ -15,6 +15,13 @@ steps:
     name: Cancel bounded Factory runs that outlived their liveness budget
     command: 'if [ -n "$CEZ_API_URL" ] && [ -n "$CEZ_PROJECT_ID" ]; then pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/watchdog-automations.ps1 -ApiUrl "$CEZ_API_URL" -ProjectId "$CEZ_PROJECT_ID" -MaxRunMinutes 30 -Workflow factory-maintenance,factory-intake,factory-health,factory-environment-analysis -ExcludeRunId "$CEZ_TASK_ID" -RouteCancelledRuns; else echo "watchdog skipped: Cezar API is not reachable from this run"; fi'
     timeoutSeconds: 120
+  # Issue runs get a liveness budget too, far above what they normally take. An implementation or fix run
+  # that outlives it is cancelled and its issue goes to factory:investigate. A plan, review or investigate
+  # run is only cancelled: its issue keeps its state, and the stale refresher re-triggers it.
+  - id: watchdog-issue-runs
+    name: Cancel issue runs that outlived their liveness budget
+    command: 'if [ -n "$CEZ_API_URL" ] && [ -n "$CEZ_PROJECT_ID" ]; then pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/watchdog-automations.ps1 -ApiUrl "$CEZ_API_URL" -ProjectId "$CEZ_PROJECT_ID" -MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review -ExcludeRunId "$CEZ_TASK_ID" -RouteCancelledRuns && pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/watchdog-automations.ps1 -ApiUrl "$CEZ_API_URL" -ProjectId "$CEZ_PROJECT_ID" -MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "$CEZ_TASK_ID"; else echo "watchdog skipped: Cezar API is not reachable from this run"; fi'
+    timeoutSeconds: 120
   # Independent deterministic housekeeping runs before the bounded classification
   # agent so an agent failure cannot suppress either maintenance task.
   # GitHub only honours "Closes #N" on the default branch, and Factory PRs merge into dev, so this

@@ -98,6 +98,14 @@ one list and be missing from the list that would have given it a consumer.
   evidence gate and issue filing all fail together. Measure calls per component per hour on the host and cut the
   largest; the sweep, refresher and delivery sync already share one cached listing.
 
+- [ ] **0.11 Containers start before the host has its address.** At boot on 2026-11-12 Podman's rootless network
+  namespace was created while the host only had a link-local address, so `host.containers.internal` was dead for
+  every bridge-network container (Cezar, Postiz, Langfuse, Obot, Hindsight) until all of them were stopped and
+  started again by hand. Needs the owner on the host: make the user session wait for a real address before
+  `podman-restart.service` and `container-cezar.service` run (for example enable `NetworkManager-wait-online`,
+  or order both after a unit that waits for a non-link-local address). The compose monitoring stack also starts
+  at boot now; decide whether it should.
+
 ## Phase 1: no state without an owner and a deadline
 
 - [x] **1.1 Intake takes promoter-filed issues.** The promoter labels its issues `type:bug` and
@@ -135,13 +143,13 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **1.6 Crash recovery for `factory:working`.** Verify and fix the `CEZAR_API_URL` versus
   `CEZ_API_URL` mismatch that makes "latest run failed" detection fall back to a 24-hour wait; stop
   comments from resetting the clock (use time in state).
-- [ ] **1.7 Watchdog covers issue-scoped runs** (plan, implement, review, fix, investigate), not only the
+- [x] **1.7 Watchdog covers issue-scoped runs** (plan, implement, review, fix, investigate), not only the
   four housekeeping workflows.
-- [ ] **1.8 `needs-help` requires a real question.** An escalation without a structured decision returns
+- [x] **1.8 `needs-help` requires a real question.** An escalation without a structured decision returns
   to `factory:needs-plan`; open decisions get a weekly digest instead of silence.
 - [x] **1.9 PR sweep.** A `CONFLICTING` PR into `dev` routes its issue to `factory:changes-requested`;
   drafts and PRs without a closing keyword are reported.
-- [ ] **1.10 Bound the investigate, re-plan, implement loop** (today only the direct retry is capped).
+- [x] **1.10 Bound the investigate, re-plan, implement loop** (today only the direct retry is capped).
 - [ ] **1.11 Re-enabling an automation reconciles existing labels** instead of baselining to "now"
   (make every automation level-triggered, as intake already is with `fullReconcileHours`).
 - [x] **1.12 Correct `docs/lifecycle.md`** where it disagrees with `route-state.ps1` (`blocked` is never
@@ -172,6 +180,12 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **2.9 A candidate with no changed paths is not a failure** and does not count toward the breaker.
 - [ ] **2.10 Fixture canary for plan, implement, review** against a sandbox repository, the largest
   remaining blind spot.
+
+- [ ] **2.11 A canary runs the new scripts with the old workflow definition.** The maintenance canary for `941134a`
+  ran scripts from the candidate's runtime (`factory-runtime/941134a`) but its step list was the one on `stable`:
+  it had no `lifecycle-sweep` step. A change to a workflow file is therefore never canaried, and a script whose
+  parameters change is canaried against the old command line. Make a canary run the candidate's own workflow
+  definitions, or record it as a known limit and rely on the workflow contract test.
 
 ## Phase 3: turn it back on and prove it
 
@@ -253,3 +267,15 @@ Then the feature backlog reopens.
   as their workflow starts them (`collect-environment-state.ps1` is left out because it probes real endpoints).
   2.4 stays open for running every workflow script against fixtures to a structured result. 2.5 is enforced by
   the `AGENTS.md` rule and the receipt; the promoter validates on Linux itself, so its gate is unchanged.
+- 2026-11-12 18:00Z: promotion was failing again. Since the 14:19Z reboot the Cezar container could not reach
+  LiteLLM through `host.containers.internal` (item 0.11), so batches 4 and 5 were validated, activated, failed the
+  `maintenance` canary's model check and were rolled back and quarantined (2 of 3 failures toward the breaker).
+  With the owner's approval all 26 containers on the Podman bridge networks were stopped and started again at
+  19:07Z; the snapshot is in `~/.local/share/cezar-factory/rollback/netns-rebuild-20261112T190646Z.txt` on the
+  host. The model probe passes from inside Cezar again.
+- 2026-11-12: batch 6 merged (PR #451, `941134a`). Batch 7 delivers the environment preflight and 1.7, 1.8, 1.10.
+  1.8's digest is the stall report: a `factory:needs-help` issue idle for a week is listed there.
+- 2026-11-12 19:20Z: batch 6 (`941134a`) passed the model check but its `maintenance` canary failed and the breaker
+  opened. Cause: GitHub answered HTTP 502 while `create-labels.ps1` re-created a label; the canary's reason only said
+  "exited non-zero", so the transient retry from batch 4 had nothing to match. Batch 7 adds the step output to the
+  reason and makes label creation write only what differs. Also found: item 2.11.

@@ -101,6 +101,14 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
     issues = raw.get("issues", {}) or {}
     drift = raw.get("drift", {}) or {}
     blocked = raw.get("blocked", {}) or {}
+    preflight = []
+    for item in raw.get("preflight", []) or []:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]:
+            raise PolicyError("every preflight check requires an id")
+        preflight.append({
+            "id": item["id"], "command": _argv(item.get("command"), f"preflight {item['id']} command"),
+            "timeoutSeconds": _int(item.get("timeoutSeconds"), "preflight timeoutSeconds", 5, 3600, 120),
+        })
     deploy = stable.get("deployCommand")
     try:
         transient_re = re.compile(canaries.get("transientPattern", DEFAULT_CANARY_TRANSIENT), re.IGNORECASE)
@@ -117,6 +125,7 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
         "canaryReadySeconds": _int(canaries.get("readySeconds"), "canaries.readySeconds", 0, 3600, 180),
         "canaries": items,
         "canaryTransientPattern": transient_re,
+        "preflight": preflight,
         "blockedEscalationSeconds": _int(blocked.get("escalateSeconds"), "blocked.escalateSeconds", 60, 7 * 24 * 3600, 3600),
         "stableBranch": stable.get("branch", "stable"),
         "deployCommand": _argv(deploy, "stable.deployCommand") if deploy is not None else None,
@@ -227,6 +236,25 @@ class CanaryRunner:
             payload = response.read(4 * 1024 * 1024)
         return json.loads(payload.decode("utf-8")) if payload else None
 
+    def _failed_step_output(self, run_id: str, step_ids: list[str]) -> str:
+        """The lines a failed step printed that say why.
+
+        Cezar reports a failed check step only as "<command> exited non-zero". Whether that was the release or
+        GitHub answering HTTP 502 is in the step's output, so without it a transient error cannot be told from
+        a defect and a good release is rolled back. Reading it is best effort: no history, no detail.
+        """
+        try:
+            history = self.request("GET", f"{self.base}/runs/{urllib.parse.quote(run_id, safe='')}/history", None)
+        except Exception:  # noqa: BLE001 - the reason is still usable without the detail
+            return ""
+        items = history.get("items", []) if isinstance(history, dict) else []
+        outputs = [str(i.get("text") or "") for i in items if isinstance(i, dict) and i.get("type") == "check-output" and str(i.get("stepId")) in step_ids]
+        if not outputs:
+            return ""
+        lines = [line.strip() for line in re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", outputs[-1]).splitlines() if line.strip()]
+        telling = [line for line in lines if re.search(r"HTTP \d{3}|rate limit|[Ee]rror|[Ff]ailed|[Ee]xception|timed? ?out|refused|reset", line)]
+        return " / ".join((telling or lines)[-3:])[:400]
+
     def _retry(self, method: str, suffix: str, body: Any = None, *, window: int | None = None) -> Any:
         """Retry transient failures (a restarting Cezar, a held lease) inside a readiness window."""
         deadline = self.clock() + (self.ready_seconds if window is None else window)
@@ -274,6 +302,9 @@ class CanaryRunner:
                     if state == "failed":
                         failed = [s for s in run.get("steps", []) if s.get("status") == "failed"]
                         result["reason"] = "; ".join(f"step {s.get('id')}: {s.get('error', 'failed')}" for s in failed)[:500] or f"run {run.get('status')}"
+                        detail = self._failed_step_output(run_id, [str(s.get("id")) for s in failed])
+                        if detail:
+                            result["reason"] = f"{result['reason']} | output: {detail}"[:900]
                     return result
                 if run.get("status") in WAITING_RUN:
                     if self.clock() >= queue_deadline:
