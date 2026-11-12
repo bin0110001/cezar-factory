@@ -202,7 +202,16 @@ switch ($Action) {
         $text = (Get-Content -Raw -LiteralPath $log) -replace "\x1b\[[0-9;]*[A-Za-z]", ''
         $failed = @($text -split "`r?`n" | Where-Object { $_ -match '^\s*(FAIL\b|FAILED\b)' } | Select-Object -Unique -First 15)
         foreach ($line in $failed) { Write-Host "VALIDATE_FAIL $($line.Trim())" }
-        if ($code -eq 0 -and $text -match 'ALL PASSED') { Write-Host "VALIDATE_PASSED commit=$($sha.Substring(0, 9)) (Linux full suite) log=$log"; break }
+        if ($code -eq 0 -and $text -match 'ALL PASSED') {
+            # The receipt is what a merge cites: this exact commit passed the full suite on Linux.
+            $receiptDir = Join-Path $root '.factory/ship-loop/receipts'
+            New-Item -ItemType Directory -Force $receiptDir | Out-Null
+            $receipt = Join-Path $receiptDir "linux-$sha.json"
+            [ordered]@{ schemaVersion = 'factory-linux-validation-receipt/v1'; sha = $sha; branch = $Branch; host = "$target"; suite = 'tests/run-tests.ps1'; passedAt = (Get-Date).ToUniversalTime().ToString('o'); log = $log } | ConvertTo-Json | Set-Content -LiteralPath $receipt
+            Write-Host "VALIDATE_PASSED commit=$($sha.Substring(0, 9)) (Linux full suite) log=$log"
+            Write-Host "VALIDATE_RECEIPT $receipt"
+            break
+        }
         Write-Host "VALIDATE_FAILED commit=$($sha.Substring(0, 9)) exit=$code log=$log"
         exit 5
     }

@@ -34,3 +34,22 @@ must name a script that exists and pass only parameters the script declares, inc
 one. A workflow step is the only caller of most scripts and first runs on the host after merge, so a
 renamed parameter is caught here instead of by the next scheduled run. The deploy shell tests need a POSIX
 `bash` (Git for Windows provides one); a missing `bash` fails the suite.
+
+Three more static checks cover what a Windows run cannot see by executing code:
+
+- **Portability.** No script may use a construct that only works on Windows: `-WindowStyle` or `-Verb`, a
+  Windows-only environment variable read without a fallback on the same line, a drive-letter path, or (in
+  `scripts/`) a `.cmd`/`.bat` shim. A line that is deliberately Windows-only ends with `# windows-only`.
+- **Host commands.** Every Python entry point started by a workflow `command:` step or by a systemd unit in
+  `integrations/bazzite/` must be passed only `--flags` and a first word its argument parser defines.
+- **Start-up smoke.** Workflow scripts that no other test or canary executes are started exactly as their
+  workflow step starts them, in an empty directory, with a `gh` that refuses every call. They are expected to
+  stop with their own message; dying on a missing cmdlet, parameter or property fails the suite. Add a script
+  to the list in `tests/run-tests.ps1` when a workflow gains a step nothing else exercises.
+
+## Linux before merge
+
+The suite passing on Windows does not mean it passes in the Linux container that promotes a candidate.
+`pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate` runs the host's full suite for a pushed
+commit and writes a receipt to `.factory/ship-loop/receipts/linux-<sha>.json`. `AGENTS.md` requires it before
+merging a change to scripts, tests, workflows, automations, policies or config.

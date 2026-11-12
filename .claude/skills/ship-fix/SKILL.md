@@ -28,7 +28,8 @@ verify by hand. Settings (project, base branch, attempt budget, default verify a
    `factory:implemented`/`factory:pr-open` per `AGENTS.md`. Run `gh` outside the sandbox.
 4. **Validate on Linux, then merge and deploy.** The suite passes on Windows and can still fail in the Linux
    promotion container. Before merging, run `pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate`
-   (the PR head must be pushed); it runs the host's own full suite and prints `VALIDATE_FAIL` lines. Do not
+   (the PR head must be pushed); it runs the host's own full suite and prints `VALIDATE_FAIL` lines. On success
+   it writes a receipt and prints `VALIDATE_RECEIPT`; quote the `VALIDATE_PASSED` line in a PR comment. Do not
    merge on `VALIDATE_FAILED`: fix it, push, and validate again. For a fix to broken code, merge the PR yourself (`gh pr merge <n> --squash`; never
    `--auto`, GitHub rejects it here): first confirm the PR head is your pushed, validated commit and the PR is
    `MERGEABLE`/`CLEAN`, then after merging confirm the fix is on `origin/dev` (grep for the changed line). Never
