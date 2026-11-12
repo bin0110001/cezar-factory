@@ -75,6 +75,17 @@ export function candidatePriority(candidate: Pick<GithubCandidate, 'labels'>): n
   return best;
 }
 
+/**
+ * Intake, investigation and planning automations exist to move an issue OUT of the Inbox/Refinement lanes. The
+ * lane gate ("lane is Inbox, not Ready") is for dispatching implementation; applied to them it deadlocks the
+ * lanes it is meant to drain, because only these automations can make an issue Ready.
+ */
+const PRE_READY_LANE_LABELS = ['factory:new', 'factory:investigate', 'factory:needs-plan'];
+export function targetsPreReadyLane(definition: GithubAutomationDefinition): boolean {
+  const { allLabels = [], changedLabels = [], anyLabels = [] } = definition.filters ?? {};
+  return [...allLabels, ...changedLabels, ...anyLabels].some((label) => PRE_READY_LANE_LABELS.includes(label));
+}
+
 export class ProjectAutomationScheduler {
   constructor(private readonly handle: ProjectAutomationHandle) {}
 
@@ -262,7 +273,7 @@ export class ProjectAutomationScheduler {
           admission = result;
           await this.assertStillEligible(definition, candidate);
           if (capReached()) throw new AutomationAdmissionDeferredError(`admission-cap: ${definition.filters.maxAdmissionsPerCycle} new launches per cycle already admitted; awaiting a later cycle`);
-          if (this.handle.backlogAdmit) {
+          if (this.handle.backlogAdmit && !targetsPreReadyLane(definition)) {
             const backlog = await this.handle.backlogAdmit(candidate);
             if (!backlog.allow) throw new AutomationAdmissionDeferredError(`backlog-scheduling: ${backlog.reason}`);
           }

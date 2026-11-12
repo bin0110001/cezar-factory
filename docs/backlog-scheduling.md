@@ -77,3 +77,27 @@ protocol (no poller drives it yet).
 (`server/backlog/sync-timer.ts`) only when **both** `CEZAR_BACKLOG_SCHEDULING` is `shadow|enforce` **and**
 `CEZAR_BACKLOG_SYNC=on`, because it writes the `factory-backlog` block into issue bodies. It is single-flight, isolates
 per-project failures, and logs `[backlog-sync] <repo> {status counts}`. `POST /api/v1/backlog/sync` runs the same pass on demand.
+
+## Stall detection and the dependency map
+`server/dependency-graph/stalls.ts` `diagnoseStalls()` answers "can every open issue still move?" from the dependency
+graph plus the `factory:*` labels that **enabled** GitHub automations fire on (`consumedStateLabels`). Each open issue is
+`running`, `runnable`, `blocked` (behind work that is progressing), `waiting` (a person, an open decision or outside
+information: an acceptable stopping point, never an alarm) or `stuck`. Stuck means it cannot move as things stand:
+a dependency cycle, blocked by stuck work (the cycle is named as `rootCauseIds`), a `factory:blocked` label with no open
+blocker, no `factory:*` state label, or a state label no enabled automation consumes (for example a paused automation).
+The verdict is `stalled` only when nothing is runnable or running and something is stuck; stale graph data reports
+`unknown` rather than guessing. Complexity routing is not modelled: a lane counts as consumed if any enabled automation
+targets its label.
+
+`GET /api/v1/dependency-graph/stalls` returns the report. The Backlog page's **Dependency map** tab draws it (blockers
+left of what they block, cycle edges dashed red, decisions and external blockers as dashed nodes) with a blockers table
+for every open issue.
+
+After each 10-minute graph sync the **stall guard** (`runStallGuard` in `server.ts`) logs `[stall-guard]`, records a
+`stall-detected` audit event when the set of stuck issues changes, and dispatches the cycle-replan agent immediately for
+any blocking cycle (its attempt budget and cooldown still apply). It never edits GitHub dependencies itself; applying a
+repair remains an audited, approved action.
+
+Intake, investigation and planning automations (those targeting `factory:new`, `factory:investigate` or
+`factory:needs-plan`) are exempt from the `enforce` lane gate: they exist to move issues out of Inbox/Refinement, and
+gating them on "lane is Ready" deadlocked both lanes.
