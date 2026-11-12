@@ -221,3 +221,10 @@ Then the feature backlog reopens.
   activation) until the next candidate passes. `4bb870a` itself is recorded as failed by the promoter (item 0.9),
   so the breaker count is 1. Still open for 0.7: close #432, #377, #375 once a candidate promotes normally.
 - 2026-11-12: batch 3 (issue #442) delivers 0.3.
+- 2026-11-12 13:18Z: first normal promotion since the deadlock. Batch 3 (PR #444, `450faf8`) passed the evidence gate
+  on its self-review, validated, activated `dev` and was promoted to `origin/stable` by the promoter in eight minutes
+  with no manual step. At 13:19Z the last stage was still in progress: the stable pointer read `4bb870a` and
+  `health` (now running the new code on the host) correctly said `stalled` for the 13.8h drift. Next session:
+  confirm the stable pointer reached `450faf8` and health returned to `ok`, then finish 0.7 (close #432, #377,
+  #375; the breaker count is 1 from item 0.9 and resets on a successful stable deploy).
+- Next up, in order: 0.9, 0.2, 1.4c (remaining scripts), 1.5, 2.4, 2.5.
