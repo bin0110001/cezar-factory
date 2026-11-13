@@ -57,6 +57,7 @@
         },
         "factory:review": {
           "kind": "automated",
+          "inFlight": true,
           "owner": { "workflow": "factory-review" },
           "exits": [
             { "to": "factory:done", "on": "review-result" },
@@ -69,6 +70,7 @@
         },
         "factory:changes-requested": {
           "kind": "automated",
+          "inFlight": true,
           "owner": { "workflow": "factory-fix-review" },
           "exits": [
             { "to": "factory:working", "on": "start" }

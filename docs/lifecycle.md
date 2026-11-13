@@ -98,8 +98,13 @@ instead of `factory:ready`, and the implement automation cannot start it until a
 | Add a gate for another risk or type | Add a conditional exit in a profile (`risk` and `type` conditions are supported) and the state it leads to |
 | Check a profile | `tests/run-tests.ps1` runs the soundness check on every profile the policy ships |
 
-Limit: Cezar's own stall detector and Decisions screen keep their own state list until plan item 1.4f, so an issue
-waiting in a profile-only state can be reported there as having no state label.
+A state may carry `"inFlight": true` ("an automation is mid-flow on it"); the stall detector treats it like a running
+state instead of looking for an automation that consumes its label (`factory:review` and `factory:changes-requested`).
+
+Cezar's stall detector reads this policy from the project's checkout (`policies/lifecycle.json`, or a managed
+project's `.ai/factory/policies/`), counting the states of every profile, so an issue waiting at a profile-only state
+such as `factory:design-signoff` is reported as waiting on a person. When the file cannot be read it uses the standard
+process, as before. Limit: Cezar's Decisions screen and backlog lanes still keep their own state lists.
 
 ## Level-triggered consumers
 

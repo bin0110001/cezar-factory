@@ -1,5 +1,6 @@
 import { isVerifiedBlockingEdge, type DependencyGraphNode, type DependencyGraphSnapshot } from '@open-mercato/cezar-contract';
 import { blockingCycles } from './algorithms.ts';
+import { DEFAULT_LIFECYCLE, type LifecycleKinds } from './lifecycle-model.ts';
 
 /**
  * Stall detection: "can every open task eventually move without a human fixing the graph?"
@@ -48,6 +49,11 @@ export interface StallVerdictInput {
    * (the graph-only rules still apply). A paused automation must not be listed.
    */
   consumedLabels?: ReadonlySet<string>;
+  /**
+   * Which `factory:*` labels are lifecycle states, which a person owns, and which mean work is in flight, as the
+   * Factory's `policies/lifecycle.json` defines them. Omit for the standard process.
+   */
+  lifecycle?: LifecycleKinds | undefined;
 }
 
 export type StallVerdictKind = 'idle' | 'healthy' | 'waiting' | 'stalled' | 'unknown';
@@ -61,10 +67,6 @@ export interface StallReport {
   cycles: string[][];
 }
 
-const HUMAN_WAIT = new Set(['factory:needs-help', 'factory:human-review']);
-/** Stages an in-flight issue sits in while an automation or person works on it. */
-const IN_FLIGHT = new Set(['factory:working', 'factory:implemented', 'factory:pr-open', 'factory:review', 'factory:changes-requested']);
-const STATE_LABELS = new Set(['factory:new', 'factory:investigate', 'factory:needs-plan', 'factory:ready', ...IN_FLIGHT, ...HUMAN_WAIT, 'factory:blocked', 'factory:done']);
 /** Epics and tracking issues are closed by hand; they never run, so they are neither stuck nor runnable. */
 const isTracking = (node: DependencyGraphNode) => node.kind === 'epic' || ('labels' in node && node.labels.some((label) => label === 'factory:tracking' || label === 'epic'));
 
@@ -83,7 +85,8 @@ function nonTaskBlocker(node: DependencyGraphNode | undefined): 'waiting-on-deci
 
 const RANK: Record<StallClass, number> = { running: 0, runnable: 1, blocked: 2, waiting: 3, stuck: 4 };
 
-export function diagnoseStalls({ snapshot, consumedLabels }: StallVerdictInput): StallReport {
+export function diagnoseStalls({ snapshot, consumedLabels, lifecycle }: StallVerdictInput): StallReport {
+  const { humanWait: HUMAN_WAIT, inFlight: IN_FLIGHT, stateLabels: STATE_LABELS } = lifecycle ?? DEFAULT_LIFECYCLE;
   const byId = new Map(snapshot.nodes.map((node) => [node.id, node]));
   const cycles = blockingCycles(snapshot);
   const inCycle = new Set(cycles.flat());
