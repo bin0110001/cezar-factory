@@ -702,6 +702,33 @@ try {
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
+# The router and the model must agree (STABILIZATION-PLAN.md item 1.4c). For each event the router handles, every
+# state it accepts as a source and every state it sets must be an exit the model declares for that event, and every
+# model exit for one of those events must be one the router can take. Editing one without the other fails here.
+$routerText = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
+$routerBlocks = @{}
+foreach ($m in [regex]::Matches($routerText.Substring($routerText.IndexOf('switch ($Event) {')), "(?ms)^    '([a-z-]+)' \{(.*?)(?=^    '[a-z-]+' \{|\z)")) { $routerBlocks[$m.Groups[1].Value] = $m.Groups[2].Value }
+$routerDrift = @()
+foreach ($evt in $routerBlocks.Keys) {
+    if ($evt -eq 'already-resolved') { continue }
+    $sources = @([regex]::Matches((($routerBlocks[$evt] -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' ', "'(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value })
+    $targets = @([regex]::Matches($routerBlocks[$evt], "Set-State '(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+    foreach ($t in $targets) {
+        if (-not @($sources | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_['to'] -eq $t }).Count }).Count) { $routerDrift += "$evt sets $t, which no accepted source reaches in the model" }
+    }
+}
+foreach ($stateName in $lifecycle.States.Keys) {
+    foreach ($exit in @($lifecycle.States[$stateName]['exits'] | Where-Object { $_ })) {
+        $evt = [string]$exit['on']
+        if (-not $routerBlocks.ContainsKey($evt)) { continue }
+        $block = $routerBlocks[$evt]
+        $accepts = (($block -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' '
+        if ($accepts -notmatch [regex]::Escape("'$stateName'") -or $block -notmatch [regex]::Escape("'$($exit['to'])'")) { $routerDrift += "model exit $stateName -> $($exit['to']) on $evt is not handled by route-state.ps1" }
+    }
+}
+$routerDrift | ForEach-Object { Write-Host "    $_" }
+Assert 'route-state.ps1 and the lifecycle model declare the same transitions' ($routerBlocks.Count -ge 6 -and -not $routerDrift.Count)
+
 # The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
 # are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
 # script that needs to know the states asks scripts/lifecycle-lib.ps1.
