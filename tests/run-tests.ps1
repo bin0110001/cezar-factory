@@ -819,6 +819,12 @@ try {
 }
 finally { Remove-Item -Recurse -Force $startDirectory -ErrorAction SilentlyContinue }
 
+# Obot MCP end-to-end security/regression/telemetry acceptance (issue #172; docs/obot-mcp-e2e.md). Local compute only.
+$obotE2e = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'obot-e2e.ps1') *>&1 | Out-String
+Assert 'Obot MCP end-to-end acceptance suite passes (identity, isolation, fault injection, redaction)' ($LASTEXITCODE -eq 0 -and $obotE2e -match 'OBOT E2E PASSED')
+if ($LASTEXITCODE -ne 0) { Write-Host $obotE2e }
+Assert 'Obot end-to-end runbook documents every gate and the coverage gaps' ((Get-Content -Raw (Join-Path $factory 'docs/obot-mcp-e2e.md')) -match '(?s)G0.*G1.*G2.*G3.*G4.*Not covered')
+
 if ($StaticOnly) {
     if ($script:fail) { Write-Error "$script:fail static checks failed."; exit 1 }
     Write-Host 'STATIC CHECKS PASSED'
