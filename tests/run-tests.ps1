@@ -2366,5 +2366,8 @@ $shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
 Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
 Remove-Item -Recurse -Force $pruneDir
 
+$dvDoc = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..' 'docs' 'distributed-verification-pilots.md'))
+Assert 'distributed pilots doc records gaps and stays opt-in local-only' ($dvDoc -match 'coverage gap' -and $dvDoc -match 'opt-in' -and $dvDoc -match 'no GitHub Actions' -and $dvDoc -notmatch '\|\s*(passed|green)\s*\|')
+
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
