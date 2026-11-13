@@ -191,7 +191,7 @@ one list and be missing from the list that would have given it a consumer.
 - [ ] **2.10 Fixture canary for plan, implement, review** against a sandbox repository, the largest
   remaining blind spot.
 
-- [ ] **2.11 A canary runs the new scripts with the old workflow definition (root cause found; needs the owner).** The maintenance canary for `941134a`
+- [x] **2.11 A canary runs the new scripts with the old workflow definition (fixed on the host with the owner's approval).** The maintenance canary for `941134a`
   ran scripts from the candidate's runtime (`factory-runtime/941134a`) but its step list was the one on `stable`:
   it had no `lifecycle-sweep` step. A change to a workflow file is therefore never canaried, and a script whose
   parameters change is canaried against the old command line. Make a canary run the candidate's own workflow
@@ -358,3 +358,10 @@ Then the feature backlog reopens.
   allowlist is 14 scripts that name individual states as transitions or routing (`route-state.ps1`'s `Set-State`, the
   watchdog's route to investigate, intake's exclusions); those are logic, and moving them means making the router itself
   model-driven, which 1.4e began for plan-result only. 1.4c stays open for that. Also corrected the symlink date above: 2026.
+- 2026-11-13 01:37Z: 2.11 fixed on the host, with the owner's approval. Removed the symlink
+  `/projects/cezar-factory/.ai/cezar/workflows` (inside the Cezar container; it pointed at the checkout's own `workflows/`). Before:
+  the project's workflow list reported `path: /projects/cezar-factory/.ai/cezar/workflows/maintenance.yaml`; after: `path:
+  /home/cezar/.cezar/factory-runtime/<release sha>/workflows/maintenance.yaml`, 16 workflows, no load issues. The 02:00Z
+  scheduled maintenance run then ran on release `733034ba9` with all 20 steps done. The checkout's `workflows/` directory
+  was not touched. To restore: `podman exec cezar ln -s /projects/cezar-factory/workflows /projects/cezar-factory/.ai/cezar/workflows`.
+  A canary now exercises the candidate's own workflow files. Confirmed at 02:03Z: batch 14 (`1757be1`) went to `stable-deployed` and the link was still absent, health `ok`.
