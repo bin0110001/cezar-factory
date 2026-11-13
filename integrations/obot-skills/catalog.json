@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "description": "Approved pilot catalog of Git-backed skill bundles indexed by Obot. Git remains the source of truth; this file only pins what is approved.",
+  "bundles": [
+    {
+      "id": "godot-core",
+      "version": "1",
+      "source": {
+        "repository": "https://github.com/bin0110001/cezar-factory.git",
+        "path": "skills/factory-godot-upgrade",
+        "commit": "ca723837496e1909d87e63453a3e69a389c6972a"
+      },
+      "digest": "sha256:c7490f7a8c66a0ec46d7dfdacf6a48fb78e6b7539ad592ffc52474ee20031925",
+      "metadata": {
+        "languages": ["godot"],
+        "frameworks": ["godot"],
+        "capabilities": ["upgrade", "gdunit", "parse"],
+        "owner": "bin0110001",
+        "license": "UNLICENSED-internal",
+        "trust": "first-party",
+        "permissions": ["read-worktree", "write-worktree"]
+      },
+      "projectTypes": ["godot"],
+      "requiredExecutables": [],
+      "dependencies": []
+    }
+  ]
+}
