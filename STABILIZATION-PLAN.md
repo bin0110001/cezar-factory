@@ -415,3 +415,4 @@ Then the feature backlog reopens.
   Cezar remain, as described above. What is left in this plan needs the owner or elapsed time: 0.6, 0.11 and 0.12 (host),
   3.1 and 3.4 (decisions), 3.2 and 3.3 (after 3.1), and the exit criteria (seven days, ten candidates); 1.4c's router and
   2.10's sandbox canary are each a separate design-sized batch.
+- 2026-11-13: batch 19 adds a suite test that `route-state.ps1` and the model declare the same transitions, in both directions (1.4c). The router still holds its transitions in code; making it execute the model is not done, but a mismatch now fails before merge. The single exception is `already-resolved`, which moves any issue to `factory:done`.
