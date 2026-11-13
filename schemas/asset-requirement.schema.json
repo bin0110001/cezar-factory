@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "factory-asset-requirement/v1",
+  "title": "Asset requirement descriptor",
+  "description": "Names a versioned asset a job needs. It carries identity and constraints, never the payload and never a licensed filename.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "version", "digest", "sourceClass", "accessScope", "sizeBytes", "stagingMethod", "cacheable", "retentionDays"],
+  "properties": {
+    "schemaVersion": { "const": "factory-asset-requirement/v1" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$", "description": "Namespaced opaque identity, e.g. project.namespace.name." },
+    "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "Integrity digest of the staged content (a file, or the manifest digest for a tree)." },
+    "sourceClass": { "enum": ["public", "project-private", "licensed"] },
+    "accessScope": { "type": "string", "minLength": 1, "description": "Authorization scope a worker must hold." },
+    "sizeBytes": { "type": "integer", "minimum": 0 },
+    "stagingMethod": { "enum": ["local-mount", "readonly-filesystem", "object-storage"] },
+    "sourceRef": { "type": "string", "description": "Opaque, relative reference resolved by the adapter inside its allowlisted root." },
+    "cacheable": { "type": "boolean" },
+    "licenseRestrictions": { "type": "array", "items": { "type": "string" } },
+    "retentionDays": { "type": "integer", "minimum": 0 }
+  }
+}
