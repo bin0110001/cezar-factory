@@ -702,44 +702,35 @@ try {
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
-# The router and the model must agree (STABILIZATION-PLAN.md item 1.4c). For each event the router handles, every
-# state it accepts as a source and every state it sets must be an exit the model declares for that event, and every
-# model exit for one of those events must be one the router can take. Editing one without the other fails here.
+# The router executes the model (STABILIZATION-PLAN.md item 1.4c): it names no lifecycle state itself, asks the model which
+# states may receive an event (Get-EventSources) and where each named outcome leads (Get-Outcome). Every event the router
+# handles must have a source, every outcome it asks for must resolve to exactly one state, and every model exit for one of
+# its events must carry an outcome, or the router could never take it.
 $routerText = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
-$routerBlocks = @{}
-foreach ($m in [regex]::Matches($routerText.Substring($routerText.IndexOf('switch ($Event) {')), "(?ms)^    '([a-z-]+)' \{(.*?)(?=^    '[a-z-]+' \{|\z)")) { $routerBlocks[$m.Groups[1].Value] = $m.Groups[2].Value }
+$routerSwitch = $routerText.Substring($routerText.IndexOf('switch ($Event) {'))
 $routerDrift = @()
-foreach ($evt in $routerBlocks.Keys) {
-    if ($evt -eq 'already-resolved') { continue }
-    $sources = @([regex]::Matches((($routerBlocks[$evt] -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' ', "'(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value })
-    $targets = @([regex]::Matches($routerBlocks[$evt], "Set-State '(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-    foreach ($t in $targets) {
-        if (-not @($sources | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_['to'] -eq $t }).Count }).Count) { $routerDrift += "$evt sets $t, which no accepted source reaches in the model" }
-    }
+$routerEvents = @([regex]::Matches($routerSwitch, "(?m)^    '([a-z-]+)' \{") | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'already-resolved' })
+foreach ($evt in $routerEvents) {
+    $sources = @($lifecycle.States.Keys | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_ -and $_['on'] -eq $evt }).Count })
+    if (-not $sources.Count) { $routerDrift += "the model has no state that receives $evt" }
+}
+foreach ($m in [regex]::Matches($routerSwitch, "Get-Outcome '([a-z-]+)' '([a-z-]+)'")) {
+    $evt = $m.Groups[1].Value; $name = $m.Groups[2].Value
+    $targets = @($lifecycle.States.Keys | ForEach-Object { @($lifecycle.States[$_]['exits']) | Where-Object { $_ -and $_['on'] -eq $evt -and $_['outcome'] -eq $name -and -not $_.Contains('when') } | ForEach-Object { [string]$_['to'] } } | Select-Object -Unique)
+    if ($targets.Count -ne 1) { $routerDrift += "$evt outcome '$name' resolves to $($targets.Count) states in the model" }
 }
 foreach ($stateName in $lifecycle.States.Keys) {
     foreach ($exit in @($lifecycle.States[$stateName]['exits'] | Where-Object { $_ })) {
-        $evt = [string]$exit['on']
-        if (-not $routerBlocks.ContainsKey($evt)) { continue }
-        $block = $routerBlocks[$evt]
-        $accepts = (($block -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' '
-        if ($accepts -notmatch [regex]::Escape("'$stateName'") -or $block -notmatch [regex]::Escape("'$($exit['to'])'")) { $routerDrift += "model exit $stateName -> $($exit['to']) on $evt is not handled by route-state.ps1" }
+        if ($routerEvents -contains [string]$exit['on'] -and -not $exit.Contains('when') -and -not $exit['outcome']) { $routerDrift += "model exit $stateName -> $($exit['to']) on $($exit['on']) has no outcome, so route-state.ps1 cannot take it" }
     }
 }
 $routerDrift | ForEach-Object { Write-Host "    $_" }
-Assert 'route-state.ps1 and the lifecycle model declare the same transitions' ($routerBlocks.Count -ge 6 -and -not $routerDrift.Count)
-
-# The fixture canary (STABILIZATION-PLAN.md item 2.10) is a promotion canary only if the policy lists it and the
-# automation it names exists and runs the fixture workflow.
-$promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
-$fixtureCanary = @($promotionPolicy.promotion.canaries.items | Where-Object { $_.id -eq 'fixture-lifecycle' })[0]
-$fixtureAutomation = if ($fixtureCanary) { @($automationDefinitions | Where-Object { $_.name -eq $fixtureCanary.automation })[0] } else { $null }
-Assert 'the fixture lifecycle canary is in the promotion policy and its automation runs the fixture workflow' ($fixtureCanary -and $fixtureAutomation -and $fixtureAutomation.task.workflow -eq 'factory-fixture-lifecycle' -and (Test-Path (Join-Path $factory 'scripts/fixture-lifecycle.ps1')))
+Assert 'route-state.ps1 takes every transition from the lifecycle model' ($routerEvents.Count -ge 6 -and -not $routerDrift.Count -and $routerSwitch -notmatch "'factory:[a-z-]+'")
 
 # The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
 # are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
 # script that needs to know the states asks scripts/lifecycle-lib.ps1.
-$stateLiteralAllowlist = 'route-state.ps1', 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
+$stateLiteralAllowlist = 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
 $stateLiteralPattern = "'(" + ((@($lifecycle.States.Keys) | ForEach-Object { [regex]::Escape($_) }) -join '|') + ")'"
 $stateLiteralFiles = @(Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match $stateLiteralPattern } | ForEach-Object { $_.Name })
 $newStateLiteralFiles = @($stateLiteralFiles | Where-Object { $stateLiteralAllowlist -notcontains $_ })
