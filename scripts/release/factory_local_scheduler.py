@@ -92,6 +92,8 @@ class CheckInterrupted(SchedulerError):
 
 # Exit codes of a process ended by SIGKILL or SIGTERM, as a shell reports them (128 + signal).
 KILLED_EXIT_CODES = (137, 143)
+# `podman exec` into a container that a deploy has stopped or is still starting exits 255 with one of these.
+CONTAINER_DOWN_RE = re.compile(r"container state improper|can only create exec sessions on running containers|no such container", re.I)
 MAX_INTERRUPTED_RETRIES = 2
 DRIFT_ISSUE_REPEAT_SECONDS = 6 * 3600
 
@@ -811,7 +813,7 @@ class LocalPromotionScheduler:
                         checks.append(result)
                         if result["status"] not in ("passed", "preexisting-debt") and result["required"]:
                             code = result["exitCode"]
-                            if code is not None and (code in KILLED_EXIT_CODES or code < 0) and self._note_interruption(sha):
+                            if code is not None and (code in KILLED_EXIT_CODES or code < 0 or (code == 255 and CONTAINER_DOWN_RE.search(" ".join(result.get("failureLines", []))))) and self._note_interruption(sha):
                                 raise CheckInterrupted(f"required check {result['id']} was killed (exit code {code}); the candidate will be validated again")
                             detail = "; ".join(result.get("failureLines", [])[:5])
                             raise SchedulerError(f"required check {result['id']} failed with exit code {code}" + (f": {detail}" if detail else ""))
