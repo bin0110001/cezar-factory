@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -1832,7 +1832,7 @@ if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
 # Skipping these silently is how they drifted into failure before, so a missing bash is a failure.
 Assert 'a POSIX bash is available for the deploy shell tests' ([bool]$shellTestBash)
 if ($shellTestBash) {
-    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh') {
+    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh', 'test-install-boot-order.sh') {
         $shellOutput = & $shellTestBash.Source (Join-Path $factory "tests/$shellTest") 2>&1
         Assert "deploy shell test passes: $shellTest" ($LASTEXITCODE -eq 0)
         if ($LASTEXITCODE -ne 0) { $shellOutput | Select-Object -Last 8 | ForEach-Object { Write-Host "    $_" } }

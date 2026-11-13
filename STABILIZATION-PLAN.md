@@ -98,7 +98,7 @@ one list and be missing from the list that would have given it a consumer.
   evidence gate and issue filing all fail together. Measure calls per component per hour on the host and cut the
   largest; the sweep, refresher and delivery sync already share one cached listing.
 
-- [ ] **0.11 Containers start before the host has its address.** At boot on 2026-11-12 Podman's rootless network
+- [ ] **0.11 Containers start before the host has its address (fix prepared; the owner installs it and the next reboot proves it).** At boot on 2026-11-12 Podman's rootless network
   namespace was created while the host only had a link-local address, so `host.containers.internal` was dead for
   every bridge-network container (Cezar, Postiz, Langfuse, Obot, Hindsight) until all of them were stopped and
   started again by hand. Needs the owner on the host: make the user session wait for a real address before
@@ -342,7 +342,8 @@ Then the feature backlog reopens.
   example of a process change by configuration: a plan for risk:high work waits at `factory:design-signoff` for a person.
   It is not a separate design step with its own agent workflow; a design workflow would be one more state with an owner
   workflow and no script change.
-- 2026-11-12: batch 13 delivers 1.11 by configuration: Cezar's pollers already supported `fullReconcileHours`,`n  `initialSync` and `maxAdmissionsPerCycle` and only intake used them. Now all ten `issue.labeled` automations do, with the
+- 2026-11-12: batch 13 delivers 1.11 by configuration: Cezar's pollers already supported `fullReconcileHours`,
+  `initialSync` and `maxAdmissionsPerCycle` and only intake used them. Now all ten `issue.labeled` automations do, with the
   implement and fix automations excluded from replaying history so that enabling one still never launches the backlog.
   When the owner enables the implement automations (3.1), `fullReconcileHours` recovers events missed after the baseline and
   the `priority:<n>` label orders what is admitted (3.2).
@@ -365,3 +366,12 @@ Then the feature backlog reopens.
   scheduled maintenance run then ran on release `733034ba9` with all 20 steps done. The checkout's `workflows/` directory
   was not touched. To restore: `podman exec cezar ln -s /projects/cezar-factory/workflows /projects/cezar-factory/.ai/cezar/workflows`.
   A canary now exercises the candidate's own workflow files. Confirmed at 02:03Z: batch 14 (`1757be1`) went to `stable-deployed` and the link was still absent, health `ok`.
+- 2026-11-13: 0.11 prepared. Cause: the units say `After=network-online.target`, which in a user session is the user
+  manager's own stub, reached at login. `container-cezar.service` started 1.4 s after `basic.target`, before the wired
+  address was assigned (`rootlessport ... cannot assign requested address` at boot). Podman ships
+  `podman-user-wait-network-online.service` for exactly this and it was active on the host, but nothing was ordered after
+  it. `scripts/deploy/install-boot-order.sh` installs a drop-in for `container-cezar.service`, `podman-restart.service`
+  and `podman-compose@.service` (modes `install`, `remove`, `check`; idempotent; owns only its own file; restarts
+  nothing). Still to do, on the host and by the owner: run it, then reboot at a quiet moment and confirm that
+  `podman unshare --rootless-netns ip -4 addr` shows the LAN address and that `host.containers.internal` answers from
+  inside Cezar. Until a reboot has shown that, the fix is unproven.
