@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'docs/docs-evaluation.md', 'policies/docs-evaluation.json', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -2373,6 +2373,20 @@ Assert 'missing retention is rejected' ($pr.Code -ne 0)
 $shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
 Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
 Remove-Item -Recurse -Force $pruneDir
+
+# ---- Docs evaluation report ----------------------------------------------
+$deRuns = Join-Path $factory 'tests/docs-evaluation/runs.jsonl'
+$de = Run 'docs-evaluation-report.ps1' @{ RunsPath = $deRuns }
+$deJson = $de.Out | ConvertFrom-Json
+$deBug = @($deJson.results | Where-Object { $_.issueClass -eq 'simple-bug' })
+Assert 'docs evaluation: net saving above threshold is go' ((@($deBug | Where-Object { $_.arm -eq 'doc-assisted' })[0]).decision -eq 'go')
+Assert 'docs evaluation: maintenance overhead turns a saving into no-go' ((@($deBug | Where-Object { $_.arm -eq 'spec-first' })[0]).decision -eq 'no-go')
+Assert 'docs evaluation: too few runs is insufficient-data' ((@($deJson.results | Where-Object { $_.issueClass -eq 'unfamiliar-subsystem' })[0]).decision -eq 'insufficient-data')
+$deBad = Join-Path ([IO.Path]::GetTempPath()) "de-$([guid]::NewGuid().ToString('N')).jsonl"
+[IO.File]::WriteAllText($deBad, '{"issueClass":"simple-bug","arm":"baseline"}' + "`n")
+$deFail = Run 'docs-evaluation-report.ps1' @{ RunsPath = $deBad }
+Assert 'docs evaluation: run without sourceSha is rejected' ($deFail.Code -ne 0 -and $deFail.Out -match 'sourceSha')
+Remove-Item -Force $deBad
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
