@@ -68,10 +68,10 @@ Rendered from `policies/lifecycle.json` (the `standard` profile); a suite test f
 <!-- lifecycle-table:begin -->
 | State | Kind | Owner | Exits | Deadline | At the deadline |
 |---|---|---|---|---|---|
-| `factory:new` | automated | `factory-intake` | `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
+| `factory:new` | automated | `factory-intake` | `factory:needs-plan`, `factory:needs-help`, `factory:ready`, `factory:needs-help`, `factory:done` | 24 h | retrigger |
 | `factory:needs-plan` | automated | `factory-plan` | `factory:ready`, `factory:needs-help`, `factory:done` | 24 h | retrigger |
 | `factory:ready` | automated | `factory-implement` | `factory:working`, `factory:needs-plan` | 24 h | retrigger |
-| `factory:working` | in-run | `factory-implement` / `factory-fix-review` | `factory:review`, `factory:investigate`, `factory:implemented` | 24 h | investigate |
+| `factory:working` | in-run | `factory-implement` / `factory-fix-review` | `factory:review`, `factory:investigate`, `factory:implemented`, `factory:ready`, `factory:needs-plan`, `factory:needs-help` | 24 h | investigate |
 | `factory:review` | automated | `factory-review` | `factory:done`, `factory:changes-requested`, `factory:investigate` | 24 h | retrigger |
 | `factory:changes-requested` | automated | `factory-fix-review` | `factory:working` | 24 h | retrigger |
 | `factory:investigate` | automated | `factory-investigate` | `factory:ready`, `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
