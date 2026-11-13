@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRunVerificationView, type RunHistoryEntry } from './run-verification-view.ts';
+import { buildRunVerificationView, type ArtifactRef, type RunHistoryEntry } from './run-verification-view.ts';
 import type { RolePartition } from './scenario-operations.ts';
 
 const part = (over: Partial<RolePartition>): RolePartition => ({
@@ -34,16 +34,16 @@ describe('run verification view (#219)', () => {
   it('baseline needs enough passing samples; flags regression; picks last success', () => {
     const base = { runId: 'r1', scenarioId: 's1', expectedRoles: ['host'], partitions: [part({})] };
     expect(buildRunVerificationView({ ...base, history: hist(2, 1000) }).baseline.regression).toBe('unknown');
-    const v = buildRunVerificationView({ ...base, history: [...hist(3, 1000), { runId: 'bad', outcome: 'infra-failure', durationMs: 1, finishedAt: '2026-02-01T00:00:00Z' }] });
-    expect(v.baseline.medianMs).toBe(1000);
+    const v = buildRunVerificationView({ ...base, history: [...hist(3, 10000), { runId: 'bad', outcome: 'infra-failure', durationMs: 1, finishedAt: '2026-02-01T00:00:00Z' }] });
+    expect(v.baseline.medianMs).toBe(10000);
     expect(v.baseline.regression).toBe(false);
     expect(v.lastSuccessfulRun?.runId).toBe('h2');
-    const slow = buildRunVerificationView({ ...base, partitions: [part({ finishedAt: '2026-01-01T00:01:00Z' })], history: hist(3, 1000) });
+    const slow = buildRunVerificationView({ ...base, partitions: [part({ finishedAt: '2026-01-01T00:01:00Z' })], history: hist(3, 10000) });
     expect(slow.baseline.regression).toBe(true);
   });
 
   it('scopes artifact links by permission and bounds the list', () => {
-    const artifacts = Array.from({ length: 60 }, (_, i) => ({ id: `a${i}`, kind: 'screenshot' as const, permission: 'artifact:read' }));
+    const artifacts: ArtifactRef[] = Array.from({ length: 60 }, (_, i) => ({ id: `a${i}`, kind: 'screenshot' as const, permission: 'artifact:read' }));
     artifacts.push({ id: 'secret', kind: 'video', permission: 'artifact:admin' });
     const v = buildRunVerificationView({
       runId: 'r1', scenarioId: 's1', expectedRoles: ['host'], partitions: [part({})], artifacts, permissions: ['artifact:read'],
