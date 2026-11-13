@@ -79,3 +79,23 @@ side-effect-free dry run that lists why each worker is ineligible.
 Not yet delivered (needs the open #70/#108/#127/#128/#135 services): HTTP
 routes and UI, operator mutations with RBAC/audit, per-shard verification
 timelines, trace correlation, and graphical session preview.
+
+## Scenario operations and operator actions (#219, second slice)
+
+`server/verification/scenario-operations.ts` adds a pure per-scenario projection:
+per-shard/role partitions, coverage completeness (a scenario is `pass` only when
+every expected role finished with all required evidence), infra-failure vs
+assertion-failure, queued reasons (from `explainScheduling`), missing evidence,
+redacted errors and stable trace ids (diagnostic only, never evidence). A finished
+partition without a verdict is an infra failure, never a pass; canceled/released
+partitions show as `canceled`.
+
+`OperatorActionGuard` wraps operator mutations (enroll-link, revoke, drain,
+undrain, quarantine, cancel, retry, set-profile, schedule-dry-run). It enforces a
+permission per action, idempotency keys (replays do not re-apply; key reuse for a
+different request is rejected), retry eligibility (infra failure or canceled only)
+and records an audit entry for every outcome. Mutations are delegated to the
+existing controller API through the `apply` callback.
+
+Still open: HTTP routes/UI, graphical session preview, artifact browsing and
+last-successful-run/performance baselines (blocked on #108/#127/#128/#135).
