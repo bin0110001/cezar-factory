@@ -232,6 +232,7 @@ import { scanAndProposeDecisions } from './dependency-graph/discovery-runner.ts'
 import { dispatchCycleReplan } from './dependency-graph/cycle-agent.ts';
 import { dispatchDecisionResearch } from './dependency-graph/decision-agent.ts';
 import { consumedStateLabels, diagnoseStalls, stuckFingerprint } from './dependency-graph/stalls.ts';
+import { loadLifecycleKinds } from './dependency-graph/lifecycle-model.ts';
 import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, diffDependencySnapshots, downstreamImpact, readiness, simulateDependencyGraph } from './dependency-graph/algorithms.ts';
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
 import { answerDecisionBodySchema } from '@open-mercato/cezar-contract';
@@ -6282,7 +6283,7 @@ export function createApp(deps: ServerDeps) {
         const project = c.get('project');
         const service = dependencyGraphService(project.root);
         const repository = await service.repositoryKey();
-        return c.json(diagnoseStalls({ snapshot: service.read(repository), consumedLabels: consumedStateLabels(project.automationStore.list()) }));
+        return c.json(diagnoseStalls({ snapshot: service.read(repository), consumedLabels: consumedStateLabels(project.automationStore.list()), lifecycle: loadLifecycleKinds(project.root) }));
       } catch (error) {
         return c.json({ error: error instanceof Error ? error.message.slice(0, 1_000) : 'stall analysis unavailable' }, 503);
       }
@@ -7415,7 +7416,7 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
     const isBoot = projectId === bootId || project.root === deps.repoRoot;
     const context = isBoot ? undefined : await sharedContexts.context(projectId).catch(() => undefined);
     const automationStore = isBoot ? deps.automationStore : context?.automationStore;
-    const report = diagnoseStalls({ snapshot, ...(automationStore ? { consumedLabels: consumedStateLabels(automationStore.list()) } : {}) });
+    const report = diagnoseStalls({ snapshot, lifecycle: loadLifecycleKinds(project.root), ...(automationStore ? { consumedLabels: consumedStateLabels(automationStore.list()) } : {}) });
     const fingerprint = report.counts.stuck > 0 ? `${report.verdict}|${stuckFingerprint(report)}` : '';
     if (stallGuardSeen.get(repository) !== fingerprint) {
       stallGuardSeen.set(repository, fingerprint);

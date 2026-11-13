@@ -144,7 +144,7 @@ one list and be missing from the list that would have given it a consumer.
     its registry entry; steps can be conditional on risk or type. Prove it with a second profile:
     `factory:tech-design` followed by a manual sign-off gate before `factory:ready` for `risk:high`
     work, enabled by configuration alone with no script edits.
-  - [ ] **1.4f Cezar reads the same model** (stall detector, backlog lanes, Decisions screen) instead of
+  - [ ] **1.4f Cezar reads the same model (the stall detector does; the Decisions screen and backlog lanes still keep their own lists)** (stall detector, backlog lanes, Decisions screen) instead of
     its own copy of the states.
 - [x] **1.5 One invariant sweep in `factory-maintenance`** driven by that model. Repairs what is
   mechanical (two state labels, no state label, `ready` without exactly one complexity label, `blocked`
@@ -375,3 +375,17 @@ Then the feature backlog reopens.
   nothing). Still to do, on the host and by the owner: run it, then reboot at a quiet moment and confirm that
   `podman unshare --rootless-netns ip -4 addr` shows the LAN address and that `host.containers.internal` answers from
   inside Cezar. Until a reboot has shown that, the fix is unproven.
+- 2026-11-13: 1.4f in part. Cezar's stall detector (`stalls.ts`) derives its three state sets from `policies/lifecycle.json`
+  through a new `lifecycle-model.ts` (zod-validated, every profile counted, `extends` applied, standard process when the
+  file is missing). A test pins that the shipped policy yields exactly the old constants; another shows an issue at a
+  profile-only human state is `waiting` instead of `stuck: no-state-label`. `factory:review` and
+  `factory:changes-requested` carry `"inFlight": true` in the policy to keep their treatment. Checked with the package's
+  own commands: `npm run typecheck` clean; the 13 dependency-graph test files (78 tests) pass. This reaches the host when
+  `cezar/` changes: the next stable deploy rebuilds the image and restarts Cezar when it is idle (and, since batch 4, not
+  during a validation).
+- 2026-11-13: found while testing 1.4f, not caused by it, left alone. Four Cezar tests fail on the baseline on this
+  Windows machine: `bc-route-inventory` (six `/api/v1` routes in `server.ts` are missing from the inventory in
+  `cezar/BACKWARD_COMPATIBILITY.md`, a real documentation drift) and three in `route-parity` (a `generatedAt` timestamp
+  that differs between two spellings of the same route, and an `EBUSY` removing a temp directory). Separately, vitest here
+  fails with "failed to find the runner" when launched from Git Bash, which hands it the working directory as `d:/...`
+  instead of `D:/...`; launching from PowerShell with the uppercase path works.
