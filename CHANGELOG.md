@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.98] - 2026-11-13
 
 - The promotion drift check no longer reports false drift (#483). "Stable is ahead of dev" is reported only when stable's SHA has no healthy promotion record, so a dev canary rollback does not trip it; the `/factory-release` probe retries for 45 seconds instead of once, and an exhausted probe is reported as `unknown` and files an issue only after it persists past twice `drift.graceSeconds`. Genuine mismatches still report drift.
 - A check run while the container is down is retried, not failed (`STABILIZATION-PLAN.md` item 0.9, remainder). Candidate `0186a841c` was recorded as failed with `can only create exec sessions on running containers: container state improper`: the deploy of the previous merge had stopped Cezar while the promoter was about to start its suite, and `podman exec` exits 255, which the interruption rule (exit 137 or 143) did not cover. A required check that exits 255 with that message is now treated as interrupted, with the same retry budget and no breaker count. Test added.
