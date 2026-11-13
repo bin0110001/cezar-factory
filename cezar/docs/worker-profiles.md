@@ -63,3 +63,39 @@ concurrency saturation. A scheduled profile job reserves one of the worker's
 bounded concurrency slots together with all requested resource leases under the
 existing `ResourceLockManager`, so concurrent admissions cannot claim the same
 slot or exclusive display.
+
+## Worker operations read model (#219, first slice)
+
+`server/verification/worker-read-model.ts` is a pure projection (no store, no
+scheduler) for the existing Control Center worker view. It derives a fail-closed
+status from heartbeat age: `healthy` only with a fresh heartbeat; `stale`,
+`offline`, and never-seen `unknown` are never healthy; `revoked` always wins and
+`draining`/`quarantined` apply to live workers. Capacity counts only `running`
+attempts, so canceled and released attempts free capacity consistently in the
+worker and run views. Pages are cursor-paginated (max 100), errors are redacted
+of credentials and host paths and truncated, and `explainScheduling` is a
+side-effect-free dry run that lists why each worker is ineligible.
+
+Not yet delivered (needs the open #70/#108/#127/#128/#135 services): HTTP
+routes and UI, operator mutations with RBAC/audit, per-shard verification
+timelines, trace correlation, and graphical session preview.
+
+## Scenario operations and operator actions (#219, second slice)
+
+`server/verification/scenario-operations.ts` adds a pure per-scenario projection:
+per-shard/role partitions, coverage completeness (a scenario is `pass` only when
+every expected role finished with all required evidence), infra-failure vs
+assertion-failure, queued reasons (from `explainScheduling`), missing evidence,
+redacted errors and stable trace ids (diagnostic only, never evidence). A finished
+partition without a verdict is an infra failure, never a pass; canceled/released
+partitions show as `canceled`.
+
+`OperatorActionGuard` wraps operator mutations (enroll-link, revoke, drain,
+undrain, quarantine, cancel, retry, set-profile, schedule-dry-run). It enforces a
+permission per action, idempotency keys (replays do not re-apply; key reuse for a
+different request is rejected), retry eligibility (infra failure or canceled only)
+and records an audit entry for every outcome. Mutations are delegated to the
+existing controller API through the `apply` callback.
+
+Still open: HTTP routes/UI, graphical session preview, artifact browsing and
+last-successful-run/performance baselines (blocked on #108/#127/#128/#135).
