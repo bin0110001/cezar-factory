@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "preRegisteredAt": "2026-11-13",
+  "note": "Thresholds are fixed before any run is collected. Changing them after data exists invalidates the evaluation; record a new version instead.",
+  "issueClasses": ["simple-bug", "unfamiliar-subsystem", "cross-component-feature", "multi-repo-interface"],
+  "arms": ["baseline", "doc-assisted", "spec-first"],
+  "projects": ["cezar-factory", "TableFlux"],
+  "minRunsPerArmPerClass": 8,
+  "repeats": 3,
+  "bootstrapResamples": 2000,
+  "bootstrapSeed": 182,
+  "confidenceLevel": 0.95,
+  "thresholds": {
+    "minNetTokenReduction": 0.10,
+    "maxAcceptedRateDrop": 0.0,
+    "maxClaimIncorrectRate": 0.05,
+    "maxReworkIncreasePoints": 0.0
+  },
+  "decision": {
+    "go": "net token reduction >= minNetTokenReduction with the confidence interval's upper bound below zero cost delta, accepted rate not below baseline, and claim incorrect rate within maxClaimIncorrectRate",
+    "no-go": "net token reduction is not positive, or accepted rate drops, or claim incorrectness exceeds the limit",
+    "insufficient-data": "fewer than minRunsPerArmPerClass runs in either arm"
+  },
+  "netCostComponents": ["generationTokens", "retrievalTokens", "reviewTokens", "maintenanceTokens"],
+  "excluded": ["secrets", "raw licensed data"],
+  "rollout": {
+    "stages": ["pilot", "dev", "stable"],
+    "stableRequires": "explicit controlled approval; promotion-policy.json autonomy is unchanged by default",
+    "featureFlag": "docsAssist",
+    "flagStates": ["off", "pilot", "dev", "stable"],
+    "rollback": "set the project's docsAssist flag to off; agents fall back to direct code exploration and are never blocked by a missing index or backend"
+  },
+  "failureInjection": ["mcp-unavailable", "index-stale", "gateway-down", "git-drift", "replay", "prompt-injection"]
+}
