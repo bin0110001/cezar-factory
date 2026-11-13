@@ -51,3 +51,13 @@ rules; each item is a requirement to verify once the runtime merges, not a state
 - View-only capture grants are separate from input grants (#329).
 - Logs, paths, clipboard content and sensitive images are redacted where policy requires; no tokens in process
   arguments or diagnostics.
+
+## 10. Project-owned rendered adapter (#342)
+- Projects supply lifecycle hooks (`launch`, `ready`, `captureFrame`, `quit`; `cezar/packages/cezar/src/session-control/graphical-adapter.ts`).
+  The core runner owns only the deadline, cancellation and cleanup; no application fields enter the core schema.
+- `godot-adapter.ts` implements the hooks for Godot (.NET and non-.NET use the same contract; pass the .NET binary
+  for C# projects). It runs rendered with `--write-movie` and never `--headless`; the first written PNG is the frame.
+  Blender or any other app implements the same four hooks.
+- Launch/readiness failure, timeout, crash, cancel and cleanup failure yield `failed`/`cancelled` outcomes with a typed
+  reason and never satisfy a rendered criterion. A `headless` request cannot produce a rendered frame. Godot headless
+  tests are untouched. GPU claims remain gated by #341; the software path needs Xvfb + Mesa (section 3).
