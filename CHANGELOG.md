@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Incremental documentation refresh (#179): `scripts/docs/docs_refresh.py` with a durable, idempotent job queue pinned to verified target SHAs, deterministic impact analysis (unrelated and docs-only changes make zero model calls), crash recovery, bounded backoff with escalation, an advisory-by-default gate, and exclusion, path-traversal and comment-injection protection. See `docs/docs-refresh.md`.
+
 - Cezar's scheduler lane gate and its decision states are pinned to the lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). A Cezar test fails when `PRE_READY_LANE_LABELS` differs from the states the policy puts in the Inbox and Refinement lanes, or when `DECISION_STATES` differs from the policy's human states or no longer lets a person send an issue back to the resume state. Two constants are now exported for it; nothing changes at run time.
 
 - The lifecycle policy now declares each state's backlog lane (`STABILIZATION-PLAN.md` item 1.4f, in part). Every state in the standard profile of `policies/lifecycle.json` carries a `lane`, and a Cezar test fails when the state-to-lane table in `server/backlog/migrate.ts` differs from it. Nothing changes at run time; the table stays in the server, but it can no longer drift from the policy unnoticed. Reading the lanes from the policy at run time, and the browser's lane columns, are still open.
