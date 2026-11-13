@@ -17,6 +17,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# The lifecycle states come from the policy, not from a list in this script.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$lifecycleStates = @((Get-FactoryLifecycle).States.Keys)
+
 function Invoke-Gh([string[]]$Arguments) {
     $all = @($Arguments)
     if ($Repo) { $all += @('--repo', $Repo) }
@@ -84,7 +88,7 @@ foreach ($issue in $allIssues) { $byNumber[[string]$issue.number] = $issue }
 
 $open = @($openIssues | Where-Object { $_.state -eq 'OPEN' } | ForEach-Object {
     $labels = @(Get-LabelNames $_)
-    $states = @($labels | Where-Object { $_ -in @('factory:new','factory:needs-plan','factory:needs-help','factory:ready','factory:working','factory:review','factory:changes-requested','factory:human-review','factory:blocked','factory:done','factory:investigate','factory:implemented','factory:pr-open') })
+    $states = @($labels | Where-Object { $_ -in $lifecycleStates })
     $priorityLabels = @($labels | ForEach-Object {
         if ($_ -match '^priority:(?<value>-?\d+)$') { [int]$Matches.value }
     })

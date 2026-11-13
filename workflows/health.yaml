@@ -3,7 +3,7 @@ description: Daily read-only project health - bounded Cezar failure audit with F
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-health -Step collect-failures -RequireGh -RequiredScripts audit-factory-failures.ps1,publish-failure-audit.ps1,collect-backlog-snapshot.ps1,reconcile-backlog.ps1,write-health-report.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-health -Step collect-failures -RequireGh -RequiredScripts audit-factory-failures.ps1,publish-failure-audit.ps1,collect-backlog-snapshot.ps1,reconcile-backlog.ps1,lifecycle-lib.ps1,write-health-report.ps1
     timeoutSeconds: 60
   - id: collect-failures
     name: Collect bounded failure evidence

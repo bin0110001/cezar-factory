@@ -39,7 +39,10 @@ function Get-IssueBody([int]$IssueNumber) {
     [string]$view.body
 }
 
-$factoryMarkers = @('factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working', 'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked', 'factory:done', 'factory:investigate','factory:implemented','factory:pr-open', 'factory:auditing', 'factory:tracking')
+# An issue that already carries a lifecycle state, or the audit's own reservation or a tracking marker, is not a
+# legacy candidate. The states come from the lifecycle policy.
+. (Join-Path $PSScriptRoot 'lifecycle-lib.ps1')
+$factoryMarkers = @((Get-FactoryLifecycle).States.Keys) + @('factory:auditing', 'factory:tracking')
 $search = 'is:open ' + (($factoryMarkers | ForEach-Object { "-label:`"$_`"" }) -join ' ')
 $raw = Invoke-Gh @('issue', 'list', '--state', 'open', '--search', $search, '--limit', '1000', '--json', 'number,title,labels,updatedAt')
 $issues = @($raw -join "`n" | ConvertFrom-Json)
