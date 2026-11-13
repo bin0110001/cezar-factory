@@ -729,6 +729,13 @@ foreach ($stateName in $lifecycle.States.Keys) {
 $routerDrift | ForEach-Object { Write-Host "    $_" }
 Assert 'route-state.ps1 and the lifecycle model declare the same transitions' ($routerBlocks.Count -ge 6 -and -not $routerDrift.Count)
 
+# The fixture canary (STABILIZATION-PLAN.md item 2.10) is a promotion canary only if the policy lists it and the
+# automation it names exists and runs the fixture workflow.
+$promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
+$fixtureCanary = @($promotionPolicy.promotion.canaries.items | Where-Object { $_.id -eq 'fixture-lifecycle' })[0]
+$fixtureAutomation = if ($fixtureCanary) { @($automationDefinitions | Where-Object { $_.name -eq $fixtureCanary.automation })[0] } else { $null }
+Assert 'the fixture lifecycle canary is in the promotion policy and its automation runs the fixture workflow' ($fixtureCanary -and $fixtureAutomation -and $fixtureAutomation.task.workflow -eq 'factory-fixture-lifecycle' -and (Test-Path (Join-Path $factory 'scripts/fixture-lifecycle.ps1')))
+
 # The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
 # are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
 # script that needs to know the states asks scripts/lifecycle-lib.ps1.
