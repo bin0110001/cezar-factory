@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Cezar's scheduler lane gate and its decision states are pinned to the lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). A Cezar test fails when `PRE_READY_LANE_LABELS` differs from the states the policy puts in the Inbox and Refinement lanes, or when `DECISION_STATES` differs from the policy's human states or no longer lets a person send an issue back to the resume state. Two constants are now exported for it; nothing changes at run time.
+
 - The lifecycle policy now declares each state's backlog lane (`STABILIZATION-PLAN.md` item 1.4f, in part). Every state in the standard profile of `policies/lifecycle.json` carries a `lane`, and a Cezar test fails when the state-to-lane table in `server/backlog/migrate.ts` differs from it. Nothing changes at run time; the table stays in the server, but it can no longer drift from the policy unnoticed. Reading the lanes from the policy at run time, and the browser's lane columns, are still open.
 
 - A check run while the container is down is retried, not failed (`STABILIZATION-PLAN.md` item 0.9, remainder). Candidate `0186a841c` was recorded as failed with `can only create exec sessions on running containers: container state improper`: the deploy of the previous merge had stopped Cezar while the promoter was about to start its suite, and `podman exec` exits 255, which the interruption rule (exit 137 or 143) did not cover. A required check that exits 255 with that message is now treated as interrupted, with the same retry budget and no breaker count. Test added.
