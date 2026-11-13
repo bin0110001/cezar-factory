@@ -49,7 +49,7 @@
     },
     {
       "id": "factory-static-contracts",
-      "patterns": ["scripts/**", "workflows/**", "policies/**", "templates/**", "schemas/**", "integrations/**", "config/**", ".ai/factory/**", ".github/**", ".yamllint.yaml", "tests/run-tests.ps1"],
+      "patterns": ["scripts/**", "workflows/**", "policies/**", "templates/**", "schemas/**", "integrations/**", "config/**", ".ai/factory/**", ".github/**", ".yamllint.yaml", "tests/run-tests.ps1", "tests/verification-workflow.ps1"],
       "command": "pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly"
     },
     {
