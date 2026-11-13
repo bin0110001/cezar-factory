@@ -170,6 +170,59 @@ class LocalPromotionSchedulerTests(unittest.TestCase):
         self.scheduler._state_put("drift_since", "0")
         self.assertEqual("ok", self.scheduler.health()["state"])
 
+    def _drift_fixture(self, dev: str, stable: str) -> None:
+        git(self.repo, "push", "origin", f"{stable}:refs/heads/stable", "--force")
+        channels = self.scheduler.controller.channels
+        channels.mkdir(parents=True, exist_ok=True)
+        for name, sha in (("dev", dev), ("stable", stable)):
+            (channels / f"{name}.json").write_text(json.dumps({"currentSha": sha}), encoding="utf-8")
+        self.scheduler.policy = None  # the Cezar probe is covered separately
+
+    def test_drift_accepts_stable_ahead_of_dev_when_stable_passed_dev_canaries(self) -> None:
+        self._drift_fixture(self.base_sha, self.sha)  # dev rolled back to the older SHA
+        self.assertIn("stable is ahead of dev", " ".join(self.scheduler.drift()["findings"]))
+        self._promotion(self.sha, "healthy", "2026-11-13T00:00:00.000Z")
+        self.assertNotIn("stable is ahead of dev", " ".join(self.scheduler.drift()["findings"]))
+
+    def test_unreadable_cezar_probe_is_unknown_not_drift_until_it_persists(self) -> None:
+        self._drift_fixture(self.sha, self.sha)
+        self.scheduler.policy = {"stableBranch": "stable", "driftGraceSeconds": 1800, "issueLabels": [], "mode": "autonomous"}
+        windows: list[int] = []
+        class Runner:
+            def _retry(self, method, suffix, body=None, *, window=None):
+                windows.append(window)
+                raise TimeoutError("timed out")
+        self.scheduler._canary_runner = lambda: Runner()
+        filed: list[str] = []
+        import scripts.release.factory_local_scheduler as module
+        original = module.file_issue
+        module.file_issue = lambda *args, **kwargs: filed.append(args[2])
+        try:
+            report = self.scheduler._drift_watch()
+            self.assertEqual("unknown", report["status"])
+            self.assertGreater(windows[0], 0)  # a bounded retry window, not zero
+            self.scheduler._state_put("probe_unknown_since", str(time.time() - 1800))
+            self.assertEqual("unknown", self.scheduler._drift_watch()["status"])
+            self.assertEqual([], filed)
+            self.scheduler._state_put("probe_unknown_since", str(time.time() - 3 * 3600))
+            self.scheduler._drift_watch()
+            self.scheduler._state_put("drift_since", str(time.time() - 3600))
+            self.scheduler._drift_watch()
+            self.assertEqual(["[promotion] release drift persists"], filed)
+        finally:
+            module.file_issue = original
+
+    def test_genuine_cezar_mismatch_is_still_drift(self) -> None:
+        self._drift_fixture(self.sha, self.sha)
+        self.scheduler.policy = {"stableBranch": "stable", "driftGraceSeconds": 1800, "issueLabels": [], "mode": "autonomous"}
+        class Runner:
+            def _retry(self, method, suffix, body=None, *, window=None):
+                return {"channel": "dev", "sourceSha": "f" * 40}
+        self.scheduler._canary_runner = lambda: Runner()
+        report = self.scheduler.drift()
+        self.assertEqual("drift", report["status"])
+        self.assertIn("Cezar serves", report["findings"][0])
+
     def test_passing_check_has_no_failure_lines(self) -> None:
         result = self.scheduler.run_once()
         record = json.loads(pathlib.Path(result["recordPath"]).read_text(encoding="utf-8"))
