@@ -99,3 +99,16 @@ existing controller API through the `apply` callback.
 
 Still open: HTTP routes/UI, graphical session preview, artifact browsing and
 last-successful-run/performance baselines (blocked on #108/#127/#128/#135).
+
+## Run verification view (#219, third slice)
+
+`server/verification/run-verification-view.ts` composes the scenario projection into
+the existing run page model: a start-ordered per-shard/role timeline (a running
+partition on a stale/offline worker is flagged as disconnected, never healthy),
+abstract topology requirements with a host-count check (`unknown` when not
+determinable), failure class (infra/assertion/both), a performance baseline from
+passing runs only (`regression` stays `unknown` below 3 samples), the last
+successful run, permission-scoped artifact links (max 50 visible, hidden count
+reported, no media bytes) and trace ids marked `authoritative: false`.
+
+Still open: HTTP routes/UI, graphical session preview and takeover grants.
