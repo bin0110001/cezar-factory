@@ -317,6 +317,8 @@ describe('local workspace lifecycle', () => {
     expect(integratedIssueLabelEdits(['factory:review', 'factory:blocked', 'factory:auditing', 'risk:low']))
       .toEqual({ add: ['factory:done'], remove: ['factory:review', 'factory:blocked'] });
     expect(integratedIssueLabelEdits(['factory:done', 'factory:auditing'])).toEqual({ add: [], remove: [] });
+    expect(integratedIssueLabelEdits(['factory:pr-open', 'factory:design-signoff'], new Set(['factory:pr-open', 'factory:design-signoff'])))
+      .toEqual({ add: ['factory:done'], remove: ['factory:pr-open', 'factory:design-signoff'] });
   });
 
   it('persists post-merge validation attempts under the execution fence', async () => {

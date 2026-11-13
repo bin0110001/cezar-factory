@@ -15,6 +15,7 @@ import {
   type LifecycleState,
 } from './lifecycle.ts';
 import { pruneCodingRunArtifacts } from './coding-run-artifacts.ts';
+import { loadLifecycleKinds } from '../server/dependency-graph/lifecycle-model.ts';
 
 const execFileAsync = promisify(execFile);
 const USAGE = `cez workspace <command>
@@ -415,17 +416,18 @@ interface MergedPullRequest {
   mergeCommit: { oid: string };
 }
 
+/** The standard process, used when the project has no readable `policies/lifecycle.json`. */
 const FACTORY_STATE_LABELS = [
   'factory:new', 'factory:needs-plan', 'factory:needs-help', 'factory:ready', 'factory:working',
   'factory:review', 'factory:changes-requested', 'factory:human-review', 'factory:blocked',
   'factory:done', 'factory:investigate',
 ];
 
-export function integratedIssueLabelEdits(labels: string[]): { add: string[]; remove: string[] } {
+export function integratedIssueLabelEdits(labels: string[], stateLabels: Iterable<string> = FACTORY_STATE_LABELS): { add: string[]; remove: string[] } {
   const present = new Set(labels);
   return {
     add: present.has('factory:done') ? [] : ['factory:done'],
-    remove: FACTORY_STATE_LABELS.filter((label) => label !== 'factory:done' && present.has(label)),
+    remove: [...stateLabels].filter((label) => label !== 'factory:done' && present.has(label)),
   };
 }
 
@@ -435,7 +437,7 @@ async function syncIntegratedIssueState(issue: string, cwd: string): Promise<voi
   });
   const data = JSON.parse(response.stdout) as { labels?: Array<{ name?: string }> };
   const labels = (data.labels ?? []).flatMap((label) => typeof label.name === 'string' ? [label.name] : []);
-  const edits = integratedIssueLabelEdits(labels);
+  const edits = integratedIssueLabelEdits(labels, loadLifecycleKinds(cwd)?.stateLabels);
   if (!edits.add.length && !edits.remove.length) return;
   const args = ['issue', 'edit', issue];
   if (edits.add.length) args.push('--add-label', edits.add.join(','));
