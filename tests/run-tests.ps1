@@ -159,12 +159,9 @@ Assert 'backlog audit documents read-only collector and deterministic preparatio
 Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
 Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
-Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'maintenance watchdog covers issue runs: implement and fix runs are routed to investigate, plan, review and investigate runs are only cancelled' ($maintenanceWorkflow -match '(?s)id: watchdog-issue-runs.*-MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review [^&]*-RouteCancelledRuns && .*-MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "\$CEZ_TASK_ID";')
-Assert 'maintenance ends by verifying the run made no commit, and tells the agent step not to' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$' -and $maintenanceWorkflow -match 'Do not commit, push, create a branch or open a pull request')
-Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
-Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
+Assert 'maintenance ends by verifying the run made no commit' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$')
+Assert 'maintenance has no model step: no agent skill and no model probe, so a spent model limit cannot fail the run or the promotion canary' ($maintenanceWorkflow -notmatch '(?m)^\s+skill:' -and $maintenanceWorkflow -notmatch 'id: model-check' -and $maintenanceWorkflow -notmatch 'id: backlog-label-audit')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $planSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
@@ -272,7 +269,6 @@ Assert 'maintenance recovery uses Cezar loopback API and selected worktree ident
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
-Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
 $auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
 Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 $scriptOwnershipViolations = @()
@@ -2235,7 +2231,7 @@ Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
 Assert 'model probe fails fast on a host that is up but not generating, retries transients, and never leaks the key' ($LASTEXITCODE -eq 0)
-$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'maintenance', 'environment-analysis', 'godot-upgrade')
+$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'environment-analysis', 'godot-upgrade')
 $unprobed = @($agentWorkflows | Where-Object {
     $wf = Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")
     # The probe must run after startup and before the first agent step, and startup must preflight the script.
@@ -2245,7 +2241,7 @@ $unprobed = @($agentWorkflows | Where-Object {
 })
 Assert "every agent workflow probes the model endpoint before its first agent step ($($unprobed -join ', '))" ($unprobed.Count -eq 0)
 $maintenanceText = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance runs its watchdog and housekeeping before the model probe, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: watchdog') -lt $maintenanceText.IndexOf('id: model-check') -and $maintenanceText.IndexOf('id: intake-route') -lt $maintenanceText.IndexOf('id: model-check'))
+Assert 'maintenance has no model probe: the watchdog and intake routing run without a model, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: intake-route') -gt $maintenanceText.IndexOf('id: watchdog') -and $maintenanceText -notmatch 'id: model-check')
 $promScrape = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus.yml')
 $promAlerts = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus-alerts.yml')
 $promCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
