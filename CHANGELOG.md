@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A promotion canary now runs the candidate's own workflow files (`STABILIZATION-PLAN.md` item 2.11). Cezar loads a project's own `.ai/cezar/workflows` before a release's, and on the host that was a symlink to the checkout's `workflows/` (`stable`), so a change to a workflow file was first exercised by the first scheduled run after `stable` moved. The symlink was removed on the host with the owner's approval; this entry and the plan record the check and the restore command. No repository code changed.
+
 - Three more scripts take the lifecycle states from the policy instead of their own copy of the list (`STABILIZATION-PLAN.md` item 1.4c): `reconcile-backlog.ps1`, `collect-backlog-snapshot.ps1` and `audit-backlog-labels.ps1`. The states they still name in code are transitions and routing, not lists. With a lifecycle profile that adds a state, these scripts now see it. The health workflow's start-up manifest lists the library.
 
 - Level-triggered consumers (`STABILIZATION-PLAN.md` item 1.11). Every `issue.labeled` automation now also re-lists the open issues that still carry its label once a day (`fullReconcileHours: 24`) and recovers events the poller missed, admits one new launch per poll (`maxAdmissionsPerCycle: 1`), and looks back 30 days across up to 25 records, as intake already did. Before, the planning, investigation, review, implement and fix automations polled one record, never re-read existing labels, and lost any event that arrived while they were paused or down. The enabled planning, investigation and review automations also take existing eligible work on creation; the implement and fix automations do not, so enabling one still baselines to now and never launches the backlog. A suite test requires this of every `issue.labeled` automation.
@@ -280,6 +282,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+- A promotion canary now runs the candidate's own workflow files (`STABILIZATION-PLAN.md` item 2.11). Cezar loads a project's own `.ai/cezar/workflows` before a release's, and on the host that was a symlink to the checkout's `workflows/` (`stable`), so a change to a workflow file was first exercised by the first scheduled run after `stable` moved. The symlink was removed on the host with the owner's approval; this entry and the plan record the check and the restore command. No repository code changed.
 
 - Three more scripts take the lifecycle states from the policy instead of their own copy of the list (`STABILIZATION-PLAN.md` item 1.4c): `reconcile-backlog.ps1`, `collect-backlog-snapshot.ps1` and `audit-backlog-labels.ps1`. The states they still name in code are transitions and routing, not lists. With a lifecycle profile that adds a state, these scripts now see it. The health workflow's start-up manifest lists the library.
 
