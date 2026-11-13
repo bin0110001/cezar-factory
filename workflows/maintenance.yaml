@@ -50,7 +50,7 @@ steps:
     timeoutSeconds: 300
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -Limit 1 -OutputPath .factory/stale-workable-refresh.json
     timeoutSeconds: 300
   - id: repository-maintenance
     name: Run deterministic repository maintenance
