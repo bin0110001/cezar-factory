@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.98] - 2026-11-13
+
 - Bounded coding-run lifecycle in the Cezar package (issue #131): stage order, typed failure reasons with distinct retry/wait/repair/block semantics, ledger-counted budgets, restart-safe resume planning, duplicate-delivery refusal and stale-attempt rejection, as a pure layer over the existing run ledger (see `cezar/docs/coding-run-contract.md`).
 - A check run while the container is down is retried, not failed (`STABILIZATION-PLAN.md` item 0.9, remainder). Candidate `0186a841c` was recorded as failed with `can only create exec sessions on running containers: container state improper`: the deploy of the previous merge had stopped Cezar while the promoter was about to start its suite, and `podman exec` exits 255, which the interruption rule (exit 137 or 143) did not cover. A required check that exits 255 with that message is now treated as interrupted, with the same retry budget and no breaker count. Test added.
 
