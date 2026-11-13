@@ -602,10 +602,53 @@ class LocalPromotionScheduler:
                 self.breaker.record_success()
                 return {"status": "promoted", "sourceSha": sha, "stage": self.FINAL_STAGE}
             self._set_stage(sha, "stable-promoted", deploy_attempts=attempts)
+            self._state_put("last_stable_deploy_error", f"{sha}|{detail[-300:]}")
             if attempts == 3:  # one issue per candidate, not per tick
                 self._failure("stable-deploy", sha, detail, subject="stable")
             return {"status": "deploy-pending", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
         return {"status": "unchanged", "sourceSha": sha, "stage": stage}
+
+    def _reconcile_stable(self, skip_sha: str | None = None) -> dict[str, Any] | None:
+        """Retry the stable deploy when the pointer lags origin/stable.
+
+        _advance only walks the current dev candidate, so a stable SHA whose deploy stalled (Cezar busy, dirty
+        checkout) was never retried once dev moved on, and the drift report just repeated itself.
+        """
+        if not self.policy or not self.policy["deployCommand"]:
+            return None
+        try:
+            tip = self._fetch_ref(self.policy["stableBranch"])
+        except (SchedulerError, ControllerError, subprocess.SubprocessError):
+            return None
+        pointer = self._stable_pointer()
+        row = self._row(tip)
+        if tip == skip_sha or pointer is None or pointer == tip or not row or row["stage"] not in ("stable-promoted", self.FINAL_STAGE):
+            return None
+        ok, detail = self._deploy_stable(tip)
+        if ok:
+            self._set_stage(tip, self.FINAL_STAGE)
+            self._state_put("last_stable_deploy_error", "")
+            return {"status": "stable-reconciled", "sourceSha": tip}
+        self._state_put("last_stable_deploy_error", f"{tip}|{detail[-300:]}")
+        return {"status": "deploy-pending", "sourceSha": tip, "detail": detail[-300:]}
+
+    def _stalled_step(self, tip: str) -> str:
+        """Name the step that kept the stable pointer from reaching origin/stable, with its last error."""
+        row = self._row(tip)
+        if not row:
+            return f"origin/stable {tip[:9]} has no promotion record on this host (promoted outside the scheduler)"
+        parts = [f"stage {row['stage']}"]
+        if row["stage"] == "stable-promoted":
+            parts.append(f"deploy pending after {int(row['deploy_attempts'] or 0)} attempt(s)")
+        sha, _, error = self._state_get("last_stable_deploy_error", "").partition("|")
+        if error and sha == tip:
+            parts.append(f"last deploy error: {error.strip()[:200]}")
+        try:
+            if run_git(self.repo, "status", "--porcelain", "--untracked-files=no").strip():
+                parts.append("host checkout is dirty")
+        except (ControllerError, subprocess.SubprocessError, OSError):
+            pass
+        return ", ".join(parts)
 
     def drift(self) -> dict[str, Any]:
         """Report disagreement between origin, the channel pointers, the host checkout, and what Cezar serves."""
@@ -625,7 +668,8 @@ class LocalPromotionScheduler:
                 seen[f"{channel}Pointer"] = None
         seen["hostCheckout"] = run_git(self.repo, "rev-parse", "HEAD").decode().strip()
         if seen["stablePointer"] and seen["stablePointer"] != seen["originStable"]:
-            findings.append(f"stable pointer {seen['stablePointer'][:9]} lags origin/stable {seen['originStable'][:9]}")
+            findings.append(f"stable pointer {seen['stablePointer'][:9]} lags origin/stable {seen['originStable'][:9]}; "
+                            f"stalled step: {self._stalled_step(seen['originStable'])}")
         if seen["stablePointer"] and seen["hostCheckout"] != seen["stablePointer"] and seen["hostCheckout"] != seen["originStable"]:
             findings.append(f"host checkout {seen['hostCheckout'][:9]} matches neither the stable pointer nor origin/stable")
         if seen["devPointer"] and seen["stablePointer"] and seen["devPointer"] != seen["stablePointer"]:
@@ -744,6 +788,9 @@ class LocalPromotionScheduler:
             except CheckInterrupted as exc:
                 result = {"status": "interrupted", "sourceSha": sha, "reason": str(exc)}
             if self.policy and result["status"] != "paused":
+                reconciled = self._reconcile_stable(skip_sha=sha)
+                if reconciled:
+                    result["stableReconcile"] = reconciled
                 result["drift"] = self._drift_watch()["status"]
             return result
 
