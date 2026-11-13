@@ -2231,6 +2231,10 @@ Write-Host '== verification query layer =='
 $vqOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-query.ps1') 2>&1 | Out-String
 Write-Host $vqOutput
 Assert 'verification query layer: pagination, redaction, ordering, oversized artifacts, byte-identical output and schema validation' ($LASTEXITCODE -eq 0)
+Write-Host '== asset locality =='
+$assetOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'asset-locality.ps1') 2>&1 | Out-String
+Write-Host $assetOutput
+Assert 'asset locality: authorization, cache hit and fresh stage, manifest invalidation, unsafe path, hash mismatch, disk full, revoked access and evidence without payload' ($LASTEXITCODE -eq 0)
 Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
