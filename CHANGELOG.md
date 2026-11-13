@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Distributed verification pilots, fault matrix and benchmark protocol recorded (#220), `docs/distributed-verification-pilots.md`. No distributed worker runtime exists on `dev` yet, so every acceptance row is an explicit coverage gap and no figure is claimed; a suite test keeps the document honest (gaps recorded, opt-in, no GitHub Actions, no green rows).
 - The maintenance workflow has no model step (`STABILIZATION-PLAN.md` item 0.12, at the owner's choice). The backlog label audit (collect, validate, prepare, model probe, agent, apply) is retired from `workflows/maintenance.yaml`: the lifecycle sweep, intake and the stale refresher cover what it did, and it was the one step that made the hourly run, and so the promotion canary that runs the same automation, fail whenever the Claude 5-hour limit was spent. `recover-audit-reservations` stays to release any reservation already on an issue. The audit's scripts and skill stay in the repository, unused by the workflow. A suite test now requires that the workflow has no `skill:` step, no model probe and no audit step.
 
 - The browser's backlog lane columns are pinned to the lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). The lane descriptions and trigger labels moved from `web/src/routes/backlog.tsx` into `backlog-lanes.ts`, and a web test fails when a lane's trigger labels differ from the `automated` states the policy puts in that lane. Nothing changes at run time.
