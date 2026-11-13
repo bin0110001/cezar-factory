@@ -985,13 +985,14 @@ try {
             '3' = @{ state = 'OPEN'; labels = @('factory:needs-plan'); comments = @(); createdAt = '2026-01-03T00:00:00Z'; updatedAt = '2026-03-02T00:00:00Z' }
             '4' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); createdAt = '2026-01-04T00:00:00Z'; updatedAt = [DateTimeOffset]::UtcNow.ToString('o') }
             '5' = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); createdAt = '2026-01-01T00:00:00Z'; updatedAt = '2026-02-01T00:00:00Z' }
+            '6' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small', 'priority:0'); comments = @(); createdAt = '2026-01-06T00:00:00Z'; updatedAt = '2026-03-04T00:00:00Z' }
         } } | ConvertTo-Json -Depth 8 | Set-Content $closeState
     $refreshOut = Join-Path $tmp 'stale-refresh.json'
     $refreshRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $refreshOut }
     if ($refreshRun.Code -ne 0) { Write-Host $refreshRun.Out }
     $refresh = Get-Content -Raw $refreshOut | ConvertFrom-Json
-    Assert 'stale refresher takes the least recently touched workable issues first, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '2,3')
-    Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 3 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
+    Assert 'stale refresher takes a priority:0 issue first, then the least recently touched, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '6,2')
+    Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 4 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
 
     # A housekeeping run must leave no commit. The run branch is created when the run starts, so anything
     # after the branch's first reflog entry was committed by the run.
