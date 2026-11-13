@@ -415,3 +415,5 @@ Then the feature backlog reopens.
   Cezar remain, as described above. What is left in this plan needs the owner or elapsed time: 0.6, 0.11 and 0.12 (host),
   3.1 and 3.4 (decisions), 3.2 and 3.3 (after 3.1), and the exit criteria (seven days, ten candidates); 1.4c's router and
   2.10's sandbox canary are each a separate design-sized batch.
+- 2026-11-13: batch 19 adds a suite test that `route-state.ps1` and the model declare the same transitions, in both directions (1.4c). The router still holds its transitions in code; making it execute the model is not done, but a mismatch now fails before merge. The single exception is `already-resolved`, which moves any issue to `factory:done`.
+- 2026-11-13: found while validating batch 19: `0186a841c` (PR #478, which restarted Cezar on deploy) failed with "container state improper" and counted toward the breaker, because 0.9 only treated exit 137 and 143 as a killed check. `podman exec` into a stopped container exits 255. Batch 19 adds that case to the interruption rule. The failed record for `0186a841c` is for the owner to clear (`reset-breaker`) or leave; the next merge is a new candidate.
