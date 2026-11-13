@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fingerprintId, gpuPilotEnabled, runGpuPilot,
   type GpuPilotDeps, type GpuRuntimeFingerprint,
-} from './gpu-pilot';
+} from './gpu-pilot.js';
 
 const fp: GpuRuntimeFingerprint = {
   device: 'AMD Radeon RX 7800', driver: 'radv 25.1.0', api: 'vulkan', apiVersion: '1.3.296',
