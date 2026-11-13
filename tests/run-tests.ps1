@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -2366,6 +2366,31 @@ Assert 'missing retention is rejected' ($pr.Code -ne 0)
 $shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
 Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
 Remove-Item -Recurse -Force $pruneDir
+
+# Spec-first change contracts (policies/change-contract.json, scripts/change-contract-lib.ps1, #178).
+. (Join-Path $factory 'scripts/change-contract-lib.ps1')
+$ccp = Get-ChangeContractPolicy -Path (Join-Path $factory 'policies/change-contract.json')
+foreach ($ccFile in 'docs/spec-first.md', 'templates/change-contract.md') { Assert "$ccFile exists" (Test-Path (Join-Path $factory $ccFile)) }
+$ccSpec = Select-ChangePath -Policy $ccp -Labels 'type:feature', 'risk:high' -ContractKinds 'interface'
+Assert 'a feature with an interface contract takes the spec-first path' ($ccSpec.Path -eq 'spec-first')
+$ccHotfix = Select-ChangePath -Policy $ccp -Labels 'type:bug', 'risk:high'
+Assert 'a high-risk bug hotfix stays code-first with no approval' ($ccHotfix.Path -eq 'code-first')
+Assert 'a bug that changes a migration contract goes spec-first' ((Select-ChangePath -Policy $ccp -Labels 'type:bug' -ContractKinds 'migration').Path -eq 'spec-first')
+Assert 'a routine feature stays code-first' ((Select-ChangePath -Policy $ccp -Labels 'type:feature', 'risk:medium').Path -eq 'code-first')
+Assert 'an unpinned contract is stale' ((Test-ChangeContractStale -ApprovedSha '' -CurrentSha 'b').Stale)
+Assert 'a moved base with unknown changes is stale' ((Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'x.ps1').Stale)
+Assert 'a base that changed a contract path (case-insensitive) is stale' ((Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'Src/A.ps1' -ChangedSinceApproval @('src/a.ps1')).Stale)
+Assert 'a base that moved elsewhere is not stale' (-not (Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'src/a.ps1' -ChangedSinceApproval @('docs/x.md')).Stale)
+Assert 'replans are bounded' ((Test-ReplanAllowed -Policy $ccp -Replans 1) -and -not (Test-ReplanAllowed -Policy $ccp -Replans 2))
+$ccItems = @(@{ id = 'C1'; paths = @('src/a.ps1') })
+$ccGood = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths @('src/a.ps1') -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $true }, @{ id = 'C1'; kind = 'acceptance'; passed = $true })
+Assert 'a converged implementation is verified from evidence' ($ccGood.Verified -and $ccGood.Discrepancies.Count -eq 0)
+$ccBad = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths @('src/a.ps1', 'src/b.ps1') -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $true })
+Assert 'a divergent implementation yields discrepancies, not verified' (-not $ccBad.Verified -and @($ccBad.Discrepancies | Where-Object Kind -eq 'missing-evidence').Count -eq 1 -and @($ccBad.Discrepancies | Where-Object Kind -eq 'unplanned-change').Count -eq 1)
+Assert 'failed evidence is not verified' (-not (Compare-ChangeContract -Policy $ccp -Items $ccItems -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $false }, @{ id = 'C1'; kind = 'acceptance'; passed = $true })).Verified)
+$ccMany = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths (1..25 | ForEach-Object { "f$_.ps1" })
+Assert 'discrepancies are bounded' ($ccMany.Discrepancies.Count -eq $ccp.convergence.maxDiscrepancies -and $ccMany.Truncated -gt 0)
+Assert 'an empty contract is never verified' (-not (Compare-ChangeContract -Policy $ccp -Items @()).Verified)
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

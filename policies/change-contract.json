@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "description": "Entry criteria, approval and convergence rules for the spec-first change path (#178). Routine work stays code-first. Cezar and the GitHub lifecycle remain the only scheduler and state owner; this file only decides which path a change takes and what evidence may close it.",
+  "specFirst": {
+    "contractKinds": ["interface", "serialization", "network", "migration", "godot-resource", "build"],
+    "labels": ["risk:high"],
+    "protectedAssets": true,
+    "minModules": 3
+  },
+  "codeFirst": {
+    "types": ["type:bug", "type:docs", "type:test", "type:maintenance"],
+    "note": "A code-first type stays code-first unless it declares a contract kind or touches a protected asset."
+  },
+  "approval": {
+    "state": "factory:design-signoff",
+    "ownerRole": "tech-lead",
+    "note": "Approval is requested only for a spec-first change; it never gates risk level alone, and the approver is checked by the lifecycle's owner role."
+  },
+  "replan": { "maxReplans": 2, "onExceeded": "factory:needs-help" },
+  "convergence": {
+    "maxDiscrepancies": 10,
+    "requiredEvidence": ["tests", "acceptance"],
+    "note": "Verified means every contract item has passing test or acceptance evidence. An agent statement is never evidence."
+  }
+}

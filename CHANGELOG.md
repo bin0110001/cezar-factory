@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Spec-first change contracts (#178). `policies/change-contract.json`, `scripts/change-contract-lib.ps1`, `templates/change-contract.md` and `docs/spec-first.md` add an optional path for changes that declare a contract kind, touch a protected asset, span three modules or carry `risk:high`; bug, docs, test and maintenance work stays code-first with no approval. A contract is pinned to an approved SHA and is stale when the target branch changed a path it covers; replans are capped; convergence is computed from recorded test and acceptance evidence and yields bounded follow-up discrepancies, never an LLM-certified pass. No scheduler or state owner is added, and nothing is wired into a workflow yet.
+
 - Cezar's scheduler lane gate and its decision states are pinned to the lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). A Cezar test fails when `PRE_READY_LANE_LABELS` differs from the states the policy puts in the Inbox and Refinement lanes, or when `DECISION_STATES` differs from the policy's human states or no longer lets a person send an issue back to the resume state. Two constants are now exported for it; nothing changes at run time.
 
 - The lifecycle policy now declares each state's backlog lane (`STABILIZATION-PLAN.md` item 1.4f, in part). Every state in the standard profile of `policies/lifecycle.json` carries a `lane`, and a Cezar test fails when the state-to-lane table in `server/backlog/migrate.ts` differs from it. Nothing changes at run time; the table stays in the server, but it can no longer drift from the policy unnoticed. Reading the lanes from the policy at run time, and the browser's lane columns, are still open.
