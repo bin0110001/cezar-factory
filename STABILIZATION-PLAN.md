@@ -199,7 +199,7 @@ one list and be missing from the list that would have given it a consumer.
 
 ## Phase 3: turn it back on and prove it
 
-- [ ] **3.1 Owner decision: re-enable the implement and fix automations** (`ready-to-implement-*`,
+- [ ] **3.1 Owner decision: re-enable the implement and fix automations (implement done by the owner at 02:37Z; `changes-requested` still off)** (`ready-to-implement-*`,
   `changes-requested`), one at a time. They were paused on 2026-11-07 for Claude token cost; while they
   are off, nothing in `factory:ready` can move regardless of everything above.
 - [ ] **3.2 Order the queue**: stabilization issues ahead of features (backlog priority), so re-enabling
@@ -389,3 +389,31 @@ Then the feature backlog reopens.
   that differs between two spellings of the same route, and an `EBUSY` removing a temp directory). Separately, vitest here
   fails with "failed to find the runner" when launched from Git Bash, which hands it the working directory as `d:/...`
   instead of `D:/...`; launching from PowerShell with the uppercase path works.
+- 2026-11-13: what is left of 1.4f, with locations, for whoever picks it up. Cezar still keeps its own copies of the
+  lifecycle in: `automations/scheduler.ts:83` (`PRE_READY_LANE_LABELS`, the lane gate), `server/backlog/migrate.ts:24`
+  (a state-to-lane table), `web/src/routes/backlog.tsx:24` (the lane columns), `server/decisions/decisions.ts:29`
+  (`RESUME_STATE`, where an answered decision returns to) with `contract/src/decisions.ts:78` (a literal in the response
+  schema), and `workspace/lifecycle-cli.ts:419` (a full state list). The lanes and the decision resume state are product
+  behaviour spanning the server, the contract schema and the web app, so moving them onto the policy means adding a
+  `lane` field to it and serving it to the browser; that is a design step, not a quick edit. `lifecycle-cli.ts:419` is the
+  one small, self-contained conversion.
+- 2026-11-13 03:43Z: batch 17 (`ca72383`) reached `stable-deployed`; Cezar restarted and came back healthy, the stall endpoint
+  answers on the new code, promoter health `ok`. Observed on the host at the same time, not done by this session: the three
+  `[factory] ready-to-implement-*` automations are enabled, with baselines 02:37:32Z to 02:37:35Z (so, as designed, enabling
+  baselined to now and launched no backlog). The stall verdict moved from "8 can progress, 59 stuck" (43 of them `no-consumer`) to
+  "53 can progress, 10 stuck" because `factory:ready` now has a consumer. Two consequences to decide on, both the owner's:
+  (1) `[factory] changes-requested` is still disabled. With implement on, a pull request that the review automation sends back
+  lands at `factory:changes-requested` with no consumer and waits there until the stall report lists it. It needs enabling with
+  the others. (2) The hourly stale refresher re-triggers the two least-recently-touched `factory:ready` issues, so with implement
+  on it will start roughly two implement runs an hour from the feature backlog, at the 170,000 to 450,000 tokens each that item
+  0.12 recorded, and a spent Claude limit fails the maintenance run and the promotion canary. If that is more than wanted, the
+  throttle is the refresher's `-Limit` (default 2, in `workflows/maintenance.yaml`) or leaving some `ready` issues in another
+  state; both are repository changes I can make on request.
+- 2026-11-13: batch 18 converts `workspace/lifecycle-cli.ts` (the post-merge label reconcile) to the policy: it removes every
+  state label the project's `policies/lifecycle.json` defines (so `factory:pr-open`, `factory:implemented` and any profile-only
+  state go too) and falls back to the old list when the policy is unreadable. The lanes and the decision resume state in
+  Cezar remain, as described above. What is left in this plan needs the owner or elapsed time: 0.6, 0.11 and 0.12 (host),
+  3.1 and 3.4 (decisions), 3.2 and 3.3 (after 3.1), and the exit criteria (seven days, ten candidates); 1.4c's router and
+  2.10's sandbox canary are each a separate design-sized batch.
+- 2026-11-13: batch 19 adds a suite test that `route-state.ps1` and the model declare the same transitions, in both directions (1.4c). The router still holds its transitions in code; making it execute the model is not done, but a mismatch now fails before merge. The single exception is `already-resolved`, which moves any issue to `factory:done`.
+- 2026-11-13: found while validating batch 19: `0186a841c` (PR #478, which restarted Cezar on deploy) failed with "container state improper" and counted toward the breaker, because 0.9 only treated exit 137 and 143 as a killed check. `podman exec` into a stopped container exits 255. Batch 19 adds that case to the interruption rule. The failed record for `0186a841c` is for the owner to clear (`reset-breaker`) or leave; the next merge is a new candidate.
