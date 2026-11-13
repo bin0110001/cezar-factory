@@ -14,6 +14,7 @@
       "states": {
         "factory:new": {
           "kind": "automated",
+          "lane": "Inbox",
           "owner": { "workflow": "factory-intake" },
           "exits": [
             { "to": "factory:needs-plan", "on": "intake-result" },
@@ -24,6 +25,7 @@
         },
         "factory:needs-plan": {
           "kind": "automated",
+          "lane": "Refinement",
           "owner": { "workflow": "factory-plan" },
           "exits": [
             { "to": "factory:ready", "on": "plan-result" },
@@ -35,6 +37,7 @@
         },
         "factory:ready": {
           "kind": "automated",
+          "lane": "Ready",
           "owner": { "workflow": "factory-implement" },
           "requires": { "exactlyOne": "complexity", "otherwise": "factory:needs-plan" },
           "exits": [
@@ -46,6 +49,7 @@
         },
         "factory:working": {
           "kind": "in-run",
+          "lane": "Active",
           "owner": { "workflows": ["factory-implement", "factory-fix-review"] },
           "exits": [
             { "to": "factory:review", "on": "implement-result" },
@@ -57,6 +61,7 @@
         },
         "factory:review": {
           "kind": "automated",
+          "lane": "Review",
           "inFlight": true,
           "owner": { "workflow": "factory-review" },
           "exits": [
@@ -70,6 +75,7 @@
         },
         "factory:changes-requested": {
           "kind": "automated",
+          "lane": "Active",
           "inFlight": true,
           "owner": { "workflow": "factory-fix-review" },
           "exits": [
@@ -80,6 +86,7 @@
         },
         "factory:investigate": {
           "kind": "automated",
+          "lane": "Inbox",
           "owner": { "workflow": "factory-investigate" },
           "exits": [
             { "to": "factory:ready", "on": "investigate-result" },
@@ -101,6 +108,7 @@
         },
         "factory:human-review": {
           "kind": "human",
+          "lane": "Review",
           "owner": { "role": "owner" },
           "exits": [
             { "to": "factory:needs-plan", "on": "manual" }
@@ -121,6 +129,7 @@
         },
         "factory:implemented": {
           "kind": "delivery",
+          "lane": "Review",
           "owner": { "workflow": "factory-maintenance" },
           "exits": [
             { "to": "factory:pr-open", "on": "delivery-sync" }
@@ -130,6 +139,7 @@
         },
         "factory:pr-open": {
           "kind": "delivery",
+          "lane": "Review",
           "owner": { "workflow": "factory-maintenance" },
           "exits": [
             { "to": "factory:done", "on": "delivery-sync" }
@@ -138,7 +148,8 @@
           "onTimeout": "report"
         },
         "factory:done": {
-          "kind": "terminal"
+          "kind": "terminal",
+          "lane": "Done"
         }
       }
     },

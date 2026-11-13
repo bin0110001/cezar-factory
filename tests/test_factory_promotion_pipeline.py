@@ -318,6 +318,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once()["status"], "healthy")  # same SHA, validated again
         self.assertEqual(attempts.read_text(), "2")
 
+    def test_a_check_run_while_the_container_is_down_is_retried_not_counted(self):
+        scheduler = self.build()
+        attempts = pathlib.Path(self.tmp.name) / "attempts-down"
+        script = (f"import pathlib,sys;p=pathlib.Path(r'{attempts}');n=int(p.read_text()) if p.exists() else 0;p.write_text(str(n+1));"
+                  "n == 0 and (print('Error: can only create exec sessions on running containers: container state improper', file=sys.stderr) or sys.exit(255))")
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", script]
+        self.assertEqual(scheduler.run_once()["status"], "interrupted")
+        self.assertEqual((scheduler.breaker.failures(), self.gh.issues), (0, []))
+        self.assertEqual(scheduler.run_once()["status"], "healthy")
+
     def test_a_check_that_is_killed_every_time_fails_after_the_retry_budget(self):
         scheduler = self.build()
         scheduler.config["checks"][0]["command"] = [sys.executable, "-c", "raise SystemExit(137)"]

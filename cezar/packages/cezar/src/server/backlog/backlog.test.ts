@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { decodeBacklogMetadata, encodeBacklogMetadata, upsertBacklogMetadata } from './github-metadata.ts';
-import { migrateFromLabels, priorityFromLabel } from './migrate.ts';
+import { LANE_BY_STATE, migrateFromLabels, priorityFromLabel } from './migrate.ts';
 import { DEFAULT_FIELDS, isAllowedTransition, workflowEligibility } from './model.ts';
 import { compareRank, isValidRank, rankBetween, spreadRanks } from './rank.ts';
 import { BacklogError, BacklogStore } from './store.ts';
@@ -246,5 +249,15 @@ describe('GitHub reconciliation', () => {
     expect(s.applyRemote(REPO, 1, remoteBody({ basePriority: 'P4' }, 2))).toEqual({ outcome: 'unchanged' });
     expect(s.get(REPO, 1)!.basePriority).toBe('P1');
     expect(s.applyRemote(REPO, 1, 'no block')).toEqual({ outcome: 'no-remote-metadata' });
+  });
+});
+
+describe('lane table and the Factory lifecycle policy', () => {
+  it('gives every state the lane the standard profile declares, and no other', () => {
+    const policy = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../../policies/lifecycle.json'), 'utf8')) as {
+      profiles: { standard: { states: Record<string, { lane?: string }> } };
+    };
+    const declared = Object.fromEntries(Object.entries(policy.profiles.standard.states).flatMap(([label, state]) => (state.lane ? [[label, state.lane]] : [])));
+    expect(LANE_BY_STATE).toEqual(declared);
   });
 });
