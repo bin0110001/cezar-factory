@@ -348,9 +348,13 @@ Then the feature backlog reopens.
   the `priority:<n>` label orders what is admitted (3.2).
 - 2026-11-12 23:05Z: 2.11 root cause. Cezar loads a project's own `.ai/cezar/workflows` before a release's workflows
   (`workflows/load.ts`: the repo's files shadow shared ones of the same name). On the host,
-  `/projects/cezar-factory/.ai/cezar/workflows` is a symlink (created 2024-10-24) to the checkout's own `workflows/`, which is
+  `/projects/cezar-factory/.ai/cezar/workflows` is a symlink (created 2026-10-24) to the checkout's own `workflows/`, which is
   `stable`. So for the Factory project itself every run, canaries included, uses `stable`'s workflow files with the
   candidate's scripts, and a change to a workflow file is first exercised by the first scheduled run after `stable` moves.
   The fix is on the host, not in the repo: remove that symlink so the release's own `workflows/` is used (reversible with
   `ln -s ../../workflows .ai/cezar/workflows`; check first that Cezar does not recreate it on restart). The workflow
   contract test and the table-driven smoke cover a workflow change before merge in the meantime.
+- 2026-11-12: batch 14 moves three more scripts off their own copy of the state list (1.4c). What remains on the ratchet
+  allowlist is 14 scripts that name individual states as transitions or routing (`route-state.ps1`'s `Set-State`, the
+  watchdog's route to investigate, intake's exclusions); those are logic, and moving them means making the router itself
+  model-driven, which 1.4e began for plan-result only. 1.4c stays open for that. Also corrected the symlink date above: 2026.
