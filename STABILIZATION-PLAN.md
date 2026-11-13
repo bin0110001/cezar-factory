@@ -188,7 +188,7 @@ one list and be missing from the list that would have given it a consumer.
 - [x] **2.8 Canaries do not roll back on transient GitHub errors** (rate limit, truncated output):
   inconclusive, retry.
 - [x] **2.9 A candidate with no changed paths is not a failure** and does not count toward the breaker.
-- [ ] **2.10 Fixture canary for plan, implement, review** against a sandbox repository, the largest
+- [x] **2.10 Fixture canary for plan, implement, review (model-free form: the router, the real `gh` and a sandbox repository; the agent steps are not rehearsed)** against a sandbox repository, the largest
   remaining blind spot.
 
 - [x] **2.11 A canary runs the new scripts with the old workflow definition (fixed on the host with the owner's approval).** The maintenance canary for `941134a`
@@ -199,7 +199,7 @@ one list and be missing from the list that would have given it a consumer.
 
 ## Phase 3: turn it back on and prove it
 
-- [ ] **3.1 Owner decision: re-enable the implement and fix automations (implement done by the owner at 02:37Z; `changes-requested` still off)** (`ready-to-implement-*`,
+- [x] **3.1 Owner decision: re-enable the implement and fix automations (implement enabled by the owner at 02:37Z; `changes-requested` enabled 2026-11-13 at the owner's direction; refresher limit lowered to 1 an hour)** (`ready-to-implement-*`,
   `changes-requested`), one at a time. They were paused on 2026-11-07 for Claude token cost; while they
   are off, nothing in `factory:ready` can move regardless of everything above.
 - [ ] **3.2 Order the queue**: stabilization issues ahead of features (backlog priority), so re-enabling
@@ -420,3 +420,5 @@ Then the feature backlog reopens.
 - 2026-11-13: batch 20 puts each state's backlog lane in the policy and pins Cezar's `LANE_BY_STATE` to it with a test (1.4f). Still open there: the lane gate in `automations/scheduler.ts`, the browser's lane columns, and the decision resume state, which need the policy served to the web app.
 - 2026-11-13: batch 20 (`1bf0c295a`) reached `stable-deployed`; health `ok`, failure count back to 0 (the activation timeout on `917c4c3aa` was transient). Batch 21 pins the scheduler lane gate and the decision states to the policy with a Cezar test. What is left of 1.4f is reading the policy at run time and serving it to the web app for the lane columns.
 - 2026-11-13: batch 22 delivers 2.10 in its model-free form, with the owner's approval to create the sandbox: private repository `bin0110001/cezar-factory-sandbox`. The `fixture-lifecycle` canary runs intake, plan, start and implement through the real router and the real `gh` and checks each state against the lifecycle model; two live runs passed on the first try (issues #1 and #2 there, closed). It does not run the agent steps, so a model-backed rehearsal of plan, implement and review remains out of reach without spending tokens; if the owner wants that, it is a second canary on the same sandbox. First host run is the promotion of this batch: if the container's `gh` credential cannot reach the sandbox, that canary fails and rolls the candidate back, and the reason will say so.
+- 2026-11-13: batch 22 (`938468322`) reached `stable-deployed`, so the `fixture-lifecycle` canary ran on the host against the sandbox and the candidate stayed healthy. 2.10 is ticked in its model-free form.
+- 2026-11-13: owner decisions applied. 3.1: `[factory] changes-requested` enabled through the Cezar API (revision 46 to 47; it baselines to now, so it launches no backlog), and the hourly stale refresher's `-Limit` is 1 in `workflows/maintenance.yaml` (batch 24), so the feature backlog starts about one implement run an hour. 3.4: #115 decided (an in-repo fixture is an acceptable non-Godot pilot; comment on the issue, implementation stays in the feature backlog). #39 is checked in part: the registry on the dev machine has one target and its adapter defines changed, full and verify; the Bazzite host's own registry was not read from here, so that stays open for someone on the host. 3.4 is therefore not ticked.
