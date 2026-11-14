@@ -166,12 +166,10 @@ export const sessionControlTraceEventSchema = z.object({
 export type SessionControlTraceEvent = z.infer<typeof sessionControlTraceEventSchema>;
 
 function safeOrigin(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin.slice(0, 256) : undefined;
-  } catch {
-    return undefined;
-  }
+  // No `URL` global in this package's lib (it is runtime-neutral), so match the origin directly.
+  const match = /^(https?):\/\/([^\s/?#@]+)(?:[/?#]|$)/i.exec(value);
+  if (!match) return undefined;
+  return `${match[1]!.toLowerCase()}://${match[2]!.toLowerCase()}`.slice(0, 256);
 }
 
 /** Reduces an action to bounded, non-sensitive trace parameters. */
