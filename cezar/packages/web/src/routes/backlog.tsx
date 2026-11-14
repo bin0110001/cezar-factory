@@ -5,29 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BacklogDependencyMap } from '@/components/backlog-dependency-map'
+import { LANE_TRIGGER_LABELS, LANE_WORK } from './backlog-lanes'
 import { editBacklogIssue, getAutomations, getBacklog, getBacklogRecommendation, type BacklogCardData } from '@/api/client'
 
 const key = ['backlog'] as const
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3', 'P4', 'unset'] as const
-const LANE_WORK: Record<string, string> = {
-  Inbox: 'intake and investigation',
-  Backlog: 'triage',
-  Refinement: 'planning',
-  Ready: 'implementation',
-  Active: 'in progress and requested fixes',
-  Review: 'review',
-  Done: 'complete',
-}
-const LANE_TRIGGER_LABELS: Record<string, string[]> = {
-  Inbox: ['factory:new', 'factory:investigate'],
-  Backlog: [],
-  Refinement: ['factory:needs-plan'],
-  Ready: ['factory:ready'],
-  Active: ['factory:changes-requested'],
-  Review: ['factory:review'],
-  Done: [],
-}
-
 function statusTone(kind: BacklogCardData['status']['kind']): string {
   if (kind === 'dispatchable' || kind === 'running') return 'text-emerald-600'
   if (kind === 'deferred') return 'text-pending-strong'
