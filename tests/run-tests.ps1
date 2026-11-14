@@ -159,12 +159,9 @@ Assert 'backlog audit documents read-only collector and deterministic preparatio
 Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
 Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
-Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'maintenance watchdog covers issue runs: implement and fix runs are routed to investigate, plan, review and investigate runs are only cancelled' ($maintenanceWorkflow -match '(?s)id: watchdog-issue-runs.*-MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review [^&]*-RouteCancelledRuns && .*-MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "\$CEZ_TASK_ID";')
-Assert 'maintenance ends by verifying the run made no commit, and tells the agent step not to' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$' -and $maintenanceWorkflow -match 'Do not commit, push, create a branch or open a pull request')
-Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
-Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
+Assert 'maintenance ends by verifying the run made no commit' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$')
+Assert 'maintenance has no model step: no agent skill and no model probe, so a spent model limit cannot fail the run or the promotion canary' ($maintenanceWorkflow -notmatch '(?m)^\s+skill:' -and $maintenanceWorkflow -notmatch 'id: model-check' -and $maintenanceWorkflow -notmatch 'id: backlog-label-audit')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $planSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
@@ -194,6 +191,13 @@ Assert 'Codex and Claude hook fragments connect session start/stop to verified w
 Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 $testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+# Every Factory change bumps VERSION and CHANGELOG.md. A path with no focused owner expands to the whole suite inside the
+# implement run, which cost three six-minute attempts and failed a correct docs-only change (fixture issue #528,
+# STABILIZATION-PLAN.md item 3.3). Both must have an owner in the ownership map.
+foreach ($routine in 'VERSION', 'CHANGELOG.md') {
+    $owned = @($testOwnership.checks | Where-Object { $check = $_; @($check.patterns | Where-Object { $routine -match ('^' + [regex]::Escape([string]$_).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$') }).Count })
+    Assert "$routine has a focused test owner, so a routine bump does not expand to the full suite" ($owned.Count -ge 1)
+}
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
 Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
@@ -272,7 +276,6 @@ Assert 'maintenance recovery uses Cezar loopback API and selected worktree ident
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
-Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
 $auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
 Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 $scriptOwnershipViolations = @()
@@ -702,10 +705,35 @@ try {
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
+# The router executes the model (STABILIZATION-PLAN.md item 1.4c): it names no lifecycle state itself, asks the model which
+# states may receive an event (Get-EventSources) and where each named outcome leads (Get-Outcome). Every event the router
+# handles must have a source, every outcome it asks for must resolve to exactly one state, and every model exit for one of
+# its events must carry an outcome, or the router could never take it.
+$routerText = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
+$routerSwitch = $routerText.Substring($routerText.IndexOf('switch ($Event) {'))
+$routerDrift = @()
+$routerEvents = @([regex]::Matches($routerSwitch, "(?m)^    '([a-z-]+)' \{") | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'already-resolved' })
+foreach ($evt in $routerEvents) {
+    $sources = @($lifecycle.States.Keys | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_ -and $_['on'] -eq $evt }).Count })
+    if (-not $sources.Count) { $routerDrift += "the model has no state that receives $evt" }
+}
+foreach ($m in [regex]::Matches($routerSwitch, "Get-Outcome '([a-z-]+)' '([a-z-]+)'")) {
+    $evt = $m.Groups[1].Value; $name = $m.Groups[2].Value
+    $targets = @($lifecycle.States.Keys | ForEach-Object { @($lifecycle.States[$_]['exits']) | Where-Object { $_ -and $_['on'] -eq $evt -and $_['outcome'] -eq $name -and -not $_.Contains('when') } | ForEach-Object { [string]$_['to'] } } | Select-Object -Unique)
+    if ($targets.Count -ne 1) { $routerDrift += "$evt outcome '$name' resolves to $($targets.Count) states in the model" }
+}
+foreach ($stateName in $lifecycle.States.Keys) {
+    foreach ($exit in @($lifecycle.States[$stateName]['exits'] | Where-Object { $_ })) {
+        if ($routerEvents -contains [string]$exit['on'] -and -not $exit.Contains('when') -and -not $exit['outcome']) { $routerDrift += "model exit $stateName -> $($exit['to']) on $($exit['on']) has no outcome, so route-state.ps1 cannot take it" }
+    }
+}
+$routerDrift | ForEach-Object { Write-Host "    $_" }
+Assert 'route-state.ps1 takes every transition from the lifecycle model' ($routerEvents.Count -ge 6 -and -not $routerDrift.Count -and $routerSwitch -notmatch "'factory:[a-z-]+'")
+
 # The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
 # are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
 # script that needs to know the states asks scripts/lifecycle-lib.ps1.
-$stateLiteralAllowlist = 'route-state.ps1', 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
+$stateLiteralAllowlist = 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
 $stateLiteralPattern = "'(" + ((@($lifecycle.States.Keys) | ForEach-Object { [regex]::Escape($_) }) -join '|') + ")'"
 $stateLiteralFiles = @(Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match $stateLiteralPattern } | ForEach-Object { $_.Name })
 $newStateLiteralFiles = @($stateLiteralFiles | Where-Object { $stateLiteralAllowlist -notcontains $_ })
@@ -887,9 +915,10 @@ try {
             '23' = @{ state = 'OPEN'; labels = @('type:feature'); comments = @() }
             '24' = @{ state = 'OPEN'; labels = @('factory:tracking', 'factory:working'); comments = @() }
             '25' = @{ state = 'OPEN'; labels = @('factory:pr-open'); comments = @() }
-            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }        }
+            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }
+            '27' = @{ state = 'OPEN'; labels = @('factory:working', 'type:maintenance'); comments = @() }        }
         openPrs = @(
-            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25' }
+            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25, closes #27' }
             @{ number = 21; url = 'https://example/pull/21'; title = 'Draft'; isDraft = $true; body = 'Closes #26' }
         )
         failClose = @()
@@ -903,6 +932,7 @@ try {
     Assert 'merged-to-dev PR closes its referenced open issues and sets factory:done' ($closeRun.Code -eq 0 -and $closeAfter.issues['1'].state -eq 'CLOSED' -and $closeAfter.issues['1'].labels -contains 'factory:done' -and $closeAfter.issues['1'].labels -notcontains 'factory:review' -and $closeAfter.issues['8'].state -eq 'CLOSED')
     Assert 'close step skips tracking epics, human-reopened issues, code/comment/non-closing references, and PRs past the lookback' ($closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['5'].state -eq 'OPEN' -and -not (@($closeAfter.calls) -match 'issue view (3|6|7|9) ') -and @($closeResult.closed.issue) -join ',' -eq '1,8')
     Assert 'open non-draft PR moves pre-PR issues to factory:pr-open and never overwrites review, tracking, or draft-PR issues' ($closeAfter.issues['21'].labels -contains 'factory:pr-open' -and $closeAfter.issues['21'].labels -notcontains 'factory:working' -and $closeAfter.issues['21'].labels -contains 'factory:interactive' -and $closeAfter.issues['23'].labels -contains 'factory:pr-open' -and $closeAfter.issues['22'].labels -contains 'factory:review' -and $closeAfter.issues['22'].labels -notcontains 'factory:pr-open' -and $closeAfter.issues['24'].labels -contains 'factory:working' -and $closeAfter.issues['26'].labels -contains 'factory:working' -and @($closeResult.promoted.issue) -join ',' -eq '21,23' -and $closeAfter.labelsEnsured -contains 'factory:pr-open')
+    Assert 'a PR does not claim an issue that a Factory run owns (working without interactive), so review and the run watchdog still route it' ($closeAfter.issues['27'].labels -contains 'factory:working' -and $closeAfter.issues['27'].labels -notcontains 'factory:pr-open' -and @($closeResult.skipped | Where-Object { $_.issue -eq 27 -and $_.reason -eq 'owned-by-factory-run' }).Count -eq 1)
     $closeRerun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
     Assert 'close step is idempotent' ($closeRerun.Code -eq 0 -and @((Get-Content -Raw $closeOut | ConvertFrom-Json).closed).Count -eq 0)
     $closeAfter.prs = @(@{ number = 11; url = 'https://example/pull/11'; title = 'Two'; mergedAt = $recent; body = 'Closes #11 and closes #12' })
@@ -951,13 +981,14 @@ try {
             '3' = @{ state = 'OPEN'; labels = @('factory:needs-plan'); comments = @(); createdAt = '2026-01-03T00:00:00Z'; updatedAt = '2026-03-02T00:00:00Z' }
             '4' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); createdAt = '2026-01-04T00:00:00Z'; updatedAt = [DateTimeOffset]::UtcNow.ToString('o') }
             '5' = @{ state = 'OPEN'; labels = @('factory:blocked'); comments = @(); createdAt = '2026-01-01T00:00:00Z'; updatedAt = '2026-02-01T00:00:00Z' }
+            '6' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small', 'priority:0'); comments = @(); createdAt = '2026-01-06T00:00:00Z'; updatedAt = '2026-03-04T00:00:00Z' }
         } } | ConvertTo-Json -Depth 8 | Set-Content $closeState
     $refreshOut = Join-Path $tmp 'stale-refresh.json'
     $refreshRun = Run 'refresh-stale-workable.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $refreshOut }
     if ($refreshRun.Code -ne 0) { Write-Host $refreshRun.Out }
     $refresh = Get-Content -Raw $refreshOut | ConvertFrom-Json
-    Assert 'stale refresher takes the least recently touched workable issues first, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '2,3')
-    Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 3 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
+    Assert 'stale refresher takes a priority:0 issue first, then the least recently touched, not the oldest by creation' ($refreshRun.Code -eq 0 -and (@($refresh.refreshed | ForEach-Object { $_.issue }) -join ',') -eq '6,2')
+    Assert 'stale refresher leaves a recently touched issue and a human-owned state alone' ($refresh.eligible -eq 4 -and @($refresh.excluded | Where-Object { $_.issue -eq 5 -and $_.reason -eq 'manual-or-terminal-state' }).Count -eq 1)
 
     # A housekeeping run must leave no commit. The run branch is created when the run starts, so anything
     # after the branch's first reflog entry was committed by the run.
@@ -1097,7 +1128,12 @@ try {
             Assert 'backlog proposal orders ready work and reports lease exclusion' (@($proposal.actions).Count -eq 2 -and $proposal.actions[0].issue -eq 4 -and @($proposal.excludedIssues | Where-Object { $_.issue -eq 3 -and $_.reason -eq 'active-lease' }).Count -eq 1)
         }
     }
-    foreach ($fx in Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory) {
+    # fixtures/ also contains data-only inputs (for example routing-eval). Only
+    # project fixtures with an installed Factory config belong in this loop.
+    $projectFixtures = @(Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName '.ai/factory/factory.config.yaml') -PathType Leaf
+    })
+    foreach ($fx in $projectFixtures) {
         Write-Host "== fixture $($fx.Name) =="
         $proj = Join-Path $tmp $fx.Name
         Copy-Item $fx.FullName $proj -Recurse
@@ -1793,7 +1829,11 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
-$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
+$python3Command = Get-Command python3 -ErrorAction SilentlyContinue
+$pythonRunner = if ($python3Command -and $python3Command.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]') { 'python3' } elseif ($python3Command) {
+    $installedPython = @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]|[\\/]WindowsApps[\\/]' } | Select-Object -First 1)
+    if ($installedPython) { $installedPython[0].Source } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python3' }
+} elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
 $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') }
     Push-Location $factory
@@ -2209,7 +2249,7 @@ Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
 Assert 'model probe fails fast on a host that is up but not generating, retries transients, and never leaks the key' ($LASTEXITCODE -eq 0)
-$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'maintenance', 'environment-analysis', 'godot-upgrade')
+$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'environment-analysis', 'godot-upgrade')
 $unprobed = @($agentWorkflows | Where-Object {
     $wf = Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")
     # The probe must run after startup and before the first agent step, and startup must preflight the script.
@@ -2219,7 +2259,7 @@ $unprobed = @($agentWorkflows | Where-Object {
 })
 Assert "every agent workflow probes the model endpoint before its first agent step ($($unprobed -join ', '))" ($unprobed.Count -eq 0)
 $maintenanceText = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance runs its watchdog and housekeeping before the model probe, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: watchdog') -lt $maintenanceText.IndexOf('id: model-check') -and $maintenanceText.IndexOf('id: intake-route') -lt $maintenanceText.IndexOf('id: model-check'))
+Assert 'maintenance has no model probe: the watchdog and intake routing run without a model, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: intake-route') -gt $maintenanceText.IndexOf('id: watchdog') -and $maintenanceText -notmatch 'id: model-check')
 $promScrape = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus.yml')
 $promAlerts = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus-alerts.yml')
 $promCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')

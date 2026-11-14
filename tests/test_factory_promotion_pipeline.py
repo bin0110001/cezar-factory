@@ -318,6 +318,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once()["status"], "healthy")  # same SHA, validated again
         self.assertEqual(attempts.read_text(), "2")
 
+    def test_a_check_run_while_the_container_is_down_is_retried_not_counted(self):
+        scheduler = self.build()
+        attempts = pathlib.Path(self.tmp.name) / "attempts-down"
+        script = (f"import pathlib,sys;p=pathlib.Path(r'{attempts}');n=int(p.read_text()) if p.exists() else 0;p.write_text(str(n+1));"
+                  "n == 0 and (print('Error: can only create exec sessions on running containers: container state improper', file=sys.stderr) or sys.exit(255))")
+        scheduler.config["checks"][0]["command"] = [sys.executable, "-c", script]
+        self.assertEqual(scheduler.run_once()["status"], "interrupted")
+        self.assertEqual((scheduler.breaker.failures(), self.gh.issues), (0, []))
+        self.assertEqual(scheduler.run_once()["status"], "healthy")
+
     def test_a_check_that_is_killed_every_time_fails_after_the_retry_budget(self):
         scheduler = self.build()
         scheduler.config["checks"][0]["command"] = [sys.executable, "-c", "raise SystemExit(137)"]
@@ -442,6 +452,26 @@ class PipelineTests(unittest.TestCase):
         report = scheduler.drift()
         self.assertEqual(report["status"], "drift")
         self.assertTrue(any("lags origin/stable" in f for f in report["findings"]))
+
+    def test_lagging_stable_pointer_names_the_stalled_step_and_is_retried(self):
+        subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
+        scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
+        (scheduler.controller.channels / "stable.json").write_text(json.dumps({"currentSha": self.base_sha}), encoding="utf-8")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'healthy', ?)", (self.sha, "2026-01-01T00:00:00Z"))
+        scheduler._set_stage(self.sha, "stable-promoted", deploy_attempts=2)
+        scheduler._state_put("last_stable_deploy_error", f"{self.sha}|Cezar busy")
+        git(self.repo, "checkout", "-q", "--detach", self.base_sha)
+        report = scheduler.drift()
+        text = "; ".join(report["findings"])
+        self.assertIn("deploy pending after 2 attempt(s)", text)
+        self.assertIn("last deploy error: Cezar busy", text)
+        calls = []
+        scheduler._deploy_stable = lambda sha: (calls.append(sha) or (True, "ok"))
+        result = scheduler._reconcile_stable()
+        self.assertEqual(calls, [self.sha])
+        self.assertEqual(result["status"], "stable-reconciled")
+        self.assertEqual(scheduler._row(self.sha)["stage"], scheduler.FINAL_STAGE)
 
     def test_no_drift_when_everything_agrees(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.base_sha}:refs/heads/stable"], check=True, capture_output=True)

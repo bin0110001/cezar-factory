@@ -5,6 +5,10 @@ description: Recover and merge explicitly assigned, non-draft pull requests whos
 
 # Factory orphaned pull request recovery
 
+This is recovery guidance for a PR whose originating job has ended or disappeared,
+not the routine handoff for an active implement/fix job. Active jobs retain ownership
+through merge; an open PR must not be left for this recovery process by default.
+
 Use this skill when a maintainer explicitly assigns recovery of an open pull
 request whose original job has ended, disappeared, or cannot complete its own
 integration. It is not a bulk merge shortcut: every pull request is reconciled,

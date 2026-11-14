@@ -18,7 +18,8 @@ export function priorityFromLabel(label: string): BasePriority | null {
   return NUMERIC_PRIORITY[Math.max(0, Math.min(4, Number(numeric[1])))] ?? null;
 }
 
-const LANE_BY_STATE: Record<string, BacklogLane> = {
+/** Kept in step with the `lane` of each state in `policies/lifecycle.json` by `backlog.test.ts`. */
+export const LANE_BY_STATE: Record<string, BacklogLane> = {
   'factory:new': 'Inbox',
   'factory:investigate': 'Inbox',
   'factory:needs-plan': 'Refinement',
