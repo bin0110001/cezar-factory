@@ -4,7 +4,7 @@ import {
   GraphicalPolicyError, GraphicalSessionLedger, assertSafeContainerArgv, boundImageEvidence, breachFailureReason,
   buildContainerArgv, enforceRuntimeLimits, graphicalContainerPolicySchema, redactClipboard, redactDiagnostics,
   type GraphicalContainerPolicy,
-} from './graphical-container-policy';
+} from './graphical-container-policy.js';
 
 const policy: GraphicalContainerPolicy = graphicalContainerPolicySchema.parse({
   image: 'localhost/cezar-gfx:1',
