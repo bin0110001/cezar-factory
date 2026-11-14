@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The static parse and portability checks match their `.ai`/`.factory`/`node_modules` exclusions against the path below the scanned root, not the absolute path. A run worktree's temp directory sits under `.ai/cezar/tmp`, so the suite's seeded fixtures were skipped and two assertions failed there (`contract check reports a script with a syntax error`, the portability check): the unexplained in-run exit 1 noted below (`STABILIZATION-PLAN.md` item 3.3).
+
 - `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
 
 - The delivery sync no longer claims an issue that a Factory run owns (`STABILIZATION-PLAN.md` item 3.3). `sync-issue-delivery.ps1` moved any open, non-draft PR's referenced issue from a pre-PR state to `factory:pr-open`, and `factory:working` counted as pre-PR. For fixture issue #528 that took an issue whose implement run had failed its tests (the agent had already opened PR #529) from `working` straight to `pr-open`: review and the run watchdog were skipped, and nothing merges a PR at `pr-open`. An issue at `factory:working` without `factory:interactive` is now skipped (`owned-by-factory-run` in the result); work finished in a dev window, which carries `interactive`, is claimed as before. Test added.
