@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Project-scoped documentation search/read adapter for agents (#177). `scripts/docs/search.py` is a backend-neutral `docs_search`/`docs_read` layer with per-identity project/repo/ref authorisation before retrieval, bounded anchored snippets carrying source SHA, freshness and an evidence link, timeout/retry/cache, checked-in-doc fallback, untrusted-text neutralisation, licensed-path exclusion and a secret-free audit with latency/size metrics. Contract and agent guidance in `integrations/docs-mcp/README.md`. Obot upstream registration and skill publication wait on the #175/#176 backend decision.
+
 ## [0.3.110] - 2026-11-14
 
 - Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
