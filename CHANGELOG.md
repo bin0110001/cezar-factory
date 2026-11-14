@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Obot Skills catalog pilot (#168): `integrations/obot-skills/catalog.json` pins a Git-backed `godot-core` bundle by commit and digest with an explicit project-type allow-list, and `scripts/obot-skills/obot_skills.py` fetches, verifies, caches (offline after warmup) and records installed refs. Non-Godot projects receive nothing; tampered, symlinked or mismatched bundles are rejected. See `docs/obot-skills-catalog.md`.
+
 - Quota-aware admission for the scheduler (#93). `scripts/capacity/quota_admission.py` checks every capacity window, cooldown and concurrency cap before dispatch, reserves capacity atomically with expiring leases, falls back to the next eligible candidate or defers with a reason and earliest retry (never fails), turns rate-limit errors into bounded jittered backoff with a retry-storm guard and configurable attempt cap, and readmits deferred jobs by priority plus aging. Unknown capacity follows a conservative or optimistic mode. Tests cover races, crashes, duplicate dispatch, multiple windows and all-exhausted. See `docs/quota-admission.md`.
 
 - Bounded coding-run lifecycle in the Cezar package (issue #131): stage order, typed failure reasons with distinct retry/wait/repair/block semantics, ledger-counted budgets, restart-safe resume planning, duplicate-delivery refusal and stale-attempt rejection, as a pure layer over the existing run ledger (see `cezar/docs/coding-run-contract.md`).
@@ -340,6 +342,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 
 - Cezar's stall detector reads the Factory's lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). It derives which `factory:*` labels are lifecycle states, which a person owns, and which mean work is in flight from `policies/lifecycle.json` (counting every profile, with `extends` applied) instead of three hard-coded sets, so an issue waiting at a profile-only state such as the `risk-gated` profile's `factory:design-signoff` is reported as waiting on a person and not as having no state label. With the shipped policy the derived sets are exactly the old constants (a test pins this); when the file is missing or invalid the detector uses the standard process as before. `factory:review` and `factory:changes-requested` carry `"inFlight": true` in the policy to keep their treatment. The Decisions screen and backlog lanes still keep their own lists.
 ### Fixed
