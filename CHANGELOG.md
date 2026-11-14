@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.111] - 2026-11-14
+
+- Bounded triage/repair loop (#105): `scripts/repair-loop-step.ps1` classifies failing impacted checks (code defect, flaky, infrastructure, untested), routes them per `policies/retry.yaml`, enforces attempt/repeat/safety/security bounds deterministically, records attempts and budget in a ledger and hands persistent failures to the audit path without creating issues or waivers. Workflow `factory-verification-repair`, docs and tests added.
+
 ## [0.3.110] - 2026-11-14
 
 - Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
@@ -316,6 +320,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.111] - 2026-11-14
+
+- Bounded triage/repair loop (#105): `scripts/repair-loop-step.ps1` classifies failing impacted checks (code defect, flaky, infrastructure, untested), routes them per `policies/retry.yaml`, enforces attempt/repeat/safety/security bounds deterministically, records attempts and budget in a ledger and hands persistent failures to the audit path without creating issues or waivers. Workflow `factory-verification-repair`, docs and tests added.
 
 - Cezar's stall detector reads the Factory's lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). It derives which `factory:*` labels are lifecycle states, which a person owns, and which mean work is in flight from `policies/lifecycle.json` (counting every profile, with `extends` applied) instead of three hard-coded sets, so an issue waiting at a profile-only state such as the `risk-gated` profile's `factory:design-signoff` is reported as waiting on a person and not as having no state label. With the shipped policy the derived sets are exactly the old constants (a test pins this); when the file is missing or invalid the detector uses the standard process as before. `factory:review` and `factory:changes-requested` carry `"inFlight": true` in the policy to keep their treatment. The Decisions screen and backlog lanes still keep their own lists.
 ### Fixed

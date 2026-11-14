@@ -1,0 +1,27 @@
+name: factory-verification-repair
+description: Bounded triage/repair loop for verification failures (#105). Deterministic controller decides each round from policies/retry.yaml; the agent only repairs when the decision says repair; only impacted checks are rerun; persistent failures stay visible and are handed to the failure-audit publication path (no issue created here).
+steps:
+  - id: startup
+    name: Prepare workflow environment
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-verification-repair -Step decide -RequiredScripts repair-loop-step.ps1,repair-loop-lib.ps1,failure-summary-lib.ps1,factory/test-changed.ps1
+    timeoutSeconds: 60
+  - id: decide-1
+    name: Classify failures and decide round 1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/repair-loop-step.ps1 -ChecksPath .factory/verification-checks.json -LedgerPath .factory/repair-ledger.json -OutputPath .factory/repair-decision.json -HandoffPath .factory/repair-loop-handoff.json
+    timeoutSeconds: 120
+  - id: repair-1
+    name: Targeted repair when the decision says repair
+    skill: factory-implement
+    prompt: |
+      Read `.factory/repair-decision.json`. Only when its `action` is `repair`, make the smallest targeted
+      change that fixes the `impactedChecks`, using the concise `summary` as your failure context (and the
+      `hindsight` recall only if it is present). For any other action make no edits. Do not change policy,
+      evidence or ledger files, do not publish issues, and do not create waivers.
+  - id: rerun-1
+    name: Rerun only the impacted checks
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Quiet
+    timeoutSeconds: 1800
+  - id: decide-2
+    name: Record the attempt outcome and decide round 2
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/repair-loop-step.ps1 -ChecksPath .factory/verification-checks.json -LedgerPath .factory/repair-ledger.json -OutputPath .factory/repair-decision.json -HandoffPath .factory/repair-loop-handoff.json
+    timeoutSeconds: 120
