@@ -116,6 +116,10 @@
   event store with strictly monotonic sequence, a pluggable emit function and an allow-list redaction layer
   (`docs/routing-events.md`).
 
+## [0.3.99] - 2026-11-13
+
+- Skill resolver core (#169). `cezar/packages/cezar/src/skill-resolver.ts` adds project-type policies (a Godot project selects Godot skills; other types select none), an explicit precedence of protected `factory-*`, project-owned, task and catalog skills (a catalog entry can never shadow a higher layer, and every denial is recorded with its reason), order-independent selection by type, tags and requirements, a per-task `skills.lock.json` that replays the exact pinned bytes on retry or resume even when the catalog changes, and a content-addressed bundle cache that is integrity-checked on read. A required skill that is neither cached nor fetchable fails before the agent starts; materialization rejects unsafe paths. It extends the existing discovery and materializer without replacing them. Not yet wired into `workflows/run.ts` or the provenance record (#64/#126), and MCP profile injection (#167) and catalog publishing (#168) remain separate.
+
 ## [0.3.66] - 2026-11-07
 
 - Add reviewed baseline promotion (`scripts/promote-baseline.ps1`: permitted, non-author approver required,
