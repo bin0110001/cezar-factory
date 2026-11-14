@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Verification CLI with stable JSON output (#107, parent #57). `scripts/verification-cli.ps1` has `run --profile quick|standard|full`, `affected --changed <paths>`, `last-failed` and `compare --baseline <runId>`; with `--json` stdout is one deterministic, key-sorted document validated by `schemas/verification-cli-output.schema.json` (`schemaVersion` 1), built only from `Invoke-VerificationQuery` pages (bounded, redacted). Failures are classified `new` or `known`; `compare` also lists `fixed`. Exit codes: 0 pass, 1 test failures, 2 usage/config, 3 internal/provider/executor error. The CLI talks to executor, history and catalog through one provider script (`--provider` or `FACTORY_VERIFICATION_PROVIDER`), so no new executor, ledger or selection engine is added; with no provider it exits 3. Docs: `docs/verification-cli.md`. Tests: `tests/verification-cli.ps1` with a fixture provider.
+
 ## [0.3.110] - 2026-11-14
 
 - Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
