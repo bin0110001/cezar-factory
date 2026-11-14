@@ -80,7 +80,7 @@ export function candidatePriority(candidate: Pick<GithubCandidate, 'labels'>): n
  * lane gate ("lane is Inbox, not Ready") is for dispatching implementation; applied to them it deadlocks the
  * lanes it is meant to drain, because only these automations can make an issue Ready.
  */
-const PRE_READY_LANE_LABELS = ['factory:new', 'factory:investigate', 'factory:needs-plan'];
+export const PRE_READY_LANE_LABELS = ['factory:new', 'factory:investigate', 'factory:needs-plan'];
 export function targetsPreReadyLane(definition: GithubAutomationDefinition): boolean {
   const { allLabels = [], changedLabels = [], anyLabels = [] } = definition.filters ?? {};
   return [...allLabels, ...changedLabels, ...anyLabels].some((label) => PRE_READY_LANE_LABELS.includes(label));

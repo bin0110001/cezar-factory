@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RoutingDatasetV1",
+  "description": "Versioned, redacted historical coding-run dataset (#137). Allow-listed fields only; missing telemetry is the string 'unknown', never an estimate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "unknownMarker", "recordCount", "records"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "unknownMarker": { "const": "unknown" },
+    "recordCount": { "type": "integer", "minimum": 0 },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runId", "category", "modelFamily", "model", "tier", "subscriptionAlias", "attempts", "durationSeconds", "validationPassed", "accepted", "merged", "inputTokens", "outputTokens", "costUsd", "routingEvents", "fallbackUsed"],
+        "properties": {
+          "runId": { "type": "string" },
+          "category": { "type": "string" },
+          "modelFamily": { "type": "string" },
+          "model": { "type": "string" },
+          "tier": { "type": "string" },
+          "subscriptionAlias": { "type": "string" },
+          "attempts": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "const": "unknown" }] },
+          "durationSeconds": { "oneOf": [{ "type": "number", "minimum": 0 }, { "const": "unknown" }] },
+          "validationPassed": { "oneOf": [{ "type": "boolean" }, { "const": "unknown" }] },
+          "accepted": { "oneOf": [{ "type": "boolean" }, { "const": "unknown" }] },
+          "merged": { "oneOf": [{ "type": "boolean" }, { "const": "unknown" }] },
+          "inputTokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "const": "unknown" }] },
+          "outputTokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "const": "unknown" }] },
+          "costUsd": { "oneOf": [{ "type": "number", "minimum": 0 }, { "const": "unknown" }] },
+          "routingEvents": { "type": "integer", "minimum": 0 },
+          "fallbackUsed": { "oneOf": [{ "type": "boolean" }, { "const": "unknown" }] }
+        }
+      }
+    }
+  }
+}

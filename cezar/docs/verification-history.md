@@ -31,3 +31,15 @@ The read view classifies a fingerprint with one recorded occurrence as new, repe
 known, and failures without a fingerprint as unknown. An episode is shown as resolved when a later
 run of the same check passes. These are read-only projections over retained run events; they do not
 change verification or baseline policy.
+
+## Visual baseline comparison
+
+`packages/cezar/src/verification/visual-baseline.ts` compares a decoded RGBA capture to a pinned
+baseline (`verificationVisualComparisonSchema`, `verificationVisualPolicySchema`). Baselines are chosen
+by renderer-fingerprint compatibility (everything but `appVersion`); a missing or incompatible baseline,
+a policy that differs from the one the baseline was approved under, or an invalid mask set returns
+`inconclusive` (unverified), never pass/fail by guess. Masks must be approved, in bounds and bounded by
+`maxMaskedRatio`; pixels outside masks always count. `authorizeChange` lets the project agent tighten
+a policy freely but requires a distinct permitted reviewer (and sign-off when configured) to relax it
+or replace an approved baseline. Deterministic metrics are authoritative; `advisory` is agent
+interpretation only. Playwright and generic (Godot) adapters share one baseline key scheme.

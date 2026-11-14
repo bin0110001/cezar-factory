@@ -1,5 +1,5 @@
 name: factory-implement
-description: Prepare a ready issue, implement it, run verification, PR, then factory:review
+description: Prepare a ready issue, implement and validate it, open a PR, then keep owning it through review and merge to dev
 steps:
   - id: startup
     name: Prepare workflow environment

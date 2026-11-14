@@ -83,6 +83,14 @@ dry-run backlog reconciliation, and writes `.factory/health-report.json`. It rep
 `failure-audit` and `backlog-reconciliation` automations. `factory-environment-analysis` is
 on-demand and host-side only.
 
+## Verify
+
+`factory-verify` (`workflows/verify.yaml`, on demand) is verification as a workflow and runs no agent. Its
+command steps are `select-scoped` (impacted checks from the ownership map plus the checks marked mandatory in
+`policies/verification.json`), `invoke-checks` (runs only those) and `policy-evaluate` (derives the verdict,
+appends it to the ledger, writes `.factory/verification/verdict.json`, and fails the run on a `fail` verdict).
+See `docs/verification-workflow.md`.
+
 ## Update contract
 
 Use `scripts/update-github-lifecycle.ps1` for operator-driven transitions:

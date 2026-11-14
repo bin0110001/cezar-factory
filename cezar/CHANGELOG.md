@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Features
+- Bounded coding-run lifecycle (#131): `workspace/coding-run-lifecycle.ts` adds the Prepare→Context→Implement→Validate→Repair→Deliver→Learn stage order, typed failure reasons (`infra`, `capacity`, `parse`, `test`, `policy`, `cancelled`, `budget-exhausted`) with distinct retry/wait/repair/block semantics, ledger-counted budgets, restart-safe resume planning, duplicate-delivery refusal and stale-attempt rejection. Additive: an optional `reason` on ledger events and `strictLifecycle` on `appendCodingRunEvent`; existing producers and stored history are unchanged.
 - Verification History now includes a 7/30/90-day reliability dashboard with deterministic failure classification, linked PR outcomes, model segmentation, evidence IDs, and coverage limits.
 - GitHub issue detail now includes bounded coding-run history with worker, agent, model, attempts, validation, commit/PR references, evidence completeness, optional Langfuse links, and permission-checked evidence downloads.
 - A Codex run whose model host goes silent is now stopped after 15 minutes with a "no output while waiting on the model (stalled)" error, instead of sitting until the 30-minute wall clock and failing as an opaque timeout. The bound counts only silence while the model is who the turn is waiting on — never a running tool call, a pending question, or the gap between turns — and `CEZ_CODEX_IDLE_TIMEOUT_MS` tunes it (`0` turns it off).

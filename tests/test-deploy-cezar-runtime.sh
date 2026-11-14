@@ -11,6 +11,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 mkdir -p "$TMP/repo/scripts/deploy" "$TMP/repo/cezar" "$TMP/bin" "$TMP/state"
 # Hermetic: never depend on a writable $HOME (the Cezar container that validates candidates has none).
 export FACTORY_AUTODEPLOY_STATE_DIR="$TMP/autodeploy-state"
+export FACTORY_ACTIVE_RUNS_COMMAND='echo 0'
 cp "$ROOT/scripts/deploy/deploy-cezar-runtime.sh" "$TMP/repo/scripts/deploy/"
 printf 'FROM scratch\n' > "$TMP/repo/cezar/Dockerfile"
 git -C "$TMP/repo" init -b stable >/dev/null
