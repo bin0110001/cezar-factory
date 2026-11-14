@@ -96,6 +96,7 @@ KILLED_EXIT_CODES = (137, 143)
 CONTAINER_DOWN_RE = re.compile(r"container state improper|can only create exec sessions on running containers|no such container", re.I)
 MAX_INTERRUPTED_RETRIES = 2
 DRIFT_ISSUE_REPEAT_SECONDS = 6 * 3600
+PROBE_WINDOW_SECONDS = 45  # how long drift() retries a transient /factory-release failure before calling it unknown
 
 
 def now() -> str:
@@ -675,23 +676,47 @@ class LocalPromotionScheduler:
         if seen["devPointer"] and seen["stablePointer"] and seen["devPointer"] != seen["stablePointer"]:
             if subprocess.run(["git", "-C", str(self.repo), "merge-base", "--is-ancestor", seen["devPointer"], seen["stablePointer"]],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0:
-                findings.append("stable is ahead of dev; stable must only contain SHAs that passed dev canaries")
+                # A dev canary rollback legitimately leaves dev behind stable. The invariant is that stable holds
+                # only SHAs that passed dev canaries, so check the record instead of the pointer order.
+                row = self._row(seen["stablePointer"])
+                if not row or row["status"] != "healthy":
+                    findings.append("stable is ahead of dev; stable must only contain SHAs that passed dev canaries")
+        probe_unreadable = False
         if self.policy:
             try:
                 runner = self._canary_runner()
-                served = runner._retry("GET", "/factory-release", window=0)
+                served = runner._retry("GET", "/factory-release", window=PROBE_WINDOW_SECONDS)
                 seen["servedByCezar"] = {"channel": served.get("channel"), "sourceSha": served.get("sourceSha")}
                 pointer = seen.get(f"{served.get('channel')}Pointer")
                 if pointer and served.get("sourceSha") != pointer:
                     findings.append(f"Cezar serves {str(served.get('sourceSha'))[:9]} on {served.get('channel')} but the pointer is {pointer[:9]}")
             except Exception as exc:  # noqa: BLE001
-                findings.append(f"could not read what Cezar serves: {str(exc)[:200]}")
-        return {"status": "drift" if findings else "ok", "findings": findings, "seen": seen}
+                # Retries are exhausted. An unreadable probe is not evidence of drift: report it as unknown.
+                probe_unreadable = True
+                seen["probeError"] = f"could not read what Cezar serves: {str(exc)[:200]}"
+        if findings:
+            return {"status": "drift", "findings": findings, "seen": seen}
+        if probe_unreadable:
+            return {"status": "unknown", "findings": [seen["probeError"]], "probeUnreadable": True, "seen": seen}
+        return {"status": "ok", "findings": [], "seen": seen}
 
     def _drift_watch(self) -> dict[str, Any]:
         report = self.drift()
         if not self.policy:
             return report
+        if report.get("probeUnreadable"):
+            # Not drift by itself: it only becomes an issue when it outlasts twice the grace period.
+            self._state_put("drift_since", "0")
+            unknown_since = float(self._state_get("probe_unknown_since", "0") or 0)
+            if not unknown_since:
+                self._state_put("probe_unknown_since", str(time.time()))
+                return report
+            if time.time() - unknown_since <= 2 * self.policy["driftGraceSeconds"]:
+                return report
+            report = {**report, "status": "drift"}
+            self._state_put("drift_since", str(unknown_since))
+        else:
+            self._state_put("probe_unknown_since", "0")
         if report["status"] != "drift":
             self._state_put("drift_since", "0")
             return report
