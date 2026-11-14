@@ -63,3 +63,19 @@ concurrency saturation. A scheduled profile job reserves one of the worker's
 bounded concurrency slots together with all requested resource leases under the
 existing `ResourceLockManager`, so concurrent admissions cannot claim the same
 slot or exclusive display.
+
+## Worker operations read model (#219, first slice)
+
+`server/verification/worker-read-model.ts` is a pure projection (no store, no
+scheduler) for the existing Control Center worker view. It derives a fail-closed
+status from heartbeat age: `healthy` only with a fresh heartbeat; `stale`,
+`offline`, and never-seen `unknown` are never healthy; `revoked` always wins and
+`draining`/`quarantined` apply to live workers. Capacity counts only `running`
+attempts, so canceled and released attempts free capacity consistently in the
+worker and run views. Pages are cursor-paginated (max 100), errors are redacted
+of credentials and host paths and truncated, and `explainScheduling` is a
+side-effect-free dry run that lists why each worker is ineligible.
+
+Not yet delivered (needs the open #70/#108/#127/#128/#135 services): HTTP
+routes and UI, operator mutations with RBAC/audit, per-shard verification
+timelines, trace correlation, and graphical session preview.

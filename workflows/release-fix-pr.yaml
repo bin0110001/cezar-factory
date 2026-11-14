@@ -1,5 +1,5 @@
 name: factory-release-fix-pr
-description: Publish already prepared and locally validated release-controller changes to dev as an open PR; merging remains a separate reviewed action.
+description: Submit already prepared and locally validated release-controller changes as an intermediate dev PR; its owner must continue through review and verified merge.
 steps:
   - id: startup
     name: Verify the local recovery runtime
