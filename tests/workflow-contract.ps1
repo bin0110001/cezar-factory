@@ -19,8 +19,7 @@ function Get-ScriptParseProblems {
     $problems = @()
     foreach ($root in $Roots) {
         if (-not (Test-Path $root)) { continue }
-        $rootFull = (Resolve-Path $root).ProviderPath.TrimEnd('\','/')
-        foreach ($file in Get-ChildItem $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName.Substring($rootFull.Length) -notmatch '[\\/](node_modules|\.factory|\.ai)[\\/]' }) {
+        foreach ($file in Get-ChildItem $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName.Substring($root.TrimEnd([char]92,[char]47).Length) -notmatch '[\\/](node_modules|\.factory|\.ai)[\\/]' }) {
             $tokens = $null; $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
             foreach ($e in @($errors)) { $problems += "parse error in $($file.FullName):$($e.Extent.StartLineNumber): $($e.Message)" }
@@ -99,8 +98,7 @@ function Get-PortabilityProblems {
     $problems = @()
     foreach ($root in $Roots) {
         if (-not (Test-Path $root)) { continue }
-        $rootFull = (Resolve-Path $root).ProviderPath.TrimEnd('\','/')
-        foreach ($file in Get-ChildItem $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName.Substring($rootFull.Length) -notmatch '[\\/](node_modules|\.factory|\.ai|fixtures)[\\/]' }) {
+        foreach ($file in Get-ChildItem $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName.Substring($root.TrimEnd([char]92,[char]47).Length) -notmatch '[\\/](node_modules|\.factory|\.ai|fixtures)[\\/]' }) {
             $tokens = $null; $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
             $lines = @(Get-Content -LiteralPath $file.FullName)
