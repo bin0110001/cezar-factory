@@ -761,3 +761,7 @@ published package carries the built app, so `npx` users never run a bundler.
 Every module is meant to be read in one sitting.
 
 ---
+
+## Recovery console
+
+The Recovery view (`/recovery`, `packages/web/src/components/recovery-console.tsx`) lists incidents aggregated by failure class and fingerprint (occurrence count, escalation severity) with a drill-down for attempts, cooldown, prior repairs, affected projects, error evidence and the generated PR. Retry, reconcile, quarantine and rollback call only `RecoveryClient.submitAction` (`src/lib/recovery-contract.ts`) with an idempotency key; quarantine and rollback require confirmation. Controls are disabled without the matching `recovery:*` scope or while the backend reports a conflicting activation/action, and success is reported only from the backend receipt, never from API acceptance. The route currently uses a fixture adapter until the controller read-model/action API (#70) lands; the UI holds no repair or secret logic. Validation runs locally (`npx vitest run`), never on GitHub Actions.
