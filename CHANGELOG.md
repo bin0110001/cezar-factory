@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Session-control action trace events (#349). Every graphical session-control request now emits a strict, versioned `SessionControlTraceEvent` bound to the fenced run/attempt/session (and optional scenario) identity, with metadata-only sanitized parameters and an opaque `evidenceRef` for screenshots. Typed text, selectors, URL paths, key values and stop reasons are never recorded. Redaction, attribution, ordering and stale-lease tests added; runbook section 10 documents the feature flag and operator notes.
+
 - The maintenance workflow has no model step (`STABILIZATION-PLAN.md` item 0.12, at the owner's choice). The backlog label audit (collect, validate, prepare, model probe, agent, apply) is retired from `workflows/maintenance.yaml`: the lifecycle sweep, intake and the stale refresher cover what it did, and it was the one step that made the hourly run, and so the promotion canary that runs the same automation, fail whenever the Claude 5-hour limit was spent. `recover-audit-reservations` stays to release any reservation already on an issue. The audit's scripts and skill stay in the repository, unused by the workflow. A suite test now requires that the workflow has no `skill:` step, no model probe and no audit step.
 
 - The browser's backlog lane columns are pinned to the lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). The lane descriptions and trigger labels moved from `web/src/routes/backlog.tsx` into `backlog-lanes.ts`, and a web test fails when a lane's trigger labels differ from the `automated` states the policy puts in that lane. Nothing changes at run time.
