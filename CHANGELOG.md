@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.106] - 2026-11-14
+
 - Desktop adapter for scoped display observation and control (issue #348). `cezar/packages/cezar/src/session-control/desktop-adapter.ts` serves one session's own display through an injected AT-SPI/Selkies backend. Screenshot, input, clipboard, file transfer and recording are separate opt-in grants, a session is read-only by default, the pixel fallback needs both screenshot and input, and human takeover suspends agent input until a fresh authorization resumes it. It enforces rate, lifetime and capture limits, a non-root backend on the session display, and idempotent cleanup on stop, cancel, disconnect or lease loss. Project-native actions plug in through a generic hook; `godot-pilot.ts` registers `create_room` over the Godot harness as the pilot, and the core has no Godot actions. Tests cover a non-Godot fixture, read-only denial, takeover, cleanup and redaction. See `cezar/docs/desktop-adapter.md`.
 
 - The maintenance workflow has no model step (`STABILIZATION-PLAN.md` item 0.12, at the owner's choice). The backlog label audit (collect, validate, prepare, model probe, agent, apply) is retired from `workflows/maintenance.yaml`: the lifecycle sweep, intake and the stale refresher cover what it did, and it was the one step that made the hourly run, and so the promotion canary that runs the same automation, fail whenever the Claude 5-hour limit was spent. `recover-audit-reservations` stays to release any reservation already on an issue. The audit's scripts and skill stay in the repository, unused by the workflow. A suite test now requires that the workflow has no `skill:` step, no model probe and no audit step.
