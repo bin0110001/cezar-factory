@@ -191,6 +191,13 @@ Assert 'Codex and Claude hook fragments connect session start/stop to verified w
 Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 $testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+# Every Factory change bumps VERSION and CHANGELOG.md. A path with no focused owner expands to the whole suite inside the
+# implement run, which cost three six-minute attempts and failed a correct docs-only change (fixture issue #528,
+# STABILIZATION-PLAN.md item 3.3). Both must have an owner in the ownership map.
+foreach ($routine in 'VERSION', 'CHANGELOG.md') {
+    $owned = @($testOwnership.checks | Where-Object { $check = $_; @($check.patterns | Where-Object { $routine -match ('^' + [regex]::Escape([string]$_).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$') }).Count })
+    Assert "$routine has a focused test owner, so a routine bump does not expand to the full suite" ($owned.Count -ge 1)
+}
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
 Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
