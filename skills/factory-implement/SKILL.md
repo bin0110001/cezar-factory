@@ -111,8 +111,9 @@ source: skills/factory-implement/SKILL.md
 - Create a new branch if not already on one.
 - Commit changes with a clear, concise message.
 - Create or update a pull request targeting the configured `dev` base branch.
-  After validation and independent approval, the review router requests GitHub
-  auto-merge into `dev`.
+  The review workflow may perform independent review and request the configured
+  merge path, but that does not transfer ownership: this job remains responsible
+  for the PR until GitHub confirms it merged into `dev`.
 - Link the PR to the issue.
 
 ### 8a. Own the merge: leave the PR mergeable
@@ -128,6 +129,10 @@ The PR is yours until it merges; do not hand a conflicting PR to review or to th
 - Re-run the targeted validation on the merged result, then push.
 - Confirm the PR is mergeable (`gh pr view <number> --json mergeable,mergeStateStatus` shows
   `MERGEABLE`). Record the base commit you merged in the result's notes.
+- After validation and review pass, follow the repository merge policy and verify
+  GitHub reports the PR as `MERGED` (including its merge commit). An open PR, including
+  one with auto-merge requested, is not completed work; keep its issue in review and
+  continue owning it through conflict repair, revalidation, and merge.
 - If a conflict cannot be reconciled without a major architectural decision, say so in the
   result with the conflicting paths; that is the only reason to stop short of mergeable.
 
@@ -140,8 +145,9 @@ implementation result. This implementation workflow runs its configured
 validation commands and routes the PR to review. The Factory release and
 configured-target synchronization are later gates handled by the reviewed
 finish-release process, after the PR is approved and merged. A successful
-implementation result means the code and PR are ready for review; do not claim
-the Factory update has been released or delivered to targets at this stage.
+implementation result must not call the work delivered while the PR remains open.
+Keep ownership through merge; do not claim the Factory update has been released or
+delivered to targets until its separate release gates complete.
 
 ## Retry Behavior
 
