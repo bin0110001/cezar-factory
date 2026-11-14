@@ -14,12 +14,28 @@ New-Item -ItemType Directory -Force $work | Out-Null
 $state = Join-Path $work 'state'
 $script:proc = $null
 $script:url = $null
+$python3 = Get-Command python3 -ErrorAction SilentlyContinue
+$pythonShimPattern = '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]'
+$pythonWindowsAppsPattern = '[\\/]WindowsApps[\\/]'
+$script:pythonPrefix = @()
+$script:pythonExecutable = if ($python3 -and $python3.Source -notmatch $pythonShimPattern -and $python3.Source -notmatch $pythonWindowsAppsPattern -and $python3.Source -notmatch '\.bat$') {
+    $python3.Source
+} else {
+    $installedPython = @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch "$pythonShimPattern|$pythonWindowsAppsPattern" -and $_.Source -notmatch '\.bat$' } | Select-Object -First 1)
+    $python312 = Get-Command python3.12 -ErrorAction SilentlyContinue
+    $pythonLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($installedPython) { $installedPython[0].Source }
+    elseif ($python312 -and $python312.Source -notmatch "$pythonShimPattern|$pythonWindowsAppsPattern" -and $python312.Source -notmatch '\.bat$') { $python312.Source }
+    elseif ($pythonLauncher) { $script:pythonPrefix = @('-3'); $pythonLauncher.Source }
+    else { $null }
+}
+if (-not $script:pythonExecutable) { throw 'Python 3.10+ is required (python3 on Linux or an installed python.exe on Windows).' }
 
 function Start-Gateway {
     $port = Join-Path $work 'port.txt'
     Remove-Item $port -ErrorAction SilentlyContinue
-    $psi = [Diagnostics.ProcessStartInfo]::new('python3')
-    foreach ($a in @('-I', (Join-Path $PSScriptRoot 'obot-e2e/fake-gateway.py'), $state)) { $psi.ArgumentList.Add($a) }
+    $psi = [Diagnostics.ProcessStartInfo]::new($script:pythonExecutable)
+    foreach ($a in (@($script:pythonPrefix) + @('-I', (Join-Path $PSScriptRoot 'obot-e2e/fake-gateway.py'), $state))) { $psi.ArgumentList.Add($a) }
     $psi.RedirectStandardOutput = $true; $psi.UseShellExecute = $false
     if ($script:lastPort) { $psi.Environment['FAKE_GATEWAY_PORT'] = "$script:lastPort" }
     $script:proc = [Diagnostics.Process]::Start($psi)
@@ -123,7 +139,11 @@ try {
     $r = Invoke-WebRequest -Uri $script:url -Method Post -Body '{not json' -ContentType 'application/json' -Headers @{ Authorization = "Bearer $good" } -SkipHttpErrorCheck -TimeoutSec 10
     Assert 'a malformed request is rejected, not executed' ([int]$r.StatusCode -eq 400)
 
-    $helper = Join-Path $factory 'integrations/mcp-gateway/headers.mjs'
+    $helperSource = Join-Path $factory 'integrations/mcp-gateway/headers.mjs'
+    $helper = Join-Path $work 'isolated/integrations/mcp-gateway/headers.mjs'
+    New-Item -ItemType Directory -Force (Split-Path -Parent $helper) | Out-Null
+    Copy-Item -LiteralPath $helperSource -Destination $helper
+    Assert 'isolated client helper is byte-identical to the committed helper' ((Get-FileHash -LiteralPath $helperSource -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash)
     $envFile = Join-Path $work 'gateway.env'
     $oldEnv = $env:CEZ_MCP_GATEWAY_ENV_FILE
     $env:CEZ_MCP_GATEWAY_ENV_FILE = $envFile

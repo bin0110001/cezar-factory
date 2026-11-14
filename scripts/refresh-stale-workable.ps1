@@ -101,7 +101,13 @@ foreach ($issue in $issues) {
     }
 }
 
-$selected = @($candidates | Sort-Object @{ Expression = { [DateTimeOffset]::Parse($_.updatedAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
+# Order the queue (STABILIZATION-PLAN.md item 3.2): an issue labelled `priority:N` (0 is the most urgent) goes before one
+# that is not, and within a priority the least recently touched goes first, so every workable issue is still re-triggered in turn.
+function Get-IssuePriority($Labels) {
+    $ranks = @(@($Labels) | ForEach-Object { if ([string]$_ -match '^priority:(\d+)$') { [int]$Matches[1] } })
+    if ($ranks.Count) { ($ranks | Measure-Object -Minimum).Minimum } else { 1000 }
+}
+$selected = @($candidates | Sort-Object @{ Expression = { Get-IssuePriority $_.labels }; Ascending = $true }, @{ Expression = { [DateTimeOffset]::Parse($_.updatedAt) }; Ascending = $true }, issue | Select-Object -First $Limit)
 $refreshed = @()
 $failures = @()
 foreach ($candidate in $selected) {

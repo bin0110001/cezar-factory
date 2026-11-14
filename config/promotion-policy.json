@@ -36,6 +36,18 @@
           "timeoutSeconds": 600
         },
         {
+          "id": "fixture-lifecycle",
+          "automation": "[factory] fixture lifecycle",
+          "when": [
+            "scripts/**",
+            "workflows/**",
+            "automations/**",
+            "policies/**",
+            "config/**"
+          ],
+          "timeoutSeconds": 900
+        },
+        {
           "id": "maintenance",
           "automation": "[factory] maintenance",
           "when": ["scripts/**", "workflows/**", "automations/**", "skills/**", "policies/**", "routing/**", "cezar/**", "config/**", "VERSION"],

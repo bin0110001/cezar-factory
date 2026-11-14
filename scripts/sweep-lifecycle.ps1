@@ -133,11 +133,12 @@ foreach ($issue in $issues) {
     $markers = @($labels | Where-Object { $markerNames -contains $_ })
     if ($markers -contains 'factory:tracking') { continue }
     $idleHours = [Math]::Round(($now - [DateTimeOffset]::Parse([string]$issue.updatedAt)).TotalHours, 1)
+    $idleText = [Math]::Floor($idleHours)  # whole hours in report text; fractions only made the report differ run to run
 
     if ($states.Count -gt 1) { Add-Violation $number $title 'multiple-states' "carries $($states -join ', '); exactly one state is allowed"; continue }
     if ($states.Count -eq 0) {
         # A reservation or a person in a dev window owns it for now; anything else has no owner at all.
-        if ($markers.Count) { if ($idleHours -ge 24) { Add-Violation $number $title 'no-state' "only $($markers -join ', ') and no state for $idleHours h" }; continue }
+        if ($markers.Count) { if ($idleHours -ge 24) { Add-Violation $number $title 'no-state' "only $($markers -join ', ') and no state for $idleText h" }; continue }
         Invoke-Repair $issue 'no-state' @() $lifecycle.Initial 'it had no lifecycle state, so no automation owned it.'
         continue
     }
@@ -163,7 +164,7 @@ foreach ($issue in $issues) {
         $body = [string](Get-Field ((Invoke-Gh @('issue', 'view', [string]$number, '--json', 'body')) -join "`n" | ConvertFrom-Json) 'body')
         $blockers = @([regex]::Matches($body, $blockerPattern) | ForEach-Object { [regex]::Matches($_.Groups[1].Value, '#(\d+)') | ForEach-Object { [int]$_.Groups[1].Value } } | Where-Object { $_ -ne $number } | Sort-Object -Unique)
         if (-not $blockers.Count) {
-            if ($idleHours -ge [double]$state['maxDwellHours']) { Add-Violation $number $title 'blocked-without-blocker' "blocked for $idleHours h and its description names no blocking issue" }
+            if ($idleHours -ge [double]$state['maxDwellHours']) { Add-Violation $number $title 'blocked-without-blocker' "blocked for $idleText h and its description names no blocking issue" }
         } elseif (-not @($blockers | Where-Object { $openNumbers -contains $_ }).Count) {
             Invoke-Repair $issue 'unblocked' @($name) ([string]$state['onUnblocked']) "every issue it names as a blocker is closed ($(($blockers | ForEach-Object { "#$_" }) -join ', '))."
         }
@@ -178,7 +179,7 @@ foreach ($issue in $issues) {
     if ($idleHours -ge $limit) {
         $owner = @(Get-FactoryLifecycleOwnerWorkflows $state)
         $who = if ($owner.Count) { "automation $($owner -join ' / ')" } else { "a person ($($state['owner']['role']))" }
-        Add-Violation $number $title 'overdue' "in $name for $idleHours h with no activity (deadline $deadline h, owner: $who)"
+        Add-Violation $number $title 'overdue' "in $name for $idleText h with no activity (deadline $deadline h, owner: $who)"
     }
 }
 
@@ -211,7 +212,9 @@ if ($repairs.Count -and -not $DryRun) { Clear-GhCache }
 # One rolling report, rewritten only when it changes.
 $lines = @($violations | Sort-Object kind, issue | ForEach-Object { "- #$($_.issue) **$($_.kind)**: $($_.detail)" })
 $content = if ($lines.Count) { ($lines -join "`n") } else { 'Nothing is stalled: every open issue is in one state, inside its deadline.' }
-$digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($content))).ToLowerInvariant().Substring(0, 16)
+# The digest ignores elapsed-hour counts, which grow with the clock; a change in what is stalled still changes it.
+$digestInput = [regex]::Replace($content, '\d+(\.\d+)? h\b', 'N h')
+$digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($digestInput))).ToLowerInvariant().Substring(0, 16)
 $reportBody = "Open work that breaks the lifecycle invariant (one state, an owner, inside its deadline). Written by the hourly lifecycle sweep from ``policies/lifecycle.json``; it is replaced, not appended to.`n`n$content`n`n<!-- factory-stall-report:$digest -->"
 $existing = @($issues | Where-Object { [string]$_.title -eq $reportTitle }) | Select-Object -First 1
 $report = [ordered]@{ action = 'none'; issue = $null }

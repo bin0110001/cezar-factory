@@ -9,10 +9,13 @@ compute only (no GitHub Actions) and is part of `tests/run-tests.ps1`.
 pwsh -NoProfile -File tests/obot-e2e.ps1     # prints OBOT E2E PASSED, exit 0
 ```
 
-Requirements: `pwsh` 7, `python3` 3.10+, `node` 20+ (tested with Python 3.13 and
-Node 22 on Linux). The suite binds `127.0.0.1` on a random port, writes only to a
-temp directory, and removes it. Windows is expected to work (the helper and
-gateway are portable) but is not part of the tested matrix.
+Requirements: `pwsh` 7, Python 3.10+, and `node` 20+. The suite uses `python3`
+on Linux and an installed `python.exe` on Windows, avoiding WindowsApps aliases
+and pyenv batch shims when launching the gateway process. It has been validated
+with Python 3.11 on Windows and Python 3.13 with Node 22 on Linux. The suite binds
+`127.0.0.1` on a random port, writes only to a temp directory, and removes it.
+The client-helper cases run a byte-identical copy from that isolated temp tree,
+so a developer's private gateway `.env` cannot affect the missing-token case.
 
 ## What it exercises
 

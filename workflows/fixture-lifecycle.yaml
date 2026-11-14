@@ -1,0 +1,11 @@
+name: factory-fixture-lifecycle
+description: Model-free run of the issue lifecycle (intake, plan, start, implement) against the sandbox repository with the real gh. Spends no tokens; it is the promotion canary for the router and its GitHub handling.
+steps:
+  - id: startup
+    name: Check the runtime
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-fixture-lifecycle -Step fixture -RequireGh -RequiredScripts fixture-lifecycle.ps1,route-state.ps1,create-labels.ps1
+    timeoutSeconds: 60
+  - id: fixture
+    name: Drive a fixture issue through the lifecycle
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/fixture-lifecycle.ps1
+    timeoutSeconds: 600
