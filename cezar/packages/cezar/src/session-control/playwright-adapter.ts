@@ -7,7 +7,10 @@ import {
   sessionControlActionAllowed,
   sessionControlRateLimited,
   sessionControlRequestSchema,
+  sanitizeSessionControlActionForTrace,
   sessionControlResponseSchema,
+  sessionControlTraceEventSchema,
+  type SessionControlTraceEvent,
   type SessionControlAction,
   type SessionControlCapability,
   type SessionControlRequest,
@@ -51,23 +54,13 @@ export interface PlaywrightBrowser {
   newContext(options: { serviceWorkers: 'block'; acceptDownloads: false }): Promise<PlaywrightBrowserContext>;
 }
 
-export interface SessionControlTraceEvent {
-  runId: string;
-  attemptId: string;
-  sessionId: string;
-  requestId: string;
-  timestamp: string;
-  action: SessionControlAction['type'];
-  outcome: 'completed' | 'failed' | 'denied';
-  errorCode?: string;
-}
-
 export interface PlaywrightSessionOptions {
   browser: PlaywrightBrowser;
   expectedBrowserVersion: string;
   runId: string;
   attemptId: string;
   sessionId: string;
+  scenarioId?: string;
   capability: SessionControlCapability;
   allowedOrigins: string[];
   isLeaseValid: () => boolean;
@@ -160,6 +153,7 @@ export async function createPlaywrightSessionControl(options: PlaywrightSessionO
     const request = parsed.data;
     let code: Extract<SessionControlResponse, { ok: false }>['error']['code'] | undefined;
     let outcome: SessionControlTraceEvent['outcome'] = 'completed';
+    let evidenceRef: string | undefined;
     try {
       if (closed) throw Object.assign(new Error('browser session is closed'), { sessionCode: 'lost_worker' });
       if (request.sessionId !== options.sessionId) throw Object.assign(new Error('request belongs to another session'), { sessionCode: 'wrong_session' });
@@ -171,6 +165,7 @@ export async function createPlaywrightSessionControl(options: PlaywrightSessionO
       if (!sessionControlActionAllowed(options.capability, request.action)) throw Object.assign(new Error('interactive control is not enabled for this session'), { sessionCode: 'denied_control' });
       const result = await executeAction(page, context, request.action, options);
       if (request.action.type === 'requestStop') await closeSession();
+      if (result.kind === 'screenshot') evidenceRef = result.reference;
       return response(request, result as never);
     } catch (error) {
       outcome = 'failed';
@@ -181,7 +176,13 @@ export async function createPlaywrightSessionControl(options: PlaywrightSessionO
       const message = code && code in messages ? messages[code as keyof typeof messages] : messages.transient_render;
       return errorResponse(request, code ?? 'transient_render', message, code === 'rate_limited' ? 60_000 : undefined);
     } finally {
-      const event: SessionControlTraceEvent = { runId: options.runId, attemptId: options.attemptId, sessionId: options.sessionId, requestId: fallback.requestId, timestamp: new Date(now()).toISOString(), action: parsed.success ? parsed.data.action.type : 'metadata', outcome, ...(code ? { errorCode: code } : {}) };
+      const event = sessionControlTraceEventSchema.parse({
+        schemaVersion: 1, runId: options.runId, attemptId: options.attemptId, sessionId: options.sessionId,
+        ...(options.scenarioId ? { scenarioId: options.scenarioId } : {}), requestId: fallback.requestId,
+        timestamp: new Date(now()).toISOString(), action: parsed.success ? parsed.data.action.type : 'metadata',
+        params: parsed.success ? sanitizeSessionControlActionForTrace(parsed.data.action) : {}, outcome,
+        ...(code ? { errorCode: code } : {}), ...(evidenceRef ? { evidenceRef } : {}),
+      });
       await options.recordEvent(event);
     }
   };
