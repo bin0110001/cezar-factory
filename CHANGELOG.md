@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Bounded coding-run lifecycle in the Cezar package (issue #131): stage order, typed failure reasons with distinct retry/wait/repair/block semantics, ledger-counted budgets, restart-safe resume planning, duplicate-delivery refusal and stale-attempt rejection, as a pure layer over the existing run ledger (see `cezar/docs/coding-run-contract.md`).
+
 - The promotion drift check no longer reports false drift (#483). “Stable is ahead of dev” is reported only when stable’s SHA has no healthy promotion record, so a dev canary rollback does not trip it; the `/factory-release` probe retries for 45 seconds instead of once, and an exhausted probe is reported as `unknown` and files an issue only after it persists past twice `drift.graceSeconds`. Genuine mismatches still report drift.
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
