@@ -72,8 +72,10 @@ which the pipeline asks for a human. A successful stable deploy resets it, and s
 `factory_local_scheduler.py reset-breaker`.
 
 Drift is checked every pass: the stable pointer against `origin/stable`, the host checkout, stable ahead of
-dev, and what Cezar actually serves against the channel pointer. Drift that persists beyond
-`drift.graceSeconds` opens an issue.
+dev, and what Cezar actually serves against the channel pointer. Stable ahead of dev is drift only when
+stable's SHA has no healthy promotion record (a dev canary rollback leaves it legitimately ahead). The Cezar
+probe retries for 45 seconds; an unreadable probe is `unknown`, not drift, and opens an issue only after it
+persists past twice `drift.graceSeconds`. Drift that persists beyond `drift.graceSeconds` opens an issue.
 
 ## Modes are data
 
@@ -150,6 +152,9 @@ validated, activated, rolled back or quarantined, and the breaker does not move.
 
 On 2026-11-12 a reboot left the Cezar container unable to reach LiteLLM, and two good releases were validated,
 activated, failed the `maintenance` canary's model check, and were rolled back and quarantined before anyone looked.
+Those candidates (`3bbf40fe`, `ae948a3d`, promotion fingerprint `659bee2f8ee0`, issue #450) are covered by this preflight: the
+regression is `test_a_broken_environment_blocks_the_candidate_before_validation_and_is_not_a_failure`. A later merge produces a new SHA and
+is promoted normally once the model probe reports OK.
 
 ## Not the candidate's fault
 
