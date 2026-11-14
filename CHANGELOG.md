@@ -10,6 +10,10 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.114] - 2026-11-14
+
+- Verification workflow for issue #102 (parent #56): adds scoped check selection, command-bound invocation, policy-mandatory checks, verdict evaluation, and an append-only hash-chained result ledger. The existing implement/review verification remains unchanged. See `docs/verification-workflow.md` for the contract gaps.
+
 ## [0.3.113] - 2026-11-14
 
 - Project channel, drift and migration read model (issue #72). `scripts/release/factory_project_channels.py` (`overview`, `detail`, `preview`, `request`) reports configured and effective channel state separately with activation history, pinned tasks, compatibility, override impact, stale/offline status, and remediation. Channel changes are previewed read-only and recorded as permission-checked audit requests bound to a preview token; the request applies no pointer or symlink changes. See `docs/project-channels.md`.
