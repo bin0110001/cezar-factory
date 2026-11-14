@@ -18,6 +18,8 @@ param(
 $ErrorActionPreference = 'Stop'
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 $Root = (Resolve-Path -LiteralPath $Root).Path
+. (Join-Path $PSScriptRoot 'base-lib.ps1')
+$baseGiven = [bool]$Base
 if (-not $ManifestPath) { $ManifestPath = Join-Path $PSScriptRoot '../../policies/protected-assets.json' }
 $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json -AsHashtable
 if ($manifest.schemaVersion -ne 1 -or -not ($manifest.assets -is [array])) { throw "Invalid protected-assets manifest: $ManifestPath" }
@@ -40,6 +42,9 @@ if ($Base -notmatch '^[0-9a-fA-F]{40,64}$') {
     }
 }
 if ($Base -notmatch '^[0-9a-fA-F]{40,64}$') { Write-Error 'protect-governance: cannot establish a trusted base commit; refusing to pass.'; exit 1 }
+# An explicit -Base (tests, manual runs) is used as given. Otherwise measure from where the branch's merge of the real dev joined it,
+# so work already merged to dev is not charged to this change.
+if (-not $baseGiven) { $Base = Get-FactoryEffectiveBase -Root $Root -Base $Base }
 $head = ((Invoke-Git rev-parse HEAD) -join '').Trim()
 
 # Changes: committed + staged + unstaged (diff against the base commit) plus untracked files (as additions).

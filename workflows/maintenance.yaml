@@ -50,7 +50,7 @@ steps:
     timeoutSeconds: 300
   - id: refresh-stale-workable
     name: Refresh at most two stale workable issues
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -OutputPath .factory/stale-workable-refresh.json
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/refresh-stale-workable.ps1 -Limit 1 -OutputPath .factory/stale-workable-refresh.json
     timeoutSeconds: 300
   - id: repository-maintenance
     name: Run deterministic repository maintenance
@@ -70,74 +70,8 @@ steps:
     name: Release expired backlog-label audit reservations
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/recover-audit-reservations.ps1 -OutputPath .factory/audit-reservation-recovery.json
     timeoutSeconds: 300
-  - id: backlog-label-audit-collect
-    name: Collect bounded backlog-label audit input
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/audit-backlog-labels.ps1 -OutputPath .factory/backlog-label-audit-input.json
-    timeoutSeconds: 300
-  - id: backlog-label-audit-validate
-    name: Validate bounded backlog-label audit handoff
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-backlog-label-audit-input.ps1 -Path .factory/backlog-label-audit-input.json -MaxCandidates 3
-    timeoutSeconds: 60
-  - id: backlog-label-audit-prepare
-    name: Apply deterministic classifications and reserve candidates
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -Prepare -WorkflowContract -OutputPath .factory/backlog-label-audit-preparation.json
-    timeoutSeconds: 300
-    outputSchema:
-      type: object
-      required: [status, candidateCount, resolvedCount]
-      properties:
-        status: { type: string, const: prepared }
-        candidateCount: { type: integer, minimum: 0, maximum: 3 }
-        resolvedCount: { type: integer, minimum: 0 }
-        $cezar:
-          type: object
-          required: [action, reasonCode]
-          properties:
-            action: { type: string, const: no_work }
-            reasonCode: { type: string, const: no_work }
-          additionalProperties: false
-      allOf:
-        - if: { properties: { candidateCount: { const: 0 } }, required: [candidateCount] }
-          then: { required: [$cezar] }
-        - if: { properties: { candidateCount: { minimum: 1 } }, required: [candidateCount] }
-          then: { not: { required: [$cezar] } }
-      additionalProperties: false
-  # Probe the model only here, immediately before the one agent step. Every earlier step is deterministic
-  # housekeeping (the stuck-run watchdog, intake routing, stale-issue recovery) and must keep running during a
-  # model outage, which is exactly when it is needed.
-  - id: model-check
-    name: Fail fast when the model host cannot generate
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/probe-model-endpoint.ps1
-    timeoutSeconds: 300
-  - id: backlog-label-audit
-    name: Audit at most three legacy issues
-    skill: factory-backlog-label-audit
-    prompt: |
-      {{task}}
-
-      Apply only the bounded legacy-label policy in the Factory Backlog Label Audit skill.
-      The workflow already ran the read-only collector, `audit-backlog-labels.ps1`, exactly once,
-      validated the bounded input, and applied deterministic legacy-label classifications and
-      audit reservations through the preparation consumer.
-      Do not run it or any other Factory script, retrieve issue bodies, call `gh issue list`, or
-      manually select issues. Read only the worktree-local `.factory/backlog-label-audit-input.json`
-      artifact. The resolved entries have already been applied and verified; evaluate only the
-      remaining candidates, which are capped at three. Write a candidate-only proposal to
-      `.factory/backlog-label-audit.json`. Set `considered` to the exact candidate `number` values.
-      Put every candidate exactly once across `changed` and `skipped`; use the field `issue` with
-      that candidate's number in each outcome (not `number`). Every outcome must include `added`
-      with its proposed allowlisted closing labels and `reason` with a concise rationale. Do not
-      omit an outcome when skipping a candidate; skipped outcomes also require a durable closing
-      Factory state label.
-      Do not read or mutate GitHub state. The following deterministic workflow step validates the
-      proposal and applies effects after checking the live issue state and audit reservation.
-      Do not commit, push, create a branch or open a pull request: this run changes labels, not
-      files, and its last step fails if the run made a commit.
-  - id: backlog-label-audit-apply
-    name: Validate and apply backlog-label proposals
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/apply-backlog-label-audit.ps1 -InputPath .factory/backlog-label-audit-input.json -PreparationPath .factory/backlog-label-audit-preparation.json -ProposalPath .factory/backlog-label-audit.json -OutputPath .factory/backlog-label-audit-application.json
-    timeoutSeconds: 300
-  # A housekeeping run has nothing to commit. The agent step above once committed, pushed and opened pull
+  # A housekeeping run has nothing to commit. The backlog label audit agent (retired: the lifecycle sweep and
+  # intake cover it, and it made the run depend on the model limit) once committed, pushed and opened pull
   # requests itself every hour; this fails the run if that ever returns. (Cezar's own end-of-run autosave
   # happens after the last step and is handled by .gitignore, not here.)
   - id: no-run-commits

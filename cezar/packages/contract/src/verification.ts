@@ -119,6 +119,53 @@ export const verificationArtifactRefSchema = z.object({
   visualEvidence: verificationVisualEvidenceSchema.optional(),
 }).strict();
 
+export const verificationVisualRegionSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+}).strict();
+
+export const verificationVisualMaskSchema = verificationVisualRegionSchema.extend({
+  reason: z.string().min(1).max(512),
+  approvedBy: z.string().min(1).max(128),
+}).strict();
+
+export const verificationVisualPolicySchema = z.object({
+  version: z.literal(1),
+  /** Per-channel absolute difference (0-255) at or below which a pixel is treated as equal. */
+  channelTolerance: z.number().int().min(0).max(255),
+  /** Fraction (0-1) of unmasked pixels allowed to differ. */
+  maxDiffRatio: z.number().min(0).max(1),
+  masks: z.array(verificationVisualMaskSchema).max(64),
+  /** Upper bound on the fraction of the image masks may cover, so masks cannot hide the page. */
+  maxMaskedRatio: z.number().min(0).max(1),
+}).strict();
+
+export const verificationVisualComparisonSchema = z.object({
+  version: z.literal(1),
+  /** Deterministic assertions are authoritative; `advisory` is agent interpretation only. */
+  status: z.enum(['passed', 'failed', 'inconclusive']),
+  reason: z.string().min(1).max(1_024),
+  expected: verificationArtifactRefSchema.optional(),
+  actual: verificationArtifactRefSchema,
+  diff: verificationArtifactRefSchema.optional(),
+  metrics: z.array(verificationMetricSchema).max(VERIFICATION_LIMITS.metricsPerCheck),
+  rendererMismatch: z.array(z.string().min(1).max(64)).max(32),
+  policySha256: z.string().regex(/^[a-f0-9]{64}$/),
+  baselineProvenance: z.object({
+    baselineId: z.string().min(1).max(256),
+    commitSha: z.string().regex(/^[a-f0-9]{40,64}$/i),
+    changeReason: z.string().min(1).max(1_024),
+    approvedBy: z.string().min(1).max(128),
+    approvedAt: z.string().datetime(),
+    signOff: z.string().min(1).max(128).optional(),
+  }).strict().optional(),
+  advisory: z.string().max(4_096).optional(),
+}).strict();
+export type VerificationVisualComparison = z.infer<typeof verificationVisualComparisonSchema>;
+export type VerificationVisualPolicy = z.infer<typeof verificationVisualPolicySchema>;
+
 export const verificationCheckRunSchema = z.object({
   checkId: z.string().min(1).max(128),
   required: z.boolean(),
