@@ -16,6 +16,9 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.120] - 2026-11-14
+
+- Worker protocol core for remote execution (#214). `scripts/worker/worker_protocol.py` defines worker enrollment with rotation and revocation, protocol-version negotiation, coordinator-clock heartbeats and worker states, durable execution leases with monotonic fencing tokens, idempotency keys and expiry, signed replay-resistant receipts, cancel acknowledgement, typed outcomes (`auth_failed`, `unsupported_capability`, `worker_disconnected`, `started_but_lost`, `stale_fence` and the rest) and a bounded worker-side spool. Commands are a version-pinned adapter with string arguments, never a shell string. ADR `docs/adr/214-worker-protocol.md` records the transport choice (worker-initiated outbound HTTPS to Cezar's API), the threat model and the graphical-session fencing hook. 18 tests cover duplicate claims, split brain, dead coordinator, clock skew, replay, revocation and offline workers. Not wired to Cezar's executor or a network listener yet, and graphical session association is not implemented here; single-host execution is unchanged.
 ## [0.3.119] - 2026-11-14
 
 - The backlog pilot report (#202) now carries predeclared success and rollback criteria, a fault-injection coverage map to the existing deterministic tests, defaults, privacy and retention notes, a runbook and the default-enablement decision (not by default yet). Documentation only.
