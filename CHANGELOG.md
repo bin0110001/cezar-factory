@@ -16,6 +16,9 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.119] - 2026-11-14
+
+- The backlog pilot report (#202) now carries predeclared success and rollback criteria, a fault-injection coverage map to the existing deterministic tests, defaults, privacy and retention notes, a runbook and the default-enablement decision (not by default yet). Documentation only.
 ## [0.3.118] - 2026-11-14
 
 - Documentation-assist evaluation protocol (issue #182). `policies/docs-evaluation.json` pre-registers issue classes, arms, thresholds and rollout stages, and `scripts/docs-evaluation-report.ps1` turns a JSONL run file into a per-class go, no-go or insufficient-data decision with a seeded bootstrap confidence interval. Net cost includes maintenance and review tokens, and runs without a source SHA are rejected. `docs/docs-evaluation.md` covers the `docsAssist` flag, rollback and failure-injection playbook. No measurements have been collected yet; the pilots (#175-#181) must exist first, so every class stays `off`.
