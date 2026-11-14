@@ -191,3 +191,12 @@ affected `modules` and public `contracts`, and `coverage`. Rules:
 - Low-risk code-first work needs only the files you will touch; deeper contracts and
   modules are for spec-first, high-impact changes.
 - Put licensed or secret paths in `sensitiveGlobs` so they are hidden from dashboards.
+
+## Spec-first or code-first
+
+Follow `docs/spec-first.md` and `policies/change-contract.json`. Routine work (bug fixes, docs,
+tests, maintenance) is code-first: no contract, no approval. Only when the plan declares a contract
+kind, touches a protected asset, spans three or more modules, or is `risk:high` on a non-code-first
+type, fill `templates/change-contract.md` (spec, design, tasks, acceptance), pin it to the base SHA
+and the issue, and note the open decisions. Do not claim behavior is verified: name the test or #132
+acceptance evidence each contract item needs and leave verification to the workflow.
