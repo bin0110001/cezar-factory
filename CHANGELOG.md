@@ -10,6 +10,10 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.113] - 2026-11-14
+
+- Project channel, drift and migration read model (issue #72). `scripts/release/factory_project_channels.py` (`overview`, `detail`, `preview`, `request`) reports configured and effective channel state separately with activation history, pinned tasks, compatibility, override impact, stale/offline status, and remediation. Channel changes are previewed read-only and recorded as permission-checked audit requests bound to a preview token; the request applies no pointer or symlink changes. See `docs/project-channels.md`.
+
 ## [0.3.112] - 2026-11-14
 
 - Model evaluation dataset and report (#137). `scripts/build-routing-dataset.ps1` builds a versioned, allow-list-redacted, deterministic coding-run dataset from run records and routing events (`schemas/routing-dataset.schema.json`); `scripts/report-routing-evaluation.ps1` reports per model, tier and capacity alias the attempts, retries, accepted and merged changes, and retry-inclusive effective cost per accepted change, with missing cost shown as `unknown` and small samples flagged. `docs/routing-evaluation.md` gains a deterministic rule proposal and experiment guardrails. Read-only; live routing is unchanged.
