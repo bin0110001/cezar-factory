@@ -16,7 +16,10 @@ function Get-FreePort {
 function Start-Fake([string]$Mode, [int]$Port, [int]$Delay = 2) {
     # ProcessStartInfo, not Start-Process: -WindowStyle does not exist on Linux PowerShell, and the promoter
     # runs this suite inside the Linux Cezar container.
-    $psi = [System.Diagnostics.ProcessStartInfo]::new('pwsh')
+    $pwshExecutable = Join-Path $PSHOME 'pwsh'
+    if ($IsWindows) { $pwshExecutable += '.exe' }
+    if (-not (Test-Path -LiteralPath $pwshExecutable -PathType Leaf)) { throw "PowerShell executable not found beside the current host: $pwshExecutable" }
+    $psi = [System.Diagnostics.ProcessStartInfo]::new($pwshExecutable)
     foreach ($a in @('-NoProfile', '-File', $server, '-Port', "$Port", '-Mode', $Mode, '-DelaySeconds', "$Delay")) { $psi.ArgumentList.Add($a) }
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true

@@ -19,6 +19,7 @@
     "factory-maintenance": {"runner":"claude","model":"sonnet","spendTier":"gateway"},
     "factory-health": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-repair-probe": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
+    "factory-fixture-lifecycle": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
     "factory-godot-upgrade": {"runner":"codex","model":"factory-gateway/factory-code","spendTier":"gateway"},
   },
   "jobs": [
