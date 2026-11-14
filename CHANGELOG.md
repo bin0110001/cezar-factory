@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.109] - 2026-11-14
+
 - The lifecycle sweep's rolling stall report no longer changes just because time passed (#533). Idle durations are whole hours in the text and the content digest ignores them, so the 'lifecycle sweep is idempotent' test (and a real hourly run) reports `unchanged` unless something stalled changes. It flaked in the promotion full-suite when the clock crossed a 0.1 h boundary between runs.
 - `tests/workflow-contract.ps1` is owned by the static check in `.ai/factory/test-ownership.json`, so changing it no longer falls through to the full regression in an implement run (#533).
 - The delivery sync no longer claims an issue that a Factory run owns (`STABILIZATION-PLAN.md` item 3.3). `sync-issue-delivery.ps1` moved any open, non-draft PR's referenced issue from a pre-PR state to `factory:pr-open`, and `factory:working` counted as pre-PR. For fixture issue #528 that took an issue whose implement run had failed its tests (the agent had already opened PR #529) from `working` straight to `pr-open`: review and the run watchdog were skipped, and nothing merges a PR at `pr-open`. An issue at `factory:working` without `factory:interactive` is now skipped (`owned-by-factory-run` in the result); work finished in a dev window, which carries `interactive`, is claimed as before. Test added.
