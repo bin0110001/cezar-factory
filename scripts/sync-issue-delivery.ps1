@@ -140,6 +140,11 @@ foreach ($key in @($openBy.Keys)) {
         if ($labels -contains 'factory:tracking') { $skipped += [ordered]@{ issue = $n; pr = [int]$pr.number; reason = 'tracking-issue' }; continue }
         $states = @($labels | Where-Object { $stateLabels -contains $_ })
         if ($states -contains 'factory:pr-open') { continue }
+        # `factory:working` without `factory:interactive` is owned by a Factory implement or fix run: its result routes
+        # it to review or investigation, and the watchdog routes a run that died. A PR that run opened before its tests
+        # failed is not delivered work; claiming it here skipped review and left the issue at pr-open with nothing to
+        # merge it (fixture issue #528, STABILIZATION-PLAN.md item 3.3). Work finished in a dev window carries `interactive`.
+        if ($states -contains 'factory:working' -and $labels -notcontains 'factory:interactive') { $skipped += [ordered]@{ issue = $n; pr = [int]$pr.number; reason = 'owned-by-factory-run' }; continue }
         if ($states.Count -and @($states | Where-Object { $prePrStates -notcontains $_ }).Count) { continue }
         if (-not $DryRun) { Set-IssueStateLabel $n $labels 'factory:pr-open' }
         $promoted += [ordered]@{ issue = $n; pr = [int]$pr.number; from = @($states) }
