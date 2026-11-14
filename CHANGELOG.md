@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.111] - 2026-11-14
+
+- `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
+
 ## [0.3.110] - 2026-11-14
 
 - Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
