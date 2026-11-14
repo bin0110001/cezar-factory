@@ -2,6 +2,7 @@
 Set-StrictMode -Version Latest
 
 $script:ManifestName = 'manifest.json'
+. (Join-Path $PSScriptRoot 'factory/base-lib.ps1')
 
 function Get-DefaultFactoryRoot { (Resolve-Path (Join-Path $PSScriptRoot '..')).Path }
 
@@ -143,6 +144,8 @@ function Get-ChangedValidationSelection([string]$Root, $Config) {
         }
     }
     if ($base -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { throw 'Cannot establish a trusted base commit for changed-test selection.' }
+    # The branch merged the current dev before handing over; measure from where that merge joined it, not from the run's start.
+    $base = Get-FactoryEffectiveBase -Root $Root -Base $base
     $paths = @(& git -C $Root diff --name-only "$base...HEAD" 2>$null)
     if ($LASTEXITCODE -ne 0) { throw "Could not compare changed files with base commit $base." }
     $paths += @(& git -C $Root diff --name-only 2>$null)
