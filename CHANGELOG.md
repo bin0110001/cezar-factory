@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Visual evidence correlates multi-role captures by checkpoint and reports aggregate completeness (#353).
+
 - Work already merged to dev is no longer charged to an implementation's own change (`STABILIZATION-PLAN.md` item 3.3). The governance guard and the changed-test selector measured an implementation from the base commit the run recorded when it started. The agent must merge the current `origin/dev` before handing over, so anything merged to dev during the run showed up as the agent's own change: the rerun of fixture issue #528 (a docs-only change) was refused by the guard for two files another run's merged feature had brought in. New `scripts/factory/base-lib.ps1` (`Get-FactoryEffectiveBase`) moves the base forward to where the branch's merge of the real remote's dev joined it. It fetches the remote and does not trust the local `origin/dev` ref, so an agent cannot point that ref at its own HEAD to hide a protected change; the base only moves forward, and any failure leaves the recorded base, which can only make the guard stricter. An explicit `-Base` is used as given. Tests: a merged protected change is not charged, the branch's own protected change is still refused after the merge, and a forged local ref hides nothing.
 
 - The lifecycle sweep's rolling stall report no longer changes just because time passed (#533). Idle durations are whole hours in the text and the content digest ignores them, so the 'lifecycle sweep is idempotent' test (and a real hourly run) reports `unchanged` unless something stalled changes. It flaked in the promotion full-suite when the clock crossed a 0.1 h boundary between runs.

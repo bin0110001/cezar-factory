@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { verificationFingerprintStrategySchema, verificationManifestSchema, verificationRunSchema, projectValidationConfigSchema } from '@open-mercato/cezar-contract';
+import { verificationFingerprintStrategySchema, verificationManifestSchema, verificationRunSchema, projectValidationConfigSchema, aggregateRoleEvidence } from '@open-mercato/cezar-contract';
 
 const fixtures = new URL('../../../contract/fixtures/verification/', import.meta.url);
 const read = async (name: string) => JSON.parse(await readFile(new URL(name, fixtures), 'utf8'));
@@ -78,5 +78,44 @@ describe('versioned verification contracts', () => {
     const consumer = fileURLToPath(new URL('./fixture-consumer.mjs', import.meta.url));
     const output = execFileSync(process.execPath, [consumer, fileURLToPath(fixtures)], { encoding: 'utf8' });
     expect(output).toContain('Verification fixtures passed (21,');
+  });
+
+  describe('multi-role visual evidence aggregation', () => {
+    const base = {
+      version: 1 as const, kind: 'png' as const, verificationId: 'v1', attempt: 1, sessionId: 's1', testId: 't',
+      commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64), policyVersion: 'p', capturedAt: '2026-01-01T00:00:00.000Z',
+      retention: 'r', accessPolicy: 'private' as const, redactionState: 'redacted' as const, storageReference: 'a.png',
+      renderer: { os: 'linux', resolution: { width: 1, height: 1 }, dpi: 96, displayBackend: 'x', renderer: 'software' as const, graphicsApi: null, driver: null, appVersion: '1', colorSettings: {}, renderFeatures: [] },
+    };
+    const ev = (role: string, checkpointId: string, n: string, extra: object = {}) => ({ ...base, role, checkpointId, contentSha256: n.repeat(64), workerFingerprint: `host-${role}`, ...extra });
+    const run = (evidence: ReturnType<typeof ev>[], extra: object = {}) => aggregateRoleEvidence({
+      verificationId: 'v1', attempt: 1, sessionId: 's1',
+      expected: [{ role: 'host', checkpoints: ['c1'] }, { role: 'client', checkpoints: ['c1'] }], evidence, ...extra,
+    });
+
+    it('maps two-host artifacts to roles and checkpoints regardless of order or timestamps', () => {
+      const result = run([ev('client', 'c1', 'd', { capturedAt: '2020-01-01T00:00:00.000Z' }), ev('host', 'c1', 'c')]);
+      expect(result.status).toBe('passed');
+      expect(result.roles.find((r) => r.role === 'host')!.checkpoints.c1!.sha256).toBe('c'.repeat(64));
+      expect(result.roles.find((r) => r.role === 'client')!.checkpoints.c1!.sha256).toBe('d'.repeat(64));
+    });
+    it('is incomplete when a role is missing and not masked by a passing sibling', () => {
+      const result = run([ev('host', 'c1', 'c')]);
+      expect(result.status).toBe('incomplete');
+      expect(result.roles.find((r) => r.role === 'client')!.status).toBe('incomplete');
+    });
+    it('fails on a failed role and reports infrastructure-error on disconnect', () => {
+      const both = [ev('host', 'c1', 'c'), ev('client', 'c1', 'd')];
+      expect(run(both, { failedRoles: ['client'] }).status).toBe('failed');
+      expect(run(both, { disconnectedRoles: ['client'] }).status).toBe('infrastructure-error');
+    });
+    it('rejects cross-attempt, cross-session, unknown-checkpoint and conflicting duplicate evidence', () => {
+      const result = run([ev('host', 'c1', 'c', { attempt: 2 }), ev('client', 'c1', 'd', { sessionId: 's0' }), ev('host', 'zz', 'e')]);
+      expect(result.status).toBe('incomplete');
+      expect(result.roles[0]!.rejected.map((r) => r.reason)).toEqual(['stale-attempt', 'unknown-role-or-checkpoint']);
+      const dup = run([ev('host', 'c1', 'c'), ev('host', 'c1', 'e'), ev('client', 'c1', 'd')]);
+      expect(dup.status).toBe('incomplete');
+      expect(run([ev('host', 'c1', 'c'), ev('host', 'c1', 'c'), ev('client', 'c1', 'd')]).status).toBe('passed');
+    });
   });
 });
