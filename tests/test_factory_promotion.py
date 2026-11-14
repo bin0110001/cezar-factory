@@ -228,5 +228,14 @@ class GhActionTests(unittest.TestCase):
         self.assertEqual(fake.calls[0][:5], ["podman", "exec", "cezar", "gh", "pr"])
 
 
+class TransientPatternTests(unittest.TestCase):
+    def test_cezar_api_timeout_is_transient(self):
+        pattern = normalize_policy({})["canaryTransientPattern"] if normalize_policy({}) else None
+        self.assertIsNotNone(pattern)
+        msg = "activation rolled back: Cezar API GET /api/v1/p/cezar-factory/factory-release failed: timed out"
+        self.assertTrue(pattern.search(msg))
+        self.assertFalse(pattern.search("Cezar API GET /x failed: HTTP 400 bad request"))
+
+
 if __name__ == "__main__":
     unittest.main()

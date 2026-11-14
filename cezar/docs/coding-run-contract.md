@@ -48,3 +48,25 @@ persist records.
 See `packages/contract/fixtures/coding-run/lifecycle-v1.json` for a full run with two attempts, a
 repair, validation links, PR delivery, and explicit unknown model subscription metadata. The fixture
 is validated by `coding-run-contract.test.ts`.
+
+## Bounded lifecycle (`workspace/coding-run-lifecycle.ts`)
+
+A pure policy layer over the ledger; it adds no scheduler or workflow engine. Cezar's existing
+workflows/scheduler remain the orchestrator and the ledger the only state.
+
+- **Stages:** prepare → context → implement → validate → repair → deliver → learn. Terminal outcomes are
+  `completed`, `failed`, `canceled` and `blocked` (a `run.failed` with reason `policy`).
+- **Typed reasons** (optional `reason` on `attempt.failed`, `attempt.cancelled`, `delivery.rejected`,
+  `run.failed`, `run.cancelled`): `infra` → bounded retry in a fresh attempt with backoff; `capacity` →
+  wait, then re-route after `maxCapacityWaits`, never consuming a retry; `parse`/`test` → bounded repair
+  rounds (#105 performs the repair); `policy` → terminal block, never retried; `cancelled` → terminal.
+  Counters are derived from the ledger, so a restart cannot reset a budget.
+- **Order and staleness:** `appendCodingRunEvent({ strictLifecycle: true })` rejects out-of-order stage
+  events and results from finished or superseded attempts (so cancellation beats a late completion).
+  Duplicate `delivery.opened`/`delivery.merged` and a reason on an event that cannot fail are refused
+  always. Strict mode is opt-in for compatibility; stored history is never re-validated on replay.
+- **Resume:** `planResume` reads a snapshot and returns continue, abandon (stage deadline or lost worker,
+  recorded as `infra`), start a superseding attempt, or await an already-open delivery.
+- **Isolation:** `attemptWorktreePath` gives each attempt its own worktree; quota admission (#93) and
+  worker isolation (#113) stay owned by their components.
+- **Migration:** callers adopt `strictLifecycle` and `reason` per producer; no schema version change.

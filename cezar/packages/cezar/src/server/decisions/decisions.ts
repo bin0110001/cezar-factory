@@ -26,7 +26,7 @@ import {
 export type GhRunner = (args: string[]) => Promise<string>;
 
 export const DECISION_STATES = ['factory:needs-help', 'factory:human-review'] as const;
-const RESUME_STATE = 'factory:needs-plan';
+export const RESUME_STATE = 'factory:needs-plan';
 const ASK_MARKER = /<!--\s*factory-decision:v1\s+([\s\S]*?)\s*-->/;
 
 interface IssueComment { body: string; createdAt?: string }
