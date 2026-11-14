@@ -112,7 +112,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'scripts/factory/protect-governance.ps1', 'policies/protected-assets.json', 'schemas/governance-authorization.schema.json', 'tests/protect-governance.ps1', 'tests/fake-gh-governance.ps1', 'docs/governance-guard.md', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'schemas/backlog-label-audit-proposal.schema.json', 'workflows/repair-probe.yaml', 'automations/repair-probe.json', 'tests/test_factory_repair_replay.py', 'tests/replay/maintenance-considered-failure.json'
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
-'schemas/routing-event.schema.json', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
+'schemas/routing-event.schema.json', 'schemas/routing-dataset.schema.json', 'scripts/build-routing-dataset.ps1', 'scripts/report-routing-evaluation.ps1', 'tests/fixtures/routing-eval/runs.jsonl', 'tests/fixtures/routing-eval/events.jsonl', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md',
 'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
@@ -1128,7 +1128,12 @@ try {
             Assert 'backlog proposal orders ready work and reports lease exclusion' (@($proposal.actions).Count -eq 2 -and $proposal.actions[0].issue -eq 4 -and @($proposal.excludedIssues | Where-Object { $_.issue -eq 3 -and $_.reason -eq 'active-lease' }).Count -eq 1)
         }
     }
-    foreach ($fx in Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory) {
+    # fixtures/ also contains data-only inputs (for example routing-eval). Only
+    # project fixtures with an installed Factory config belong in this loop.
+    $projectFixtures = @(Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName '.ai/factory/factory.config.yaml') -PathType Leaf
+    })
+    foreach ($fx in $projectFixtures) {
         Write-Host "== fixture $($fx.Name) =="
         $proj = Join-Path $tmp $fx.Name
         Copy-Item $fx.FullName $proj -Recurse
@@ -2374,6 +2379,35 @@ Assert 'missing retention is rejected' ($pr.Code -ne 0)
 $shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
 Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
 Remove-Item -Recurse -Force $pruneDir
+
+# Routing evaluation dataset and report (#137)
+$reDir = Join-Path ([IO.Path]::GetTempPath()) ("routeval-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $reDir | Out-Null
+$reFx = Join-Path $factory 'tests/fixtures/routing-eval'
+$reA = Join-Path $reDir 'a.json'; $reB = Join-Path $reDir 'b.json'
+$r1 = Run 'build-routing-dataset.ps1' @{ RunsPath = (Join-Path $reFx 'runs.jsonl'); EventsPath = (Join-Path $reFx 'events.jsonl'); OutPath = $reA }
+$null = Run 'build-routing-dataset.ps1' @{ RunsPath = (Join-Path $reFx 'runs.jsonl'); EventsPath = (Join-Path $reFx 'events.jsonl'); OutPath = $reB }
+$reText = [IO.File]::ReadAllText($reA)
+Assert 'routing dataset builds and is byte-identical on re-run' ($r1.Code -eq 0 -and $reText -ceq [IO.File]::ReadAllText($reB))
+$reDs = $reText | ConvertFrom-Json
+Assert 'routing dataset is versioned and ordered by runId' ($reDs.schemaVersion -eq 1 -and (($reDs.records | ForEach-Object runId) -join ',') -ceq 'r1,r2,r3')
+Assert 'routing dataset redacts prompts, source, logs and credentials' ($reText -notmatch 'SECRET PROMPT|function x|sk-abcdef|abc123|apiKey|sourceCode')
+$reR1 = $reDs.records[0]
+Assert 'routing dataset marks missing telemetry unknown and joins events' ($reR1.costUsd -ceq 'unknown' -and $reR1.inputTokens -ceq 'unknown' -and $reR1.tier -ceq 'premium' -and $reR1.attempts -eq 2 -and $reR1.fallbackUsed -eq $true)
+$reRep = Join-Path $reDir 'report.json'
+$r2 = Run 'report-routing-evaluation.ps1' @{ DatasetPath = $reA; OutPath = $reRep }
+$reJson = [IO.File]::ReadAllText($reRep) | ConvertFrom-Json
+$reSonnet = $reJson.byModel | Where-Object { $_.model -eq 'sonnet' }
+$reGpt = $reJson.byModel | Where-Object { $_.model -eq 'gpt-x' }
+Assert 'report computes retry-inclusive cost per accepted change (2.0 / 2 accepted = 1.0)' ($r2.Code -eq 0 -and $reSonnet.attempts -eq 3 -and $reSonnet.retries -eq 1 -and $reSonnet.effectiveCostPerAccepted -eq 1 -and $reSonnet.mergedChanges -eq 1)
+Assert 'report keeps unknown cost unknown (never zero) and flags low sample' ($reGpt.effectiveCostPerAccepted -ceq 'unknown' -and $reGpt.totalCostUsd -ceq 'unknown' -and $reSonnet.lowSample -eq $true)
+Assert 'report compares tiers and capacity aliases' (@($reJson.byTier).Count -eq 2 -and @($reJson.byCapacityAlias).Count -eq 2)
+$reEmptyRuns = Join-Path $reDir 'empty.jsonl'; [IO.File]::WriteAllText($reEmptyRuns, '')
+$reEmpty = Join-Path $reDir 'empty-ds.json'
+$r3 = Run 'build-routing-dataset.ps1' @{ RunsPath = $reEmptyRuns; OutPath = $reEmpty }
+$r4 = Run 'report-routing-evaluation.ps1' @{ DatasetPath = $reEmpty; OutPath = (Join-Path $reDir 'empty-report.json') }
+Assert 'empty dataset builds and reports without error' ($r3.Code -eq 0 -and $r4.Code -eq 0 -and (([IO.File]::ReadAllText($reEmpty) | ConvertFrom-Json).recordCount -eq 0))
+Remove-Item -Recurse -Force $reDir
 
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green

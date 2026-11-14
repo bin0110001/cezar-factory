@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.112] - 2026-11-14
+
+- Model evaluation dataset and report (#137). `scripts/build-routing-dataset.ps1` builds a versioned, allow-list-redacted, deterministic coding-run dataset from run records and routing events (`schemas/routing-dataset.schema.json`); `scripts/report-routing-evaluation.ps1` reports per model, tier and capacity alias the attempts, retries, accepted and merged changes, and retry-inclusive effective cost per accepted change, with missing cost shown as `unknown` and small samples flagged. `docs/routing-evaluation.md` gains a deterministic rule proposal and experiment guardrails. Read-only; live routing is unchanged.
+
 ## [0.3.111] - 2026-11-14
 
 - Keep pull request ownership with the implementation or fix job through verified merge to `dev`; an open PR or queued auto-merge is not completion, and submission-only workflows are explicitly intermediate. Make local validation interpreter selection portable across Windows pyenv setups and keep the deploy/model-probe fixtures hermetic across Windows and Linux.
