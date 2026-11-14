@@ -60,3 +60,5 @@ The suite passing on Windows does not mean it passes in the Linux container that
 `pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate` runs the host's full suite for a pushed
 commit and writes a receipt to `.factory/ship-loop/receipts/linux-<sha>.json`. `AGENTS.md` requires it before
 merging a change to scripts, tests, workflows, automations, policies or config.
+
+The fixture lifecycle canary (`scripts/fixture-lifecycle.ps1`) runs against the private sandbox repository `bin0110001/cezar-factory-sandbox`, which `FACTORY_FIXTURE_REPO` overrides.
