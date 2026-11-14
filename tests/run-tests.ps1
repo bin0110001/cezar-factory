@@ -1863,7 +1863,7 @@ $gitMetadataSync = Get-Content -Raw (Join-Path $factory 'scripts/deploy/reconcil
 Assert 'autodeploy repairs only root Git metadata after verifying mounted files and preserves linked worktrees' ($autodeploy -match 'reconcile-container-git-metadata\.sh' -and $gitMetadataSync -match 'git .*ls-tree -r -z' -and $gitMetadataSync -match 'git .*read-tree' -and $gitMetadataSync -match 'update-ref refs/heads/stable' -and $gitMetadataSync -match 'task worktrees')
 # The deploy shell tests exercise real control flow (idle gate, deferral, recovery). They were once left out of the
 # suite and drifted into failure unnoticed, so run them whenever a POSIX bash (not WSL's launcher) is available.
-$shellTestBash = @(Get-Command bash -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'System32' }) | Select-Object -First 1
+$shellTestBash = @(Get-Command bash -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '(?i)(System32|WindowsApps)' }) | Select-Object -First 1
 if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
     # Git for Windows ships a POSIX bash that is often not on PATH in a plain PowerShell session.
     $gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source -Parent) -Parent) 'bin/bash.exe'
