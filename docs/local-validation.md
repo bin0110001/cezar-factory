@@ -8,6 +8,8 @@ depend on a GitHub workflow or status check: all validation runs on our own comp
 release scheduler's detached worktree). Local receipts are the validation evidence;
 do not wait for, poll, or cite GitHub checks.
 
+The fixture lifecycle canary (`scripts/fixture-lifecycle.ps1`) runs against the private sandbox repository `bin0110001/cezar-factory-sandbox`, which `FACTORY_FIXTURE_REPO` overrides.
+
 ## One-time setup
 
 Install PowerShell 7 and Python 3, then install the pinned YAML linter:
