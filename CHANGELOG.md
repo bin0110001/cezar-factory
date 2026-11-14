@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 - Project-scoped documentation search/read adapter for agents (#177). `scripts/docs/search.py` is a backend-neutral `docs_search`/`docs_read` layer with per-identity project/repo/ref authorisation before retrieval, bounded anchored snippets carrying source SHA, freshness and an evidence link, timeout/retry/cache, checked-in-doc fallback, untrusted-text neutralisation, licensed-path exclusion and a secret-free audit with latency/size metrics. Contract and agent guidance in `integrations/docs-mcp/README.md`. Obot upstream registration and skill publication wait on the #175/#176 backend decision.
+## [0.3.110] - 2026-11-14
+
+- Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
 
 - Work already merged to dev is no longer charged to an implementation's own change (`STABILIZATION-PLAN.md` item 3.3). The governance guard and the changed-test selector measured an implementation from the base commit the run recorded when it started. The agent must merge the current `origin/dev` before handing over, so anything merged to dev during the run showed up as the agent's own change: the rerun of fixture issue #528 (a docs-only change) was refused by the guard for two files another run's merged feature had brought in. New `scripts/factory/base-lib.ps1` (`Get-FactoryEffectiveBase`) moves the base forward to where the branch's merge of the real remote's dev joined it. It fetches the remote and does not trust the local `origin/dev` ref, so an agent cannot point that ref at its own HEAD to hide a protected change; the base only moves forward, and any failure leaves the recorded base, which can only make the guard stricter. An explicit `-Base` is used as given. Tests: a merged protected change is not charged, the branch's own protected change is still refused after the merge, and a forged local ref hides nothing.
 
