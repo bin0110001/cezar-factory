@@ -117,7 +117,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
 'schemas/routing-event.schema.json', 'schemas/routing-dataset.schema.json', 'scripts/build-routing-dataset.ps1', 'scripts/report-routing-evaluation.ps1', 'tests/fixtures/routing-eval/runs.jsonl', 'tests/fixtures/routing-eval/events.jsonl', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md',
-'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json', 'scripts/worker/worker_protocol.py', 'schemas/worker-protocol.schema.json', 'tests/test_worker_protocol.py', 'docs/adr/214-worker-protocol.md', 'integrations/obot-skills/catalog.json', 'scripts/obot-skills/obot_skills.py', 'tests/test_obot_skills.py', 'docs/obot-skills-catalog.md'
+'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json', 'scripts/worker/worker_protocol.py', 'schemas/worker-protocol.schema.json', 'tests/test_worker_protocol.py', 'docs/adr/214-worker-protocol.md', 'integrations/obot-skills/catalog.json', 'scripts/obot-skills/obot_skills.py', 'tests/test_obot_skills.py', 'docs/obot-skills-catalog.md', 'policies/asset-locality.json', 'schemas/asset-requirement.schema.json', 'scripts/asset-locality-lib.ps1', 'tests/asset-locality.ps1', 'docs/asset-locality.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 foreach ($schemaFile in 'schemas/evidence-manifest.schema.json', 'schemas/verification-query.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json') {
     try { Get-Content -Raw (Join-Path $factory $schemaFile) | ConvertFrom-Json | Out-Null; Assert "valid JSON $schemaFile" $true }
@@ -2262,6 +2262,10 @@ Write-Host '== verification workflow =='
 $vwOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-workflow.ps1') 2>&1 | Out-String
 Write-Host $vwOutput
 Assert 'verification workflow: scoped selection, mandatory checks from policy, invocation and ledger-recorded verdicts' ($LASTEXITCODE -eq 0)
+Write-Host '== asset locality =='
+$assetOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'asset-locality.ps1') 2>&1 | Out-String
+Write-Host $assetOutput
+Assert 'asset locality: authorization, cache hit and fresh stage, manifest invalidation, unsafe path, hash mismatch, disk full, revoked access and evidence without payload' ($LASTEXITCODE -eq 0)
 Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
