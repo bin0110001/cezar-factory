@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.111] - 2026-11-14
+
+- Keep pull request ownership with the implementation or fix job through verified merge to `dev`; an open PR or queued auto-merge is not completion, and submission-only workflows are explicitly intermediate. Make local validation interpreter selection portable across Windows pyenv setups and keep the deploy/model-probe fixtures hermetic across Windows and Linux.
+
 ## [0.3.110] - 2026-11-14
 
 - Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.

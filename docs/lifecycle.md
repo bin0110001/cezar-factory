@@ -213,5 +213,9 @@ implementation automation.
 Users decide only unresolved major architectural choices. A cleared external
 blocker is recorded with evidence and work resumes automatically; do not ask
 the user to reschedule it. Approved, validated, independently reviewed PRs are
-auto-merged into `dev`. Continue other eligible issues while an issue waits on
-CI, independent review, or release.
+auto-merged into `dev`. The implementation/fix job that opened or updated a PR keeps
+ownership across review and fix workflow handoffs until GitHub confirms the PR is
+merged. Opening a PR, passing review, or queuing auto-merge is not completion; an open
+PR stays in `factory:review` for retry and must not be left for the user or orphaned-PR
+recovery. Continue other eligible issues while an issue waits on independent review
+or release.

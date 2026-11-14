@@ -1824,7 +1824,11 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
-$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
+$python3Command = Get-Command python3 -ErrorAction SilentlyContinue
+$pythonRunner = if ($python3Command -and $python3Command.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]') { 'python3' } elseif ($python3Command) {
+    $installedPython = @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]|[\\/]WindowsApps[\\/]' } | Select-Object -First 1)
+    if ($installedPython) { $installedPython[0].Source } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python3' }
+} elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
 $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') }
     Push-Location $factory
