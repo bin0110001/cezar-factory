@@ -227,7 +227,11 @@ export function planShards(inputs: PlanInputs): ShardPlan {
   const unitMs = (u: RawUnit, w: ShardWorker) => u.tests.reduce((s, t) => s + duration(t, w).ms, 0);
   // Order by predicted work on the first compatible worker, longest first; id breaks ties.
   const ordered = raw
-    .map((u) => ({ u, ms: unitMs(u, u.compatible[0]) }))
+    .map((u) => {
+      const firstCompatible = u.compatible[0];
+      if (!firstCompatible) throw new Error(`unit ${u.id} has no compatible worker`);
+      return { u, ms: unitMs(u, firstCompatible) };
+    })
     .sort((a, b) => b.ms - a.ms || sortStr(a.u.id, b.u.id));
 
   const place = (pool: ShardWorker[]) => {
@@ -237,7 +241,9 @@ export function planShards(inputs: PlanInputs): ShardPlan {
     for (const { u } of ordered) {
       const options = u.compatible.filter((w) => load.has(w.id));
       if (!options.length) { skipped.push(u); continue; }
-      let best = options[0], bestEnd = Infinity;
+      let best = options[0];
+      if (!best) { skipped.push(u); continue; }
+      let bestEnd = Infinity;
       for (const w of options) {
         const end = (load.get(w.id) ?? 0) + unitMs(u, w);
         if (end < bestEnd) { best = w; bestEnd = end; }
@@ -297,7 +303,7 @@ export function planShards(inputs: PlanInputs): ShardPlan {
     mandatoryTestIds: mandatory,
     partitions,
     unplaceable,
-    testReasons: Object.fromEntries(Object.keys(testReasons).sort(sortStr).map((k) => [k, testReasons[k]])),
+    testReasons: Object.fromEntries(Object.keys(testReasons).sort(sortStr).map((k) => [k, testReasons[k] ?? []])),
     predictedSerialMs: serial,
     predictedMakespanMs: Math.max(0, ...partitions.map((p) => p.predictedMs)),
     reasons: capped ? (['overhead-cap'] as ReasonCode[]) : [],

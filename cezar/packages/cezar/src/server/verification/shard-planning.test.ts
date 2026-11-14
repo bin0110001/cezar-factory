@@ -105,9 +105,9 @@ describe('planShards', () => {
       tests: [{ id: 'shot', ...safe, requires: { godotGui: true, display: ':0' } }],
     });
     const plan = planShards(inputs({ manifest, selected: ['shot'], workers: [worker('w1')] }));
-    expect(plan.unplaceable[0].testId).toBe('shot');
+    expect(plan.unplaceable[0]?.testId).toBe('shot');
     const gui = worker('g', { godot: { headless: true, gui: true }, displays: [':0'] });
-    expect(planShards(inputs({ manifest, selected: ['shot'], workers: [worker('w1'), gui] })).partitions[0].workerId).toBe('g');
+    expect(planShards(inputs({ manifest, selected: ['shot'], workers: [worker('w1'), gui] })).partitions[0]?.workerId).toBe('g');
   });
 });
 
@@ -142,20 +142,22 @@ describe('aggregateShardResults', () => {
     const stale = aggregateShardResults({ plan, results: [...base, result(plan, 'p2', { attempt: 2 })], currentAttempts: { p2: 1 } });
     expect(stale.rejected).toEqual([{ partitionId: 'p2', attempt: 2, reason: 'stale-attempt' }]);
     expect(stale.verdict).toBe('pass');
-    expect(aggregateShardResults({ plan, results: [...base, { ...result(plan, 'p2'), planId: 'old' }] }).rejected[0].reason).toBe('stale-plan');
+    expect(aggregateShardResults({ plan, results: [...base, { ...result(plan, 'p2'), planId: 'old' }] }).rejected[0]?.reason).toBe('stale-plan');
     const late = aggregateShardResults({ plan, results: [result(plan, 'p1'), result(plan, 'p2', { receivedAtMs: 20 })], deadlineMs: 10 });
-    expect(late.rejected[0].reason).toBe('late');
+    expect(late.rejected[0]?.reason).toBe('late');
     expect(late.verdict).toBe('incomplete');
     expect(aggregateShardResults({ plan, results: [...base, result(plan, 'p2')] }).verdict).toBe('pass');
     const p2 = result(plan, 'p2');
     const conflict = aggregateShardResults({ plan, results: [result(plan, 'p1'), p2, { ...p2, tests: p2.tests.map((t) => ({ ...t, status: 'fail' as const })) }] });
     expect(conflict.verdict).toBe('incomplete');
-    expect(conflict.rejected[0].reason).toBe('duplicate-conflict');
+    expect(conflict.rejected[0]?.reason).toBe('duplicate-conflict');
   });
 
   it('a failure fails the run; unexpected tests are reported and not counted; skipped mandatory is not pass', () => {
     const p1 = result(plan, 'p1');
-    const failed = aggregateShardResults({ plan, results: [{ ...p1, tests: [{ id: p1.tests[0].id, status: 'fail' }, ...p1.tests.slice(1)] }, result(plan, 'p2')] });
+    const firstTest = p1.tests[0];
+    if (!firstTest) throw new Error('expected p1 to contain a test');
+    const failed = aggregateShardResults({ plan, results: [{ ...p1, tests: [{ id: firstTest.id, status: 'fail' }, ...p1.tests.slice(1)] }, result(plan, 'p2')] });
     expect(failed.verdict).toBe('fail');
     const extra = aggregateShardResults({ plan, results: [{ ...p1, tests: [...p1.tests, { id: 'ghost', status: 'pass' }] }, result(plan, 'p2')] });
     expect(extra.unexpected).toEqual([{ partitionId: 'p1', testId: 'ghost' }]);
