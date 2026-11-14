@@ -17,6 +17,8 @@ the window schema is #89). The Cezar scheduler calls it; this repository ships t
   too, and `reevaluate()` skips jobs still inside their backoff window (retry-storm guard).
 - `reevaluate(force=True)` on a reset or telemetry refresh readmits deferred jobs by priority plus aging
   (`aging_per_hour`), so low-priority work cannot starve.
+- After `max_attempts` unsuccessful admissions, automatic retries stop and the job remains deferred (it is not
+  marked failed).
 - Unknown capacity: `unknown_mode="conservative"` (default) defers; `"optimistic"` admits up to
   `optimistic_unknown_limit` concurrent probes per provider.
 

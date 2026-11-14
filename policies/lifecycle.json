@@ -14,31 +14,37 @@
       "states": {
         "factory:new": {
           "kind": "automated",
+          "lane": "Inbox",
           "owner": { "workflow": "factory-intake" },
           "exits": [
-            { "to": "factory:needs-plan", "on": "intake-result" },
-            { "to": "factory:needs-help", "on": "intake-result" }
+            { "to": "factory:needs-plan", "on": "intake-result", "outcome": "classified" },
+            { "to": "factory:needs-help", "on": "intake-result", "outcome": "question" },
+            { "to": "factory:ready", "on": "plan-result", "outcome": "ready" },
+            { "to": "factory:needs-help", "on": "plan-result", "outcome": "not-ready" },
+            { "to": "factory:done", "on": "plan-result", "outcome": "decomposed" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
         },
         "factory:needs-plan": {
           "kind": "automated",
+          "lane": "Refinement",
           "owner": { "workflow": "factory-plan" },
           "exits": [
-            { "to": "factory:ready", "on": "plan-result" },
-            { "to": "factory:needs-help", "on": "plan-result" },
-            { "to": "factory:done", "on": "plan-result" }
+            { "to": "factory:ready", "on": "plan-result", "outcome": "ready" },
+            { "to": "factory:needs-help", "on": "plan-result", "outcome": "not-ready" },
+            { "to": "factory:done", "on": "plan-result", "outcome": "decomposed" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
         },
         "factory:ready": {
           "kind": "automated",
+          "lane": "Ready",
           "owner": { "workflow": "factory-implement" },
           "requires": { "exactlyOne": "complexity", "otherwise": "factory:needs-plan" },
           "exits": [
-            { "to": "factory:working", "on": "start" },
+            { "to": "factory:working", "on": "start", "outcome": "started" },
             { "to": "factory:needs-plan", "on": "lifecycle-sweep" }
           ],
           "maxDwellHours": 24,
@@ -46,23 +52,28 @@
         },
         "factory:working": {
           "kind": "in-run",
+          "lane": "Active",
           "owner": { "workflows": ["factory-implement", "factory-fix-review"] },
           "exits": [
-            { "to": "factory:review", "on": "implement-result" },
-            { "to": "factory:investigate", "on": "implement-result" },
-            { "to": "factory:implemented", "on": "manual" }
+            { "to": "factory:review", "on": "implement-result", "outcome": "success" },
+            { "to": "factory:investigate", "on": "implement-result", "outcome": "failed" },
+            { "to": "factory:implemented", "on": "manual" },
+            { "to": "factory:ready", "on": "investigate-result", "outcome": "retry" },
+            { "to": "factory:needs-plan", "on": "investigate-result", "outcome": "replan" },
+            { "to": "factory:needs-help", "on": "investigate-result", "outcome": "escalate" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "investigate"
         },
         "factory:review": {
           "kind": "automated",
+          "lane": "Review",
           "inFlight": true,
           "owner": { "workflow": "factory-review" },
           "exits": [
-            { "to": "factory:done", "on": "review-result" },
-            { "to": "factory:changes-requested", "on": "review-result" },
-            { "to": "factory:investigate", "on": "review-result" }
+            { "to": "factory:done", "on": "review-result", "outcome": "approved" },
+            { "to": "factory:changes-requested", "on": "review-result", "outcome": "changes" },
+            { "to": "factory:investigate", "on": "review-result", "outcome": "limit" }
           ],
           "onConflict": "factory:changes-requested",
           "maxDwellHours": 24,
@@ -70,21 +81,23 @@
         },
         "factory:changes-requested": {
           "kind": "automated",
+          "lane": "Active",
           "inFlight": true,
           "owner": { "workflow": "factory-fix-review" },
           "exits": [
-            { "to": "factory:working", "on": "start" }
+            { "to": "factory:working", "on": "start", "outcome": "started" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
         },
         "factory:investigate": {
           "kind": "automated",
+          "lane": "Inbox",
           "owner": { "workflow": "factory-investigate" },
           "exits": [
-            { "to": "factory:ready", "on": "investigate-result" },
-            { "to": "factory:needs-plan", "on": "investigate-result" },
-            { "to": "factory:needs-help", "on": "investigate-result" }
+            { "to": "factory:ready", "on": "investigate-result", "outcome": "retry" },
+            { "to": "factory:needs-plan", "on": "investigate-result", "outcome": "replan" },
+            { "to": "factory:needs-help", "on": "investigate-result", "outcome": "escalate" }
           ],
           "maxDwellHours": 24,
           "onTimeout": "retrigger"
@@ -101,6 +114,7 @@
         },
         "factory:human-review": {
           "kind": "human",
+          "lane": "Review",
           "owner": { "role": "owner" },
           "exits": [
             { "to": "factory:needs-plan", "on": "manual" }
@@ -112,7 +126,7 @@
           "kind": "human",
           "owner": { "role": "owner" },
           "exits": [
-            { "to": "factory:working", "on": "start" },
+            { "to": "factory:working", "on": "start", "outcome": "started" },
             { "to": "factory:ready", "on": "lifecycle-sweep" }
           ],
           "onUnblocked": "factory:ready",
@@ -121,6 +135,7 @@
         },
         "factory:implemented": {
           "kind": "delivery",
+          "lane": "Review",
           "owner": { "workflow": "factory-maintenance" },
           "exits": [
             { "to": "factory:pr-open", "on": "delivery-sync" }
@@ -130,6 +145,7 @@
         },
         "factory:pr-open": {
           "kind": "delivery",
+          "lane": "Review",
           "owner": { "workflow": "factory-maintenance" },
           "exits": [
             { "to": "factory:done", "on": "delivery-sync" }
@@ -138,7 +154,8 @@
           "onTimeout": "report"
         },
         "factory:done": {
-          "kind": "terminal"
+          "kind": "terminal",
+          "lane": "Done"
         }
       }
     },
@@ -150,9 +167,9 @@
           "kind": "automated",
           "owner": { "workflow": "factory-plan" },
           "exits": [
-            { "to": "factory:ready", "on": "plan-result" },
-            { "to": "factory:needs-help", "on": "plan-result" },
-            { "to": "factory:done", "on": "plan-result" },
+            { "to": "factory:ready", "on": "plan-result", "outcome": "ready" },
+            { "to": "factory:needs-help", "on": "plan-result", "outcome": "not-ready" },
+            { "to": "factory:done", "on": "plan-result", "outcome": "decomposed" },
             { "to": "factory:design-signoff", "on": "plan-result", "when": { "risk": ["risk:high"] } }
           ],
           "maxDwellHours": 24,

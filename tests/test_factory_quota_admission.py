@@ -177,6 +177,19 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(ctl.reevaluate(), [])  # inside backoff: not even tried
         self.assertEqual(ctl.deferred["j"].attempts, 6)
 
+    def test_max_attempts_stops_reevaluation_without_failing_the_job(self):
+        c = Clock()
+        ctl, _ = make(c, a={"5h": 0, "weekly": 0}, max_attempts=1)
+        first = ctl.admit("j", cands("a"))
+        self.assertEqual(first.status, qa.DEFERRED)
+        self.assertIn("maximum admission attempts exhausted", first.reason)
+        self.assertIsNone(first.retry_at)
+        self.assertEqual(ctl.next_retry(), None)
+        self.assertEqual(ctl.reevaluate(force=True), [])
+        repeated = ctl.admit("j", cands("a"))
+        self.assertEqual(repeated.status, qa.DEFERRED)
+        self.assertEqual(ctl.deferred["j"].attempts, 1)
+
     def test_reset_readmits_deferred_automatically(self):
         c = Clock()
         ctl, ads = make(c, a={"5h": 0, "weekly": 100})

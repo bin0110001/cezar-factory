@@ -158,6 +158,8 @@ class AdmissionController:
             self._expire(now)
             if job_id in self.leases:  # duplicate dispatch guard
                 return Decision(job_id, ADMITTED, self.leases[job_id].provider, duplicate=True)
+            if job_id in self.exhausted_jobs:
+                return Decision(job_id, DEFERRED, reason="maximum admission attempts exhausted")
             item = self.deferred.get(job_id) or Deferred(job_id, candidates, priority, now)
             item.candidates, item.priority = candidates, priority
             return self._try(item, now)
@@ -177,11 +179,15 @@ class AdmissionController:
             if retry and (earliest is None or retry < earliest):
                 earliest = retry
         item.attempts += 1
+        if item.attempts >= self.max_attempts:
+            self.exhausted_jobs.add(item.job_id)
+            item.not_before = None
+            self.deferred[item.job_id] = item
+            reason = "; ".join(r for r in reasons if r) or "no eligible candidate"
+            return Decision(item.job_id, DEFERRED, reason=f"{reason}; maximum admission attempts exhausted")
         floor = now + timedelta(seconds=self._backoff(item.attempts))
         retry_at = max(earliest, floor) if earliest else floor  # never earlier than the storm guard allows
         item.not_before = retry_at
-        if item.attempts > self.max_attempts:
-            self.exhausted_jobs.add(item.job_id)
         self.deferred[item.job_id] = item
         return Decision(item.job_id, DEFERRED, reason="; ".join(r for r in reasons if r) or "no eligible candidate", retry_at=retry_at)
 
@@ -254,6 +260,8 @@ class AdmissionController:
             self._expire(now)
             out = []
             for item in sorted(self.deferred.values(), key=lambda i: (-self.effective_priority(i, now), i.enqueued_at)):
+                if item.job_id in self.exhausted_jobs:
+                    continue
                 if not force and item.not_before and item.not_before > now:
                     continue
                 decision = self._try(item, now)
@@ -263,5 +271,5 @@ class AdmissionController:
 
     def next_retry(self) -> Optional[datetime]:
         with self._lock:
-            times = [i.not_before for i in self.deferred.values() if i.not_before]
+            times = [i.not_before for i in self.deferred.values() if i.not_before and i.job_id not in self.exhausted_jobs]
             return min(times) if times else None
