@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.111] - 2026-11-14
+
 - The static parse and portability checks match their `.ai`/`.factory`/`node_modules` exclusions against the path below the scanned root, not the absolute path. A run worktree's temp directory sits under `.ai/cezar/tmp`, so the suite's seeded fixtures were skipped and two assertions failed there (`contract check reports a script with a syntax error`, the portability check): the unexplained in-run exit 1 noted below (`STABILIZATION-PLAN.md` item 3.3).
 
 - `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
