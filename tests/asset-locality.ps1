@@ -28,7 +28,7 @@ try {
     # Descriptor validation
     Check 'a valid descriptor has no problems' (@(Test-AssetDescriptor (New-Desc)).Count -eq 0)
     Check 'an un-namespaced id, a bad digest and an unknown source class are rejected' (@(Test-AssetDescriptor (New-Desc @{ id = 'flat' })).Count -eq 1 -and @(Test-AssetDescriptor (New-Desc @{ digest = 'abc' })).Count -eq 1 -and @(Test-AssetDescriptor (New-Desc @{ sourceClass = 'secret' })).Count -eq 1)
-    Check 'path traversal in sourceRef is rejected' ((@('../x', '/etc/passwd', 'a/../../b', 'C:\x', '~/x', 'a//b', '') | ForEach-Object { Test-AssetSafeRelativePath $_ } | Where-Object { $_ } | Measure-Object).Count -eq 0)
+    Check 'path traversal in sourceRef is rejected' ((@('../x', '/etc/passwd', 'a/../../b', 'C:\x', '~/x', 'a//b', '') | ForEach-Object { Test-AssetSafeRelativePath $_ } | Where-Object { $_ } | Measure-Object).Count -eq 0) # windows-only
     Check 'a plain relative sourceRef is accepted' (Test-AssetSafeRelativePath 'sub/dir/blob.bin')
 
     # Fresh stage, then cache hit
