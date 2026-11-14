@@ -14,6 +14,10 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.115] - 2026-11-14
+
+- A local end-to-end acceptance suite for the Obot MCP gateway (issue #172). `tests/obot-e2e.ps1` starts a loopback stand-in gateway and drives the real client helper (`integrations/mcp-gateway/headers.mjs`) and the committed client/Obot contracts through scoped identity use, missing/unknown/expired/revoked/rotated tokens, write-tool and cross-project denial, concurrent runs, an outage and an Obot restart (both fail closed), malformed requests, run/attempt trace correlation, and a ledger and token registry proven free of credentials. It runs from `tests/run-tests.ps1` on local compute; `docs/obot-mcp-e2e.md` is the runbook (reproduce command, gate-to-case map, supported versions, fail-closed rules) and lists what is not covered yet (GitHub App token minting, skill sync/hash verification, live Obot and Langfuse correlation), because those parts of #166–#171 are not in this repository.
+
 ## [0.3.114] - 2026-11-14
 
 - Verification workflow for issue #102 (parent #56): adds scoped check selection, command-bound invocation, policy-mandatory checks, verdict evaluation, and an append-only hash-chained result ledger. The existing implement/review verification remains unchanged. See `docs/verification-workflow.md` for the contract gaps.
@@ -348,8 +352,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-- MCP gateway policy and approved skill-catalog references are delivered through the existing dev/stable release (issue #170). `policies/capability-policy.json` ships inside the pinned release; `scripts/release/factory_capability_delivery.py` stages it as a content-addressed snapshot, verifies what the gateway actually serves, and only then swaps one atomic per-channel pointer, so a failed, partial or interrupted sync (including Obot downtime) leaves the previous verified policy active and never enables an unapproved capability. Stable activation requires a reviewed promotion. Tasks pin their policy on first resolution, so a channel promotion or rollback changes only new tasks. Project opt-ins can only select approved entries; credentials in a policy are refused. Rollback, recovery and drift reports are covered by tests. No Obot-specific push pipeline; the gateway probe is injected.
 
 
 - Cezar's stall detector reads the Factory's lifecycle policy (`STABILIZATION-PLAN.md` item 1.4f, in part). It derives which `factory:*` labels are lifecycle states, which a person owns, and which mean work is in flight from `policies/lifecycle.json` (counting every profile, with `extends` applied) instead of three hard-coded sets, so an issue waiting at a profile-only state such as the `risk-gated` profile's `factory:design-signoff` is reported as waiting on a person and not as having no state label. With the shipped policy the derived sets are exactly the old constants (a test pins this); when the file is missing or invalid the detector uses the standard process as before. `factory:review` and `factory:changes-requested` carry `"inFlight": true` in the policy to keep their treatment. The Decisions screen and backlog lanes still keep their own lists.
