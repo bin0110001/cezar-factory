@@ -114,5 +114,41 @@ Check 'commit-message tag is not a bypass' ((Run-Guard).code -ne 0)
 $r = Run-Guard (New-Marker) (New-State)
 Check 'valid authorized review passes with a visible waiver' ($r.code -eq 0 -and $r.out -match 'WAIVED by reviewer1' -and $r.out -match 'policies/risk.yaml')
 Check 'waiver is appended to the ledger' ((Test-Path $ledgerFile) -and (Get-Content -Raw $ledgerFile) -match '"type":"governance-waiver"' -and (Get-Content -Raw $ledgerFile) -match 'reviewer1')
+# The branch merged a newer dev (another run's feature touched a protected path). That is not this change's work; the
+# guard measures from where the merge joined the real remote's dev. A forged local origin/dev ref must not help.
+Write-Host '== protect-governance: base moves forward to the real dev =='
+function Run-GuardAuto {
+    $env:FAKE_GOV_STATE = ''
+    $argList = @('-NoProfile', '-File', $guard, '-Root', $script:repo, '-Gh', $fakeGh, '-Repo', 'o/r',
+        '-AuthorizationPath', (Join-Path $script:repo '.no-marker'), '-ReportPath', (Join-Path $script:repo '.factory/governance-guard.json'))
+    Push-Location $script:repo
+    try { $out = & pwsh @argList 2>&1 | Out-String } finally { Pop-Location }
+    [pscustomobject]@{ code = $LASTEXITCODE; out = $out }
+}
+New-Repo
+$origin = Join-Path ([IO.Path]::GetTempPath()) "gov-origin-$([guid]::NewGuid().ToString('N').Substring(0, 8)).git"
+& git init -q --bare $origin; if ($LASTEXITCODE -ne 0) { throw 'git init --bare failed' }
+G remote add origin $origin; G push -q origin main:dev
+New-Item -ItemType Directory -Force (Join-Path $script:repo '.factory') | Out-Null
+(@{ environment = @{ baseCommit = $script:base } } | ConvertTo-Json) | Set-Content (Join-Path $script:repo '.factory/implementation-context.json')
+G checkout -q -b cez/work
+$other = Join-Path ([IO.Path]::GetTempPath()) "gov-other-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+& git clone -q -b dev $origin $other
+& git -C $other config user.email o@example.com; & git -C $other config user.name o
+Set-Content (Join-Path $other 'policies/risk.yaml') 'a: 2'; & git -C $other commit -qam 'another run merged a policy change'; & git -C $other push -q origin dev
+Write-F 'src/app.txt' 'mine'; Commit-All
+G fetch -q origin; G merge -q --no-edit origin/dev
+$r = Run-GuardAuto
+Check 'a protected change that arrived by merging the real dev is not charged to the branch' ($r.code -eq 0 -and $r.out -match 'PASS')
+$explicit = Run-Guard
+Check 'an explicit -Base is used as given (the same history is refused from the run start)' ($explicit.code -ne 0)
+Write-F 'policies/risk.yaml' 'a: 3'; Commit-All
+$r = Run-GuardAuto
+Check 'the branch own protected change is still refused after the merge' ($r.code -ne 0 -and $r.out -match 'policies/risk.yaml')
+G update-ref refs/remotes/origin/dev HEAD
+$r = Run-GuardAuto
+Check 'a forged local origin/dev ref does not hide the branch own protected change' ($r.code -ne 0 -and $r.out -match 'policies/risk.yaml')
+Remove-Item -Recurse -Force $origin, $other -ErrorAction SilentlyContinue
+
 if ($script:failures) { Write-Host "protect-governance: $script:failures failure(s)"; exit 1 }
 Write-Host 'protect-governance: all checks passed'

@@ -1,5 +1,5 @@
 name: factory-fix-review
-description: Address actionable review findings, re-validate, and return the issue to factory:review
+description: Address actionable review findings, re-validate, return to review, and retain PR ownership through merge to dev
 steps:
   - id: startup
     name: Prepare workflow environment
