@@ -53,7 +53,22 @@ if (Test-Path $lifecycleFile) {
     try { $lifecycle = Get-FactoryLifecycle -Path $lifecycleFile }
     catch { Write-Warning "lifecycle policy ignored: $($_.Exception.Message)" }
 }
-if ($lifecycle) { $stateLabels = @(@($stateLabels) + @($lifecycle.States.Keys) | Select-Object -Unique) }
+if (-not $lifecycle) { Fail 'the lifecycle policy (policies/lifecycle.json) is missing or invalid; the router takes its transitions from it' }
+$stateLabels = @(@($stateLabels) + @($lifecycle.States.Keys) | Select-Object -Unique)
+# The router takes its transitions from the model (STABILIZATION-PLAN.md item 1.4c): which states may receive an event, and
+# where each named outcome of it leads. Conditional exits (`when`) are applied separately, by Get-FactoryLifecycleConditionalExit.
+function Get-EventSources([string]$Evt) {
+    @($lifecycle.States.Keys | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_ -and $_['on'] -eq $Evt }).Count })
+}
+function Get-Outcome([string]$Evt, [string]$Name) {
+    $targets = @(foreach ($stateName in $lifecycle.States.Keys) {
+        foreach ($x in @($lifecycle.States[$stateName]['exits'])) { if ($x -and $x['on'] -eq $Evt -and $x['outcome'] -eq $Name -and -not $x.Contains('when')) { [string]$x['to'] } }
+    })
+    $targets = @($targets | Select-Object -Unique)
+    if ($targets.Count -ne 1) { Fail "the lifecycle model has no single exit for $Evt outcome '$Name'" }
+    [string]$targets[0]
+}
+function Get-TerminalState { @($lifecycle.States.Keys | Where-Object { $lifecycle.States[$_]['kind'] -eq 'terminal' })[0] }
 $complexityLabels = @()
 $inComplexity = $false
 foreach ($l in Get-Content (Join-Path $PoliciesDir 'labels.yaml')) {
@@ -211,28 +226,29 @@ function Done([string]$To, [string]$Note = '') {
 
 switch ($Event) {
     'intake-result' {
-        Assert-Source 'factory:new'
+        Assert-Source (Get-EventSources 'intake-result')
         Set-Classification ([string]$result.type) ([string]$result.risk)
         Add-Comment "## Factory intake`n`n$(Text $result.summary)`n`n**Type:** $($result.type)`n**Risk:** $($result.risk)"
         if (-not [string]::IsNullOrWhiteSpace([string]$result.unresolvedQuestions)) {
             $decisionComment = New-DecisionComment $result; if ($decisionComment) { Add-Comment $decisionComment }
             Add-Comment (New-Escalation (Text $result.unresolvedQuestions) 'Intake classification completed.' '(see intake result)' 'The issue cannot be safely planned without an answer.' 'Answer the questions, then relabel the issue factory:needs-plan.')
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'intake question'
+            $to = Get-Outcome 'intake-result' 'question'; Set-State $to; Done $to 'intake question'
         }
-        Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'classified'
+        $to = Get-Outcome 'intake-result' 'classified'; Set-State $to; Done $to 'classified'
     }
     'already-resolved' {
         # Closed/done issue: collapse to the single terminal state label. No comment; nothing new happened.
-        Set-State 'factory:done'; Done 'factory:done' 'already resolved'
+        $to = Get-TerminalState; Set-State $to; Done $to 'already resolved'
     }
     'start' {
-        if ($current -contains 'factory:working') { Done 'factory:working' 'already working' }
-        Assert-Source 'factory:ready', 'factory:changes-requested', 'factory:blocked'
+        $started = Get-Outcome 'start' 'started'
+        if ($current -contains $started) { Done $started 'already working' }
+        Assert-Source (Get-EventSources 'start')
         Write-ExecutionRecord 'selected'
-        Set-State 'factory:working'; Done 'factory:working'
+        Set-State $started; Done $started
     }
     'plan-result' {
-        Assert-Source 'factory:needs-plan', 'factory:new'
+        Assert-Source (Get-EventSources 'plan-result')
         Set-Complexity $result.complexity
         $plan = "## Factory plan`n`n**Objective**`n$(Text $result.objective)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteria)`n`n**Non-goals**`n$(Text $result.nonGoals)`n`n**Risks**`n$(Text $result.risks)`n`n**Dependencies**`n$(Text $result.dependencies)`n`n**Work breakdown**`n$(Text $result.suggestedWorkBreakdown)`n`n**Project skills**`n$(Text $result.requiredProjectSkills)"
         if ($result.readyNotReadyStatus -eq 'decomposed') {
@@ -262,58 +278,64 @@ switch ($Event) {
             }
             $table = "## Factory decomposition`n`nCreated $($subs.Count) sub-issues and queued them as ``factory:needs-plan`` for autonomous planning and implementation in dependency order. This parent is a tracking record and is closed after decomposition.`n`n| Issue | Title | Type | Risk | Depends on |`n|---|---|---|---|---|`n$($rows -join "`n")"
             Add-Comment ($plan + "`n`n" + $table)
-            Set-State 'factory:done'
+            Set-State (Get-Outcome 'plan-result' 'decomposed')
             Invoke-Gh issue close $Issue --comment "Decomposed into $($subs.Count) child issues, queued for autonomous planning and implementation in dependency order." | Out-Null
-            Done 'factory:done' "decomposed into $($subs.Count) queued sub-issues"
+            Done (Get-Outcome 'plan-result' 'decomposed') "decomposed into $($subs.Count) queued sub-issues"
         }
         if ($result.readyNotReadyStatus -ne 'ready') {
             $decisionComment = New-DecisionComment $result
             if ($decisionComment) { $plan = $plan + "`n`n" + $decisionComment }
             Add-Comment ($plan + "`n`n" + (New-Escalation (Text $result.unresolvedQuestions) 'Planning pass completed; blocking questions remain.' '(see plan above)' 'Issue lacks information required by the Definition of Ready.' 'Answer the questions above, then relabel factory:needs-plan.'))
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'not ready'
+            $to = Get-Outcome 'plan-result' 'not-ready'; Set-State $to; Done $to 'not ready'
         }
         Add-Comment $plan
         # A lifecycle profile can hold some plans for a person before implementation (risk-gated: risk:high). With
         # the standard profile there is no conditional exit, so this goes to ready exactly as before.
         $issueRisk = @($labels | Where-Object { $_ -like 'risk:*' })
-        $gate = if ($lifecycle) { Get-FactoryLifecycleConditionalExit -Lifecycle $lifecycle -State 'factory:needs-plan' -Event 'plan-result' -IssueLabels $issueRisk } else { $null }
-        if ($gate -and $gate -ne 'factory:ready') {
+        $planFrom = @($current | Where-Object { (Get-EventSources 'plan-result') -contains $_ })[0]
+        $ready = Get-Outcome 'plan-result' 'ready'
+        $gate = if ($lifecycle) { Get-FactoryLifecycleConditionalExit -Lifecycle $lifecycle -State $planFrom -Event 'plan-result' -IssueLabels $issueRisk } else { $null }
+        if ($gate -and $gate -ne $ready) {
             $gateDefinition = $lifecycle.States[$gate]
             $role = if ($gateDefinition -and $gateDefinition['owner'] -and $gateDefinition['owner']['role']) { [string]$gateDefinition['owner']['role'] } else { 'a person' }
             Add-Comment "## Factory sign-off required`n`nThis plan is complete, but the lifecycle profile ``$($lifecycle.Name)`` holds $($issueRisk -join ', ') work at ``$gate`` until $role signs it off. Review the plan above. To approve it, relabel the issue ``factory:ready``; to rework it, comment and relabel ``factory:needs-plan``."
             Set-State $gate; Done $gate 'awaiting sign-off'
         }
-        Set-State 'factory:ready'; Done 'factory:ready'
+        Set-State $ready; Done $ready
     }
     'implement-result' {
         # A workflow retry after a later step failed (preflight, handoff) re-runs this route step. The first
         # call already moved the issue to review and posted the comment, so a repeat is a no-op, not a refusal.
-        if ($result.status -eq 'success' -and $current -contains 'factory:review') { Done 'factory:review' 'already routed to review by an earlier attempt' }
-        Assert-Source 'factory:working'
+        $toReview = Get-Outcome 'implement-result' 'success'
+        if ($result.status -eq 'success' -and $current -contains $toReview) { Done $toReview 'already routed to review by an earlier attempt' }
+        Assert-Source (Get-EventSources 'implement-result')
         if ($result.status -ne 'success') {
             Write-ExecutionRecord 'failed' $result
             Add-Comment "## Factory implementation failed`n`n$(Text $result.summary)`n`nTests: $(Text $result.testResult)`nConcerns: $(Text $result.knownConcerns)"
-            Set-State 'factory:investigate'; Done 'factory:investigate' 'implementation failed'
+            $to = Get-Outcome 'implement-result' 'failed'; Set-State $to; Done $to 'implementation failed'
         }
         Write-ExecutionRecord 'complete' $result
         Add-Comment "## Factory implementation`n`nPR: $($result.pr)`n`n$(Text $result.summary)`n`n**Tests run**`n$(Text $result.testsRun)`n`n**Result:** $(Text $result.testResult)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaStatus)`n`n**Known concerns**`n$(Text $result.knownConcerns)"
-        Set-State 'factory:review'; Done 'factory:review'
+        Set-State $toReview; Done $toReview
     }
     'review-result' {
-        Assert-Source 'factory:review'
+        Assert-Source (Get-EventSources 'review-result')
+        $inReview = @($current | Where-Object { (Get-EventSources 'review-result') -contains $_ })[0]
+        $approved = Get-Outcome 'review-result' 'approved'
+        $changes = Get-Outcome 'review-result' 'changes'
         $body = "## Factory review`n`n**Verdict:** $($result.approvalChangeRequestStatus)`n`n**Blocking findings**`n$(Text $result.blockingFindings)`n`n**Non-blocking findings**`n$(Text $result.nonBlockingFindings)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteriaVerification)`n`n**Test adequacy**`n$(Text $result.testAdequacy)`n`n**Risk observations**`n$(Text $result.riskObservations)"
         if ($result.approvalChangeRequestStatus -eq 'approval') {
             $autoMerge = [string]$result.pr
             if ($autoMerge) {
                 if (-not $GatePath -or -not (Test-Path -LiteralPath $GatePath)) {
                     Add-Comment ($body + "`n`nMerge was not requested: the workflow did not produce a merge-eligibility receipt. The issue remains in review.")
-                    Done 'factory:review' 'missing merge-eligibility receipt'
+                    Done $inReview 'missing merge-eligibility receipt'
                 }
                 try { $gate = Get-Content -Raw -LiteralPath $GatePath | ConvertFrom-Json } catch { Fail "invalid merge-eligibility receipt: $($_.Exception.Message)" }
                 if ($gate.decision -ne 'allowed' -or [string]$gate.pr -ne $autoMerge -or [string]$gate.headSha -ne [string]$result.reviewedHeadSha) {
                     $blockers = @($gate.blockers | ForEach-Object { "- $_" }) -join "`n"
                     Add-Comment ($body + "`n`nMerge was not requested. The live eligibility gate denied this PR at the reviewed head. The issue remains in review.`n`n$blockers")
-                    Done 'factory:review' 'merge eligibility denied; no GitHub write made'
+                    Done $inReview 'merge eligibility denied; no GitHub write made'
                 }
                 if ([string]$gate.reviewMode -eq 'self-review') {
                     # Solo-maintainer posture: dev has no rules, so GitHub rejects --auto. The gate has verified the exact head,
@@ -324,7 +346,7 @@ switch ($Event) {
                         if ($live -and [string]$live.state -eq 'OPEN' -and [string]$live.mergeable -eq 'CONFLICTING') {
                             # The job that owns the PR repairs it (AGENTS.md: a job owns its pull request until it merges).
                             Add-Comment ($body + "`n`nThe PR was approved but cannot merge: it conflicts with dev. Returning it to the fix automation, which owns resolving the conflict, merging dev in and re-validating.")
-                            Set-State 'factory:changes-requested'; Done 'factory:changes-requested' 'approved PR conflicts with dev; fix job resolves it'
+                            Set-State $changes; Done $changes 'approved PR conflicts with dev; fix job resolves it'
                         }
                         throw
                     }
@@ -336,39 +358,39 @@ switch ($Event) {
                 if ([string]$mergeState.state -eq 'MERGED') {
                     if ($env:FACTORY_FENCING_TOKEN) {
                         Add-Comment ($body + "`n`nValidated approval: GitHub reports the reviewed PR merged. The local workspace lifecycle is still verifying the merged tree before marking this issue done.")
-                        Done 'factory:review' 'merged PR awaiting workspace integration validation'
+                        Done $inReview 'merged PR awaiting workspace integration validation'
                     }
                     Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head and GitHub reports the PR merged.")
-                    Set-State 'factory:done'; Done 'factory:done' 'approved, validated PR observed merged'
+                    Set-State $approved; Done $approved 'approved, validated PR observed merged'
                 }
                 Add-Comment ($body + "`n`nValidated approval: auto-merge was requested for the reviewed dev head. GitHub has not reported the PR merged yet; the issue remains in review for a later completion check.")
-                Done 'factory:review' 'auto-merge requested; completion not yet observed'
+                Done $inReview 'auto-merge requested; completion not yet observed'
             }
             Add-Comment ($body + "`n`nNo PR URL was supplied. Return this issue to implementation to provide the PR link; do not wait for user review.")
-            Set-State 'factory:changes-requested'; Done 'factory:changes-requested' 'approved result is missing its PR URL'
+            Set-State $changes; Done $changes 'approved result is missing its PR URL'
         }
         $rounds = @($comments | Where-Object { $_ -match '<!-- factory:review-round -->' }).Count
         if ($rounds -ge $maxRounds) {
             Add-Comment ($body + "`n`nIndependent review still requests changes after $rounds fix round(s). Automatically investigating the disagreement and continuing the work; this limit is not a user-approval gate.")
-            Set-State 'factory:investigate'; Done 'factory:investigate' 'review fix limit reached; automatic investigation'
+            $to = Get-Outcome 'review-result' 'limit'; Set-State $to; Done $to 'review fix limit reached; automatic investigation'
         }
-        Add-Comment ($body + "`n`n<!-- factory:review-round -->"); Set-State 'factory:changes-requested'; Done 'factory:changes-requested'
+        Add-Comment ($body + "`n`n<!-- factory:review-round -->"); Set-State $changes; Done $changes
     }
     'investigate-result' {
         # Idempotent re-entry: a previous attempt may have posted its comment and moved the
         # label before failing. Re-running must not be refused for that reason.
         $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes((Get-Content -Raw $Path)))).Replace('-', '').Substring(0, 16).ToLower()
         $marker = "<!-- factory:investigate-result:$hash -->"
-        $postStates = 'factory:needs-plan', 'factory:needs-help', 'factory:ready'
+        $postStates = @('retry', 'replan', 'escalate' | ForEach-Object { Get-Outcome 'investigate-result' $_ })
         if (@($comments | Where-Object { $_ -like "*$marker*" }).Count -and ($current | Where-Object { $postStates -contains $_ })) {
             Done @($current)[0] 'investigation result already routed'
         }
-        Assert-Source 'factory:investigate', 'factory:working'
+        Assert-Source (Get-EventSources 'investigate-result')
         $retries = @($comments | Where-Object { $_ -match '<!-- factory:investigate-retry -->' }).Count
         $summary = "**Classification:** $($result.failureClassification) (confidence: $($result.confidence))"
         if ($result.automaticRetryAppropriate -eq $true -and $result.confidence -ne 'low' -and $retries -lt $maxInvestigateRetries) {
             Add-Comment "## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`nRetrying implementation.`n`n<!-- factory:investigate-retry -->`n$marker"
-            Set-State 'factory:ready'; Done 'factory:ready' 'retry'
+            $to = Get-Outcome 'investigate-result' 'retry'; Set-State $to; Done $to 'retry'
         }
         Add-Comment ("## Factory investigation`n`n$summary`n`n**Root cause:** $(Text $result.rootCauseHypothesis)`n`n**Recommended action:** $(Text $result.recommendedAction)`n`n$marker")
         if ($result.failureClassification -eq 'architecture') {
@@ -378,7 +400,7 @@ switch ($Event) {
             if ($decisionComment) {
                 Add-Comment $decisionComment
                 Add-Comment 'This issue requires a major architectural decision. User input is needed before planning can continue.'
-                Set-State 'factory:needs-help'; Done 'factory:needs-help' 'major architectural decision required'
+                $to = Get-Outcome 'investigate-result' 'escalate'; Set-State $to; Done $to 'major architectural decision required'
             }
             Add-Comment 'The investigation classified this as an architectural decision but stated no decision to make, so there is nothing for a person to answer. Returning the issue to planning; the plan must name the question and its options before anyone is asked.'
         }
@@ -387,12 +409,12 @@ switch ($Event) {
         $investigations = @($comments | Where-Object { $_ -match '<!-- factory:investigate-result:' }).Count + 1
         if ($investigations -ge $maxInvestigations) {
             Add-Comment (New-Escalation "This issue has failed and been investigated $investigations times without converging." 'Automatic retry and re-planning are exhausted for this issue.' '(see the investigation comments above)' 'The issue as written is not converging; another automatic attempt is unlikely to end differently.' 'Decide one: narrow the scope, split it into smaller issues, or close it. Then relabel factory:needs-plan.')
-            Set-State 'factory:needs-help'; Done 'factory:needs-help' 'investigation limit reached'
+            $to = Get-Outcome 'investigate-result' 'escalate'; Set-State $to; Done $to 'investigation limit reached'
         }
         # An agent's classification is not proof of an external blocker. Only
         # deterministic operational gates or an explicit operator action may
         # set factory:blocked; otherwise continue through automatic planning.
         Add-Comment 'The investigation did not establish a verified external blocker or a major architectural decision. Returning the issue to planning with the evidence so work can continue automatically. Use factory:blocked only for a blocker confirmed by an operational gate or operator evidence.'
-        Set-State 'factory:needs-plan'; Done 'factory:needs-plan' 'automatic re-plan after investigation'
+        $to = Get-Outcome 'investigate-result' 'replan'; Set-State $to; Done $to 'automatic re-plan after investigation'
     }
 }

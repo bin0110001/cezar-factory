@@ -1,0 +1,5 @@
+{
+  "schemaVersion": "factory-capability-policy/v1",
+  "gateway": { "profile": "factory-default" },
+  "catalog": []
+}
