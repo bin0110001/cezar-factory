@@ -112,7 +112,7 @@ describe('versioned verification contracts', () => {
     it('rejects cross-attempt, cross-session, unknown-checkpoint and conflicting duplicate evidence', () => {
       const result = run([ev('host', 'c1', 'c', { attempt: 2 }), ev('client', 'c1', 'd', { sessionId: 's0' }), ev('host', 'zz', 'e')]);
       expect(result.status).toBe('incomplete');
-      expect(result.roles[0].rejected.map((r) => r.reason)).toEqual(['stale-attempt', 'unknown-role-or-checkpoint']);
+      expect(result.roles[0]!.rejected.map((r) => r.reason)).toEqual(['stale-attempt', 'unknown-role-or-checkpoint']);
       const dup = run([ev('host', 'c1', 'c'), ev('host', 'c1', 'e'), ev('client', 'c1', 'd')]);
       expect(dup.status).toBe('incomplete');
       expect(run([ev('host', 'c1', 'c'), ev('host', 'c1', 'c'), ev('client', 'c1', 'd')]).status).toBe('passed');
