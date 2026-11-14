@@ -130,7 +130,7 @@ export interface DesktopSessionOptions {
   isLeaseValid: () => boolean;
   saveArtifact: (input: { sessionId: string; name: string; bytes: Uint8Array; mediaType: string }) => Promise<string>;
   recordEvent: (event: DesktopTraceEvent) => Promise<void> | void;
-  limits?: Partial<Pick<typeof DESKTOP_LIMITS, 'maxRequestsPerMinute' | 'maxSessionMs' | 'maxRecordingMs'>>;
+  limits?: { maxRequestsPerMinute?: number; maxSessionMs?: number; maxRecordingMs?: number };
   now?: () => number;
 }
 
