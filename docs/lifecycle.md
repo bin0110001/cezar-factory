@@ -68,10 +68,10 @@ Rendered from `policies/lifecycle.json` (the `standard` profile); a suite test f
 <!-- lifecycle-table:begin -->
 | State | Kind | Owner | Exits | Deadline | At the deadline |
 |---|---|---|---|---|---|
-| `factory:new` | automated | `factory-intake` | `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
+| `factory:new` | automated | `factory-intake` | `factory:needs-plan`, `factory:needs-help`, `factory:ready`, `factory:needs-help`, `factory:done` | 24 h | retrigger |
 | `factory:needs-plan` | automated | `factory-plan` | `factory:ready`, `factory:needs-help`, `factory:done` | 24 h | retrigger |
 | `factory:ready` | automated | `factory-implement` | `factory:working`, `factory:needs-plan` | 24 h | retrigger |
-| `factory:working` | in-run | `factory-implement` / `factory-fix-review` | `factory:review`, `factory:investigate`, `factory:implemented` | 24 h | investigate |
+| `factory:working` | in-run | `factory-implement` / `factory-fix-review` | `factory:review`, `factory:investigate`, `factory:implemented`, `factory:ready`, `factory:needs-plan`, `factory:needs-help` | 24 h | investigate |
 | `factory:review` | automated | `factory-review` | `factory:done`, `factory:changes-requested`, `factory:investigate` | 24 h | retrigger |
 | `factory:changes-requested` | automated | `factory-fix-review` | `factory:working` | 24 h | retrigger |
 | `factory:investigate` | automated | `factory-investigate` | `factory:ready`, `factory:needs-plan`, `factory:needs-help` | 24 h | retrigger |
@@ -213,5 +213,9 @@ implementation automation.
 Users decide only unresolved major architectural choices. A cleared external
 blocker is recorded with evidence and work resumes automatically; do not ask
 the user to reschedule it. Approved, validated, independently reviewed PRs are
-auto-merged into `dev`. Continue other eligible issues while an issue waits on
-CI, independent review, or release.
+auto-merged into `dev`. The implementation/fix job that opened or updated a PR keeps
+ownership across review and fix workflow handoffs until GitHub confirms the PR is
+merged. Opening a PR, passing review, or queuing auto-merge is not completion; an open
+PR stays in `factory:review` for retry and must not be left for the user or orphaned-PR
+recovery. Continue other eligible issues while an issue waits on independent review
+or release.

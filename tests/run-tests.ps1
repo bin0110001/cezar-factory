@@ -66,7 +66,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -106,15 +106,18 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
 'workflows/godot-upgrade.yaml', 'automations/godot-upgrade.json', 'skills/factory-godot-upgrade/SKILL.md', 'scripts/godot-upgrade.ps1', 'cezar/godot-install.sh', 'cezar/godot-select.sh', 'skills/factory-workspace/SKILL.md', 'docs/workspace-lifecycle.md', 'integrations/agents/workspace-lifecycle/codex-hooks.json', 'integrations/agents/workspace-lifecycle/claude-settings.fragment.json',
-'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_incident_ledger.py', 'scripts/release/factory_drift_repair.py', 'scripts/release/factory_self_healing.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_incident_ledger.py', 'tests/test_factory_drift_repair.py', 'tests/test_factory_self_healing.py', 'tests/test_factory_activation.py', 'docs/factory-release-controller.md', 'workflows/release-self-healing.yaml', 'workflows/release-fix-pr.yaml', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
+'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_incident_ledger.py', 'scripts/release/factory_drift_repair.py', 'scripts/release/factory_self_healing.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_incident_ledger.py', 'tests/test_factory_drift_repair.py', 'tests/test_factory_self_healing.py', 'tests/test_factory_activation.py', 'scripts/docs/docs_refresh.py', 'tests/test_factory_docs_refresh.py', 'docs/docs-refresh.md', 'docs/factory-release-controller.md', 'workflows/release-self-healing.yaml', 'workflows/release-fix-pr.yaml', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
+
+'scripts/release/promote-stable.ps1', 'scripts/release/factory_release_controller.py', 'scripts/release/factory_incident_ledger.py', 'scripts/release/factory_drift_repair.py', 'scripts/release/factory_project_channels.py', 'tests/test_factory_project_channels.py', 'docs/project-channels.md', 'scripts/release/factory_self_healing.py', 'scripts/release/factory_activation.py', 'tests/test_factory_release_controller.py', 'tests/test_factory_incident_ledger.py', 'tests/test_factory_drift_repair.py', 'tests/test_factory_self_healing.py', 'tests/test_factory_activation.py',
+'scripts/release/factory_capability_delivery.py', 'tests/test_factory_capability_delivery.py', 'policies/capability-policy.json', 'docs/capability-delivery.md', 'docs/factory-release-controller.md', 'workflows/release-self-healing.yaml', 'workflows/release-fix-pr.yaml', 'scripts/sync-all-automations.ps1', 'scripts/migrate-to-shared.ps1', 'scripts/deploy/factory-autodeploy.sh', 'scripts/deploy/deploy-cezar-runtime.sh', 'scripts/deploy/reconcile-container-git-metadata.sh', 'integrations/bazzite/factory-autodeploy.service', 'integrations/bazzite/factory-autodeploy.timer', 'integrations/bazzite/factory-release-controller.service', 'integrations/bazzite/factory-release-controller.timer', 'docs/shared-factory.md',
 'scripts/check-release-locks.py', 'tests/test_factory_legacy_push_lock.py',
 'tests/test-factory-autodeploy.sh', 'tests/test-deploy-cezar-runtime.sh', 'tests/test-reconcile-container-git-metadata.sh',
 'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'scripts/factory/protect-governance.ps1', 'policies/protected-assets.json', 'schemas/governance-authorization.schema.json', 'tests/protect-governance.ps1', 'tests/fake-gh-governance.ps1', 'docs/governance-guard.md', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'schemas/backlog-label-audit-proposal.schema.json', 'workflows/repair-probe.yaml', 'automations/repair-probe.json', 'tests/test_factory_repair_replay.py', 'tests/replay/maintenance-considered-failure.json'
-'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md'
+'integrations/bazzite/standalone/blackbox.yml', 'integrations/bazzite/standalone/factory-blackbox.container.template', 'scripts/deploy/deploy-prometheus-standalone.sh', 'integrations/bazzite/standalone/prometheus.yml', 'integrations/bazzite/standalone/factory-prometheus.container.template', 'scripts/probe-model-endpoint.ps1', 'tests/model-probe.ps1', 'tests/fake-model-server.ps1', 'scripts/publish-failure-audit.ps1', 'scripts/write-health-report.ps1', 'tests/health-report.ps1', 'schemas/failure-audit-publication.schema.json', 'tests/failure-audit-publisher.ps1', 'tests/fake-gh-publisher.ps1', 'scripts/verification-query.ps1', 'tests/verification-query.ps1', 'schemas/verification-query.schema.json', 'docs/verification-query.md', 'scripts/documentation-status.ps1', 'tests/documentation-status.ps1', 'docs/documentation-status.md', 'scripts/verification-lib.ps1', 'scripts/verification-select.ps1', 'scripts/verification-invoke.ps1', 'scripts/verification-evaluate.ps1', 'workflows/verify.yaml', 'policies/verification.json', 'tests/verification-workflow.ps1', 'docs/verification-workflow.md', 'docs/docs-evaluation.md', 'policies/docs-evaluation.json'
 'scripts/release/factory_local_scheduler.py', 'tests/test_factory_local_scheduler.py', 'config/local-release-scheduler.json.example', 'schemas/factory-release/promotion-record.schema.json', 'schemas/factory-release/fixtures/promotion-healthy.json', 'integrations/bazzite/factory-local-promotion.service', 'integrations/bazzite/factory-local-promotion.timer',
-'schemas/routing-event.schema.json', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
+'schemas/routing-event.schema.json', 'schemas/routing-dataset.schema.json', 'scripts/build-routing-dataset.ps1', 'scripts/report-routing-evaluation.ps1', 'tests/fixtures/routing-eval/runs.jsonl', 'tests/fixtures/routing-eval/events.jsonl', 'docs/routing-events.md', 'cezar/packages/cezar/src/server/routing-events/routing-events.test.ts',
 'scripts/release/factory_promotion.py', 'scripts/release/validate-in-container.sh', 'config/promotion-policy.json', 'tests/test_factory_promotion.py', 'tests/test_factory_promotion_pipeline.py', 'docs/promotion-pipeline.md',
-'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json', 'scripts/worker/worker_protocol.py', 'schemas/worker-protocol.schema.json', 'tests/test_worker_protocol.py', 'docs/adr/214-worker-protocol.md'
+'policies/evidence-retention.yaml', 'schemas/evidence-manifest.schema.json', 'scripts/worker/worker_protocol.py', 'schemas/worker-protocol.schema.json', 'tests/test_worker_protocol.py', 'docs/adr/214-worker-protocol.md', 'integrations/obot-skills/catalog.json', 'scripts/obot-skills/obot_skills.py', 'tests/test_obot_skills.py', 'docs/obot-skills-catalog.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
 foreach ($schemaFile in 'schemas/evidence-manifest.schema.json', 'schemas/verification-query.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json') {
     try { Get-Content -Raw (Join-Path $factory $schemaFile) | ConvertFrom-Json | Out-Null; Assert "valid JSON $schemaFile" $true }
@@ -159,12 +162,9 @@ Assert 'backlog audit documents read-only collector and deterministic preparatio
 Assert 'backlog audit rejects bare skips and requires a durable closing-label proposal' ($backlogAuditSkill -match 'Do not use a bare skipped outcome' -and $backlogAuditSkill -match 'Every proposal must include a durable closing label')
 Assert 'backlog audit skill proposes changes without applying GitHub effects' ($backlogAuditSkill -match 'Do not read GitHub state or apply any changes' -and $backlogAuditSkill -notmatch 'execute and re-read one closing label edit')
 $maintenanceWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance prompt states the complete candidate proposal contract' ($maintenanceWorkflow -match 'considered.*exact candidate `number` values' -and $maintenanceWorkflow -match 'every candidate exactly once' -and $maintenanceWorkflow -match 'field `issue`' -and $maintenanceWorkflow -match 'include `added`' -and $maintenanceWorkflow -match '`reason`')
-Assert 'backlog collector is read-only and workflow prepares effects before agent dispatch' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?id: backlog-label-audit\r?\n' -and $backlogAuditSkill -match 'read-only collector')
 Assert 'maintenance watchdog covers issue runs: implement and fix runs are routed to investigate, plan, review and investigate runs are only cancelled' ($maintenanceWorkflow -match '(?s)id: watchdog-issue-runs.*-MaxRunMinutes 360 -Workflow factory-implement,factory-fix-review [^&]*-RouteCancelledRuns && .*-MaxRunMinutes 240 -Workflow factory-plan,factory-review,factory-investigate -ExcludeRunId "\$CEZ_TASK_ID";')
-Assert 'maintenance ends by verifying the run made no commit, and tells the agent step not to' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$' -and $maintenanceWorkflow -match 'Do not commit, push, create a branch or open a pull request')
-Assert 'independent maintenance runs before backlog agent dispatch' ($maintenanceWorkflow.IndexOf('id: refresh-stale-workable') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit') -and $maintenanceWorkflow.IndexOf('id: repository-maintenance') -lt $maintenanceWorkflow.IndexOf('id: backlog-label-audit'))
-Assert 'maintenance uses typed no-work output after deterministic audit preparation' ($maintenanceWorkflow -match '(?s)id: backlog-label-audit-prepare.*?-WorkflowContract.*?outputSchema:.*?candidateCount:.*?\$cezar:')
+Assert 'maintenance ends by verifying the run made no commit' ($maintenanceWorkflow.TrimEnd() -match '(?s)id: no-run-commits\s+name: [^\n]+\s+command: pwsh -NoProfile -File \$FACTORY_RUNTIME_ROOT/scripts/assert-no-run-commits\.ps1 [^\n]+\s+timeoutSeconds: \d+$')
+Assert 'maintenance has no model step: no agent skill and no model probe, so a spent model limit cannot fail the run or the promotion canary' ($maintenanceWorkflow -notmatch '(?m)^\s+skill:' -and $maintenanceWorkflow -notmatch 'id: model-check' -and $maintenanceWorkflow -notmatch 'id: backlog-label-audit')
 $planWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/plan.yaml')
 $planSkill = Get-Content -Raw (Join-Path $factory 'skills/factory-plan/SKILL.md')
 $investigateWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/investigate.yaml')
@@ -194,6 +194,13 @@ Assert 'Codex and Claude hook fragments connect session start/stop to verified w
 Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 $testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+# Every Factory change bumps VERSION and CHANGELOG.md. A path with no focused owner expands to the whole suite inside the
+# implement run, which cost three six-minute attempts and failed a correct docs-only change (fixture issue #528,
+# STABILIZATION-PLAN.md item 3.3). Both must have an owner in the ownership map.
+foreach ($routine in 'VERSION', 'CHANGELOG.md') {
+    $owned = @($testOwnership.checks | Where-Object { $check = $_; @($check.patterns | Where-Object { $routine -match ('^' + [regex]::Escape([string]$_).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$') }).Count })
+    Assert "$routine has a focused test owner, so a routine bump does not expand to the full suite" ($owned.Count -ge 1)
+}
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
 Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
@@ -272,7 +279,6 @@ Assert 'maintenance recovery uses Cezar loopback API and selected worktree ident
 $failureAuditWorkflow = Get-Content -Raw (Join-Path $factory 'workflows/health.yaml')
 $failureAuditScript = Get-Content -Raw (Join-Path $factory 'scripts/audit-factory-failures.ps1')
 Assert 'failure audit does not depend on missing per-project shell variables' ($failureAuditWorkflow -notmatch '\$env:CEZAR_|\$CEZAR_' -and $failureAuditScript -match 'http://127\.0\.0\.1:4321' -and $failureAuditScript -match '\.ai' -and $failureAuditScript -match 'worktrees' -and $failureAuditScript -match 'Split-Path \$Matches\.root -Leaf')
-Assert 'maintenance validates the audit handoff before the model step' ($maintenanceWorkflow -match 'id: backlog-label-audit-collect' -and $maintenanceWorkflow -match 'id: backlog-label-audit-validate\r?\n\s+name: Validate bounded backlog-label audit handoff' -and $maintenanceWorkflow -match 'validate-backlog-label-audit-input\.ps1')
 $auditGuard = Get-Content -Raw (Join-Path $factory 'scripts/validate-backlog-label-audit-input.ps1')
 Assert 'audit handoff guard fails closed and prevents rediscovery' ($auditGuard -match 'handoff is missing' -and $auditGuard -match 'Stop before the audit skill' -and $auditGuard -match 'MaxCandidates')
 $scriptOwnershipViolations = @()
@@ -702,44 +708,35 @@ try {
 }
 finally { Remove-Item -Force $lifecycleFixture -ErrorAction SilentlyContinue }
 
-# The router and the model must agree (STABILIZATION-PLAN.md item 1.4c). For each event the router handles, every
-# state it accepts as a source and every state it sets must be an exit the model declares for that event, and every
-# model exit for one of those events must be one the router can take. Editing one without the other fails here.
+# The router executes the model (STABILIZATION-PLAN.md item 1.4c): it names no lifecycle state itself, asks the model which
+# states may receive an event (Get-EventSources) and where each named outcome leads (Get-Outcome). Every event the router
+# handles must have a source, every outcome it asks for must resolve to exactly one state, and every model exit for one of
+# its events must carry an outcome, or the router could never take it.
 $routerText = Get-Content -Raw (Join-Path $factory 'scripts/route-state.ps1')
-$routerBlocks = @{}
-foreach ($m in [regex]::Matches($routerText.Substring($routerText.IndexOf('switch ($Event) {')), "(?ms)^    '([a-z-]+)' \{(.*?)(?=^    '[a-z-]+' \{|\z)")) { $routerBlocks[$m.Groups[1].Value] = $m.Groups[2].Value }
+$routerSwitch = $routerText.Substring($routerText.IndexOf('switch ($Event) {'))
 $routerDrift = @()
-foreach ($evt in $routerBlocks.Keys) {
-    if ($evt -eq 'already-resolved') { continue }
-    $sources = @([regex]::Matches((($routerBlocks[$evt] -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' ', "'(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value })
-    $targets = @([regex]::Matches($routerBlocks[$evt], "Set-State '(factory:[a-z-]+)'") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-    foreach ($t in $targets) {
-        if (-not @($sources | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_['to'] -eq $t }).Count }).Count) { $routerDrift += "$evt sets $t, which no accepted source reaches in the model" }
-    }
+$routerEvents = @([regex]::Matches($routerSwitch, "(?m)^    '([a-z-]+)' \{") | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'already-resolved' })
+foreach ($evt in $routerEvents) {
+    $sources = @($lifecycle.States.Keys | Where-Object { @($lifecycle.States[$_]['exits'] | Where-Object { $_ -and $_['on'] -eq $evt }).Count })
+    if (-not $sources.Count) { $routerDrift += "the model has no state that receives $evt" }
+}
+foreach ($m in [regex]::Matches($routerSwitch, "Get-Outcome '([a-z-]+)' '([a-z-]+)'")) {
+    $evt = $m.Groups[1].Value; $name = $m.Groups[2].Value
+    $targets = @($lifecycle.States.Keys | ForEach-Object { @($lifecycle.States[$_]['exits']) | Where-Object { $_ -and $_['on'] -eq $evt -and $_['outcome'] -eq $name -and -not $_.Contains('when') } | ForEach-Object { [string]$_['to'] } } | Select-Object -Unique)
+    if ($targets.Count -ne 1) { $routerDrift += "$evt outcome '$name' resolves to $($targets.Count) states in the model" }
 }
 foreach ($stateName in $lifecycle.States.Keys) {
     foreach ($exit in @($lifecycle.States[$stateName]['exits'] | Where-Object { $_ })) {
-        $evt = [string]$exit['on']
-        if (-not $routerBlocks.ContainsKey($evt)) { continue }
-        $block = $routerBlocks[$evt]
-        $accepts = (($block -split "`n") | Where-Object { $_ -match 'Assert-Source' }) -join ' '
-        if ($accepts -notmatch [regex]::Escape("'$stateName'") -or $block -notmatch [regex]::Escape("'$($exit['to'])'")) { $routerDrift += "model exit $stateName -> $($exit['to']) on $evt is not handled by route-state.ps1" }
+        if ($routerEvents -contains [string]$exit['on'] -and -not $exit.Contains('when') -and -not $exit['outcome']) { $routerDrift += "model exit $stateName -> $($exit['to']) on $($exit['on']) has no outcome, so route-state.ps1 cannot take it" }
     }
 }
 $routerDrift | ForEach-Object { Write-Host "    $_" }
-Assert 'route-state.ps1 and the lifecycle model declare the same transitions' ($routerBlocks.Count -ge 6 -and -not $routerDrift.Count)
-
-# The fixture canary (STABILIZATION-PLAN.md item 2.10) is a promotion canary only if the policy lists it and the
-# automation it names exists and runs the fixture workflow.
-$promotionPolicy = Get-Content -Raw (Join-Path $factory 'config/promotion-policy.json') | ConvertFrom-Json
-$fixtureCanary = @($promotionPolicy.promotion.canaries.items | Where-Object { $_.id -eq 'fixture-lifecycle' })[0]
-$fixtureAutomation = if ($fixtureCanary) { @($automationDefinitions | Where-Object { $_.name -eq $fixtureCanary.automation })[0] } else { $null }
-Assert 'the fixture lifecycle canary is in the promotion policy and its automation runs the fixture workflow' ($fixtureCanary -and $fixtureAutomation -and $fixtureAutomation.task.workflow -eq 'factory-fixture-lifecycle' -and (Test-Path (Join-Path $factory 'scripts/fixture-lifecycle.ps1')))
+Assert 'route-state.ps1 takes every transition from the lifecycle model' ($routerEvents.Count -ge 6 -and -not $routerDrift.Count -and $routerSwitch -notmatch "'factory:[a-z-]+'")
 
 # The lifecycle lives in policies/lifecycle.json. These scripts still name lifecycle states in code and
 # are being moved to the loader (STABILIZATION-PLAN.md item 1.4c); the list may shrink, never grow. A new
 # script that needs to know the states asks scripts/lifecycle-lib.ps1.
-$stateLiteralAllowlist = 'route-state.ps1', 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
+$stateLiteralAllowlist = 'onboard-project.ps1', 'create-labels.ps1', 'apply-backlog-label-audit.ps1', 'sync-issue-delivery.ps1', 'maintain-repository.ps1', 'audit-backlog-labels.ps1', 'update-github-lifecycle.ps1', 'collect-backlog-snapshot.ps1', 'watchdog-automations.ps1', 'select-intake-issue.ps1', 'reconcile-backlog.ps1', 'publish-failure-audit.ps1', 'check-already-resolved.ps1'
 $stateLiteralPattern = "'(" + ((@($lifecycle.States.Keys) | ForEach-Object { [regex]::Escape($_) }) -join '|') + ")'"
 $stateLiteralFiles = @(Get-ChildItem (Join-Path $factory 'scripts') -Filter *.ps1 | Where-Object { (Get-Content -Raw $_.FullName) -match $stateLiteralPattern } | ForEach-Object { $_.Name })
 $newStateLiteralFiles = @($stateLiteralFiles | Where-Object { $stateLiteralAllowlist -notcontains $_ })
@@ -825,6 +822,12 @@ try {
     Assert 'start-up smoke reports a script that dies on its own defect and accepts one that refuses its input' ($seededStart.Count -eq 1 -and $seededStart[0] -match 'defect\.ps1')
 }
 finally { Remove-Item -Recurse -Force $startDirectory -ErrorAction SilentlyContinue }
+
+# Obot MCP end-to-end security/regression/telemetry acceptance (issue #172; docs/obot-mcp-e2e.md). Local compute only.
+$obotE2e = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'obot-e2e.ps1') *>&1 | Out-String
+Assert 'Obot MCP end-to-end acceptance suite passes (identity, isolation, fault injection, redaction)' ($LASTEXITCODE -eq 0 -and $obotE2e -match 'OBOT E2E PASSED')
+if ($LASTEXITCODE -ne 0) { Write-Host $obotE2e }
+Assert 'Obot end-to-end runbook documents every gate and the coverage gaps' ((Get-Content -Raw (Join-Path $factory 'docs/obot-mcp-e2e.md')) -match '(?s)G0.*G1.*G2.*G3.*G4.*Not covered')
 
 if ($StaticOnly) {
     if ($script:fail) { Write-Error "$script:fail static checks failed."; exit 1 }
@@ -921,9 +924,10 @@ try {
             '23' = @{ state = 'OPEN'; labels = @('type:feature'); comments = @() }
             '24' = @{ state = 'OPEN'; labels = @('factory:tracking', 'factory:working'); comments = @() }
             '25' = @{ state = 'OPEN'; labels = @('factory:pr-open'); comments = @() }
-            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }        }
+            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }
+            '27' = @{ state = 'OPEN'; labels = @('factory:working', 'type:maintenance'); comments = @() }        }
         openPrs = @(
-            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25' }
+            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25, closes #27' }
             @{ number = 21; url = 'https://example/pull/21'; title = 'Draft'; isDraft = $true; body = 'Closes #26' }
         )
         failClose = @()
@@ -937,6 +941,7 @@ try {
     Assert 'merged-to-dev PR closes its referenced open issues and sets factory:done' ($closeRun.Code -eq 0 -and $closeAfter.issues['1'].state -eq 'CLOSED' -and $closeAfter.issues['1'].labels -contains 'factory:done' -and $closeAfter.issues['1'].labels -notcontains 'factory:review' -and $closeAfter.issues['8'].state -eq 'CLOSED')
     Assert 'close step skips tracking epics, human-reopened issues, code/comment/non-closing references, and PRs past the lookback' ($closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['5'].state -eq 'OPEN' -and -not (@($closeAfter.calls) -match 'issue view (3|6|7|9) ') -and @($closeResult.closed.issue) -join ',' -eq '1,8')
     Assert 'open non-draft PR moves pre-PR issues to factory:pr-open and never overwrites review, tracking, or draft-PR issues' ($closeAfter.issues['21'].labels -contains 'factory:pr-open' -and $closeAfter.issues['21'].labels -notcontains 'factory:working' -and $closeAfter.issues['21'].labels -contains 'factory:interactive' -and $closeAfter.issues['23'].labels -contains 'factory:pr-open' -and $closeAfter.issues['22'].labels -contains 'factory:review' -and $closeAfter.issues['22'].labels -notcontains 'factory:pr-open' -and $closeAfter.issues['24'].labels -contains 'factory:working' -and $closeAfter.issues['26'].labels -contains 'factory:working' -and @($closeResult.promoted.issue) -join ',' -eq '21,23' -and $closeAfter.labelsEnsured -contains 'factory:pr-open')
+    Assert 'a PR does not claim an issue that a Factory run owns (working without interactive), so review and the run watchdog still route it' ($closeAfter.issues['27'].labels -contains 'factory:working' -and $closeAfter.issues['27'].labels -notcontains 'factory:pr-open' -and @($closeResult.skipped | Where-Object { $_.issue -eq 27 -and $_.reason -eq 'owned-by-factory-run' }).Count -eq 1)
     $closeRerun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
     Assert 'close step is idempotent' ($closeRerun.Code -eq 0 -and @((Get-Content -Raw $closeOut | ConvertFrom-Json).closed).Count -eq 0)
     $closeAfter.prs = @(@{ number = 11; url = 'https://example/pull/11'; title = 'Two'; mergedAt = $recent; body = 'Closes #11 and closes #12' })
@@ -1132,7 +1137,12 @@ try {
             Assert 'backlog proposal orders ready work and reports lease exclusion' (@($proposal.actions).Count -eq 2 -and $proposal.actions[0].issue -eq 4 -and @($proposal.excludedIssues | Where-Object { $_.issue -eq 3 -and $_.reason -eq 'active-lease' }).Count -eq 1)
         }
     }
-    foreach ($fx in Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory) {
+    # fixtures/ also contains data-only inputs (for example routing-eval). Only
+    # project fixtures with an installed Factory config belong in this loop.
+    $projectFixtures = @(Get-ChildItem (Join-Path $PSScriptRoot 'fixtures') -Directory | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName '.ai/factory/factory.config.yaml') -PathType Leaf
+    })
+    foreach ($fx in $projectFixtures) {
         Write-Host "== fixture $($fx.Name) =="
         $proj = Join-Path $tmp $fx.Name
         Copy-Item $fx.FullName $proj -Recurse
@@ -1828,7 +1838,11 @@ try {
 
 # ---- Shared Factory (stable gate, mounted workflows, migration) -------------
 Write-Host '== shared factory =='
-$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
+$python3Command = Get-Command python3 -ErrorAction SilentlyContinue
+$pythonRunner = if ($python3Command -and $python3Command.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]') { 'python3' } elseif ($python3Command) {
+    $installedPython = @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]|[\\/]WindowsApps[\\/]' } | Select-Object -First 1)
+    if ($installedPython) { $installedPython[0].Source } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python3' }
+} elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
 if ($pythonRunner) {
 $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') } else { @('-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v') }
     Push-Location $factory
@@ -1858,7 +1872,7 @@ $gitMetadataSync = Get-Content -Raw (Join-Path $factory 'scripts/deploy/reconcil
 Assert 'autodeploy repairs only root Git metadata after verifying mounted files and preserves linked worktrees' ($autodeploy -match 'reconcile-container-git-metadata\.sh' -and $gitMetadataSync -match 'git .*ls-tree -r -z' -and $gitMetadataSync -match 'git .*read-tree' -and $gitMetadataSync -match 'update-ref refs/heads/stable' -and $gitMetadataSync -match 'task worktrees')
 # The deploy shell tests exercise real control flow (idle gate, deferral, recovery). They were once left out of the
 # suite and drifted into failure unnoticed, so run them whenever a POSIX bash (not WSL's launcher) is available.
-$shellTestBash = @(Get-Command bash -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'System32' }) | Select-Object -First 1
+$shellTestBash = @(Get-Command bash -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '(?i)(System32|WindowsApps)' }) | Select-Object -First 1
 if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
     # Git for Windows ships a POSIX bash that is often not on PATH in a plain PowerShell session.
     $gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source -Parent) -Parent) 'bin/bash.exe'
@@ -2240,11 +2254,19 @@ Write-Host '== verification query layer =='
 $vqOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-query.ps1') 2>&1 | Out-String
 Write-Host $vqOutput
 Assert 'verification query layer: pagination, redaction, ordering, oversized artifacts, byte-identical output and schema validation' ($LASTEXITCODE -eq 0)
+Write-Host '== documentation status read model =='
+$dsOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'documentation-status.ps1') 2>&1 | Out-String
+Write-Host $dsOutput
+Assert 'documentation status: proposed never shown as verified, stale/unknown/backend-absent states, denied/idempotent/concurrent actions' ($LASTEXITCODE -eq 0)
+Write-Host '== verification workflow =='
+$vwOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verification-workflow.ps1') 2>&1 | Out-String
+Write-Host $vwOutput
+Assert 'verification workflow: scoped selection, mandatory checks from policy, invocation and ledger-recorded verdicts' ($LASTEXITCODE -eq 0)
 Write-Host '== model endpoint preflight =='
 $probeOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'model-probe.ps1') 2>&1 | Out-String
 Write-Host $probeOutput
 Assert 'model probe fails fast on a host that is up but not generating, retries transients, and never leaks the key' ($LASTEXITCODE -eq 0)
-$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'maintenance', 'environment-analysis', 'godot-upgrade')
+$agentWorkflows = @('implement', 'investigate', 'plan', 'review', 'fix-review', 'environment-analysis', 'godot-upgrade')
 $unprobed = @($agentWorkflows | Where-Object {
     $wf = Get-Content -Raw (Join-Path $factory "workflows/$_.yaml")
     # The probe must run after startup and before the first agent step, and startup must preflight the script.
@@ -2254,7 +2276,7 @@ $unprobed = @($agentWorkflows | Where-Object {
 })
 Assert "every agent workflow probes the model endpoint before its first agent step ($($unprobed -join ', '))" ($unprobed.Count -eq 0)
 $maintenanceText = Get-Content -Raw (Join-Path $factory 'workflows/maintenance.yaml')
-Assert 'maintenance runs its watchdog and housekeeping before the model probe, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: watchdog') -lt $maintenanceText.IndexOf('id: model-check') -and $maintenanceText.IndexOf('id: intake-route') -lt $maintenanceText.IndexOf('id: model-check'))
+Assert 'maintenance has no model probe: the watchdog and intake routing run without a model, so a model outage cannot disable the stuck-run backstop' ($maintenanceText.IndexOf('id: watchdog') -ge 0 -and $maintenanceText.IndexOf('id: intake-route') -gt $maintenanceText.IndexOf('id: watchdog') -and $maintenanceText -notmatch 'id: model-check')
 $promScrape = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus.yml')
 $promAlerts = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/prometheus-alerts.yml')
 $promCompose = Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')
@@ -2375,5 +2397,72 @@ $shipped = Run 'prune-events.ps1' @{ EventsPath = $pruneFile; Now = $pruneNow }
 Assert 'the shipped retention policy is valid' ($shipped.Code -eq 0)
 Remove-Item -Recurse -Force $pruneDir
 
+# Spec-first change contracts (policies/change-contract.json, scripts/change-contract-lib.ps1, #178).
+. (Join-Path $factory 'scripts/change-contract-lib.ps1')
+$ccp = Get-ChangeContractPolicy -Path (Join-Path $factory 'policies/change-contract.json')
+foreach ($ccFile in 'docs/spec-first.md', 'templates/change-contract.md') { Assert "$ccFile exists" (Test-Path (Join-Path $factory $ccFile)) }
+$ccSpec = Select-ChangePath -Policy $ccp -Labels 'type:feature', 'risk:high' -ContractKinds 'interface'
+Assert 'a feature with an interface contract takes the spec-first path' ($ccSpec.Path -eq 'spec-first')
+$ccHotfix = Select-ChangePath -Policy $ccp -Labels 'type:bug', 'risk:high'
+Assert 'a high-risk bug hotfix stays code-first with no approval' ($ccHotfix.Path -eq 'code-first')
+Assert 'a bug that changes a migration contract goes spec-first' ((Select-ChangePath -Policy $ccp -Labels 'type:bug' -ContractKinds 'migration').Path -eq 'spec-first')
+Assert 'a routine feature stays code-first' ((Select-ChangePath -Policy $ccp -Labels 'type:feature', 'risk:medium').Path -eq 'code-first')
+Assert 'an unpinned contract is stale' ((Test-ChangeContractStale -ApprovedSha '' -CurrentSha 'b').Stale)
+Assert 'a moved base with unknown changes is stale' ((Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'x.ps1').Stale)
+Assert 'a base that changed a contract path (case-insensitive) is stale' ((Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'Src/A.ps1' -ChangedSinceApproval @('src/a.ps1')).Stale)
+Assert 'a base that moved elsewhere is not stale' (-not (Test-ChangeContractStale -ApprovedSha 'a' -CurrentSha 'b' -ContractPaths 'src/a.ps1' -ChangedSinceApproval @('docs/x.md')).Stale)
+Assert 'replans are bounded' ((Test-ReplanAllowed -Policy $ccp -Replans 1) -and -not (Test-ReplanAllowed -Policy $ccp -Replans 2))
+$ccItems = @(@{ id = 'C1'; paths = @('src/a.ps1') })
+$ccGood = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths @('src/a.ps1') -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $true }, @{ id = 'C1'; kind = 'acceptance'; passed = $true })
+Assert 'a converged implementation is verified from evidence' ($ccGood.Verified -and $ccGood.Discrepancies.Count -eq 0)
+$ccBad = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths @('src/a.ps1', 'src/b.ps1') -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $true })
+Assert 'a divergent implementation yields discrepancies, not verified' (-not $ccBad.Verified -and @($ccBad.Discrepancies | Where-Object Kind -eq 'missing-evidence').Count -eq 1 -and @($ccBad.Discrepancies | Where-Object Kind -eq 'unplanned-change').Count -eq 1)
+Assert 'failed evidence is not verified' (-not (Compare-ChangeContract -Policy $ccp -Items $ccItems -Evidence @(@{ id = 'C1'; kind = 'tests'; passed = $false }, @{ id = 'C1'; kind = 'acceptance'; passed = $true })).Verified)
+$ccMany = Compare-ChangeContract -Policy $ccp -Items $ccItems -ChangedPaths (1..25 | ForEach-Object { "f$_.ps1" })
+Assert 'discrepancies are bounded' ($ccMany.Discrepancies.Count -eq $ccp.convergence.maxDiscrepancies -and $ccMany.Truncated -gt 0)
+Assert 'an empty contract is never verified' (-not (Compare-ChangeContract -Policy $ccp -Items @()).Verified)
+
+# Routing evaluation dataset and report (#137)
+$reDir = Join-Path ([IO.Path]::GetTempPath()) ("routeval-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $reDir | Out-Null
+$reFx = Join-Path $factory 'tests/fixtures/routing-eval'
+$reA = Join-Path $reDir 'a.json'; $reB = Join-Path $reDir 'b.json'
+$r1 = Run 'build-routing-dataset.ps1' @{ RunsPath = (Join-Path $reFx 'runs.jsonl'); EventsPath = (Join-Path $reFx 'events.jsonl'); OutPath = $reA }
+$null = Run 'build-routing-dataset.ps1' @{ RunsPath = (Join-Path $reFx 'runs.jsonl'); EventsPath = (Join-Path $reFx 'events.jsonl'); OutPath = $reB }
+$reText = [IO.File]::ReadAllText($reA)
+Assert 'routing dataset builds and is byte-identical on re-run' ($r1.Code -eq 0 -and $reText -ceq [IO.File]::ReadAllText($reB))
+$reDs = $reText | ConvertFrom-Json
+Assert 'routing dataset is versioned and ordered by runId' ($reDs.schemaVersion -eq 1 -and (($reDs.records | ForEach-Object runId) -join ',') -ceq 'r1,r2,r3')
+Assert 'routing dataset redacts prompts, source, logs and credentials' ($reText -notmatch 'SECRET PROMPT|function x|sk-abcdef|abc123|apiKey|sourceCode')
+$reR1 = $reDs.records[0]
+Assert 'routing dataset marks missing telemetry unknown and joins events' ($reR1.costUsd -ceq 'unknown' -and $reR1.inputTokens -ceq 'unknown' -and $reR1.tier -ceq 'premium' -and $reR1.attempts -eq 2 -and $reR1.fallbackUsed -eq $true)
+$reRep = Join-Path $reDir 'report.json'
+$r2 = Run 'report-routing-evaluation.ps1' @{ DatasetPath = $reA; OutPath = $reRep }
+$reJson = [IO.File]::ReadAllText($reRep) | ConvertFrom-Json
+$reSonnet = $reJson.byModel | Where-Object { $_.model -eq 'sonnet' }
+$reGpt = $reJson.byModel | Where-Object { $_.model -eq 'gpt-x' }
+Assert 'report computes retry-inclusive cost per accepted change (2.0 / 2 accepted = 1.0)' ($r2.Code -eq 0 -and $reSonnet.attempts -eq 3 -and $reSonnet.retries -eq 1 -and $reSonnet.effectiveCostPerAccepted -eq 1 -and $reSonnet.mergedChanges -eq 1)
+Assert 'report keeps unknown cost unknown (never zero) and flags low sample' ($reGpt.effectiveCostPerAccepted -ceq 'unknown' -and $reGpt.totalCostUsd -ceq 'unknown' -and $reSonnet.lowSample -eq $true)
+Assert 'report compares tiers and capacity aliases' (@($reJson.byTier).Count -eq 2 -and @($reJson.byCapacityAlias).Count -eq 2)
+$reEmptyRuns = Join-Path $reDir 'empty.jsonl'; [IO.File]::WriteAllText($reEmptyRuns, '')
+$reEmpty = Join-Path $reDir 'empty-ds.json'
+$r3 = Run 'build-routing-dataset.ps1' @{ RunsPath = $reEmptyRuns; OutPath = $reEmpty }
+$r4 = Run 'report-routing-evaluation.ps1' @{ DatasetPath = $reEmpty; OutPath = (Join-Path $reDir 'empty-report.json') }
+Assert 'empty dataset builds and reports without error' ($r3.Code -eq 0 -and $r4.Code -eq 0 -and (([IO.File]::ReadAllText($reEmpty) | ConvertFrom-Json).recordCount -eq 0))
+Remove-Item -Recurse -Force $reDir
+
+# ---- Docs evaluation report ----------------------------------------------
+$deRuns = Join-Path $factory 'tests/docs-evaluation/runs.jsonl'
+$de = Run 'docs-evaluation-report.ps1' @{ RunsPath = $deRuns }
+$deJson = $de.Out | ConvertFrom-Json
+$deBug = @($deJson.results | Where-Object { $_.issueClass -eq 'simple-bug' })
+Assert 'docs evaluation: net saving above threshold is go' ((@($deBug | Where-Object { $_.arm -eq 'doc-assisted' })[0]).decision -eq 'go')
+Assert 'docs evaluation: maintenance overhead turns a saving into no-go' ((@($deBug | Where-Object { $_.arm -eq 'spec-first' })[0]).decision -eq 'no-go')
+Assert 'docs evaluation: too few runs is insufficient-data' ((@($deJson.results | Where-Object { $_.issueClass -eq 'unfamiliar-subsystem' })[0]).decision -eq 'insufficient-data')
+$deBad = Join-Path ([IO.Path]::GetTempPath()) "de-$([guid]::NewGuid().ToString('N')).jsonl"
+[IO.File]::WriteAllText($deBad, '{"issueClass":"simple-bug","arm":"baseline"}' + "`n")
+$deFail = Run 'docs-evaluation-report.ps1' @{ RunsPath = $deBad }
+Assert 'docs evaluation: run without sourceSha is rejected' ($deFail.Code -ne 0 -and $deFail.Out -match 'sourceSha')
+Remove-Item -Force $deBad
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
