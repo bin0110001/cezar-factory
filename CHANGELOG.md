@@ -4,9 +4,11 @@
 
 ## [0.3.111] - 2026-11-14
 
-- The static parse and portability checks match their `.ai`/`.factory`/`node_modules` exclusions against the path below the scanned root, not the absolute path. A run worktree's temp directory sits under `.ai/cezar/tmp`, so the suite's seeded fixtures were skipped and two assertions failed there (`contract check reports a script with a syntax error`, the portability check): the unexplained in-run exit 1 noted below (`STABILIZATION-PLAN.md` item 3.3).
-
 - `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
+
+## [0.3.110] - 2026-11-14
+
+- Graphical worker isolation policy (#340): rootless Podman policy, resource limits and redaction for the graphical worker.
 
 - Work already merged to dev is no longer charged to an implementation's own change (`STABILIZATION-PLAN.md` item 3.3). The governance guard and the changed-test selector measured an implementation from the base commit the run recorded when it started. The agent must merge the current `origin/dev` before handing over, so anything merged to dev during the run showed up as the agent's own change: the rerun of fixture issue #528 (a docs-only change) was refused by the guard for two files another run's merged feature had brought in. New `scripts/factory/base-lib.ps1` (`Get-FactoryEffectiveBase`) moves the base forward to where the branch's merge of the real remote's dev joined it. It fetches the remote and does not trust the local `origin/dev` ref, so an agent cannot point that ref at its own HEAD to hide a protected change; the base only moves forward, and any failure leaves the recorded base, which can only make the guard stricter. An explicit `-Base` is used as given. Tests: a merged protected change is not charged, the branch's own protected change is still refused after the merge, and a forged local ref hides nothing.
 
