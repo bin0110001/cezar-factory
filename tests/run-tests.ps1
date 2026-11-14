@@ -191,6 +191,13 @@ Assert 'Codex and Claude hook fragments connect session start/stop to verified w
 Assert 'Factory implementation and review defer full suites while preserving focused checks and the verified handoff' ($implementWorkflow -match 'id: targeted-tests' -and $implementWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $reviewWorkflow -notmatch 'id: full-verification|factory/test-full\.ps1' -and $implementWorkflow -match '(?s)id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $fixReviewWorkflow -match '(?s)id: targeted-tests.*?id: validate.*?id: route.*?id: workspace-preflight.*?cez workspace preflight.*?id: lifecycle-ready.*?cez workspace handoff' -and $reviewWorkflow -match '(?s)id: merge-eligibility.*?id: route.*?id: lifecycle-ready.*?cez workspace handoff')
 $testOwnership = Get-Content -Raw (Join-Path $factory '.ai/factory/test-ownership.json') | ConvertFrom-Json
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+# Every Factory change bumps VERSION and CHANGELOG.md. A path with no focused owner expands to the whole suite inside the
+# implement run, which cost three six-minute attempts and failed a correct docs-only change (fixture issue #528,
+# STABILIZATION-PLAN.md item 3.3). Both must have an owner in the ownership map.
+foreach ($routine in 'VERSION', 'CHANGELOG.md') {
+    $owned = @($testOwnership.checks | Where-Object { $check = $_; @($check.patterns | Where-Object { $routine -match ('^' + [regex]::Escape([string]$_).Replace('\*\*', '.*').Replace('\*', '[^/]*').Replace('\?', '.') + '$') }).Count })
+    Assert "$routine has a focused test owner, so a routine bump does not expand to the full suite" ($owned.Count -ge 1)
+}
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
 Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
@@ -908,9 +915,10 @@ try {
             '23' = @{ state = 'OPEN'; labels = @('type:feature'); comments = @() }
             '24' = @{ state = 'OPEN'; labels = @('factory:tracking', 'factory:working'); comments = @() }
             '25' = @{ state = 'OPEN'; labels = @('factory:pr-open'); comments = @() }
-            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }        }
+            '26' = @{ state = 'OPEN'; labels = @('factory:working'); comments = @() }
+            '27' = @{ state = 'OPEN'; labels = @('factory:working', 'type:maintenance'); comments = @() }        }
         openPrs = @(
-            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25' }
+            @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25, closes #27' }
             @{ number = 21; url = 'https://example/pull/21'; title = 'Draft'; isDraft = $true; body = 'Closes #26' }
         )
         failClose = @()
@@ -924,6 +932,7 @@ try {
     Assert 'merged-to-dev PR closes its referenced open issues and sets factory:done' ($closeRun.Code -eq 0 -and $closeAfter.issues['1'].state -eq 'CLOSED' -and $closeAfter.issues['1'].labels -contains 'factory:done' -and $closeAfter.issues['1'].labels -notcontains 'factory:review' -and $closeAfter.issues['8'].state -eq 'CLOSED')
     Assert 'close step skips tracking epics, human-reopened issues, code/comment/non-closing references, and PRs past the lookback' ($closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['5'].state -eq 'OPEN' -and -not (@($closeAfter.calls) -match 'issue view (3|6|7|9) ') -and @($closeResult.closed.issue) -join ',' -eq '1,8')
     Assert 'open non-draft PR moves pre-PR issues to factory:pr-open and never overwrites review, tracking, or draft-PR issues' ($closeAfter.issues['21'].labels -contains 'factory:pr-open' -and $closeAfter.issues['21'].labels -notcontains 'factory:working' -and $closeAfter.issues['21'].labels -contains 'factory:interactive' -and $closeAfter.issues['23'].labels -contains 'factory:pr-open' -and $closeAfter.issues['22'].labels -contains 'factory:review' -and $closeAfter.issues['22'].labels -notcontains 'factory:pr-open' -and $closeAfter.issues['24'].labels -contains 'factory:working' -and $closeAfter.issues['26'].labels -contains 'factory:working' -and @($closeResult.promoted.issue) -join ',' -eq '21,23' -and $closeAfter.labelsEnsured -contains 'factory:pr-open')
+    Assert 'a PR does not claim an issue that a Factory run owns (working without interactive), so review and the run watchdog still route it' ($closeAfter.issues['27'].labels -contains 'factory:working' -and $closeAfter.issues['27'].labels -notcontains 'factory:pr-open' -and @($closeResult.skipped | Where-Object { $_.issue -eq 27 -and $_.reason -eq 'owned-by-factory-run' }).Count -eq 1)
     $closeRerun = Run 'sync-issue-delivery.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $closeOut }
     Assert 'close step is idempotent' ($closeRerun.Code -eq 0 -and @((Get-Content -Raw $closeOut | ConvertFrom-Json).closed).Count -eq 0)
     $closeAfter.prs = @(@{ number = 11; url = 'https://example/pull/11'; title = 'Two'; mergedAt = $recent; body = 'Closes #11 and closes #12' })
