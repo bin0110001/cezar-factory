@@ -10,6 +10,10 @@ source: skills/factory-review/SKILL.md
 - Independently review the implementation.
 - Treat this as technical review, not a request for user approval. A passing
   review proceeds to the normal auto-merge handoff without waiting for the user.
+- Review is a gate, not a transfer of PR ownership. When the review passes, route the
+  PR through the configured merge path; if it remains open, keep the issue in review
+  for lifecycle retry. The originating implement/fix job remains responsible until
+  GitHub confirms the PR is `MERGED`.
 - Compare changes against issue acceptance criteria.
 - Check for missed edge cases.
 - Check architecture/conventions.

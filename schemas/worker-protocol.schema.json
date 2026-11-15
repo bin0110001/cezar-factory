@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Worker protocol lease snapshot",
+  "type": "object",
+  "required": ["schemaVersion", "fences", "claims", "leases"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "fences": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+    "claims": {"type": "object", "additionalProperties": {"type": "string"}},
+    "leases": {"type": "object", "additionalProperties": {
+      "type": "object",
+      "required": ["node", "session", "fence", "state", "outcome", "expiresAt", "key", "command"],
+      "properties": {
+        "state": {"enum": ["leased", "started", "cancel_requested", "completed", "expired", "cancelled"]},
+        "outcome": {"enum": ["passed", "test_failed", "auth_failed", "unsupported_capability", "worker_disconnected", "started_but_lost", "stale_fence", "rejected_replay", "cancelled", "expired", null]}
+      }
+    }}
+  }
+}
