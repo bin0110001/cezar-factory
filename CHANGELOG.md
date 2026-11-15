@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.131] - 2026-11-15
+
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.
