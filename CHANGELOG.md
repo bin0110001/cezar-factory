@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Desktop adapter for scoped display observation and control (issue #348). `cezar/packages/cezar/src/session-control/desktop-adapter.ts` serves one session's own display through an injected AT-SPI/Selkies backend. Screenshot, input, clipboard, file transfer and recording are separate opt-in grants, a session is read-only by default, the pixel fallback needs both screenshot and input, and human takeover suspends agent input until a fresh authorization resumes it. It enforces rate, lifetime and capture limits, a non-root backend on the session display, and idempotent cleanup on stop, cancel, disconnect or lease loss. Project-native actions plug in through a generic hook; `godot-pilot.ts` registers `create_room` over the Godot harness as the pilot, and the core has no Godot actions. Tests cover a non-Godot fixture, read-only denial, takeover, cleanup and redaction. See `cezar/docs/desktop-adapter.md`.
+
 - Scoped capability profile and short-lived per-run credentials for graphical session control (#346). `scripts/session/capability_broker.py` separates read-only `observe` from opt-in `control` (flag `FACTORY_SESSION_CONTROL`), binds tokens to project, run, attempt, session and fence, and denies expired, revoked, stale-fence, cross-project/session, host or controller targets, and takeover input; project config can only narrow. Tests in `tests/test_session_capability_broker.py`; see `docs/session-control-capabilities.md`.
 
 - Project-owned rendered graphical adapter hooks and a Godot adapter for the graphical worker (#342), with tests and a runbook note in `docs/graphical-worker-runbook.md`.
