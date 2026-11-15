@@ -11,7 +11,7 @@
     "pr": { "type": "string", "pattern": "^https://github\\.com/[^/\\s]+/[^/\\s]+/pull/[1-9][0-9]*$" },
     "headSha": { "type": "string", "pattern": "^[0-9a-fA-F]{40}$" },
     "stage": { "type": "string", "enum": ["changed", "full", "verify"] },
-    "status": { "type": "string", "enum": ["passed", "failed", "skipped", "error"] },
+    "status": { "type": "string", "enum": ["passed", "warning", "failed", "skipped", "error"] },
     "exitCode": { "type": "integer" },
     "artifactPaths": {
       "type": "array",
@@ -27,7 +27,20 @@
     "message": { "type": "string" },
     "selectedChecks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "unmappedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+    "unmappedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "checkId": { "type": "string", "minLength": 1 },
+          "issue": { "type": "string", "pattern": "^https://github\\.com/[^/\\s]+/[^/\\s]+/issues/[1-9][0-9]*$" },
+          "message": { "type": "string" }
+        },
+        "required": ["checkId", "issue", "message"]
+      }
+    }
   },
   "required": ["schemaVersion", "issue", "repository", "pr", "headSha", "stage", "status", "exitCode", "artifactPaths"]
 }

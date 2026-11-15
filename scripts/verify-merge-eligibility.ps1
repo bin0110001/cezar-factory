@@ -146,10 +146,29 @@ try {
                     [string]$receipt.stage -eq $stage) { $matchingReceipts += [pscustomobject]@{ File = $file; Receipt = $receipt } }
             }
             $latestReceipt = $matchingReceipts | Sort-Object { $_.File.LastWriteTimeUtc } -Descending | Select-Object -First 1
-            $valid = $null -ne $latestReceipt -and [string]$latestReceipt.Receipt.status -eq 'passed' -and
+            $receiptStatus = if ($null -ne $latestReceipt) { [string]$latestReceipt.Receipt.status } else { '' }
+            $knownDebt = $false
+            if ($stage -eq 'changed' -and $receiptStatus -eq 'warning' -and $null -ne $latestReceipt) {
+                $warningRows = @($latestReceipt.Receipt.warnings)
+                $knownDebt = $warningRows.Count -gt 0
+                $verifiedIssues = @{}
+                foreach ($warning in $warningRows) {
+                    if (-not $warning.checkId -or -not $warning.message -or
+                        [string]$warning.issue -notmatch "^https://github\.com/$([regex]::Escape($decision.repository))/issues/(?<number>[1-9][0-9]*)$") {
+                        $knownDebt = $false; break
+                    }
+                    $issueNumber = [string]$Matches.number
+                    if (-not $verifiedIssues.ContainsKey($issueNumber)) {
+                        $trackedIssue = Get-GhJson @('issue','view',$issueNumber,'--repo',$decision.repository,'--json','number,state')
+                        $verifiedIssues[$issueNumber] = ([int]$trackedIssue.number -eq [int]$issueNumber -and [string]$trackedIssue.state -eq 'OPEN')
+                    }
+                    if (-not $verifiedIssues[$issueNumber]) { $knownDebt = $false; break }
+                }
+            }
+            $valid = $null -ne $latestReceipt -and ($receiptStatus -eq 'passed' -or $knownDebt) -and
                 [int]$latestReceipt.Receipt.exitCode -eq 0 -and $latestReceipt.Receipt.worktreeClean -eq $true
             $decision.validation[$stage] = $valid
-            if ($stage -in $requiredStages -and -not $valid) { Add-Blocker "no passed, clean, current-head '$stage' validation receipt exists for this issue and PR" }
+            if ($stage -in $requiredStages -and -not $valid) { Add-Blocker "no passed or issue-linked warning, clean, current-head '$stage' validation receipt exists for this issue and PR" }
             if ($stage -notin $requiredStages -and $null -ne $latestReceipt -and -not $valid) { Add-Blocker "the latest current-head '$stage' validation attempt failed" }
         }
     }

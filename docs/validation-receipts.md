@@ -15,8 +15,16 @@ validation stage writes it under the current worktree's
 PR, 40-character head SHA, stage (`changed`, `full`, or `verify`), normalized
 status, child exit code, artifact paths, and clean-worktree flag. Consumers must compare the
 receipt's repository, PR, and head SHA with the current GitHub PR and require
-the applicable stages to have `status: passed` and `exitCode: 0`. A matching
-version or an agent-written result alone does not qualify as merge evidence.
+the applicable stages to have `status: passed` and `exitCode: 0`. A changed-stage
+`status: warning` is accepted only when every warning names an issue in the same
+project repository; full and verify stages remain strict. The warning and issue
+links stay in the receipt. In `.ai/factory/test-ownership.json`, a focused check
+may set `knownIssue` to the full GitHub URL for the issue tracking that failure.
+A failed check with this field becomes an issue-linked warning; a check without
+it still fails the implementation step. Keep the issue description aligned with
+the failure mode covered by that check.
+
+A matching version or an agent-written result alone does not qualify as merge evidence.
 
 The configured project runner and receipt producer are provided by #19. The
 current-head merge gate that consumes the receipts is tracked in #27. Until

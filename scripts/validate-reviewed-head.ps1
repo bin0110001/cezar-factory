@@ -3,8 +3,9 @@
 .SYNOPSIS
 Bind the review's validation receipts to the exact pull-request head it reviewed.
 .DESCRIPTION
-The merge gate (verify-merge-eligibility.ps1) accepts only passed, clean receipts whose PR URL and head SHA match the live
-PR. A review worktree starts on the base branch, so validating it proves nothing about the PR. This step:
+The merge gate (verify-merge-eligibility.ps1) accepts passed, clean receipts and changed-stage warnings linked to
+existing issues in the same project, bound to the live PR URL and head SHA. A review worktree starts on the base branch,
+so validating it proves nothing about the PR. This step:
   1. skips unless the review approved (a changes-requested verdict has nothing to merge);
   2. refuses when the live PR head is not the head the reviewer recorded;
   3. makes sure the PR carries one risk label, copying the issue's (the merge gate requires exactly one);
