@@ -74,3 +74,19 @@ rules; each item is a requirement to verify once the runtime merges, not a state
 - Launch/readiness failure, timeout, crash, cancel and cleanup failure yield `failed`/`cancelled` outcomes with a typed
   reason and never satisfy a rendered criterion. A `headless` request cannot produce a rendered frame. Godot headless
   tests are untouched. GPU claims remain gated by #341; the software path needs Xvfb + Mesa (section 3).
+
+## 11. Action trace events (#349)
+- Every session-control request (accepted, failed or denied) emits one `SessionControlTraceEvent`
+  (`@open-mercato/cezar-contract`, `sessionControlTraceEventSchema`, strict, schema version 1) through the
+  adapter's `recordEvent` hook. It carries `runId`, `attemptId`, `sessionId`, optional `scenarioId`,
+  `requestId`, an ISO timestamp, the action type, the outcome and an error code. These identities come from the
+  fenced session options, never from the request body, so a stale or foreign request is recorded under the
+  original attempt and cannot be attributed to another one.
+- Parameters are metadata only (`sanitizeSessionControlActionForTrace`): target kind, text length, URL origin,
+  key class, scroll deltas, timeouts. Typed text, selectors, element names, URL paths and queries, key values,
+  stop reasons, page content and clipboard are never recorded.
+- `evidenceRef` is an opaque reference to a canonical artifact (#220/#330), set for screenshots. The event does
+  not embed content and there is no separate action store: #127 owns durable events and #128 tracing, #219 owns
+  the operator view. The feature follows the graphical-mode flag in section 1; with it off no session exists and no events are emitted.
+- Operator notes: to audit a run, filter events by `attemptId`, order by `timestamp`/`requestId`, and follow
+  `evidenceRef` to the artifact. Missing `evidenceRef` on a screenshot event means the capture failed.
