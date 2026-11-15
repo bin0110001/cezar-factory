@@ -87,7 +87,9 @@ content_digest() {
   [[ -f "$root/config/factory-projects.json" ]] && paths+=(config/factory-projects.json)
   ( cd "$root"
     local digest
-    digest="$(find "${paths[@]}" -type f -print0 |
+    digest="$(find "${paths[@]}" \
+      \( -type d -name __pycache__ -prune \) -o \
+      \( -type f ! -name '*.pyc' ! -name '*.pyo' ! -name '*.pyd' -print0 \) |
       LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
     printf '%s' "${digest%% *}"
   )
@@ -171,7 +173,9 @@ container_content_digest="$(podman exec "$CONTAINER" sh -c '
   cd "$1"
   set -- VERSION workflows skills scripts routing automations
   [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
-  digest="$(find "$@" -type f -print0 |
+  digest="$(find "$@" \
+    \( -type d -name __pycache__ -prune \) -o \
+    \( -type f ! -name "*.pyc" ! -name "*.pyo" ! -name "*.pyd" -print0 \) |
     LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
   printf '%s' "${digest%% *}"
 ' sh "$RUNTIME_ROOT")"
