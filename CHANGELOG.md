@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep the shared-migration dirty-check based on Git's porcelain output, so line-ending warnings on stderr do not block a clean target; actual status entries and Git failures still stop the migration.
+- Keep the private MCP-config permission assertion POSIX-specific; Windows does not expose the same mode bits through `stat`.
+
 - Project-scoped documentation search/read adapter for agents (#177). `scripts/docs/search.py` is a backend-neutral `docs_search`/`docs_read` layer with per-identity project/repo/ref authorisation before retrieval, bounded anchored snippets carrying source SHA, freshness and an evidence link, timeout/retry/cache, checked-in-doc fallback, untrusted-text neutralisation, licensed-path exclusion and a secret-free audit with latency/size metrics. Contract and agent guidance in `integrations/docs-mcp/README.md`. Obot upstream registration and skill publication wait on the #175/#176 backend decision.
 ## [0.3.126] - 2026-11-15
 
