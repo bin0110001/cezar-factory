@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Scoped capability profile and short-lived per-run credentials for graphical session control (#346). `scripts/session/capability_broker.py` separates read-only `observe` from opt-in `control` (flag `FACTORY_SESSION_CONTROL`), binds tokens to project, run, attempt, session and fence, and denies expired, revoked, stale-fence, cross-project/session, host or controller targets, and takeover input; project config can only narrow. Tests in `tests/test_session_capability_broker.py`; see `docs/session-control-capabilities.md`.
+
 - Project-owned rendered graphical adapter hooks and a Godot adapter for the graphical worker (#342), with tests and a runbook note in `docs/graphical-worker-runbook.md`.
 
 - Gated GPU render pilot and pinned runtime fingerprint for graphical workers (#341). `session-control/gpu-pilot.ts` decides `supported`/`unsupported`/`unavailable`/`failed`/`disabled` from an injected probe, lease and render proof behind `CEZ_GRAPHICAL_GPU_PILOT=1`; software rendering, unpinned drivers, absent or reset GPUs, and lease contention are explicit coverage gaps that never report a rendered pass. The runbook documents the gate. No real-hardware render has been run yet.
