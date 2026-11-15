@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Autodeploy parity now compares one Git-indexed managed-file manifest on host and container, excludes untracked/generated artifacts, and records the differing paths when a real mismatch blocks deployment (#561).
+
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.
 
 - Promotion canaries now run the maintenance automation first for release changes. If a run remains queued beyond its queue timeout, the candidate is recorded as infrastructure-blocked and remains active; later ticks resume the same run ID. Queue starvation does not roll back or quarantine a SHA, increment the circuit breaker, or duplicate canary runs. Real started-run failures retain the strict rollback path (#546).
