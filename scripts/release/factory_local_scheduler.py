@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+from dataclasses import dataclass
 import fnmatch
 import hashlib
 import json
@@ -25,7 +26,7 @@ import sys
 import tempfile
 import time
 import uuid
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -88,6 +89,12 @@ class SchedulerError(RuntimeError):
 
 class CheckInterrupted(SchedulerError):
     """A required check was killed from outside (a container restart, the OOM killer), not failed by the candidate."""
+
+
+@dataclass(frozen=True)
+class StableDeployResult:
+    outcome: Literal["success", "deferred", "failed"]
+    detail: str
 
 
 # Exit codes of a process ended by SIGKILL or SIGTERM, as a shell reports them (128 + signal).
@@ -574,11 +581,15 @@ class LocalPromotionScheduler:
         sha = value.get("currentSha") if isinstance(value, dict) else None
         return sha if isinstance(sha, str) and SHA_RE.fullmatch(sha) else None
 
-    def _deploy_stable(self, sha: str) -> tuple[bool, str]:
+    def _deploy_stable(self, sha: str) -> StableDeployResult:
         command = self.policy["deployCommand"]
         if not command:
-            return True, "no deploy command configured"
-        env = {**self._safe_environment(), "FACTORY_DEPLOY_IDLE_WAIT_SECONDS": str(self.policy["deployIdleWaitSeconds"])}
+            return StableDeployResult("success", "no deploy command configured")
+        env = {
+            **self._safe_environment(),
+            "FACTORY_DEPLOY_IDLE_WAIT_SECONDS": str(self.policy["deployIdleWaitSeconds"]),
+            "FACTORY_DEPLOY_MAX_DEFER_SECONDS": str(self.policy["deployMaxDeferSeconds"]),
+        }
         if os.name == "posix":
             # The promoter's unit runs with UMask=0077. The deploy checks files out into the tree the Cezar container
             # mounts read-only as a different user, so it must create them world-readable like the autodeploy timer does.
@@ -586,13 +597,55 @@ class LocalPromotionScheduler:
         try:
             result = subprocess.run(command, cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=3600, check=False, env=env)
         except subprocess.TimeoutExpired:
-            return False, "stable deploy timed out"
+            return StableDeployResult("failed", "stable deploy timed out")
         tail = (result.stdout or b"").decode("utf-8", "replace")[-600:]
+        if result.returncode == 25 or "DEFERRED: runtime restart waits for an idle Cezar" in tail:
+            return StableDeployResult("deferred", tail or "stable deploy exited 25: deferred while Cezar is busy")
         if result.returncode:
-            return False, f"stable deploy exited {result.returncode}: {tail}"
+            return StableDeployResult("failed", f"stable deploy exited {result.returncode}: {tail}")
         if self._stable_pointer() != sha:
-            return False, "deploy finished but the stable channel pointer has not reached this SHA yet (deferred while Cezar is busy)"
-        return True, tail
+            return StableDeployResult("failed", "deploy completed but the stable channel pointer has not reached this SHA")
+        return StableDeployResult("success", tail)
+
+    def _clear_stable_deploy_deferral(self, sha: str | None = None) -> None:
+        current_sha, _, _ = self._state_get("stable_deploy_deferred", "").partition("|")
+        if not sha or current_sha == sha:
+            self._state_put("stable_deploy_deferred", "")
+
+    def _stable_deploy_deferral(self, sha: str) -> tuple[float, int] | None:
+        stored_sha, separator, started = self._state_get("stable_deploy_deferred", "").partition("|")
+        if not separator or stored_sha != sha:
+            return None
+        try:
+            since = float(started)
+        except ValueError:
+            return None
+        elapsed = max(0, int(time.time() - since))
+        maximum = self.policy["deployMaxDeferSeconds"] if self.policy else 7200
+        return since, max(0, maximum - elapsed)
+
+    def _mark_stable_deploy_deferred(self, sha: str) -> int:
+        existing = self._stable_deploy_deferral(sha)
+        since = existing[0] if existing else time.time()
+        self._state_put("stable_deploy_deferred", f"{sha}|{since}")
+        return max(0, (self.policy["deployMaxDeferSeconds"] if self.policy else 7200) - int(time.time() - since))
+
+    @staticmethod
+    def _drift_is_explained_by_stable_deferral(report: dict[str, Any]) -> bool:
+        findings = report.get("findings")
+        if not isinstance(findings, list) or not findings:
+            return False
+        saw_stable_lag = False
+        for finding in findings:
+            if not isinstance(finding, str):
+                return False
+            if finding.startswith("stable pointer ") and " lags origin/stable " in finding:
+                saw_stable_lag = True
+            elif finding.startswith("Cezar serves ") and " on stable but the pointer is " in finding:
+                continue
+            else:
+                return False
+        return saw_stable_lag
 
     def _advance(self, sha: str) -> dict[str, Any]:
         """Move a dev-validated candidate through soak, approval, the stable ref, and the stable deploy."""
@@ -616,17 +669,26 @@ class LocalPromotionScheduler:
             row = self._row(sha)
             stage = "stable-promoted"
         if stage == "stable-promoted":
-            ok, detail = self._deploy_stable(sha)
-            attempts = int((row["deploy_attempts"] if row else 0) or 0) + (0 if ok else 1)
-            if ok:
+            deploy = self._deploy_stable(sha)
+            attempts = int((row["deploy_attempts"] if row else 0) or 0)
+            if deploy.outcome == "success":
+                self._clear_stable_deploy_deferral(sha)
                 self._set_stage(sha, self.FINAL_STAGE)
                 self.breaker.record_success()
                 return {"status": "promoted", "sourceSha": sha, "stage": self.FINAL_STAGE}
+            if deploy.outcome == "deferred":
+                remaining = self._mark_stable_deploy_deferred(sha)
+                self._set_stage(sha, "stable-promoted", deploy_attempts=attempts)
+                self._state_put("last_stable_deploy_error", f"{sha}|deferred: {deploy.detail[-300:]}")
+                return {"status": "deploy-deferred", "sourceSha": sha, "stage": stage, "attempts": attempts,
+                        "remainingMaxDeferSeconds": remaining, "detail": deploy.detail[-300:]}
+            self._clear_stable_deploy_deferral(sha)
+            attempts += 1
             self._set_stage(sha, "stable-promoted", deploy_attempts=attempts)
-            self._state_put("last_stable_deploy_error", f"{sha}|{detail[-300:]}")
+            self._state_put("last_stable_deploy_error", f"{sha}|{deploy.detail[-300:]}")
             if attempts == 3:  # one issue per candidate, not per tick
-                self._failure("stable-deploy", sha, detail, subject="stable")
-            return {"status": "deploy-pending", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
+                self._failure("stable-deploy", sha, deploy.detail, subject="stable")
+            return {"status": "deploy-pending", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": deploy.detail[-300:]}
         return {"status": "unchanged", "sourceSha": sha, "stage": stage}
 
     def _reconcile_stable(self, skip_sha: str | None = None) -> dict[str, Any] | None:
@@ -645,13 +707,20 @@ class LocalPromotionScheduler:
         row = self._row(tip)
         if tip == skip_sha or pointer is None or pointer == tip or not row or row["stage"] not in ("stable-promoted", self.FINAL_STAGE):
             return None
-        ok, detail = self._deploy_stable(tip)
-        if ok:
+        deploy = self._deploy_stable(tip)
+        if deploy.outcome == "success":
+            self._clear_stable_deploy_deferral(tip)
             self._set_stage(tip, self.FINAL_STAGE)
             self._state_put("last_stable_deploy_error", "")
             return {"status": "stable-reconciled", "sourceSha": tip}
-        self._state_put("last_stable_deploy_error", f"{tip}|{detail[-300:]}")
-        return {"status": "deploy-pending", "sourceSha": tip, "detail": detail[-300:]}
+        if deploy.outcome == "deferred":
+            remaining = self._mark_stable_deploy_deferred(tip)
+            self._state_put("last_stable_deploy_error", f"{tip}|deferred: {deploy.detail[-300:]}")
+            return {"status": "deploy-deferred", "sourceSha": tip, "remainingMaxDeferSeconds": remaining,
+                    "detail": deploy.detail[-300:]}
+        self._clear_stable_deploy_deferral(tip)
+        self._state_put("last_stable_deploy_error", f"{tip}|{deploy.detail[-300:]}")
+        return {"status": "deploy-pending", "sourceSha": tip, "detail": deploy.detail[-300:]}
 
     def _stalled_step(self, tip: str) -> str:
         """Name the step that kept the stable pointer from reaching origin/stable, with its last error."""
@@ -660,7 +729,15 @@ class LocalPromotionScheduler:
             return f"origin/stable {tip[:9]} has no promotion record on this host (promoted outside the scheduler)"
         parts = [f"stage {row['stage']}"]
         if row["stage"] == "stable-promoted":
-            parts.append(f"deploy pending after {int(row['deploy_attempts'] or 0)} attempt(s)")
+            deferral = self._stable_deploy_deferral(tip)
+            if deferral:
+                maximum = self.policy["deployMaxDeferSeconds"] if self.policy else 7200
+                if deferral[1] > 0:
+                    parts.append(f"stable deploy deferred; {deferral[1]}s remain in the {maximum}s max-defer window")
+                else:
+                    parts.append(f"stable deploy deferred; max-defer window exceeded ({maximum}s)")
+            else:
+                parts.append(f"deploy pending after {int(row['deploy_attempts'] or 0)} attempt(s)")
         sha, _, error = self._state_get("last_stable_deploy_error", "").partition("|")
         if error and sha == tip:
             parts.append(f"last deploy error: {error.strip()[:200]}")
@@ -739,6 +816,10 @@ class LocalPromotionScheduler:
             self._state_put("probe_unknown_since", "0")
         if report["status"] != "drift":
             self._state_put("drift_since", "0")
+            return report
+        stable_sha = report.get("seen", {}).get("originStable")
+        deferral = self._stable_deploy_deferral(stable_sha) if isinstance(stable_sha, str) else None
+        if deferral and deferral[1] > 0 and self._drift_is_explained_by_stable_deferral(report):
             return report
         since = float(self._state_get("drift_since", "0") or 0)
         if not since:

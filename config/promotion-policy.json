@@ -58,7 +58,8 @@
     "stable": {
       "branch": "stable",
       "deployCommand": ["bash", "scripts/deploy/factory-autodeploy.sh", "--force"],
-      "deployIdleWaitSeconds": 600
+      "deployIdleWaitSeconds": 600,
+      "deployMaxDeferSeconds": 7200
     },
     "preflight": [
       {

@@ -8,7 +8,7 @@ import time
 import unittest
 
 from scripts.release.factory_activation import ActivationError
-from scripts.release.factory_local_scheduler import LocalPromotionScheduler, SchedulerError
+from scripts.release.factory_local_scheduler import LocalPromotionScheduler, SchedulerError, StableDeployResult
 from scripts.release.factory_promotion import GhRunner
 
 
@@ -152,6 +152,8 @@ class PipelineTests(unittest.TestCase):
             "writes-pointer": f"import json,pathlib;p=pathlib.Path(r'{pointer}');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({{'currentSha':'{self.sha}'}}))",
             "no-pointer": "pass",
             "fails": "raise SystemExit(3)",
+            "deferred": "print('DEFERRED: runtime restart waits for an idle Cezar; stable channel not activated yet')",
+            "exit25": "raise SystemExit(25)",
         }[kind]
         return [sys.executable, "-c", code]
 
@@ -294,6 +296,79 @@ class PipelineTests(unittest.TestCase):
         scheduler = self.build(deploy="fails")
         self.assertEqual(scheduler.run_once()["promotion"]["status"], "deploy-pending")
         self.assertEqual(scheduler.run_once()["status"], "deploy-pending")
+
+    def test_deferred_stable_deploy_does_not_consume_attempts_or_file_failure(self):
+        scheduler = self.build(deploy="deferred")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at,stage,stage_at,deploy_attempts) VALUES(?, 'healthy', ?, 'stable-promoted', ?, 2)",
+                       (self.sha, "2026-01-01T00:00:00Z", time.time()))
+
+        result = scheduler._advance(self.sha)
+
+        self.assertEqual(result["status"], "deploy-deferred")
+        self.assertEqual(result["attempts"], 2)
+        self.assertEqual(result["remainingMaxDeferSeconds"], 7200)
+        self.assertEqual(scheduler._row(self.sha)["deploy_attempts"], 2)
+        self.assertEqual(self.gh.issues, [])
+
+    def test_exit_25_is_a_distinct_deferred_deploy_result(self):
+        scheduler = self.build(deploy="exit25")
+        result = scheduler._deploy_stable(self.sha)
+        self.assertEqual(result.outcome, "deferred")
+        self.assertIn("exit", result.detail.lower())
+
+    def test_stable_deploy_passes_configured_max_defer_to_the_runtime(self):
+        scheduler = self.build()
+        scheduler.policy["deployMaxDeferSeconds"] = 321
+        observed = pathlib.Path(self.tmp.name) / "max-defer-seconds"
+        pointer = scheduler.controller.channels / "stable.json"
+        code = (f"import json,os,pathlib;pathlib.Path(r'{observed}').write_text(os.environ['FACTORY_DEPLOY_MAX_DEFER_SECONDS']);"
+                f"p=pathlib.Path(r'{pointer}');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({{'currentSha':'{self.sha}'}}))")
+        scheduler.policy["deployCommand"] = [sys.executable, "-c", code]
+
+        result = scheduler._deploy_stable(self.sha)
+
+        self.assertEqual(result.outcome, "success")
+        self.assertEqual(observed.read_text(encoding="utf-8"), "321")
+
+    def test_real_stable_deploy_failure_still_counts_and_files_after_three_attempts(self):
+        scheduler = self.build(deploy="fails")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at,stage,stage_at,deploy_attempts) VALUES(?, 'healthy', ?, 'stable-promoted', ?, 0)",
+                       (self.sha, "2026-01-01T00:00:00Z", time.time()))
+
+        for attempts in (1, 2, 3):
+            result = scheduler._advance(self.sha)
+            self.assertEqual(result["status"], "deploy-pending")
+            self.assertEqual(result["attempts"], attempts)
+            self.assertEqual(scheduler._row(self.sha)["deploy_attempts"], attempts)
+        self.assertEqual(len(self.gh.issues), 1)
+
+    def test_successful_stable_deploy_clears_an_earlier_deferral(self):
+        scheduler = self.build()
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at,stage,stage_at,deploy_attempts) VALUES(?, 'healthy', ?, 'stable-promoted', ?, 1)",
+                       (self.sha, "2026-01-01T00:00:00Z", time.time()))
+        scheduler._state_put("stable_deploy_deferred", f"{self.sha}|{time.time() - 60}")
+
+        result = scheduler._advance(self.sha)
+
+        self.assertEqual(result["status"], "promoted")
+        self.assertEqual(scheduler._state_get("stable_deploy_deferred"), "")
+
+    def test_reconcile_records_deferred_outcome_without_counting_an_attempt(self):
+        scheduler = self.build(deploy="deferred")
+        scheduler._fetch_ref = lambda _branch: self.sha
+        (scheduler.controller.channels / "stable.json").write_text(json.dumps({"currentSha": self.base_sha}), encoding="utf-8")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at,stage,stage_at,deploy_attempts) VALUES(?, 'healthy', ?, 'stable-promoted', ?, 2)",
+                       (self.sha, "2026-01-01T00:00:00Z", time.time()))
+
+        result = scheduler._reconcile_stable()
+
+        self.assertEqual(result["status"], "deploy-deferred")
+        self.assertEqual(scheduler._row(self.sha)["deploy_attempts"], 2)
+        self.assertEqual(self.gh.issues, [])
 
     def test_stable_already_containing_the_sha_is_not_pushed_again(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
@@ -485,11 +560,55 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("deploy pending after 2 attempt(s)", text)
         self.assertIn("last deploy error: Cezar busy", text)
         calls = []
-        scheduler._deploy_stable = lambda sha: (calls.append(sha) or (True, "ok"))
+        scheduler._deploy_stable = lambda sha: (calls.append(sha) or StableDeployResult("success", "ok"))
         result = scheduler._reconcile_stable()
         self.assertEqual(calls, [self.sha])
         self.assertEqual(result["status"], "stable-reconciled")
         self.assertEqual(scheduler._row(self.sha)["stage"], scheduler.FINAL_STAGE)
+
+    def test_deferred_stable_drift_waits_for_max_defer_window_then_escalates(self):
+        scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
+        scheduler._fetch_ref = lambda _branch: self.sha
+        (scheduler.controller.channels / "stable.json").write_text(json.dumps({"currentSha": self.base_sha}), encoding="utf-8")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at,stage,stage_at,deploy_attempts) VALUES(?, 'healthy', ?, 'stable-promoted', ?, 0)",
+                       (self.sha, "2026-01-01T00:00:00Z", time.time()))
+        scheduler._state_put("drift_since", str(time.time() - 99999))
+        scheduler._state_put("stable_deploy_deferred", f"{self.sha}|{time.time() - 3600}")
+
+        report = scheduler._drift_watch()
+
+        self.assertEqual(report["status"], "drift")
+        self.assertIn("stable deploy deferred", "; ".join(report["findings"]))
+        self.assertIn("max-defer window", "; ".join(report["findings"]))
+        self.assertIn("remain", "; ".join(report["findings"]))
+        self.assertEqual(self.gh.issues, [])
+
+        scheduler._state_put("stable_deploy_deferred", f"{self.sha}|{time.time() - 7201}")
+        report = scheduler._drift_watch()
+        self.assertEqual(report["status"], "drift")
+        self.assertEqual(len(self.gh.issues), 1)
+        self.assertIn("stable deploy deferred", self.gh.issues[0])
+        self.assertIn("max-defer window exceeded", self.gh.issues[0])
+
+    def test_active_stable_deferral_does_not_suppress_unrelated_drift(self):
+        scheduler = self.build()
+        scheduler._state_put("stable_deploy_deferred", f"{self.sha}|{time.time() - 60}")
+        scheduler._state_put("drift_since", str(time.time() - 99999))
+        scheduler.drift = lambda: {
+            "status": "drift",
+            "findings": [
+                f"stable pointer {self.base_sha[:9]} lags origin/stable {self.sha[:9]}; deferred",
+                "host checkout does not match the release pointer",
+            ],
+            "seen": {"originStable": self.sha},
+        }
+
+        report = scheduler._drift_watch()
+
+        self.assertEqual(report["status"], "drift")
+        self.assertEqual(len(self.gh.issues), 1)
+        self.assertIn("host checkout does not match", self.gh.issues[0])
 
     def test_no_drift_when_everything_agrees(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.base_sha}:refs/heads/stable"], check=True, capture_output=True)

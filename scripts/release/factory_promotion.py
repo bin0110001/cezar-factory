@@ -130,6 +130,7 @@ def normalize_policy(raw: Any) -> dict[str, Any] | None:
         "stableBranch": stable.get("branch", "stable"),
         "deployCommand": _argv(deploy, "stable.deployCommand") if deploy is not None else None,
         "deployIdleWaitSeconds": _int(stable.get("deployIdleWaitSeconds"), "stable.deployIdleWaitSeconds", 0, 3600, 600),
+        "deployMaxDeferSeconds": _int(stable.get("deployMaxDeferSeconds"), "stable.deployMaxDeferSeconds", 60, 24 * 3600, 7200),
         "breakerMax": _int(breaker.get("maxConsecutiveFailures"), "breaker.maxConsecutiveFailures", 1, 100, 3),
         "breakerPauseSeconds": _int(breaker.get("pauseSeconds"), "breaker.pauseSeconds", 60, 7 * 24 * 3600, 3600),
         "issueLabels": list(issues.get("labels", ["factory:new"])),

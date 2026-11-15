@@ -21,7 +21,7 @@
         { "id": "health", "automation": "[factory] health", "timeoutSeconds": 900 }
       ]
     },
-    "stable": { "branch": "stable" },
+    "stable": { "branch": "stable", "deployMaxDeferSeconds": 7200 },
     "breaker": { "maxConsecutiveFailures": 3, "pauseSeconds": 3600 }
   }
 }

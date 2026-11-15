@@ -40,6 +40,13 @@ class PolicyTests(unittest.TestCase):
         policy = normalize_policy({"mode": "controlled", "modes": {"controlled": {"soakSeconds": 60}, "autonomous": {"soakSeconds": 5}}})
         self.assertEqual(policy["soakSeconds"], 60)
 
+    def test_stable_max_defer_window_defaults_to_two_hours_and_is_bounded(self):
+        self.assertEqual(normalize_policy({"mode": "autonomous"})["deployMaxDeferSeconds"], 7200)
+        self.assertEqual(normalize_policy({"stable": {"deployMaxDeferSeconds": 600}})["deployMaxDeferSeconds"], 600)
+        for seconds in (0, 60 * 60 * 24 + 1):
+            with self.assertRaises(PolicyError):
+                normalize_policy({"stable": {"deployMaxDeferSeconds": seconds}})
+
     def test_rejects_unknown_mode_and_bad_values(self):
         for bad in ({"mode": "yolo"}, {"modes": {"autonomous": {"review": "vibes"}}}, {"ghCommand": []},
                     {"breaker": {"maxConsecutiveFailures": 0}}, {"canaries": {"items": [{"id": "x"}]}},
@@ -57,6 +64,7 @@ class PolicyTests(unittest.TestCase):
     def test_factory_maintenance_canary_runs_first_for_release_tool_changes(self):
         raw = json.loads((pathlib.Path(__file__).parents[1] / "config" / "promotion-policy.json").read_text(encoding="utf-8"))
         policy = normalize_policy(raw["promotion"])
+        self.assertEqual(policy["deployMaxDeferSeconds"], 7200)
         selected = select_canaries(policy, ["scripts/release/factory_promotion.py"])
         self.assertEqual(selected[0]["id"], "maintenance")
 

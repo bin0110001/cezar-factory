@@ -55,7 +55,9 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
    `cezar/` changed, restarts it only when Cezar is idle, and activates the `stable` channel. A restart
    waits for no running runs; after the idle wait it defers (exit 25, retried next tick) and after
    `FACTORY_DEPLOY_MAX_DEFER_SECONDS` (default 2 hours) it restarts anyway so a busy queue cannot starve a
-   deploy. The candidate is done when the `stable` pointer reaches its SHA.
+   deploy. The autodeploy wrapper records that deferral and exits successfully without activating the channel;
+   the promoter recognizes its `DEFERRED` output marker as a typed deferral. Deferrals do not consume deploy
+   attempts. The candidate is done when the `stable` pointer reaches its SHA.
 
 Every candidate writes an immutable record under `~/.local/share/cezar-factory/promotion-records/` with the checks,
 canary results, rollback outcome, and a digest (`schemas/factory-release/promotion-record.schema.json`).
@@ -78,6 +80,9 @@ dev, and what Cezar actually serves against the channel pointer. Stable ahead of
 stable's SHA has no healthy promotion record (a dev canary rollback leaves it legitimately ahead). The Cezar
 probe retries for 45 seconds; an unreadable probe is `unknown`, not drift, and opens an issue only after it
 persists past twice `drift.graceSeconds`. Drift that persists beyond `drift.graceSeconds` opens an issue.
+When the stable deploy is deferred, drift still names the deferral and the remaining `stable.deployMaxDeferSeconds`
+window (default 7200s), but the drift issue is held until that window expires. Non-deferral deploy failures and
+drift with no active deferral continue to use `drift.graceSeconds`.
 
 ## Modes are data
 
