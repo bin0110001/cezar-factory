@@ -1874,7 +1874,7 @@ $autodeploy = Get-Content -Raw (Join-Path $factory 'scripts/deploy/factory-autod
 Assert 'autodeploy only fast-forwards, refuses dirty or diverged checkouts, and never resets' ($autodeploy -match 'merge-base --is-ancestor' -and $autodeploy -match 'BLOCKED' -and $autodeploy -notmatch 'reset --hard|git clean|git stash')
 Assert 'autodeploy tracks the tested stable branch' ($autodeploy -match 'FACTORY_DEPLOY_BRANCH:-stable')
 Assert 'autodeploy retains the journaled activation coordinator for channel-managed installs' ($autodeploy -match 'factory_activation.py')
-Assert 'autodeploy enforces exact source SHA, version and mounted content parity using portable shell syntax' ($autodeploy -match 'container_content_digest' -and $autodeploy -match 'host_content_digest' -and $autodeploy -match 'source_sha.*!=.*container_sha' -and $autodeploy -match '\[ -f config/factory-projects\.json \]')
+Assert 'autodeploy enforces exact source SHA, version and mounted content parity while excluding generated Python bytecode' ($autodeploy -match 'container_content_digest' -and $autodeploy -match 'host_content_digest' -and $autodeploy -match 'source_sha.*!=.*container_sha' -and $autodeploy -match '\[ -f config/factory-projects\.json \]' -and $autodeploy -match '__pycache__' -and $autodeploy -match '\.pyc' -and $autodeploy -match '\.pyo' -and $autodeploy -match '\.pyd')
 $legacySync = $autodeploy.IndexOf('sync-all-automations.ps1')
 $channelActivation = $autodeploy.IndexOf('factory_activation.py')
 Assert 'autodeploy routes legacy Cezar installs to paused automation sync and channel installs to journaled activation' ($legacySync -ge 0 -and $channelActivation -ge 0 -and $autodeploy -match 'printenv CEZ_FACTORY_RELEASE_STORE' -and $autodeploy -match 'channels/\$BRANCH\.json')
