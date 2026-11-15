@@ -2468,5 +2468,7 @@ $deBad = Join-Path ([IO.Path]::GetTempPath()) "de-$([guid]::NewGuid().ToString('
 $deFail = Run 'docs-evaluation-report.ps1' @{ RunsPath = $deBad }
 Assert 'docs evaluation: run without sourceSha is rejected' ($deFail.Code -ne 0 -and $deFail.Out -match 'sourceSha')
 Remove-Item -Force $deBad
+$dvDoc = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..' 'docs' 'distributed-verification-pilots.md'))
+Assert 'distributed pilots doc records gaps and stays opt-in local-only' ($dvDoc -match 'coverage gap' -and $dvDoc -match 'opt-in' -and $dvDoc -match 'no GitHub Actions' -and $dvDoc -notmatch '\|\s*(passed|green)\s*\|')
 if ($script:fail) { Write-Host "FAILED: $script:fail assertion(s)" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL PASSED' -ForegroundColor Green
