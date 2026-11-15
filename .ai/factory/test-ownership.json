@@ -53,6 +53,11 @@
       "command": "pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly"
     },
     {
+      "id": "mcp-profile-tests",
+      "patterns": ["scripts/mcp/**", "tests/test_mcp_profile.py", "config/mcp-profiles.json", "docs/mcp-profiles.md"],
+      "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_mcp_profile') } else { @('-B', '-m', 'unittest', 'tests.test_mcp_profile') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'MCP profile tests failed.' }"
+    },
+    {
       "id": "factory-release-unit-tests",
       "patterns": ["scripts/release/**", "tests/test_factory_local_scheduler.py", "tests/test_factory_activation.py", "tests/test_factory_release_controller.py"],
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }; if (-not $pythonRunner) { throw 'Python 3 is required for focused Factory release tests.' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') } else { @('-B', '-m', 'unittest', 'tests.test_factory_local_scheduler', 'tests.test_factory_activation', 'tests.test_factory_release_controller') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Factory release unit tests failed.' }"
