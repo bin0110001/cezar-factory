@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.133] - 2026-11-15
+
 - Autodeploy container parity (#561): host and container content digests now share one manifest implementation that excludes generated `__pycache__`/`*.pyc` files, and a content mismatch names the differing paths in the failure and `last-attempt.json` receipt. SHA, VERSION and real file differences still block.
 
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.
