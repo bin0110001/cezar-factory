@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
+
 - Visual evidence correlates multi-role captures by checkpoint and reports aggregate completeness (#353).
 
 - Session-control action trace events (#349). Every graphical session-control request now emits a strict, versioned `SessionControlTraceEvent` bound to the fenced run/attempt/session (and optional scenario) identity, with metadata-only sanitized parameters and an opaque `evidenceRef` for screenshots. Typed text, selectors, URL paths, key values and stop reasons are never recorded. Redaction, attribution, ordering and stale-lease tests added; runbook section 11 documents the feature flag and operator notes.
