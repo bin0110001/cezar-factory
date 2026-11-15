@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "factory-local-promotion-record/v1",
+  "promotionId": "c2ef3ef2-e8a4-4f8c-97b8-535571c302b2",
+  "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "dev",
+  "status": "healthy",
+  "candidateState": "active",
+  "startedAt": "2026-11-15T12:00:00Z",
+  "finishedAt": "2026-11-15T12:00:00Z",
+  "changedPaths": ["scripts/release/factory_local_scheduler.py"],
+  "checks": [],
+  "activation": { "status": "healthy", "activationId": "activation-fixture", "targetCount": 1 },
+  "canaries": [{
+    "id": "health",
+    "automation": "health",
+    "status": "unstarted",
+    "runId": "run-fixture",
+    "runStatus": "queued",
+    "reason": "Cezar never started it"
+  }],
+  "reason": "canary health is infrastructure-blocked",
+  "recordDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

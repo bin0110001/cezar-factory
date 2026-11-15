@@ -24,6 +24,12 @@
       "readySeconds": 180,
       "items": [
         {
+          "id": "maintenance",
+          "automation": "[factory] maintenance",
+          "when": ["scripts/**", "workflows/**", "automations/**", "skills/**", "policies/**", "routing/**", "cezar/**", "config/**", "VERSION"],
+          "timeoutSeconds": 3600
+        },
+        {
           "id": "health",
           "automation": "[factory] health",
           "when": ["**"],
@@ -46,12 +52,6 @@
             "config/**"
           ],
           "timeoutSeconds": 900
-        },
-        {
-          "id": "maintenance",
-          "automation": "[factory] maintenance",
-          "when": ["scripts/**", "workflows/**", "automations/**", "skills/**", "policies/**", "routing/**", "cezar/**", "config/**", "VERSION"],
-          "timeoutSeconds": 3600
         }
       ]
     },
