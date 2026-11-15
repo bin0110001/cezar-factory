@@ -1,0 +1,23 @@
+name: factory-verify
+description: Verification as a workflow - select the impacted checks plus the policy-mandatory checks, run them, and record a policy verdict in the verification ledger. Runs no agent.
+steps:
+  - id: startup
+    name: Prepare workflow environment
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-verify -Step select -RequiredScripts check-already-resolved.ps1,lib.ps1,verification-lib.ps1,verification-select.ps1,verification-invoke.ps1,verification-evaluate.ps1
+    timeoutSeconds: 60
+  - id: resolved
+    name: Finish early when the issue is already resolved
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-already-resolved.ps1 -Task "{{task}}"
+    timeoutSeconds: 60
+  - id: select-scoped
+    name: Select impacted checks plus the policy-mandatory checks
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verification-select.ps1 -OutputPath .factory/verification/selection.json
+    timeoutSeconds: 300
+  - id: invoke-checks
+    name: Run the selected checks
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verification-invoke.ps1 -SelectionPath .factory/verification/selection.json -OutputPath .factory/verification/results.json
+    timeoutSeconds: 3600
+  - id: policy-evaluate
+    name: Evaluate the policy and record the verdict in the ledger
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verification-evaluate.ps1 -SelectionPath .factory/verification/selection.json -ResultsPath .factory/verification/results.json -OutputPath .factory/verification/verdict.json -Task "{{task}}"
+    timeoutSeconds: 300
