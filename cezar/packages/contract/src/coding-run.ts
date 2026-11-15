@@ -158,6 +158,11 @@ export const CODING_RUN_EVENT_TYPES = [
 ] as const;
 export const codingRunEventTypeSchema = z.enum(CODING_RUN_EVENT_TYPES);
 
+/** Typed failure reasons; each has distinct retry semantics (see coding-run-lifecycle). */
+export const CODING_FAILURE_REASONS = ['infra', 'capacity', 'parse', 'test', 'policy', 'cancelled', 'budget-exhausted'] as const;
+export const codingFailureReasonSchema = z.enum(CODING_FAILURE_REASONS);
+export type CodingFailureReason = z.infer<typeof codingFailureReasonSchema>;
+
 export const codingRunEventSchema = z.object({
   schemaVersion: z.literal(CODING_RUN_SCHEMA_VERSION),
   eventId: identifierSchema,
@@ -171,6 +176,8 @@ export const codingRunEventSchema = z.object({
   type: codingRunEventTypeSchema,
   occurredAt: timestampSchema,
   evidenceIds: z.array(identifierSchema).max(CODING_RUN_LIMITS.eventReferences),
+  /** Optional typed reason on failure, cancellation, rejection and wait outcomes (additive v1 field). */
+  reason: codingFailureReasonSchema.optional(),
 }).strict().superRefine((event, ctx) => {
   if (event.type.startsWith('attempt.') && !event.attemptId) ctx.addIssue({ code: 'custom', path: ['attemptId'], message: 'attempt events require an attempt id' });
   if (event.type !== 'attempt.started' && event.supersedesAttemptId) ctx.addIssue({ code: 'custom', path: ['supersedesAttemptId'], message: 'only attempt.started may identify a superseded attempt' });

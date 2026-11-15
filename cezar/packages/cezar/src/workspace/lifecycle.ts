@@ -15,6 +15,7 @@ import {
   type CodingEvidenceReference,
   type CodingAttemptManifest,
   type CodingRunEvent,
+  type CodingFailureReason,
   type CodingRunRecord,
   type CodingRunSnapshot,
   type CodingRunExplorerResponse,
@@ -24,6 +25,7 @@ import { cezarHomeDir } from '../paths.ts';
 import { globToRegExp } from '../server/impact/manifest.ts';
 import { createChildTraceContext, createLangfuseTraceUrl, createTraceContext, parseTraceparent, safeTelemetryAttributes, stableSpanId } from '../observability/trace-context.ts';
 import { verifyCodingAttemptManifest } from './coding-run-manifest.ts';
+import { checkCodingRunTransition } from './coding-run-lifecycle.ts';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -247,6 +249,9 @@ export interface AppendCodingRunEventInput {
   evidenceIds?: string[];
   evidence?: CodingEvidenceReference[];
   manifest?: CodingAttemptManifest;
+  reason?: CodingFailureReason;
+  /** Opt in to the full stage-order and stale-attempt checks; duplicate delivery and bad reasons are always refused. */
+  strictLifecycle?: boolean;
 }
 
 function codingRunEventRows(db: Database, repoId: string, runId: string): Record<string, unknown>[] {
@@ -343,6 +348,7 @@ function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: 
         && previous.attemptId === input.attemptId
         && previous.supersedesAttemptId === input.supersedesAttemptId
         && previous.causationEventId === input.causationEventId
+        && previous.reason === input.reason
         && isDeepStrictEqual(previous.manifest, input.manifest)
         && (!input.occurredAt || previous.occurredAt === input.occurredAt)
         && isDeepStrictEqual(previous.evidenceIds, requestedEvidenceIds);
@@ -370,7 +376,10 @@ function appendCodingRunEventInTransaction(db: Database, repoId: string, runId: 
     type: input.type,
     occurredAt: input.occurredAt ?? new Date().toISOString(),
     evidenceIds: [...(input.evidenceIds ?? []), ...evidence.map((item) => item.evidenceId)],
+    ...(input.reason ? { reason: input.reason } : {}),
   });
+  const transition = checkCodingRunTransition(current, { type: input.type, ...(input.attemptId ? { attemptId: input.attemptId } : {}), ...(input.reason ? { reason: input.reason } : {}) });
+  if (!transition.ok && (input.strictLifecycle || transition.code === 'duplicate-delivery' || transition.code === 'bad-reason')) throw new Error(`illegal coding run transition: ${transition.detail}`);
   const currentWithEvidence = codingRunSnapshotSchema.parse({ ...current, evidence: [...current.evidence, ...evidence] });
   const next = applyCodingRunEvent(currentWithEvidence, eventRecord);
   const now = new Date().toISOString();
