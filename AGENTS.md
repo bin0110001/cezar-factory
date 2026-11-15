@@ -157,7 +157,12 @@ line for the head SHA in a PR comment; that comment is the Linux validation evid
 
 **A job owns its pull request until it merges.** The job that opens or updates a PR
 (implement, fix) is responsible for getting it to `dev`; the user is never the one who
-rebases or resolves conflicts for it. Before handing off, the job merges the current
+rebases, resolves conflicts, or finishes the merge for it. Opening/updating a PR,
+reporting implementation complete, passing review, or requesting auto-merge are
+intermediate states, not delivery. Review may be delegated, but PR ownership stays
+with the originating job across workflow handoffs. Keep the issue in review while the
+PR is open; do not report success or leave the PR ownerless until GitHub confirms the
+PR is `MERGED`. Before handing off for review, the job merges the current
 `origin/dev` into its branch, resolves every conflict itself, re-runs its validation on the
 merged result, and leaves the PR `MERGEABLE` (`gh pr view <n> --json mergeable` is
 `MERGEABLE`). Resolve a conflict by keeping the intent of both sides: shared hot files
@@ -169,6 +174,12 @@ while a PR waits for review and it becomes `CONFLICTING`, repairing it is again 
 job's work (the fix automation on that issue), followed by the same validation. A PR that
 cannot be reconciled without a major architectural decision is the only case that goes to
 `factory:needs-help`, with the conflicting paths listed in the issue comment.
+After review and validation pass, use the repository's configured merge path, then verify
+the PR's merged state and merge commit. If auto-merge is merely queued and the PR remains
+open, continue owning it and let the review lifecycle retry; do not close the issue or
+hand completion to the user. A submission-only workflow result (including the release-fix
+PR opener) means only that a PR was opened; its owner must ensure the reviewed PR reaches
+`MERGED`.
 
 Use an independent technical reviewer when another eligible maintainer is
 available. In a solo-maintainer repository, the author must instead record a
