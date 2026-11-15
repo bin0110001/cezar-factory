@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "factory-asset-locality/v1",
+  "description": "Policy for data-dependent jobs: which asset source classes, staging adapters and caches a worker may use. Asset payloads never live in Git or in the generic verification core; descriptors name them by namespaced id, version and digest only.",
+  "sourceClasses": {
+    "public": { "distributable": true, "requiresAuthorization": false, "cacheable": true },
+    "project-private": { "distributable": false, "requiresAuthorization": true, "cacheable": true },
+    "licensed": { "distributable": false, "requiresAuthorization": true, "cacheable": true }
+  },
+  "stagingMethods": ["local-mount", "readonly-filesystem", "object-storage"],
+  "adapters": {
+    "allowlist": ["local-mount", "readonly-filesystem", "object-storage"],
+    "note": "An adapter is a project-owned implementation behind a staging method. Only allowlisted methods are ever invoked; credentials are resolved after authorization, never before."
+  },
+  "cache": {
+    "defaultQuotaBytes": 10737418240,
+    "keyFields": ["id", "version", "digest"],
+    "preferCacheHit": true,
+    "evictionOrder": "least-recently-used",
+    "note": "Cache hit preference is soft. Source class, authorization scope and adapter allowlist are hard constraints."
+  },
+  "costModel": {
+    "cacheHitCost": 0,
+    "bytesPerCostUnit": 1048576,
+    "note": "Staging cost is the number of MiB that must be fetched; the scheduler may weigh it, never override authorization."
+  },
+  "statuses": {
+    "unschedulable": ["unauthorized", "worker-offline", "capacity", "adapter-not-allowed"],
+    "infra": ["hash-mismatch", "unsafe-path", "disk-full", "access-revoked", "cache-corrupt", "stage-failed"],
+    "invalid": ["descriptor"]
+  },
+  "evidence": {
+    "recordFields": ["id", "version", "digest", "sourceClass", "cacheState"],
+    "forbid": "payload bytes, file contents, licensed filenames and absolute worker paths"
+  }
+}
