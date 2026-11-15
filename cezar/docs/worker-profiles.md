@@ -64,6 +64,19 @@ bounded concurrency slots together with all requested resource leases under the
 existing `ResourceLockManager`, so concurrent admissions cannot claim the same
 slot or exclusive display.
 
+The Windows/Linux mock-agent integration suite exercises this admission path
+without connecting to a real worker. Its start/release gates verify that jobs on
+independent displays overlap, jobs sharing a display wait for the lease, missing
+OS/GUI capabilities fail closed, and cancellation releases the worker lease.
+Run it from the Cezar workspace with:
+
+```text
+npm test -- --run packages/cezar/src/server/verification/remote-agent.integration.test.ts
+```
+
+The test is platform-neutral and should be run on each supported host; it does
+not claim coverage for distributed transport or a worker-environment janitor.
+
 ## Worker operations read model (#219, first slice)
 
 `server/verification/worker-read-model.ts` is a pure projection (no store, no
