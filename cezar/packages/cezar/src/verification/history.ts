@@ -32,7 +32,7 @@ interface CodingEvidenceSummary {
   status: 'available' | 'not-recorded' | 'unavailable';
   attempts: Array<{ attemptId: string; index: number; status: string; manifestStatus: 'not-recorded' | 'verified' | 'tampered' | 'invalid'; manifestDigest?: string; manifestReference: string; artifactCount: number }>;
 }
-interface HistoryRecord { owner: RunRecord; event: RunEvent; result: VerificationRun; selection: Selection; codingEvidence: CodingEvidenceSummary; codingSnapshot?: CodingRunSnapshot }
+export interface HistoryRecord { owner: RunRecord; event: RunEvent; result: VerificationRun; selection: Selection; codingEvidence: CodingEvidenceSummary; codingSnapshot?: CodingRunSnapshot }
 interface QueryItem { key: { startedAt: string; runId: string; itemId: string }; body: Record<string, unknown> }
 
 function inside(root: string, target: string): boolean {
@@ -74,7 +74,7 @@ async function legacyResult(context: ProjectContext, owner: RunRecord, event: Ru
   } catch { return undefined; }
 }
 
-async function readHistory(context: ProjectContext): Promise<HistoryRecord[]> {
+export async function readHistory(context: ProjectContext): Promise<HistoryRecord[]> {
   const output: HistoryRecord[] = [];
   const evidenceByRun = new Map<string, CodingEvidenceSummary>();
   const snapshotByRun = new Map<string, CodingRunSnapshot | undefined>();
@@ -154,7 +154,7 @@ function safeMetrics(metrics: VerificationRun['checks'][number]['metrics']) {
   }));
 }
 
-function artifactRefs(record: HistoryRecord) {
+export function artifactRefs(record: HistoryRecord) {
   const refs = [...record.result.artifacts, ...record.result.checks.flatMap((check) => check.artifacts)];
   return refs.map((ref) => ({ ref, id: stableArtifactId(record.result.verificationId, ref.path) }));
 }
@@ -589,6 +589,8 @@ export async function readVerificationArtifact(context: ProjectContext, verifica
   if (!record) return { status: 404 as const };
   const artifact = artifactRefs(record).find((item) => item.id === id);
   if (!artifact) return { status: 404 as const };
+  // Media is served only by the evidence endpoints, which check access policy and redaction.
+  if (artifact.ref.visualEvidence) return { status: 403 as const };
   const owner = record.owner;
   const root = owner.worktreePath && existsSync(owner.worktreePath) ? owner.worktreePath : owner.worktree === false ? context.root : undefined;
   if (!root) return { status: 410 as const };
@@ -604,5 +606,22 @@ export async function readVerificationArtifact(context: ProjectContext, verifica
     const safe = safeText(bytes.toString('utf8'));
     const bounded = Buffer.from(safe, 'utf8').subarray(0, ARTIFACT_CONTENT_BYTES).toString('utf8');
     return { status: 200 as const, body: verificationArtifactContentSchema.parse({ content: bounded, bytes: bytes.byteLength, sha256, truncated: bytes.byteLength > ARTIFACT_CONTENT_BYTES || bounded.length < safe.length }) };
+  } catch { return { status: 410 as const }; }
+}
+
+/** Read a recorded artifact's bytes from its owning worktree, verifying the recorded digest. */
+export async function readRecordedBytes(context: ProjectContext, record: HistoryRecord, path: string, sha256: string) {
+  const owner = record.owner;
+  const root = owner.worktreePath && existsSync(owner.worktreePath) ? owner.worktreePath : owner.worktree === false ? context.root : undefined;
+  if (!root) return { status: 410 as const };
+  const parts = path.split('/');
+  if (path.includes('\\') || path.startsWith('/') || parts.some((part) => !part || part === '.' || part === '..')) return { status: 404 as const };
+  try {
+    const realRoot = await realpath(root);
+    const file = await realpath(resolve(realRoot, ...parts));
+    if (!inside(realRoot, file)) return { status: 404 as const };
+    const bytes = await readFile(file);
+    if (createHash('sha256').update(bytes).digest('hex') !== sha256) return { status: 409 as const };
+    return { status: 200 as const, bytes };
   } catch { return { status: 410 as const }; }
 }

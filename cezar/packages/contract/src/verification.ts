@@ -354,6 +354,50 @@ export const verificationQueryErrorSchema = z.object({ schemaVersion: z.literal(
 export const verificationQueryWireSchema = z.union([verificationQueryResponseSchema, verificationQueryErrorSchema]);
 export const verificationArtifactContentSchema = z.object({ content: z.string().max(65_536), bytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/), truncated: z.boolean() }).strict();
 
+/** Visual evidence gallery (#354): revision-bound metadata only; media is served by separate, separately authorized reads. */
+export const verificationEvidenceOutcomeSchema = z.enum(['passed', 'failed', 'incomplete', 'inconclusive']);
+export const verificationEvidenceQuerySchema = z.object({
+  /** The revision the viewer expects; evidence from another commit is reported stale, never as success. */
+  commitSha: z.string().regex(/^[a-f0-9]{40,64}$/i).optional(),
+  /** Comma-separated roles that must each have a capture, otherwise the test is incomplete. */
+  roles: z.string().max(1_024).optional(),
+}).strict();
+export const verificationEvidenceParamsSchema = z.object({ runId: z.string().min(1).max(128), artifactId: z.string().min(1).max(128) }).strict();
+export const verificationEvidenceContentQuerySchema = z.object({ disposition: z.enum(['preview', 'download']).default('preview') }).strict();
+export const verificationEvidenceItemSchema = z.object({
+  id: z.string().min(1).max(128),
+  kind: z.enum(['png', 'video', 'trace', 'diff', 'metadata']),
+  /** `expected` and `actual` are comparison sides; `diff` is the pixel diff. Other roles are session roles. */
+  side: z.enum(['expected', 'actual', 'diff', 'other']),
+  role: z.string(), sessionId: z.string(), attempt: z.number().int().positive(),
+  capturedAt: z.string().datetime(), mediaType: z.string(), bytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  accessPolicy: z.enum(['private', 'project', 'link']), redactionState: z.enum(['redacted', 'unredacted', 'unknown']), retention: z.string(),
+  preview: z.enum(['available', 'unsupported', 'denied']),
+  download: z.enum(['available', 'denied']),
+  renderer: z.object({ os: z.string(), renderer: z.string(), displayBackend: z.string(), appVersion: z.string() }).strict(),
+}).strict();
+export const verificationEvidenceGroupSchema = z.object({
+  testId: z.string(),
+  outcome: verificationEvidenceOutcomeSchema,
+  reason: z.string().max(1_024),
+  checkStatus: verificationStatusSchema,
+  roles: z.array(z.string()), missingRoles: z.array(z.string()),
+  rendererMismatch: z.array(z.string()),
+  items: z.array(verificationEvidenceItemSchema),
+  withheld: z.number().int().nonnegative(),
+}).strict();
+export const verificationEvidenceResponseSchema = z.object({
+  schemaVersion: z.literal(1),
+  verificationId: z.string(), commitSha: z.string(), manifestSha256: z.string(),
+  policyVersions: z.array(z.string()),
+  /** `none` means no visual evidence was recorded (feature disabled or headless); it is not a pass. */
+  state: z.enum(['none', 'current', 'stale']),
+  outcome: verificationEvidenceOutcomeSchema.nullable(),
+  groups: z.array(verificationEvidenceGroupSchema),
+  timeline: z.array(z.object({ capturedAt: z.string().datetime(), testId: z.string(), role: z.string(), sessionId: z.string(), itemId: z.string(), kind: z.string() }).strict()),
+}).strict();
+export type VerificationEvidenceResponse = z.infer<typeof verificationEvidenceResponseSchema>;
+
 export const reliabilityAnalyticsQuerySchema = z.object({
   windowDays: z.string().optional().transform((value) => value === undefined ? 30 : Number(value)).pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])),
 }).strict();

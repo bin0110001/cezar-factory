@@ -1,5 +1,5 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema } from '@open-mercato/cezar-api-client'
-import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema } from '@open-mercato/cezar-api-client'
+import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse, VerificationEvidenceResponse } from '@open-mercato/cezar-api-client'
 import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
@@ -1488,6 +1488,26 @@ export async function getVerificationArtifact(verificationId: string, artifactId
   const parsed = verificationArtifactContentSchema.safeParse(body)
   if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered the verification artifact request with an unexpected body')
   return parsed.data
+}
+
+/** Revision-bound visual evidence metadata for a run; media is fetched separately via `verificationEvidenceContentUrl`. */
+export async function getVerificationEvidence(verificationId: string, query: { commitSha?: string; roles?: string } = {}, opts?: ReadOptions): Promise<VerificationEvidenceResponse> {
+  const response = await cez.api.v1.p[':projectId'].verification.evidence[':runId'].$get({
+    param: { projectId: queryScope(), runId: encodeURIComponent(verificationId) },
+    query,
+  }, init(opts))
+  const body = await unwrap(response, '/verification/evidence/:runId')
+  const parsed = verificationEvidenceResponseSchema.safeParse(body)
+  if (!parsed.success) throw new ApiError(response.status, 'the Cezarium server answered the visual evidence request with an unexpected body')
+  return parsed.data
+}
+
+/** Same-origin URL of one evidence item; the server re-checks access and redaction on every read. */
+export function verificationEvidenceContentUrl(verificationId: string, artifactId: string, disposition: 'preview' | 'download'): string {
+  return cez.api.v1.p[':projectId'].verification.evidence[':runId'][':artifactId'].content.$url({
+    param: { projectId: queryScope(), runId: encodeURIComponent(verificationId), artifactId: encodeURIComponent(artifactId) },
+    query: { disposition },
+  }).toString()
 }
 
 // ---- run mutations ------------------------------------------------------------------------

@@ -3,17 +3,19 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReliabilityAnalyticsResponse, VerificationQueryResponse } from '@open-mercato/cezar-api-client'
-import { getVerificationArtifact, queryReliabilityAnalytics, queryVerificationHistory } from '@/api/client'
+import { getVerificationArtifact, getVerificationEvidence, queryReliabilityAnalytics, queryVerificationHistory } from '@/api/client'
 import { VerificationHistoryRoute } from './verification-history'
 
 vi.mock('@/api/client', () => ({
   getVerificationArtifact: vi.fn(),
+  getVerificationEvidence: vi.fn(),
+  verificationEvidenceContentUrl: (run: string, id: string, d: string) => `/evidence/${run}/${id}?disposition=${d}`,
   queryReliabilityAnalytics: vi.fn(),
   queryVerificationHistory: vi.fn(),
 }))
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-beforeEach(() => { vi.mocked(queryReliabilityAnalytics).mockResolvedValue(reliabilityFixture()) })
+beforeEach(() => { vi.mocked(getVerificationEvidence).mockResolvedValue({ schemaVersion: 1, verificationId: 'x', commitSha: '1'.repeat(40), manifestSha256: '2'.repeat(64), policyVersions: [], state: 'none', outcome: null, groups: [], timeline: [] }); vi.mocked(queryReliabilityAnalytics).mockResolvedValue(reliabilityFixture()) })
 
 function reliabilityFixture(): ReliabilityAnalyticsResponse {
   const failures = { infrastructure: 0, flaky: 1, regression: 1, unknown: 0 }
