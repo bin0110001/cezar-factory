@@ -49,7 +49,7 @@
         "properties": {
           "id": { "type": "string", "minLength": 1, "maxLength": 128 },
           "automation": { "type": "string", "minLength": 1, "maxLength": 256 },
-          "status": { "enum": ["passed", "failed"] },
+          "status": { "enum": ["passed", "failed", "unstarted"] },
           "runId": { "type": "string" },
           "runStatus": { "type": "string" },
           "reason": { "type": "string", "maxLength": 1000 },

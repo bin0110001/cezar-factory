@@ -1,4 +1,6 @@
 import subprocess
+import json
+import pathlib
 import unittest
 import urllib.error
 
@@ -51,6 +53,12 @@ class PolicyTests(unittest.TestCase):
             {"id": "maintenance", "automation": "m", "when": ["scripts/**"]}]}})
         self.assertEqual([c["id"] for c in select_canaries(policy, ["docs/a.md"])], ["health"])
         self.assertEqual([c["id"] for c in select_canaries(policy, ["scripts/x.ps1"])], ["health", "maintenance"])
+
+    def test_factory_maintenance_canary_runs_first_for_release_tool_changes(self):
+        raw = json.loads((pathlib.Path(__file__).parents[1] / "config" / "promotion-policy.json").read_text(encoding="utf-8"))
+        policy = normalize_policy(raw["promotion"])
+        selected = select_canaries(policy, ["scripts/release/factory_promotion.py"])
+        self.assertEqual(selected[0]["id"], "maintenance")
 
 
 class ReviewGateTests(unittest.TestCase):
@@ -166,8 +174,17 @@ class CanaryTests(unittest.TestCase):
 
     def test_a_run_that_never_leaves_the_queue_fails_with_a_queue_reason(self):
         result = self.runner(FakeApi(["queued"])).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 60})
-        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["status"], "unstarted")
         self.assertIn("never started", result["reason"])
+
+    def test_a_queued_run_resumes_by_id_without_creating_a_duplicate(self):
+        api = FakeApi(["queued"])
+        first = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 20})
+        self.assertEqual((first["status"], first["runId"]), ("unstarted", "r1"))
+        api.statuses[:] = ["running", "done"]
+        second = self.runner(api).run({"id": "h", "automation": "health", "timeoutSeconds": 30, "queueTimeoutSeconds": 20}, run_id=first["runId"])
+        self.assertEqual((second["status"], second["runId"]), ("passed", "r1"))
+        self.assertEqual([method for method, _ in api.calls].count("POST"), 1)
 
     def test_a_started_run_that_hangs_still_fails_on_the_run_budget(self):
         api = FakeApi(["queued", "queued", "running"])

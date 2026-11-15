@@ -88,7 +88,7 @@ MANIFEST_SCRIPT='
   cd "$1" || exit 1
   set -- VERSION workflows skills scripts routing automations
   [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
-  find "$@" -type d -name __pycache__ -prune -o -type f ! -name "*.pyc" -print0 |
+  find "$@" -type d -name __pycache__ -prune -o -type f ! -name "*.pyc" ! -name "*.pyo" ! -name "*.pyd" -print0 |
     LC_ALL=C sort -z | xargs -0 sha256sum
 '
 content_manifest() { sh -c "$MANIFEST_SCRIPT" sh "$1"; }

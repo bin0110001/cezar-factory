@@ -391,6 +391,18 @@ class LocalPromotionScheduler:
             db.execute("UPDATE promotions SET status=?,finished_at=?,record_path=?,record_digest=?,reason=? WHERE sha=?",
                        (status, now(), str(path) if path else None, record_digest, reason[:2000] if reason else None, sha))
 
+    @staticmethod
+    def _previous_canaries(existing: sqlite3.Row | None) -> list[dict[str, Any]]:
+        """Read bounded run IDs and completed canary results from this candidate's prior receipt."""
+        if not existing or not existing["record_path"]:
+            return []
+        try:
+            value = json.loads(pathlib.Path(existing["record_path"]).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        canaries = value.get("canaries", []) if isinstance(value, dict) else []
+        return [item for item in canaries[:64] if isinstance(item, dict) and isinstance(item.get("id"), str)] if isinstance(canaries, list) else []
+
     # ---- stages after the dev channel is active -------------------------------------------------
     FINAL_STAGE = "stable-deployed"
 
@@ -423,14 +435,22 @@ class LocalPromotionScheduler:
         return CanaryRunner(targets[project]["apiUrl"], project, request=self.canary_request, sleep=self.sleep,
                             ready_seconds=self.policy["canaryReadySeconds"])
 
-    def _run_canaries(self, paths: list[str], *, everything: bool = False) -> list[dict[str, Any]]:
+    def _run_canaries(self, paths: list[str], *, everything: bool = False,
+                      previous: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         selected = (list(self.policy["canaries"]) if everything else select_canaries(self.policy, paths)) if self.policy else []
         if not selected:
             return []
         runner = self._canary_runner()
+        previous_by_id = {item["id"]: item for item in (previous or [])}
         results = []
         for canary in selected:
-            result = runner.run(canary)
+            prior = previous_by_id.get(canary["id"], {})
+            if prior.get("status") == "passed":
+                # A passed canary already tested this immutable candidate SHA.
+                results.append(prior)
+                continue
+            resume_id = prior.get("runId") if prior.get("status") == "unstarted" else None
+            result = runner.run(canary, run_id=resume_id)
             # A canary is a real run against live GitHub. A rate limit or a dropped connection says nothing
             # about the release, so it earns one more run before the release is rolled back and quarantined.
             first_reason = str(result.get("reason") or "")
@@ -519,19 +539,19 @@ class LocalPromotionScheduler:
         return count <= MAX_INTERRUPTED_RETRIES
 
     def _escalate_blocked(self, sha: str, reason: str, since: str | None) -> None:
-        """A candidate waiting before validation (review evidence or environment) is not a failure. Ask once."""
+        """A candidate waiting on review, environment, or a queued canary is not a failure. Ask once."""
         if not self.policy or not since or self._state_get(f"blocked_escalated:{sha}"):
             return
         waited = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(since.replace("Z", "+00:00"))).total_seconds()
         if waited < self.policy["blockedEscalationSeconds"]:
             return
-        body = (f"`{sha}` has waited {int(waited // 60)} minutes before validation (review evidence or an environment preflight) "
+        body = (f"`{sha}` has been blocked for {int(waited // 60)} minutes waiting on review, environment, or canary readiness "
                 "and nothing merged after it can be promoted.\n\n"
                 f"```\n{reason[:1500]}\n```\n\nPipeline mode: `{self.policy['mode']}`. If the gate itself is what needs changing "
                 "(the policy on the host is read from the `stable` checkout), see \"When the pipeline cannot fix itself\" in "
                 "`docs/promotion-pipeline.md`.")
         try:
-            file_issue(self.gh, self.github_repo, "[promotion] candidate blocked before validation", body,
+            file_issue(self.gh, self.github_repo, "[promotion] candidate blocked on prerequisite", body,
                        self.policy["escalationLabels"], fingerprint("blocked", "pipeline", reason))
             self._state_put(f"blocked_escalated:{sha}", now())
         except (PolicyError, OSError, subprocess.SubprocessError) as exc:
@@ -767,12 +787,12 @@ class LocalPromotionScheduler:
             since = healthy["finished_at"] if healthy else ""
             failed = db.execute("SELECT COUNT(*) AS n FROM promotions WHERE status='failed' AND finished_at > ?", (since,)).fetchone()["n"]
             last_failed = db.execute("SELECT sha, reason FROM promotions WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").fetchone()
-            blocked = db.execute("SELECT sha, reason, finished_at FROM promotions WHERE status='blocked' AND finished_at > ? ORDER BY finished_at ASC LIMIT 1", (since,)).fetchone()
+            blocked = db.execute("SELECT sha, reason, started_at FROM promotions WHERE status='blocked' AND started_at > ? ORDER BY started_at ASC LIMIT 1", (since,)).fetchone()
         current = dt.datetime.now(dt.timezone.utc)
         reasons: list[str] = []
         blocked_hours = None
-        if blocked and blocked["finished_at"]:
-            blocked_hours = round((current - dt.datetime.fromisoformat(blocked["finished_at"].replace("Z", "+00:00"))).total_seconds() / 3600, 1)
+        if blocked and blocked["started_at"]:
+            blocked_hours = round((current - dt.datetime.fromisoformat(blocked["started_at"].replace("Z", "+00:00"))).total_seconds() / 3600, 1)
         drift_since = float(self._state_get("drift_since", "0") or 0)
         drift_hours = round((time.time() - drift_since) / 3600, 1) if drift_since else None
         drift_grace_hours = (self.policy["driftGraceSeconds"] if self.policy else 1800) / 3600
@@ -839,7 +859,7 @@ class LocalPromotionScheduler:
         except SchedulerError as exc:
             reason = str(exc)[:2000]
             if existing and existing["status"] == "blocked" and existing["reason"] == reason:
-                self._escalate_blocked(sha, reason, existing["finished_at"])
+                self._escalate_blocked(sha, reason, existing["started_at"])
                 return {"status": "blocked", "sourceSha": sha, "reason": reason}
             with self._db() as db:
                 db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'running', ?) ON CONFLICT(sha) DO UPDATE SET status='running',started_at=excluded.started_at,finished_at=NULL,reason=NULL", (sha, now()))
@@ -850,7 +870,9 @@ class LocalPromotionScheduler:
             raise
 
         with self._db() as db:
-            db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'running', ?) ON CONFLICT(sha) DO UPDATE SET status='running',started_at=excluded.started_at,finished_at=NULL,reason=NULL,stage=NULL", (sha, now()))
+            db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'running', ?) ON CONFLICT(sha) DO UPDATE SET status='running',started_at=CASE WHEN promotions.status='blocked' THEN promotions.started_at ELSE excluded.started_at END,finished_at=NULL,reason=NULL,stage=NULL", (sha, now()))
+
+        previous_canaries = self._previous_canaries(existing)
 
         promotion_id = str(uuid.uuid4())
         paths: list[str] = []
@@ -860,6 +882,7 @@ class LocalPromotionScheduler:
         worktree = self.worktrees / f"{sha}-{promotion_id}"
         previous_dev = None
         failure_kind = None
+        deferred_reason: str | None = None
         try:
             adopted = self._active_sha() == sha
             if adopted:
@@ -900,17 +923,23 @@ class LocalPromotionScheduler:
                 record["activation"] = {"status": activation["status"], "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
                 record["candidateState"] = "active"
             failure_kind = "canary"
-            canaries = self._run_canaries(paths, everything=adopted)
+            canaries = self._run_canaries(paths, everything=adopted, previous=previous_canaries)
             if canaries:
                 record["canaries"] = canaries
-            bad = next((c for c in canaries if c["status"] != "passed"), None)
-            if bad:
-                reason = f"canary {bad['id']} failed: {bad.get('reason', 'no detail')}"
-                record["rollback"] = self._rollback_dev(previous_dev, sha, reason)
-                record["candidateState"] = "rolled-back"
-                raise SchedulerError(f"{reason}; {record['rollback']}")
-            record["status"] = "healthy"
-            record["reason"] = None
+            unstarted = next((c for c in canaries if c["status"] == "unstarted"), None)
+            if unstarted:
+                deferred_reason = f"canary {unstarted['id']} is infrastructure-blocked: {unstarted.get('reason', 'Cezar has not started it')}"
+                record["candidateState"] = "active"
+                record["reason"] = deferred_reason
+            else:
+                bad = next((c for c in canaries if c["status"] != "passed"), None)
+                if bad:
+                    reason = f"canary {bad['id']} failed: {bad.get('reason', 'no detail')}"
+                    record["rollback"] = self._rollback_dev(previous_dev, sha, reason)
+                    record["candidateState"] = "rolled-back"
+                    raise SchedulerError(f"{reason}; {record['rollback']}")
+                record["status"] = "healthy"
+                record["reason"] = None
         except CheckInterrupted as exc:
             # The candidate is not at fault: no breaker count, no issue, and the next tick validates it again.
             record["status"] = "interrupted"
@@ -937,11 +966,15 @@ class LocalPromotionScheduler:
             if activation is not None:
                 record["activation"] = {"status": activation.get("status"), "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
             path, value = self._write_record(record)
-            self._record_status(sha, record["status"], path, value, record.get("reason"))
+            self._record_status(sha, "blocked" if deferred_reason else record["status"], path, value, record.get("reason"))
             if record["status"] == "healthy":
                 self._set_stage(sha, "canary-passed" if self.policy else self.FINAL_STAGE)
             if worktree.exists():
                 subprocess.run(["git", "-C", str(self.repo), "worktree", "remove", "--force", str(worktree)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120, check=False)
+        if deferred_reason:
+            since = existing["started_at"] if existing and existing["status"] == "blocked" and existing["reason"] == deferred_reason else record["startedAt"]
+            self._escalate_blocked(sha, deferred_reason, since)
+            return {"status": "blocked", "sourceSha": sha, "reason": deferred_reason, "recordPath": str(path), "recordDigest": value}
         outcome = {"status": "healthy", "sourceSha": sha, "recordPath": str(path), "recordDigest": value, "activation": record["activation"]}
         if self.policy:
             outcome["promotion"] = self._advance(sha)
