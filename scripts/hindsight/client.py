@@ -15,7 +15,9 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 MAX_MEMORIES, MAX_CHARS, MAX_DETERMINISTIC = 8, 12000, 100
-SECRET = re.compile(r"(?i)(authorization|api[_-]?key|token|password|secret)\s*[:=]\s*\S+|bearer\s+\S+")
+SECRET = re.compile(
+    r"(?i)\b(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b"
+    r"|(authorization|api[_-]?key|token|password|secret)\s*[:=]\s*(?:(?:bearer|basic)\s+)?\S+|bearer\s+\S+")
 DENY = re.compile(r"(?i)(transcript|raw log|source file|credential|password|token|secret|personal data|temporary state)")
 ALLOWED = {"architecture", "recurring-failure", "successful-fix", "convention", "environment-discovery"}
 EVIDENCE_KINDS = {"run", "issue", "commit", "test", "file"}

@@ -24,7 +24,12 @@ FLAG_ENV = "FACTORY_SESSION_CONTROL"
 MAX_TTL = 900
 DEFAULT_TTL = 300
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-_SECRET = re.compile(r"(tok\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+|(?i:bearer)\s+\S+|(?i:token|secret|password)=\S+)")
+_SECRET = re.compile(
+    r"(tok\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"
+    r"|\b(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b"
+    r"|(?i:authorization)\s*[:=]\s*(?i:bearer\s+|basic\s+)?\S+"
+    r"|(?i:bearer)\s+\S+"
+    r"|(?i:token|secret|password|api[_-]?key)\s*[:=]\s*\S+)")
 
 
 class Denied(Exception):
