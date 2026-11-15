@@ -1,0 +1,2 @@
+{"schemaVersion":1,"runId":"r1","timestamp":"2026-11-01T00:00:00Z","sequence":1,"attempt":1,"state":"routed","selected":{"model":"gpt-x","tier":"premium","subscriptionAlias":"sub-a"}}
+{"schemaVersion":1,"runId":"r1","timestamp":"2026-11-01T00:01:00Z","sequence":2,"attempt":2,"state":"retried","fallback":true}
