@@ -119,6 +119,7 @@ import {
 import { freshContinuationContext } from './continuation-context.ts';
 import { factoryRuntimeRootForSha, resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
 import { executeVerification } from '../verification/executor.ts';
+import { ingestWorkflowVerification } from '../verification/workflow-ingest.ts';
 import { listProjects } from '../workspace/projects.ts';
 import { createChildTraceContext, createTraceContext, stableSpanId } from '../observability/trace-context.ts';
 
@@ -6017,6 +6018,12 @@ export class RunManager {
     // task text into the shell line, so task content cannot inject commands.
     const command = (step.command as string).replaceAll('{{task}}', '${CEZAR_TASK}');
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
+    const workflowVerificationId = step.verificationIngest ? randomUUID() : undefined;
+    const workflowVerificationStartedAt = new Date().toISOString();
+    if (step.verificationIngest) {
+      // Never accept a verdict left by an earlier attempt as this invocation's policy result.
+      rmSync(resolve(state.cwd, step.verificationIngest.verdictPath), { force: true });
+    }
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
       // stdin is closed, not left as an open pipe: a command that reads it (PowerShell's `$input`,
@@ -6024,7 +6031,7 @@ export class RunManager {
       // process group lets the deadline and cancellation reach grandchildren.
       const child = spawn(commandShellExecutable(), ['-lc', command], {
         cwd: state.cwd,
-        env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task },
+        env: { ...process.env, ...this.agentEnv(runId, false), CEZAR_TASK: task, ...(workflowVerificationId ? { CEZAR_VERIFICATION_ID: workflowVerificationId } : {}) },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
       });
@@ -6057,8 +6064,34 @@ export class RunManager {
         // unspawnable command reports, and one no `retryOn` list can name — neither
         // is a verdict on the diff, so neither buys the agent another attempt.
         const exitCode = timedOut ? -1 : code ?? -1;
-        emit({ type: 'check-output', stepId: step.id, command, text: trimmed, exitCode });
-        resolve({ ok: !timedOut && code === 0, output: trimmed, exitCode });
+        const complete = async () => {
+          let finalCode = exitCode;
+          let finalOutput = trimmed;
+          if (step.verificationIngest && workflowVerificationId && !this.projectId) {
+            finalOutput = `${trimmed}\nverification artifact ingestion requires a registered project`;
+            finalCode = -1;
+          } else if (step.verificationIngest && workflowVerificationId && this.projectId) {
+            try {
+              const ingested = await ingestWorkflowVerification({
+                root: state.cwd, dataDir: this.dataDir, projectId: this.projectId, cezarRunId: runId,
+                verificationId: workflowVerificationId, startedAt: workflowVerificationStartedAt, paths: step.verificationIngest,
+              });
+              emit({ type: 'verification-result', stepId: step.id, verificationId: ingested.run.verificationId, status: ingested.run.status,
+                suite: 'factory-workflow', selection: JSON.parse(readFileSync(join(state.cwd, ...step.verificationIngest.selectionPath.split('/'))).toString('utf8')), result: ingested.run });
+              emit({ type: 'verification-policy-verdict', stepId: step.id, verificationId: workflowVerificationId,
+                verdict: ingested.verdict, findingIngestion: { opened: ingested.outcome.opened.length, appended: ingested.outcome.appended.length,
+                  resolved: ingested.outcome.resolved.length, retained: ingested.outcome.retained.length } });
+            } catch (error) {
+              const message = `verification artifact ingestion failed: ${error instanceof Error ? error.message : String(error)}`;
+              emit({ type: 'verification-ingest-error', stepId: step.id, verificationId: workflowVerificationId, error: message });
+              finalOutput = `${trimmed}\n${message}`;
+              finalCode = -1;
+            }
+          }
+          emit({ type: 'check-output', stepId: step.id, command, text: finalOutput, exitCode: finalCode });
+          resolve({ ok: !timedOut && finalCode === 0, output: finalOutput, exitCode: finalCode });
+        };
+        void complete();
       };
 
       let output = '';

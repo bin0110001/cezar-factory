@@ -44,6 +44,12 @@ export const workflowStepSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Ingest command produced verification artifacts into Cezar's canonical stores. */
+    verificationIngest: z.object({
+      selectionPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      resultsPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      verdictPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+    }).optional(),
     verificationSuite: z.string().trim().min(1).max(128).optional(),
     /** Command steps only: kill the command and fail the step after this many seconds (default 900).
      *  A hung command otherwise blocks the run forever. Set it to the step's real worst case. */
@@ -64,7 +70,8 @@ export const workflowStepSchema = z
   })
   .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
     message: 'a step is either an agent step, a command check, or a verification suite',
-  });
+  })
+  .refine((s) => !s.verificationIngest || Boolean(s.command), { message: 'verificationIngest is only valid on command steps' });
 
 /**
  * A workflow file names either full `steps` or the portable `skills` shorthand

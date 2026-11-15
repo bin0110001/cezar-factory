@@ -18,6 +18,10 @@ steps:
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verification-invoke.ps1 -SelectionPath .factory/verification/selection.json -OutputPath .factory/verification/results.json
     timeoutSeconds: 3600
   - id: policy-evaluate
-    name: Evaluate the policy and record the verdict in the ledger
+    name: Evaluate policy and ingest canonical verification history
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/verification-evaluate.ps1 -SelectionPath .factory/verification/selection.json -ResultsPath .factory/verification/results.json -OutputPath .factory/verification/verdict.json -Task "{{task}}"
+    verificationIngest:
+      selectionPath: .factory/verification/selection.json
+      resultsPath: .factory/verification/results.json
+      verdictPath: .factory/verification/verdict.json
     timeoutSeconds: 300

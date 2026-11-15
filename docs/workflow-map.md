@@ -88,7 +88,8 @@ on-demand and host-side only.
 `factory-verify` (`workflows/verify.yaml`, on demand) is verification as a workflow and runs no agent. Its
 command steps are `select-scoped` (impacted checks from the ownership map plus the checks marked mandatory in
 `policies/verification.json`), `invoke-checks` (runs only those) and `policy-evaluate` (derives the verdict,
-appends it to the ledger, writes `.factory/verification/verdict.json`, and fails the run on a `fail` verdict).
+records the typed result and verdict in Cezar run history, ingests failures into the project finding ledger, writes
+`.factory/verification/verdict.json`, and fails the run on a `fail` verdict).
 See `docs/verification-workflow.md`.
 
 ## Update contract
