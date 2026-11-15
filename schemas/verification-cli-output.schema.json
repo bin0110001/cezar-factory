@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/verification-cli-output.schema.json",
+  "title": "Verification CLI output (schemaVersion 1)",
+  "description": "stdout of scripts/verification-cli.ps1 --json for run, affected, last-failed and compare, or a structured error. Additive changes only within a schemaVersion. See docs/verification-cli.md.",
+  "oneOf": [ { "$ref": "#/$defs/result" }, { "$ref": "#/$defs/error" } ],
+  "$defs": {
+    "error": {
+      "type": "object",
+      "required": ["schemaVersion", "command", "exitCode", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "command": { "type": "string" },
+        "exitCode": { "enum": [2, 3] },
+        "error": {
+          "type": "object", "required": ["code", "message"], "additionalProperties": false,
+          "properties": { "code": { "enum": ["usage", "config", "provider_unavailable", "executor_failed", "query_failed", "internal_error"] }, "message": { "type": "string" } }
+        }
+      }
+    },
+    "testRef": {
+      "type": "object", "required": ["testId", "reason"], "additionalProperties": false,
+      "properties": { "testId": { "type": "string" }, "reason": { "type": "object", "description": "Bounded, redacted text from the query layer." } }
+    },
+    "result": {
+      "type": "object",
+      "required": ["schemaVersion", "command", "profile", "status", "exitCode", "summary", "selection", "failures", "failuresTruncated", "comparison", "run"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "command": { "enum": ["run", "affected", "last-failed", "compare"] },
+        "profile": { "enum": ["quick", "standard", "full", null] },
+        "status": { "enum": ["passed", "failed", "infrastructure-error"] },
+        "exitCode": { "enum": [0, 1, 3] },
+        "summary": {
+          "type": "object", "additionalProperties": false,
+          "required": ["selected", "passed", "failed", "new", "known", "fixed"],
+          "properties": { "selected": { "type": "integer" }, "passed": { "type": "integer" }, "failed": { "type": "integer" }, "new": { "type": "integer" }, "known": { "type": "integer" }, "fixed": { "type": "integer" } }
+        },
+        "selection": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "source", "changedPaths", "selected", "deferred", "truncated"],
+          "properties": {
+            "mode": { "enum": ["run", "affected", "last-failed", "compare"] },
+            "source": { "type": "string" },
+            "changedPaths": { "type": "array", "items": { "type": "string" } },
+            "selected": { "type": "array", "items": { "$ref": "#/$defs/testRef" } },
+            "deferred": { "type": "array", "items": { "$ref": "#/$defs/testRef" } },
+            "truncated": { "type": "boolean" }
+          }
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["runId", "id", "testId", "status", "message", "output", "classification"],
+            "properties": { "classification": { "enum": ["new", "known"] }, "testId": { "type": "string" }, "status": { "type": "string" }, "message": { "type": "object" }, "output": { "type": "object" } }
+          }
+        },
+        "failuresTruncated": { "type": "boolean" },
+        "comparison": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": false, "required": ["baselineRunId", "status", "new", "known", "fixed"],
+              "properties": { "baselineRunId": { "type": "string" }, "status": { "type": "string" }, "new": { "type": "array", "items": { "type": "string" } }, "known": { "type": "array", "items": { "type": "string" } }, "fixed": { "type": "array", "items": { "type": "string" } } } }
+          ]
+        },
+        "run": {
+          "type": "object", "required": ["id", "status", "suite", "counts", "checks"],
+          "properties": { "id": { "type": "string" }, "status": { "type": "string" }, "suite": { "type": "string" }, "counts": { "type": "object" },
+            "checks": { "type": "array", "items": { "type": "object", "required": ["checkId", "status"], "properties": { "checkId": { "type": "string" }, "status": { "type": "string" } } } } }
+        }
+      }
+    }
+  }
+}
