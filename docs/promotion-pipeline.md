@@ -211,3 +211,7 @@ pointer lags until the next candidate passes. Use it to get a fix to the deliver
   the ref to the promoted commit. Look there if work seems to have vanished from the root checkout.
 - `stable` is a git branch, so a person with push access can still move it. The drift check reports it;
   it does not prevent it.
+
+## Deferred stable deploys
+
+When the stable deploy exits 25 (Cezar busy, restart deferred), the promoter reports `deploy-deferred`. It does not count a failed attempt or open a stable-deploy issue, and the drift watcher files no "release drift persists" issue while the deferral is within the 7200s max-defer window. The drift report names the deferral and the time remaining. Past the window, or on any other failure, the deploy counts as a failure and the alert resumes.
