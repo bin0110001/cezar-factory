@@ -1,0 +1,29 @@
+{
+  "catalog": {
+    "profiles": {
+      "quick": ["unit-a"],
+      "standard": ["unit-a", "unit-b", "lint"],
+      "full": ["unit-a", "unit-b", "lint", "e2e"]
+    },
+    "tests": [
+      { "testId": "unit-b", "paths": ["src/b"] },
+      { "testId": "unit-a", "paths": ["src/a", "shared/util.ps1"] },
+      { "testId": "lint", "paths": ["src"] },
+      { "testId": "e2e", "paths": ["app"] }
+    ]
+  },
+  "history": {
+    "schemaVersion": 1,
+    "runs": [
+      { "id": "run-old", "startedAt": "2026-10-01T10:00:00Z", "finishedAt": "2026-10-01T10:05:00Z", "status": "failed", "commitSha": "", "baseSha": "",
+        "selected": [{ "testId": "unit-b", "reason": "x" }, { "testId": "e2e", "reason": "x" }], "deferred": [],
+        "failures": [{ "id": "unit-b#1", "testId": "unit-b", "status": "failed", "message": "old failure", "output": "" }, { "id": "e2e#1", "testId": "e2e", "status": "failed", "message": "old e2e", "output": "" }],
+        "episodes": [], "artifacts": [] },
+      { "id": "run-base", "startedAt": "2026-10-02T10:00:00Z", "finishedAt": "2026-10-02T10:05:00Z", "status": "failed", "commitSha": "", "baseSha": "",
+        "selected": [{ "testId": "unit-b", "reason": "x" }, { "testId": "lint", "reason": "x" }], "deferred": [],
+        "failures": [{ "id": "unit-b#1", "testId": "unit-b", "status": "failed", "message": "base failure", "output": "" }, { "id": "lint#1", "testId": "lint", "status": "failed", "message": "base lint", "output": "" }],
+        "episodes": [], "artifacts": [] }
+    ]
+  },
+  "outcomes": {}
+}
