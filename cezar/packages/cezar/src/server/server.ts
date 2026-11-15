@@ -14,7 +14,8 @@ import {
   dependencyGraphHistoricalTrendsSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
-import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
+import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
+import { ProjectChannelService, type ProjectChannelTask } from '../factory-release/project-channels.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { readEvidenceContent, readVerificationEvidence } from '../verification/visual-evidence.ts';
 import { queryReliabilityAnalytics, queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
@@ -3476,6 +3477,108 @@ export function createApp(deps: ServerDeps) {
       } catch (error) {
         return c.json({ status: 'error', projectId: project.id, error: error instanceof Error ? error.message : String(error) }, 503);
       }
+    })
+    .get('/factory-release/channel-state', async (c) => {
+      const project = c.get('project');
+      const config = await loadWorkspaceConfig();
+      const projectConfig = config.projects.find((entry) => entry.id === project.id);
+      if (!projectConfig) return c.json({ error: `unknown project: ${project.id}` }, 404);
+      let release: Awaited<ReturnType<typeof resolveConfiguredFactoryRelease>>;
+      let compatibility: 'compatible' | 'incompatible' | 'unknown' = 'unknown';
+      try {
+        release = await resolveConfiguredFactoryRelease(project.id);
+        compatibility = release ? 'compatible' : 'unknown';
+      } catch (error) {
+        compatibility = error && typeof error === 'object' && 'code' in error && error.code === 'incompatible-release' ? 'incompatible' : 'unknown';
+        release = undefined;
+      }
+      const tasks: ProjectChannelTask[] = project.store.listRuns()
+        .filter((run) => ['queued', 'running', 'waiting'].includes(run.status))
+        .map((run) => {
+          const pin = run.factoryRelease ?? run.workflowDef?.factoryRelease;
+          return { id: run.id, title: run.title, status: run.status, ...(pin ? { channel: pin.channel, sourceSha: pin.sourceSha } : {}) };
+        });
+      const service = new ProjectChannelService({
+        storeRoot: process.env.CEZ_FACTORY_RELEASE_STORE?.trim() || undefined,
+        projectRoot: project.root,
+        projectId: project.id,
+        configuredChannel: projectConfig.factoryChannel ?? (release ? 'stable' : undefined),
+        effectiveSha: release?.sourceSha,
+        compatibility,
+        activeTasks: tasks,
+      });
+      return c.json(await service.state());
+    })
+    .post('/factory-release/channel-preview', jsonZodValidator(z.object({ channel: z.enum(['dev', 'stable']) }).strict()), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'channel previews are available only from the local operator surface' }, 403);
+      const project = c.get('project');
+      const config = await loadWorkspaceConfig();
+      const projectConfig = config.projects.find((entry) => entry.id === project.id);
+      if (!projectConfig) return c.json({ error: `unknown project: ${project.id}` }, 404);
+      const channel = c.req.valid('json').channel as FactoryChannel;
+      let target;
+      try {
+        target = await resolveFactoryRelease(project.id, { projects: config.projects.map((entry) => ({ ...entry, factoryChannel: channel })) });
+      } catch (error) {
+        return c.json({ allowed: false, reason: 'channel-unavailable', detail: error instanceof Error ? error.message : String(error) }, 409);
+      }
+      const tasks: ProjectChannelTask[] = project.store.listRuns()
+        .filter((run) => ['queued', 'running', 'waiting'].includes(run.status))
+        .map((run) => {
+          const pin = run.factoryRelease ?? run.workflowDef?.factoryRelease;
+          return { id: run.id, title: run.title, status: run.status, ...(pin ? { channel: pin.channel, sourceSha: pin.sourceSha } : {}) };
+        });
+      const service = new ProjectChannelService({
+        storeRoot: process.env.CEZ_FACTORY_RELEASE_STORE?.trim() || undefined,
+        projectRoot: project.root,
+        projectId: project.id,
+        configuredChannel: projectConfig.factoryChannel ?? 'stable',
+        effectiveSha: target.sourceSha,
+        compatibility: 'compatible',
+        activeTasks: tasks,
+      });
+      return c.json(await service.preview(channel, { sourceSha: target.sourceSha, runtimeRoot: target.runtimeRoot }));
+    })
+    .post('/factory-release/channel-change', jsonZodValidator(z.object({ channel: z.enum(['dev', 'stable']), previewToken: z.string().regex(/^[a-f0-9]{64}$/i) }).strict()), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'channel changes are available only from the local operator surface' }, 403);
+      if (capabilities().singleProject) return c.json({ error: 'Factory channel changes are unavailable in single-project mode' }, 409);
+      const project = c.get('project');
+      const config = await loadWorkspaceConfig();
+      const projectConfig = config.projects.find((entry) => entry.id === project.id);
+      if (!projectConfig) return c.json({ error: `unknown project: ${project.id}` }, 404);
+      const { channel, previewToken } = c.req.valid('json');
+      let target;
+      try {
+        target = await resolveFactoryRelease(project.id, { projects: config.projects.map((entry) => ({ ...entry, factoryChannel: channel })) });
+      } catch (error) {
+        return c.json({ error: `target channel is unavailable: ${error instanceof Error ? error.message : String(error)}` }, 409);
+      }
+      const tasks: ProjectChannelTask[] = project.store.listRuns()
+        .filter((run) => ['queued', 'running', 'waiting'].includes(run.status))
+        .map((run) => {
+          const pin = run.factoryRelease ?? run.workflowDef?.factoryRelease;
+          return { id: run.id, title: run.title, status: run.status, ...(pin ? { channel: pin.channel, sourceSha: pin.sourceSha } : {}) };
+        });
+      const service = new ProjectChannelService({
+        storeRoot: process.env.CEZ_FACTORY_RELEASE_STORE?.trim() || undefined,
+        projectRoot: project.root,
+        projectId: project.id,
+        configuredChannel: projectConfig.factoryChannel ?? 'stable',
+        effectiveSha: target.sourceSha,
+        compatibility: 'compatible',
+        activeTasks: tasks,
+      });
+      const audit = await service.recordRequest(channel, previewToken, { sourceSha: target.sourceSha, runtimeRoot: target.runtimeRoot }, 'local-operator');
+      if (audit.status === 'refused') return c.json(audit, 409);
+      try {
+        await mergeWriteWorkspaceConfig((workspace) => {
+          const entry = workspace.projects.find((candidate) => candidate.id === project.id);
+          if (entry) entry.factoryChannel = channel;
+        });
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error), audit }, 500);
+      }
+      return c.json({ status: 'requested', projectId: project.id, channel, targetSha: target.sourceSha, audit, applies: 'new tasks resolve the selected channel; existing tasks retain their pinned release' });
     })
     .get('/workflows', async (c) => {
       const project = c.get('project');
