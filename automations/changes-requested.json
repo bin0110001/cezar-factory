@@ -24,8 +24,8 @@
   "task": {
     "prompt": "GitHub issue #{{github.number}} ({{github.title}}) at {{github.url}}",
     "workflow": "factory-fix-review",
-    "runner": "claude",
-    "model": "sonnet",
+    "runner": "codex",
+    "model": "factory-gateway/factory-code",
     "worktree": true,
     "autonomous": true
   }
