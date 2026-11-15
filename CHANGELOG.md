@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.126] - 2026-11-15
+
+- Central MCP profile injection for managed agents (#167): `scripts/mcp/profile.py` resolves a versioned, runner-neutral profile (`config/mcp-profiles.json`) through global, project-type, project and task overlays that may only narrow tools, runners and projects (widening, unknown fields, new servers and embedded credentials are rejected); adapters for Claude (`.mcp.json`) and Codex (`config.toml`) emit only environment-variable references, never secrets; `prepare` issues run-bound identities, writes 0600 config outside Git, and preflights gateway reachability, identity and required tools so a failure is a setup error before any agent retry loop (optional servers only warn); retries keep identity and revision; `cleanup` (cancel or completion) revokes identities and removes files, keeping state if revocation fails. Documented in `docs/mcp-profiles.md`; mock tests in `tests/test_mcp_profile.py`. Live gateway smoke test and wiring into the Cezar dispatch path depend on #165/#166 and remain follow-up.
+
 - `docs/local-validation.md` names the sandbox repository the fixture lifecycle canary runs against (`bin0110001/cezar-factory-sandbox`, overridable with `FACTORY_FIXTURE_REPO`). Docs only (fixture issue #528, `STABILIZATION-PLAN.md` item 3.3).
 
 - Visual evidence correlates multi-role captures by checkpoint and reports aggregate completeness (#353).

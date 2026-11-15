@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-11-15.1",
+  "servers": {
+    "hindsight": {
+      "endpoint": "https://obot.192.168.86.69.sslip.io:8443/mcp-connect/vmcp1gcv4n",
+      "identity": "per-run",
+      "tools": ["recall", "retain"],
+      "runners": ["claude", "codex"],
+      "projects": ["*"],
+      "required": false
+    }
+  }
+}
