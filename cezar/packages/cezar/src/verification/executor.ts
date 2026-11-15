@@ -93,7 +93,7 @@ export function verificationFindingFingerprint(check: VerificationCheckRun): str
   return verificationFindingIdentity(check)?.fingerprint;
 }
 
-function verificationFindingIdentity(check: VerificationCheckRun): FingerprintedFinding | undefined {
+export function verificationFindingIdentity(check: VerificationCheckRun): FingerprintedFinding | undefined {
   if (check.status !== 'failed') return undefined;
   const id = check.checkId.toLowerCase();
   const kind: VerificationFindingKind = /parse|lint|typecheck|syntax/.test(id) ? 'parse-error'
