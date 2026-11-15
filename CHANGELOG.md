@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Project-owned rendered graphical adapter hooks and a Godot adapter for the graphical worker (#342), with tests and a runbook note in `docs/graphical-worker-runbook.md`.
+
 - Gated GPU render pilot and pinned runtime fingerprint for graphical workers (#341). `session-control/gpu-pilot.ts` decides `supported`/`unsupported`/`unavailable`/`failed`/`disabled` from an injected probe, lease and render proof behind `CEZ_GRAPHICAL_GPU_PILOT=1`; software rendering, unpinned drivers, absent or reset GPUs, and lease contention are explicit coverage gaps that never report a rendered pass. The runbook documents the gate. No real-hardware render has been run yet.
 
 - Distributed verification pilots, fault matrix and benchmark protocol recorded (#220), `docs/distributed-verification-pilots.md`. No distributed worker runtime exists on `dev` yet, so every acceptance row is an explicit coverage gap and no figure is claimed; a suite test keeps the document honest (gaps recorded, opt-in, no GitHub Actions, no green rows).
