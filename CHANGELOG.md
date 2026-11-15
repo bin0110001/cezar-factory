@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.
+
 - Known focused validation failures can be reported as warnings when their ownership-map entry links an open issue in the same project repository. The receipt retains the issue link, and the review gate accepts only current-head changed-stage warnings backed by a live issue; unlinked, closed-issue, full-suite, and verify failures still block.
 
 - Bounded triage/repair loop (#105): `scripts/repair-loop-step.ps1` classifies failing impacted checks (code defect, flaky, infrastructure, untested), routes them per `policies/retry.yaml`, enforces attempt/repeat/safety/security bounds deterministically, records attempts and budget in a ledger and hands persistent failures to the audit path without creating issues or waivers. Workflow `factory-verification-repair`, docs and tests added.
