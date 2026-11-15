@@ -1427,6 +1427,18 @@ try {
     $eligible = Test-Eligibility $approvedReview 'valid'
     Assert 'merge gate allows current reviewed head with clean receipts and effective rules' ($eligible.Code -eq 0 -and $eligible.Output.decision -eq 'allowed')
     Assert 'medium-risk changes can merge with focused and integration receipts without a full-suite receipt requirement' (-not $eligible.Output.validation.fullRequired -and $eligible.Output.validation.changed -and $eligible.Output.validation.verify)
+    $changedReceiptPath = Join-Path $eligibilityRoot 'changed/attempt/receipt.json'
+    @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = 'changed'; status = 'warning'; exitCode = 0; artifactPaths = @('.factory/artifacts/validation/changed/receipt.json'); worktreeClean = $true; warnings = @(@{ checkId = 'known-project-debt'; issue = 'https://github.com/example/project/issues/123'; message = 'The configured focused validation check failed.' }) } |
+        ConvertTo-Json -Depth 5 | Set-Content $changedReceiptPath
+    $eligibilityState.issues = @(@{ number = 123; title = 'Existing project debt'; body = 'Tracks the known focused validation failure.'; labels = @() })
+    $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $linkedWarning = Test-Eligibility $approvedReview 'linked-warning'
+    Assert 'merge gate accepts a changed-stage warning linked to an existing open issue in the same repository' ($linkedWarning.Code -eq 0 -and $linkedWarning.Output.decision -eq 'allowed' -and $linkedWarning.Output.validation.changed)
+    $eligibilityState.issueState = 'CLOSED'; $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    $closedWarningIssue = Test-Eligibility $approvedReview 'closed-warning-issue'
+    Assert 'merge gate rejects a warning linked only to a closed issue' ($closedWarningIssue.Output.decision -eq 'denied' -and -not $closedWarningIssue.Output.validation.changed)
+    $eligibilityState.issueState = 'OPEN'; $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE
+    @{ schemaVersion = 1; issue = 7; repository = 'example/project'; pr = $rev.pr; headSha = ('a' * 40); stage = 'changed'; status = 'passed'; exitCode = 0; artifactPaths = @('.factory/artifacts/validation/changed/receipt.json'); worktreeClean = $true } | ConvertTo-Json | Set-Content $changedReceiptPath
     $highRiskFullReceipt = Join-Path $eligibilityRoot 'full/attempt/receipt.json'
     Remove-Item -LiteralPath $highRiskFullReceipt -Force
     $eligibilityState.prDetails.labels = @(@{ name = 'risk:high' }); $eligibilityState | ConvertTo-Json -Depth 10 | Set-Content $env:FAKE_GH_STATE

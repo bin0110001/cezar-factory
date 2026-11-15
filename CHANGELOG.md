@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Known focused validation failures can be reported as warnings when their ownership-map entry links an open issue in the same project repository. The receipt retains the issue link, and the review gate accepts only current-head changed-stage warnings backed by a live issue; unlinked, closed-issue, full-suite, and verify failures still block.
+
 - Bounded triage/repair loop (#105): `scripts/repair-loop-step.ps1` classifies failing impacted checks (code defect, flaky, infrastructure, untested), routes them per `policies/retry.yaml`, enforces attempt/repeat/safety/security bounds deterministically, records attempts and budget in a ledger and hands persistent failures to the audit path without creating issues or waivers. Workflow `factory-verification-repair`, docs and tests added.
 
 - Verification CLI with stable JSON output (#107, parent #57). `scripts/verification-cli.ps1` has `run --profile quick|standard|full`, `affected --changed <paths>`, `last-failed` and `compare --baseline <runId>`; with `--json` stdout is one deterministic, key-sorted document validated by `schemas/verification-cli-output.schema.json` (`schemaVersion` 1), built only from `Invoke-VerificationQuery` pages (bounded, redacted). Failures are classified `new` or `known`; `compare` also lists `fixed`. Exit codes: 0 pass, 1 test failures, 2 usage/config, 3 internal/provider/executor error. The CLI talks to executor, history and catalog through one provider script (`--provider` or `FACTORY_VERIFICATION_PROVIDER`), so no new executor, ledger or selection engine is added; with no provider it exits 3. Docs: `docs/verification-cli.md`. Tests: `tests/verification-cli.ps1` with a fixture provider.

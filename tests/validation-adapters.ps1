@@ -91,6 +91,37 @@ validation:
     $unownedRun = Run-Stage changed
     Check 'unmapped changed files expand to full validation and remain visible in the receipt' ($unownedRun.Code -eq 0 -and $unownedRun.Receipt.status -eq 'passed' -and $unownedRun.Receipt.selectedChecks -contains 'unmapped-full-regression' -and $unownedRun.Receipt.unmappedPaths -contains 'unowned-check.txt')
 
+    $knownIssue = 'https://github.com/example/project/issues/123'
+    $issueMap = Get-Content -Raw $ownershipMapPath | ConvertFrom-Json -AsHashtable
+    $issueMap.checks[0].knownIssue = $knownIssue
+    $issueMap | ConvertTo-Json -Depth 6 | Set-Content $ownershipMapPath
+    & git -C $project add .ai/factory/test-ownership.json
+    & git -C $project commit -qm 'link known focused-check debt to its issue'
+    @{ environment = @{ baseCommit = ((& git -C $project rev-parse HEAD).Trim()) } } |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    Set-Content (Join-Path $project 'owned-check.txt') 'known failing check'
+    & git -C $project add owned-check.txt
+    & git -C $project commit -qm known-check-failure
+    $env:ADAPTER_EXIT = '7'
+    $knownDebtRun = Run-Stage changed
+    Check 'focused failure linked to an existing issue is a warning with a successful step exit' ($knownDebtRun.Code -eq 0 -and $knownDebtRun.Receipt.status -eq 'warning' -and $knownDebtRun.Receipt.exitCode -eq 0 -and $knownDebtRun.Receipt.warnings.Count -eq 1 -and $knownDebtRun.Receipt.warnings[0].issue -eq $knownIssue)
+    Check 'issue-linked warning receipt satisfies the versioned schema' (Test-Json -Json ($knownDebtRun.Receipt | ConvertTo-Json -Depth 8) -SchemaFile (Join-Path $factory 'schemas/validation-receipt.schema.json'))
+    Remove-Item Env:ADAPTER_EXIT
+
+    $issueMap.checks[0].Remove('knownIssue')
+    $issueMap | ConvertTo-Json -Depth 6 | Set-Content $ownershipMapPath
+    & git -C $project add .ai/factory/test-ownership.json
+    & git -C $project commit -qm 'remove known issue link'
+    @{ environment = @{ baseCommit = ((& git -C $project rev-parse HEAD).Trim()) } } |
+        ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
+    Set-Content (Join-Path $project 'owned-check.txt') 'unlinked failing check'
+    & git -C $project add owned-check.txt
+    & git -C $project commit -qm unlinked-check-failure
+    $env:ADAPTER_EXIT = '7'
+    $unlinkedDebtRun = Run-Stage changed
+    Check 'focused failure without an existing issue link still fails' ($unlinkedDebtRun.Code -ne 0 -and $unlinkedDebtRun.Receipt.status -eq 'failed' -and $unlinkedDebtRun.Receipt.warnings.Count -eq 0)
+    Remove-Item Env:ADAPTER_EXIT
+
     @{ environment = @{ baseCommit = ((& git -C $project rev-parse HEAD).Trim()) } } |
         ConvertTo-Json -Depth 4 | Set-Content (Join-Path $project '.factory/implementation-context.json')
     Set-Content (Join-Path $project 'staged-check.txt') 'staged focused selection'

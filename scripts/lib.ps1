@@ -180,7 +180,10 @@ function Get-ChangedValidationSelection([string]$Root, $Config) {
                 if ($path -match $regex) { $matched.Add($path); $null = $covered.Add($path); break }
             }
         }
-        if ($matched.Count) { $selected.Add([pscustomobject]@{ id = [string]$check.id; command = [string]$check.command; paths = @($matched | Sort-Object -Unique) }) }
+        if ($matched.Count) {
+            $knownIssue = if ($check -is [System.Collections.IDictionary] -and $check.Contains('knownIssue')) { [string]$check['knownIssue'] } else { '' }
+            $selected.Add([pscustomobject]@{ id = [string]$check.id; command = [string]$check.command; paths = @($matched | Sort-Object -Unique); knownIssue = $knownIssue })
+        }
     }
     $unmapped = @($paths | Where-Object { -not $covered.Contains($_) })
     if ($unmapped.Count) {
@@ -215,7 +218,7 @@ function Invoke-FactoryValidation {
         stage = $Stage; status = 'error'; exitCode = 1
         artifactPaths = @("$relative/stdout.log", "$relative/stderr.log", "$relative/receipt.json")
         worktreeClean = $false; timeoutSeconds = (Get-ValidationTimeoutSeconds $Stage)
-        selectedChecks = @(); changedPaths = @(); unmappedPaths = @()
+        selectedChecks = @(); changedPaths = @(); unmappedPaths = @(); warnings = @()
         startedAt = (Get-Date).ToUniversalTime().ToString('o')
         finishedAt = ''; command = ''; truncated = $false; message = ''
     }
@@ -263,17 +266,36 @@ function Invoke-FactoryValidation {
             $receipt.unmappedPaths = @($selection.unmappedPaths)
             $receipt.selectedChecks = @($selection.checks | ForEach-Object { [string]$_.id })
             $commandLines = [System.Collections.Generic.List[string]]::new()
+            $commandLines.Add('$factoryValidationWarnings = [System.Collections.Generic.List[object]]::new()')
             foreach ($check in $selection.checks) {
                 $checkId = ([string]$check.id).Replace("'", "''")
                 $checkCommand = ([string]$check.command).Replace("'", "''")
+                $knownIssueProperty = $check.PSObject.Properties['knownIssue']
+                $knownIssue = if ($knownIssueProperty) { [string]$knownIssueProperty.Value } else { '' }
+                if ($knownIssue -and $knownIssue -notmatch '^https://github\.com/[^/\s]+/[^/\s]+/issues/[1-9][0-9]*$') {
+                    throw "Changed-test check '$checkId' has an invalid knownIssue URL; expected a GitHub issue URL."
+                }
+                $knownIssueLiteral = $knownIssue.Replace("'", "''")
                 $changedPathsJson = ConvertTo-Json -InputObject @($check.paths) -Compress
                 $changedPathsLiteral = $changedPathsJson.Replace("'", "''")
                 $commandLines.Add("`$env:FACTORY_CHANGED_PATHS = '$changedPathsLiteral'")
                 $commandLines.Add("Write-Output 'CHECK_START: $checkId'")
                 $commandLines.Add('$global:LASTEXITCODE = 0')
-                $commandLines.Add("Invoke-Expression '$checkCommand'")
-                $commandLines.Add("if (`$LASTEXITCODE -ne 0) { throw 'Changed validation check $checkId failed with exit code ' + `$LASTEXITCODE }")
+                $commandLines.Add('try {')
+                $commandLines.Add("  Invoke-Expression '$checkCommand'")
+                $commandLines.Add("  if (`$LASTEXITCODE -ne 0) { throw 'Changed validation check $checkId failed with exit code ' + `$LASTEXITCODE }")
+                $commandLines.Add('} catch {')
+                if ($knownIssue) {
+                    $commandLines.Add("  `$warning = [ordered]@{ checkId = '$checkId'; issue = '$knownIssueLiteral'; message = 'The configured focused validation check failed.' }")
+                    $commandLines.Add('  $factoryValidationWarnings.Add($warning) | Out-Null')
+                    $commandLines.Add('  $global:LASTEXITCODE = 0')
+                } else {
+                    $commandLines.Add('  throw')
+                }
+                $commandLines.Add('}')
             }
+            $commandLines.Add("foreach (`$warning in `$factoryValidationWarnings) { Write-Output ('FACTORY_VALIDATION_WARNING:' + (`$warning | ConvertTo-Json -Compress)) }")
+            $commandLines.Add("Write-Output ('FACTORY_VALIDATION_WARNING_COUNT:' + `$factoryValidationWarnings.Count)")
             $command = [string]::Join("`n", $commandLines)
             $receipt.command = [string]::Join(' ; ', @($selection.checks | ForEach-Object { "$($_.id): $($_.command)" }))
         }
@@ -323,7 +345,20 @@ function Invoke-FactoryValidation {
         $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
         $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
         $receipt.exitCode = [int]$process.ExitCode
-        $receipt.status = if ($process.ExitCode -eq 0) { 'passed' } else { 'failed' }
+        $stdoutText = [Text.Encoding]::UTF8.GetString($stdout)
+        $expectedWarningCount = -1
+        foreach ($line in ($stdoutText -split "`r?`n")) {
+            if ($line -match '^FACTORY_VALIDATION_WARNING:(?<json>\{.*\})$') {
+                try { $receipt.warnings += ($Matches.json | ConvertFrom-Json -ErrorAction Stop) }
+                catch { throw 'Configured validation emitted an invalid Factory warning record.' }
+            }
+            if ($line -match '^FACTORY_VALIDATION_WARNING_COUNT:(?<count>\d+)$') { $expectedWarningCount = [int]$Matches.count }
+        }
+        if ($selection -and $process.ExitCode -eq 0 -and ($expectedWarningCount -lt 0 -or $expectedWarningCount -ne @($receipt.warnings).Count)) {
+            throw 'Configured validation warning records were incomplete; refusing to report a clean result.'
+        }
+        $receipt.status = if ($process.ExitCode -ne 0) { 'failed' } elseif (@($receipt.warnings).Count) { 'warning' } else { 'passed' }
+        if (@($receipt.warnings).Count) { $receipt.message = 'Known validation failures are linked to existing project issues.' }
         if ($receipt.truncated) { $receipt.message = 'Output truncated to 64 KiB per stream.' }
     } catch {
         $receipt.status = 'error'; $receipt.exitCode = 1; $receipt.message = $_.Exception.Message
@@ -349,7 +384,7 @@ function Invoke-FactoryValidation {
         $receipt | ConvertTo-Json -Depth 6 | Set-Content -Path $receiptPath -Encoding utf8
         if (-not $Quiet) { Write-Host ($receipt | ConvertTo-Json -Compress -Depth 6) }
     }
-    if ($receipt.status -eq 'passed' -or ($Stage -eq 'changed' -and $receipt.status -eq 'skipped')) { return 0 }
+    if ($receipt.status -in @('passed', 'warning') -or ($Stage -eq 'changed' -and $receipt.status -eq 'skipped')) { return 0 }
     return 1
 }
 
