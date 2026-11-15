@@ -4,6 +4,7 @@ import { AlertCircleIcon, ChevronDownIcon, ChevronRightIcon, FileTextIcon, Refre
 import type { VerificationQueryResponse } from '@open-mercato/cezar-api-client'
 import { getVerificationArtifact, queryReliabilityAnalytics, queryVerificationHistory } from '@/api/client'
 import { Button } from '@/components/ui/button'
+import { VerificationEvidenceGallery } from './verification-evidence-gallery'
 
 const HISTORY_PAGE_SIZE = 25
 const historyKey = ['verification-history'] as const
@@ -290,6 +291,8 @@ export function VerificationHistoryRoute() {
                       {runPage.items.every((runItem) => !(runItem.checks ?? []).some((check) => check.checkId === trendCheckId)) && <p className="mt-2 text-xs text-muted-foreground">No trend points are available on this page.</p>}
                     </div>}
                   </section>
+
+                  <VerificationEvidenceGallery verificationId={item.id} commitSha={item.commitSha} />
 
                   <section id="verification-artifacts">
                     <h2 className="text-sm font-semibold">Artifacts</h2>

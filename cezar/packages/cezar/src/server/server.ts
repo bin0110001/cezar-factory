@@ -16,6 +16,7 @@ import {
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease } from '../factory-release/resolver.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
+import { readEvidenceContent, readVerificationEvidence } from '../verification/visual-evidence.ts';
 import { queryReliabilityAnalytics, queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
 import { readCodingRunArtifact, type CodingRunArtifactReference } from '../workspace/coding-run-artifacts.ts';
 import { TrackerWatches } from './tracker/watch.ts';
@@ -237,7 +238,7 @@ import { dependencyGraphHealth, dependencyNeighborhood, diagnoseBlockingCycles, 
 import { dependencyNodeIdSchema } from '@open-mercato/cezar-contract';
 import { answerDecisionBodySchema } from '@open-mercato/cezar-contract';
 import { answerDecision, createGhRunner, listDecisions } from './decisions/decisions.ts';
-import { reliabilityAnalyticsQuerySchema, verificationArtifactParamsSchema, verificationAttemptManifestParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
+import { reliabilityAnalyticsQuerySchema, verificationEvidenceContentQuerySchema, verificationEvidenceParamsSchema, verificationEvidenceQuerySchema, verificationArtifactParamsSchema, verificationAttemptManifestParamsSchema, verificationQueryInputSchema } from '@open-mercato/cezar-contract';
 import { dependencyDecisionWriteSchema, hasValidDependencyNodeIdentity } from '@open-mercato/cezar-contract';
 import { dependencySimulationInputSchema, dependencyDecisionTransitionSchema, dependencyDecisionMetadataPatchSchema, dependencyDecisionMetadataRollbackSchema, dependencyCyclePlanDispatchSchema, dependencyCycleRepairApplySchema, dependencyCycleRepairRejectSchema, dependencyCycleRepairRollbackSchema, dependencyCycleRepairResultSchema, dependencyCycleRepairRejectResponseSchema, dependencyDecisionResearchDispatchSchema, dependencyGraphEdgeSchema, type DependencyGraphEdge } from '@open-mercato/cezar-contract';
 import { fetchGithub, fetchGithubChecks, fetchGithubComments, fetchGithubPrDiff, fetchGithubRefStatus, forgetRefStatus, readCachedRefStatuses, refNumberFromUrl, searchGithubItems, GithubPrNotFoundError, GH_CHECKS_MAX, GH_SEARCH_MAX, GH_REF_STATUS_MAX } from './github.ts';
@@ -6984,9 +6985,32 @@ export function createApp(deps: ServerDeps) {
       if (result.status === 200) return c.json(result.body);
       return result.status === 404
         ? c.json({ error: 'verification artifact not found' }, 404)
-        : result.status === 410
+        : result.status === 403
+          ? c.json({ error: 'visual evidence is served only by the evidence endpoints' }, 403)
+          : result.status === 410
           ? c.json({ error: 'verification artifact is no longer available' }, 410)
           : c.json({ error: 'verification artifact does not match the recorded digest' }, 409);
+    })
+    // Visual evidence (#354): metadata, preview and download are separate reads, each authorized on its own.
+    .get('/verification/evidence/:runId', paramZodValidator(z.object({ runId: z.string().min(1).max(128) }).strict()), queryZodValidator(verificationEvidenceQuerySchema), async (c) => {
+      const evidence = await readVerificationEvidence(c.get('project'), c.req.valid('param').runId, { localOperator: capabilities().localHandoff }, c.req.valid('query'));
+      return evidence ? c.json(evidence) : c.json({ error: 'verification run not found' }, 404);
+    })
+    .get('/verification/evidence/:runId/:artifactId/content', paramZodValidator(verificationEvidenceParamsSchema), queryZodValidator(verificationEvidenceContentQuerySchema), async (c) => {
+      const { runId, artifactId } = c.req.valid('param');
+      const { disposition } = c.req.valid('query');
+      const result = await readEvidenceContent(c.get('project'), runId, artifactId, disposition, { localOperator: capabilities().localHandoff });
+      if (result.status !== 200) {
+        const messages = { 403: 'this evidence is not available to you in that form', 404: 'evidence not found', 409: 'evidence does not match the recorded digest', 410: 'evidence is no longer available', 413: 'evidence is too large to preview; download it instead', 415: 'this evidence cannot be previewed' } as const;
+        return c.json({ error: messages[result.status] }, result.status);
+      }
+      return c.body(new Uint8Array(result.bytes), 200, {
+        'Content-Type': result.contentType,
+        'Content-Disposition': disposition === 'download' ? `attachment; filename="${result.filename}"` : 'inline',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+      });
     });
 
   // ---- user decisions family ------------------------------------------------
