@@ -96,6 +96,9 @@ KILLED_EXIT_CODES = (137, 143)
 CONTAINER_DOWN_RE = re.compile(r"container state improper|can only create exec sessions on running containers|no such container", re.I)
 MAX_INTERRUPTED_RETRIES = 2
 DRIFT_ISSUE_REPEAT_SECONDS = 6 * 3600
+DEPLOY_DEFERRED_EXIT = 25  # deploy-cezar-runtime.sh: Cezar busy, retry on a later tick
+DEPLOY_DEFERRED_PREFIX = "deferred:"
+DEPLOY_MAX_DEFER_SECONDS = 7200  # deploy-cezar-runtime.sh restarts anyway after this long, so a deferral inside it is not drift
 PROBE_WINDOW_SECONDS = 45  # how long drift() retries a transient /factory-release failure before calling it unknown
 
 
@@ -568,11 +571,28 @@ class LocalPromotionScheduler:
         except subprocess.TimeoutExpired:
             return False, "stable deploy timed out"
         tail = (result.stdout or b"").decode("utf-8", "replace")[-600:]
+        if result.returncode == DEPLOY_DEFERRED_EXIT:
+            return False, f"{DEPLOY_DEFERRED_PREFIX} Cezar busy; the deploy waits for an idle Cezar: {tail}"
         if result.returncode:
             return False, f"stable deploy exited {result.returncode}: {tail}"
         if self._stable_pointer() != sha:
-            return False, "deploy finished but the stable channel pointer has not reached this SHA yet (deferred while Cezar is busy)"
+            return False, "deploy finished but the stable channel pointer has not reached this SHA yet"
         return True, tail
+
+    def _deferral_age(self, detail: str | None = None) -> float | None:
+        """Seconds the stable deploy has been deferred, or None when it is not deferred (a real failure or success)."""
+        if detail is not None and not detail.startswith(DEPLOY_DEFERRED_PREFIX):
+            self._state_put("stable_deferred_since", "0")
+            return None
+        if detail is not None and not float(self._state_get("stable_deferred_since", "0") or 0):
+            self._state_put("stable_deferred_since", str(time.time()))
+        since = float(self._state_get("stable_deferred_since", "0") or 0)
+        return time.time() - since if since else None
+
+    def _deploy_deferred(self, detail: str) -> bool:
+        """True while a deferral is still inside the deploy's own max-defer window (not a failed attempt)."""
+        age = self._deferral_age(detail)
+        return age is not None and age < DEPLOY_MAX_DEFER_SECONDS
 
     def _advance(self, sha: str) -> dict[str, Any]:
         """Move a dev-validated candidate through soak, approval, the stable ref, and the stable deploy."""
@@ -597,13 +617,17 @@ class LocalPromotionScheduler:
             stage = "stable-promoted"
         if stage == "stable-promoted":
             ok, detail = self._deploy_stable(sha)
-            attempts = int((row["deploy_attempts"] if row else 0) or 0) + (0 if ok else 1)
+            deferred = not ok and self._deploy_deferred(detail)
+            attempts = int((row["deploy_attempts"] if row else 0) or 0) + (0 if ok or deferred else 1)
             if ok:
+                self._state_put("stable_deferred_since", "0")
                 self._set_stage(sha, self.FINAL_STAGE)
                 self.breaker.record_success()
                 return {"status": "promoted", "sourceSha": sha, "stage": self.FINAL_STAGE}
             self._set_stage(sha, "stable-promoted", deploy_attempts=attempts)
             self._state_put("last_stable_deploy_error", f"{sha}|{detail[-300:]}")
+            if deferred:
+                return {"status": "deploy-deferred", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
             if attempts == 3:  # one issue per candidate, not per tick
                 self._failure("stable-deploy", sha, detail, subject="stable")
             return {"status": "deploy-pending", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
@@ -628,9 +652,12 @@ class LocalPromotionScheduler:
         ok, detail = self._deploy_stable(tip)
         if ok:
             self._set_stage(tip, self.FINAL_STAGE)
+            self._state_put("stable_deferred_since", "0")
             self._state_put("last_stable_deploy_error", "")
             return {"status": "stable-reconciled", "sourceSha": tip}
         self._state_put("last_stable_deploy_error", f"{tip}|{detail[-300:]}")
+        if self._deploy_deferred(detail):
+            return {"status": "deploy-deferred", "sourceSha": tip, "detail": detail[-300:]}
         return {"status": "deploy-pending", "sourceSha": tip, "detail": detail[-300:]}
 
     def _stalled_step(self, tip: str) -> str:
@@ -641,6 +668,10 @@ class LocalPromotionScheduler:
         parts = [f"stage {row['stage']}"]
         if row["stage"] == "stable-promoted":
             parts.append(f"deploy pending after {int(row['deploy_attempts'] or 0)} attempt(s)")
+            age = self._deferral_age()
+            if age is not None:
+                remaining = max(0, int(DEPLOY_MAX_DEFER_SECONDS - age))
+                parts.append(f"deploy deferred while Cezar is busy ({remaining}s left before it restarts Cezar anyway)")
         sha, _, error = self._state_get("last_stable_deploy_error", "").partition("|")
         if error and sha == tip:
             parts.append(f"last deploy error: {error.strip()[:200]}")
@@ -700,6 +731,11 @@ class LocalPromotionScheduler:
             return {"status": "unknown", "findings": [seen["probeError"]], "probeUnreadable": True, "seen": seen}
         return {"status": "ok", "findings": [], "seen": seen}
 
+    def _drift_deferral_allowance(self) -> float:
+        """Extra drift grace while the stable deploy is deferred inside its max-defer window; zero once it is exceeded."""
+        age = self._deferral_age()
+        return float(DEPLOY_MAX_DEFER_SECONDS) if age is not None and age < DEPLOY_MAX_DEFER_SECONDS else 0.0
+
     def _drift_watch(self) -> dict[str, Any]:
         report = self.drift()
         if not self.policy:
@@ -723,7 +759,7 @@ class LocalPromotionScheduler:
         since = float(self._state_get("drift_since", "0") or 0)
         if not since:
             self._state_put("drift_since", str(time.time()))
-        elif time.time() - since > self.policy["driftGraceSeconds"]:
+        elif time.time() - since > self.policy["driftGraceSeconds"] + self._drift_deferral_allowance():
             summary = "; ".join(report["findings"])
             # The same finding used to add a comment every tick (hundreds on one issue). Report a finding when
             # it first appears or changes, then only as a reminder.

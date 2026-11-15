@@ -473,6 +473,37 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "stable-reconciled")
         self.assertEqual(scheduler._row(self.sha)["stage"], scheduler.FINAL_STAGE)
 
+    def test_deferred_deploy_is_not_a_failed_attempt_or_drift_issue(self):
+        subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
+        scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
+        (scheduler.controller.channels / "stable.json").write_text(json.dumps({"currentSha": self.base_sha}), encoding="utf-8")
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'healthy', ?)", (self.sha, "2026-01-01T00:00:00Z"))
+        scheduler._set_stage(self.sha, "stable-promoted")
+        scheduler._deploy_stable = lambda sha: (False, "deferred: Cezar busy")
+        for _ in range(4):
+            self.assertEqual(scheduler._advance(self.sha)["status"], "deploy-deferred")
+        self.assertEqual(int(scheduler._row(self.sha)["deploy_attempts"] or 0), 0)
+        self.assertEqual(self.gh.issues, [])
+        self.assertEqual(scheduler._reconcile_stable()["status"], "deploy-deferred")
+        self.assertIn("deferred while Cezar is busy", scheduler._stalled_step(self.sha))
+        scheduler._state_put("drift_since", str(time.time() - 3600))
+        git(self.repo, "checkout", "-q", "--detach", self.base_sha)
+        scheduler._drift_watch()
+        self.assertEqual(self.gh.issues, [])
+        scheduler._state_put("stable_deferred_since", str(time.time() - 7300))
+        scheduler._state_put("drift_since", str(time.time() - 3600))
+        scheduler._drift_watch()
+        self.assertEqual(len(self.gh.issues), 1)
+
+    def test_real_deploy_failure_still_counts_attempts(self):
+        scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))
+        with scheduler._db() as db:
+            db.execute("INSERT INTO promotions(sha,status,started_at) VALUES(?, 'healthy', ?)", (self.sha, "2026-01-01T00:00:00Z"))
+        scheduler._set_stage(self.sha, "stable-promoted")
+        scheduler._deploy_stable = lambda sha: (False, "stable deploy exited 20: dirty")
+        self.assertEqual(scheduler._advance(self.sha)["attempts"], 1)
+
     def test_no_drift_when_everything_agrees(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.base_sha}:refs/heads/stable"], check=True, capture_output=True)
         scheduler = self.build(cezar=FakeCezar(served_sha=self.base_sha))

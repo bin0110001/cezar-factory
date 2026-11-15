@@ -211,3 +211,10 @@ pointer lags until the next candidate passes. Use it to get a fix to the deliver
   the ref to the promoted commit. Look there if work seems to have vanished from the root checkout.
 - `stable` is a git branch, so a person with push access can still move it. The drift check reports it;
   it does not prevent it.
+
+## Deferred stable deploys
+
+`deploy-cezar-runtime.sh` exits 25 when Cezar is busy and restarts it anyway after 7200s of continuous deferral.
+The promoter treats exit 25 as `deploy-deferred`: it does not count toward `deploy_attempts` or the stable-deploy
+issue, and drift is not escalated to an issue until the deferral outlasts that 7200s window. The drift report names the
+deferral and the time left. Any other failure, or a deploy that exits 0 without moving the pointer, still counts.
