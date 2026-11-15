@@ -22,9 +22,11 @@ const ROOT = '/Users/me/code/demo-project'
 const BOOT_ROOT = '/Users/me/code/cezar'
 
 let requests: Array<{ method: string; url: string; body?: unknown }> = []
+let runsPayload: unknown[] = []
 
 function serve() {
   requests = []
+  runsPayload = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -35,7 +37,11 @@ function serve() {
       const json = (payload: unknown) =>
         new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } })
       if (url.endsWith('/open-targets')) return json({ targets: [] })
+      if (url.endsWith('/runs')) return json(runsPayload)
       if (url.endsWith('/factory-release')) return json({ status: 'resolved', projectId: 'demo', channel: 'stable', sourceSha: 'a'.repeat(40), manifestDigest: `sha256:${'b'.repeat(64)}` })
+      if (url.endsWith('/factory-release/channel-state')) return json({ schemaVersion: 'factory-project-channel-state/v1', projectId: 'demo', configuredChannel: 'stable', configuredSha: 'a'.repeat(40), effectiveSha: 'a'.repeat(40), lastSuccessfulActivation: null, deployed: false, compatibility: 'compatible', activeTasks: runsPayload, installedPrecedence: { workflows: 'project overrides', skills: 'project overrides', source: 'resolver' }, shadowDiff: null, lastReconcile: null, findings: [], remediation: [], stale: false, readAt: new Date().toISOString() })
+      if (url.endsWith('/factory-release/channel-preview')) return json({ allowed: true, readOnly: true, projectId: 'demo', fromChannel: 'stable', toChannel: 'dev', targetSha: 'c'.repeat(40), activeTasks: runsPayload, pinnedTasksUnaffected: true, noChange: false, overrideDiff: [{ path: 'workflows/build.yaml', status: 'conflict' }], warnings: ['Active task stays pinned.'], token: 'e'.repeat(64) })
+      if (url.endsWith('/factory-release/channel-change')) return json({ status: 'requested', projectId: 'demo', channel: 'dev', targetSha: 'c'.repeat(40), audit: { status: 'requested', audit: 'request.json' }, applies: 'new tasks only' })
       if (url.startsWith('/api/v1/projects/') && method === 'DELETE') {
         return json({ removed: true, id: url.split('/').pop() })
       }
@@ -169,15 +175,29 @@ describe('the General page', () => {
     })
   })
 
-  it('pins new project tasks to the selected Factory channel', async () => {
+  it('previews the selected channel and records an audited request', async () => {
     renderAt('/p/demo/settings')
     const channel = await screen.findByLabelText('Factory channel')
     expect((channel as HTMLSelectElement).value).toBe('stable')
     fireEvent.change(channel, { target: { value: 'dev' } })
 
-    await waitFor(() => {
-      expect(requests.find((request) => request.method === 'PATCH')?.body).toEqual({ factoryChannel: 'dev' })
-    })
+    const preview = await screen.findByRole('region', { name: 'Channel change preview' })
+    expect(preview.textContent).toContain('conflict: workflows/build.yaml')
+    fireEvent.click(screen.getByRole('button', { name: 'Request channel change' }))
+    await screen.findByText(/Channel request recorded/)
+    expect(requests.find((request) => request.url.endsWith('/factory-release/channel-change'))?.body).toEqual({ channel: 'dev', previewToken: 'e'.repeat(64) })
+    expect(requests.some((request) => request.method === 'PATCH' && (request.body as { factoryChannel?: string })?.factoryChannel === 'dev')).toBe(false)
+  })
+
+  it('shows active task pin warnings in the preview before requesting a channel change', async () => {
+    runsPayload = [{ id: 'run-1', title: 'Existing task', workflow: 'build', task: 'work', status: 'running' }]
+    renderAt('/p/demo/settings')
+    const channel = await screen.findByLabelText('Factory channel')
+    await waitFor(() => expect((channel as HTMLSelectElement).disabled).toBe(false))
+    fireEvent.change(channel, { target: { value: 'dev' } })
+
+    expect((await screen.findByRole('region', { name: 'Channel change preview' })).textContent).toContain('Active task stays pinned.')
+    expect(requests.some((request) => request.method === 'PATCH' && (request.body as { factoryChannel?: string })?.factoryChannel === 'dev')).toBe(false)
   })
 
   it('saves cadence and independent rolling limits for full regression', async () => {

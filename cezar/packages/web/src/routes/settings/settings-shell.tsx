@@ -201,7 +201,7 @@ export function SettingsSectionRoute({
  *  page; on desktop it sits beside the nav as a plain directory). */
 export function SettingsIndexRoute({ scope, capabilities }: {
   scope: SettingsScope
-  capabilities?: Partial<Pick<Capabilities, 'singleProject'>>
+  capabilities?: Partial<Pick<Capabilities, 'singleProject' | 'localHandoff'>>
 }) {
   const { Link } = navComponents(scope)
   const global = scope === 'global'

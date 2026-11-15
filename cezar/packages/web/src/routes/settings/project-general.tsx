@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-import { useFactoryRelease, useProjects, useRunFullRegression, useUpdateProject, useWorkspaceConfig } from '@/api/queries'
+import { useFactoryChannelState, useFactoryRelease, useFactoryChannelPreview, useProjects, useRequestFactoryChannelChange, useRunFullRegression, useUpdateProject, useWorkspaceConfig } from '@/api/queries'
 import type { Capabilities, FullRegressionPolicy, ProjectListEntry } from '@open-mercato/cezar-api-client'
 import { Button } from '@/components/ui/button'
 import { useActiveProjectId } from '@/lib/project-router'
@@ -47,11 +47,14 @@ function fullDate(iso: string): string {
   return at.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<Capabilities, 'singleProject'>> }) {
+export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<Capabilities, 'singleProject' | 'localHandoff'>> }) {
   const projectId = useActiveProjectId()
   const projects = useProjects()
   const config = useWorkspaceConfig()
   const factoryRelease = useFactoryRelease()
+  const channelState = useFactoryChannelState()
+  const channelPreview = useFactoryChannelPreview()
+  const channelChange = useRequestFactoryChannelChange()
   const updateProject = useUpdateProject()
   const fullRegression = useRunFullRegression()
 
@@ -84,6 +87,7 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
   // manage. `PATCH`/`DELETE /api/v1/projects/:id` would both 404, so the page offers the one
   // thing that does apply — adding it — and says why it is not there yet.
   const managesRegistry = capabilities?.singleProject !== true && project.unregistered !== true
+  const currentFactoryChannel = channelState.data?.configuredChannel ?? project.factoryChannel ?? (factoryRelease.data?.status === 'resolved' ? factoryRelease.data.channel : undefined)
 
   return (
     <div data-slot="project-general" className="mx-auto flex w-full max-w-2xl flex-col gap-7">
@@ -109,14 +113,44 @@ export function ProjectGeneral({ capabilities }: { capabilities?: Partial<Pick<C
                   aria-label="Factory channel"
                   data-slot="factory-channel"
                   className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  value={project.factoryChannel ?? factoryRelease.data.channel}
-                  disabled={updateProject.isPending}
-                  onChange={(event) => updateProject.mutate({ id: project.id, factoryChannel: event.target.value as 'dev' | 'stable' })}
+                  value={currentFactoryChannel}
+                  disabled={capabilities?.localHandoff === false || channelState.isPending || channelState.isError || channelPreview.isPending || channelChange.isPending}
+                  onChange={(event) => {
+                    const channel = event.target.value as 'dev' | 'stable'
+                    if (channel === currentFactoryChannel) return
+                    channelPreview.mutate(channel)
+                  }}
                 >
                   <option value="stable">stable</option>
                   <option value="dev">dev</option>
                 </select>
-                <span className="text-[11px] text-soft-foreground">Current version: {factoryRelease.data.sourceSha.slice(0, 12)}</span>
+                <div className="text-[11px] text-soft-foreground">
+                  Configured: {channelState.data?.configuredChannel ?? 'unknown'} · configured SHA: {channelState.data?.configuredSha?.slice(0, 12) ?? 'unknown'} · effective SHA: {channelState.data?.effectiveSha?.slice(0, 12) ?? factoryRelease.data.sourceSha.slice(0, 12)}
+                </div>
+                {channelState.data ? <div className="text-[11px] text-soft-foreground">
+                  Last activation: {channelState.data.lastSuccessfulActivation ? `${channelState.data.lastSuccessfulActivation.channel} at ${channelState.data.lastSuccessfulActivation.at ?? 'unknown time'}` : 'none recorded'} · deployed: {channelState.data.deployed ? 'yes' : 'no'} · compatibility: {channelState.data.compatibility}
+                </div> : null}
+                {channelState.data?.installedPrecedence ? <div className="text-[11px] text-soft-foreground">
+                  Installed precedence — workflows: {channelState.data.installedPrecedence.workflows}; skills: {channelState.data.installedPrecedence.skills}.
+                </div> : null}
+                <span className="text-[11px] text-soft-foreground">Last reconcile: {channelState.data?.lastReconcile ? JSON.stringify(channelState.data.lastReconcile) : 'unknown'}</span>
+                {channelState.data?.shadowDiff ? <p role="status" className="text-[11px] text-warning">Drift detected: configured {channelState.data.shadowDiff.expectedSha.slice(0, 12)}, effective {channelState.data.shadowDiff.observedSha?.slice(0, 12) ?? 'unknown'}.</p> : null}
+                {channelState.data?.remediation.map((item) => <p key={item.finding} className="text-[11px] text-soft-foreground">{item.finding}: {item.action}</p>)}
+                {channelState.isError ? <p role="alert" className="text-[11px] text-danger">Channel state unavailable; changes are paused. {channelState.error.message}</p> : null}
+                {capabilities?.localHandoff === false ? <p className="text-[11px] text-soft-foreground">Channel changes require the local operator interface.</p> : null}
+                {channelPreview.data?.allowed ? <div className="flex flex-col items-start gap-2 rounded-md border border-border p-3" role="region" aria-label="Channel change preview">
+                  <strong className="text-xs">Preview {channelPreview.data.toChannel} · {channelPreview.data.targetSha.slice(0, 12)}</strong>
+                  <span className="text-[11px] text-soft-foreground">{channelPreview.data.activeTasks.length} active task(s) keep their saved release.</span>
+                  {channelPreview.data.activeTasks.map((task) => <span key={task.id} className="text-[11px] text-soft-foreground">Pinned task {task.title} ({task.id}): {task.channel ?? 'unknown channel'} · {task.sourceSha?.slice(0, 12) ?? 'unknown SHA'} · {task.status}</span>)}
+                  {channelPreview.data.warnings.map((warning) => <span key={warning} className="text-[11px] text-warning">{warning}</span>)}
+                  {channelPreview.data.overrideDiff.map((entry) => <span key={entry.path} className="text-[11px] text-soft-foreground">{entry.status}: {entry.path}</span>)}
+                  <Button type="button" size="sm" disabled={channelPreview.data.noChange || channelChange.isPending} onClick={() => { const preview = channelPreview.data; if (preview?.allowed) channelChange.mutate({ channel: preview.toChannel, previewToken: preview.token }, { onSuccess: () => channelPreview.reset() }) }}>
+                    {channelChange.isPending ? 'Recording request…' : 'Request channel change'}
+                  </Button>
+                </div> : null}
+                {channelPreview.isError ? <p role="alert" className="text-[11px] text-danger">Preview failed: {channelPreview.error.message}</p> : null}
+                {channelChange.data ? <p role="status" className="text-[11px] text-soft-foreground">Channel request recorded in {channelChange.data.audit.audit}.</p> : null}
+                {channelChange.isError ? <p role="alert" className="text-[11px] text-danger">Channel request failed: {channelChange.error.message}</p> : null}
               </div>
             ) : factoryRelease.data?.status === 'legacy' ? (
               <p className="text-[13px] text-soft-foreground">Channel releases are not configured for this Cezarium instance.</p>

@@ -59,6 +59,9 @@ import {
   getUiState,
   getWorkflows,
   getFactoryRelease,
+  getFactoryChannelState,
+  previewFactoryChannel,
+  requestFactoryChannelChange,
   getWorkspaceConfig,
   getWorkspaceUiState,
   getSkillsUpdate,
@@ -195,6 +198,9 @@ export const queryKeys = {
   },
   get factoryRelease() {
     return [queryScope(), 'factory-release'] as const
+  },
+  get factoryChannelState() {
+    return [queryScope(), 'factory-release', 'channel-state'] as const
   },
   get skills() {
     return [queryScope(), 'skills'] as const
@@ -1228,6 +1234,34 @@ export function useFactoryRelease() {
   return useQuery({
     queryKey: queryKeys.factoryRelease,
     queryFn: ({ signal }) => getFactoryRelease({ signal }),
+  })
+}
+
+export function useFactoryChannelState() {
+  return useQuery({
+    queryKey: queryKeys.factoryChannelState,
+    queryFn: ({ signal }) => getFactoryChannelState({ signal }),
+    staleTime: 10_000,
+  })
+}
+
+export function useFactoryChannelPreview() {
+  return useMutation({
+    mutationFn: (channel: 'dev' | 'stable') => previewFactoryChannel(channel),
+    retry: false,
+  })
+}
+
+export function useRequestFactoryChannelChange() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: requestFactoryChannelChange,
+    retry: false,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.factoryChannelState })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.factoryRelease })
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.projects })
+    },
   })
 }
 

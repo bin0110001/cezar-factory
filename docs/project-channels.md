@@ -37,3 +37,18 @@ existing promotion/activation flow; this module does not apply it.
 
 The diagnostic fields `activeTasks`, `overrides` (`path`, `digest`, `baseDigest`), `precedence` and `lastReconcile`
 are optional; absent ones are reported as unknown. Tests: `tests/test_factory_project_channels.py`.
+
+## Cezar settings API
+
+The project General settings page uses Cezar's native project routes rather than invoking a host CLI:
+
+| Route | Behavior |
+|---|---|
+| `GET /api/v1/p/:projectId/factory-release/channel-state` | Reports configured channel and pointer SHA separately from the resolver's effective SHA, activation receipts, active task pins, compatibility and installed-file drift. |
+| `POST /api/v1/p/:projectId/factory-release/channel-preview` | Local-operator-only read-only preview for `{ "channel": "dev" }` or `stable`; includes pinned tasks, warnings and override diff, and returns a token bound to those facts. |
+| `POST /api/v1/p/:projectId/factory-release/channel-change` | Local-operator-only, unavailable in single-project mode; accepts `{ "channel": "dev", "previewToken": "…" }`, rechecks the preview, appends an audit entry, and updates the Cezar project configuration. |
+
+The configuration update selects the release for newly created tasks. Existing tasks retain their saved SHA. The request does
+not mutate release pointers, symlinks, or deployed files. `lastReconcile` remains unknown when no resolver diagnostic is
+available; the UI labels configured/effective/deployed state separately so a channel selection is not presented as an
+activation. The Cezar service and UI tests live alongside `project-channels.ts` and `project-general.tsx`.

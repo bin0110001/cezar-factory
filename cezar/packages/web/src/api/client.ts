@@ -619,6 +619,63 @@ export type FactoryReleaseStatus =
   | { status: 'legacy'; projectId: string; channel: 'stable' }
   | { status: 'error'; projectId: string; error: string }
 
+export type FactoryChannelState = {
+  schemaVersion: 'factory-project-channel-state/v1'
+  projectId: string
+  configuredChannel: 'dev' | 'stable' | null
+  configuredSha: string | null
+  effectiveSha: string | null
+  lastSuccessfulActivation: { sha: string; channel: string; at: string | null } | null
+  deployed: boolean
+  compatibility: 'compatible' | 'incompatible' | 'unknown'
+  activeTasks: Array<{ id: string; title: string; status: string; channel?: 'dev' | 'stable'; sourceSha?: string }>
+  installedPrecedence: { workflows: string; skills: string; source: string } | null
+  shadowDiff: { expectedSha: string; observedSha?: string } | null
+  lastReconcile: unknown
+  findings: string[]
+  remediation: Array<{ finding: string; action: string }>
+  lastReceipt?: { state: string; sha: string; reasonCode?: string; message?: string } | null
+  stale: boolean
+  readAt: string
+}
+
+export type FactoryChannelPreview =
+  | { allowed: true; readOnly: true; projectId: string; fromChannel?: 'dev' | 'stable' | null; toChannel: 'dev' | 'stable'; targetSha: string; activeTasks: FactoryChannelState['activeTasks']; pinnedTasksUnaffected: true; noChange: boolean; overrideDiff: Array<{ path: string; status: 'unmodified' | 'preserved' | 'override-only' | 'conflict' }>; warnings: string[]; token: string }
+  | { allowed: false; reason: string; projectId?: string; channel?: 'dev' | 'stable'; sha?: string; detail?: string }
+
+export type FactoryChannelChangeResponse = {
+  status: 'requested'
+  projectId: string
+  channel: 'dev' | 'stable'
+  targetSha: string
+  audit: { status: 'requested'; audit: string; duplicate?: boolean; [key: string]: unknown }
+  applies: string
+}
+
+export async function getFactoryChannelState(opts?: ReadOptions): Promise<FactoryChannelState> {
+  return (await unwrap(
+    await cez.api.v1.p[':projectId']['factory-release']['channel-state'].$get(
+      { param: { projectId: queryScope() } }, init(opts),
+    ), '/factory-release/channel-state',
+  )) as unknown as FactoryChannelState
+}
+
+export async function previewFactoryChannel(channel: 'dev' | 'stable', opts?: ReadOptions): Promise<FactoryChannelPreview> {
+  return (await unwrap(
+    await cez.api.v1.p[':projectId']['factory-release']['channel-preview'].$post(
+      { param: { projectId: queryScope() }, json: { channel } }, init(opts),
+    ), '/factory-release/channel-preview',
+  )) as unknown as FactoryChannelPreview
+}
+
+export async function requestFactoryChannelChange(input: { channel: 'dev' | 'stable'; previewToken: string }): Promise<FactoryChannelChangeResponse> {
+  return (await unwrap(
+    await cez.api.v1.p[':projectId']['factory-release']['channel-change'].$post(
+      { param: { projectId: queryScope() }, json: input }, init(),
+    ), '/factory-release/channel-change',
+  )) as unknown as FactoryChannelChangeResponse
+}
+
 export async function getFactoryRelease(opts?: ReadOptions): Promise<FactoryReleaseStatus> {
   return (await unwrap(
     await cez.api.v1.p[':projectId']['factory-release'].$get(
