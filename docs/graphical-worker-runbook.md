@@ -26,6 +26,19 @@ rules; each item is a requirement to verify once the runtime merges, not a state
 - GPU rendering is a separate gate, marked supported only after a real Vulkan/OpenGL execution is proven on that
   hardware. Unproven hardware is an explicit coverage gap, not a pass.
 - GPU/display resources are exclusive and reserved through #112 leases; contention is serialized or rejected.
+- Gate: `CEZ_GRAPHICAL_GPU_PILOT=1` in addition to `CEZ_GRAPHICAL_SESSIONS=1` (trusted server environment only).
+  Implemented as pure decision logic in `cezar/packages/cezar/src/session-control/gpu-pilot.ts`; the worker adapter
+  injects the probe, the lease (#112) and the render proof, so the pilot adds no scheduler and no device access.
+- Outcomes: `supported` (real frame rendered on a pinned fingerprint), `unsupported` (software backend such as
+  llvmpipe, or driver/runtime not pinned), `unavailable` (no GPU, GPU lost, lease contended or stale), `failed`
+  (probe error, GPU reset, empty frame), `disabled`. Everything but `supported` is a coverage gap with
+  `rendered: false`; the lease is always released.
+- Fingerprint: device, driver, API and version, backend, container image and runtime, hashed to a stable
+  `gpu-<hex>` id that results and baselines (#110) carry. Pin allowed fingerprints per worker; unpinned
+  combinations stay unsupported.
+- Local pilot: set both flags, supply the pinned fingerprint list, and run
+  `npx vitest run src/session-control/gpu-pilot.test.ts` in `cezar/packages/cezar` for the contract; a real
+  render proof needs the worker adapter on the GPU host and is not claimed here.
 
 ## 5. Windows
 - Windows is **unsupported and unschedulable** for graphical sessions until a genuinely supported isolated

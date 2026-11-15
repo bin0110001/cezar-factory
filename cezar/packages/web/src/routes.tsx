@@ -85,6 +85,9 @@ const DecisionsRoute = lazy(() =>
 const BacklogRoute = lazy(() =>
   import('./routes/backlog').then((m) => ({ default: m.BacklogRoute })),
 )
+const RecoveryRoute = lazy(() =>
+  import('./routes/recovery').then((m) => ({ default: m.RecoveryRoute })),
+)
 const DependencyIntelligenceRoute = lazy(() =>
   import('./routes/dependency-intelligence').then((m) => ({ default: m.DependencyIntelligenceRoute })),
 )
@@ -315,6 +318,7 @@ const PAGE_TITLE_ROUTES = [
   { pattern: '/dependencies', pageLabel: 'Dependencies' },
   { pattern: '/backlog', pageLabel: 'Backlog' },
   { pattern: '/decisions', pageLabel: 'Decisions' },
+  { pattern: '/recovery', pageLabel: 'Recovery' },
   { pattern: '/automations/*', pageLabel: 'Automations' },
   { pattern: '/skills', pageLabel: 'Skills' },
   { pattern: '/inbox', pageLabel: 'Inbox' },
@@ -463,6 +467,7 @@ export const AppRoutes = memo(function AppRoutes() {
         />
         <Route path="dependencies" element={<Suspense fallback={<ScopeResolving />}><DependencyIntelligenceRoute /></Suspense>} />
         <Route path="verification" element={<Suspense fallback={<div className="p-6 text-sm text-muted-foreground" role="status">Loading verification history…</div>}><VerificationHistoryRoute /></Suspense>} />
+        <Route path="recovery" element={<Suspense fallback={<ScopeResolving />}><RecoveryRoute /></Suspense>} />
         <Route path="decisions" element={<Suspense fallback={<ScopeResolving />}><DecisionsRoute /></Suspense>} />
         <Route path="backlog" element={<Suspense fallback={<ScopeResolving />}><BacklogRoute /></Suspense>} />
         <Route
