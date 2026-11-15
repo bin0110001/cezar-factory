@@ -46,3 +46,12 @@ call `emitRoutingEvent` without importing the store.
 
 `runId`, `attemptId`, `eventId` and `traceId` are opaque strings owned by the run-ID contract (#126), ledger
 (#127) and trace context (#128). This store is a thin sink that #127 can replace; it is not a second ledger.
+
+## Task timeline (#315)
+
+`buildTaskTimeline(events, {runId?, limit?})` is a pure read-side projection over persisted events (no new
+storage). It re-redacts at the read boundary, orders strictly by persisted `sequence` (not timestamps or arrival
+order), drops duplicates, other runs and malformed events, groups entries by attempt, and keeps the last `limit`
+entries (default 500, `truncated` flags it). `explainDecision` reports the latest routed/delayed decision with its
+recorded reason, tier and quota snapshot; when nothing was recorded it says `unknown` or `not recorded` rather
+than inferring a reason.

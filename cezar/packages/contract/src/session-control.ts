@@ -129,3 +129,62 @@ export const sessionControlResponseSchema = z.discriminatedUnion('ok', [
   }
 });
 export type SessionControlResponse = z.infer<typeof sessionControlResponseSchema>;
+
+const traceIdSchema = z.string().min(1).max(128);
+
+/** Metadata-only action parameters: never text input, selectors, names, URL paths/queries, key values or stop reasons. */
+export const sessionControlTraceParamsSchema = z.object({
+  format: z.enum(['png', 'jpeg']).optional(),
+  fullPage: z.boolean().optional(),
+  maxNodes: z.number().int().min(1).max(SESSION_CONTROL_LIMITS.maxSnapshotNodes).optional(),
+  origin: z.string().max(256).optional(),
+  targetKind: z.enum(['selector', 'role', 'text', 'testId']).optional(),
+  textLength: z.number().int().min(0).max(SESSION_CONTROL_LIMITS.maxTextInput).optional(),
+  keyClass: z.enum(['character', 'named']).optional(),
+  deltaX: z.number().int().min(-10_000).max(10_000).optional(),
+  deltaY: z.number().int().min(-10_000).max(10_000).optional(),
+  condition: z.enum(['domReady', 'targetVisible', 'url']).optional(),
+  timeoutMs: z.number().int().min(0).max(SESSION_CONTROL_LIMITS.maxWaitMs).optional(),
+}).strict();
+export type SessionControlTraceParams = z.infer<typeof sessionControlTraceParamsSchema>;
+
+export const sessionControlTraceEventSchema = z.object({
+  schemaVersion: z.literal(SESSION_CONTROL_SCHEMA_VERSION),
+  runId: traceIdSchema,
+  attemptId: traceIdSchema,
+  sessionId: traceIdSchema,
+  scenarioId: traceIdSchema.optional(),
+  requestId: traceIdSchema,
+  timestamp: z.string().datetime(),
+  action: z.enum(['metadata', 'screenshot', 'accessibilitySnapshot', 'navigate', 'click', 'type', 'key', 'scroll', 'waitForCondition', 'requestStop']),
+  params: sessionControlTraceParamsSchema,
+  outcome: z.enum(['completed', 'failed', 'denied']),
+  errorCode: sessionControlErrorCodeSchema.optional(),
+  /** Opaque reference to canonical evidence (#220/#330); the event never embeds the content. */
+  evidenceRef: z.string().min(1).max(1_024).optional(),
+}).strict();
+export type SessionControlTraceEvent = z.infer<typeof sessionControlTraceEventSchema>;
+
+function safeOrigin(value: string): string | undefined {
+  // No `URL` global in this package's lib (it is runtime-neutral), so match the origin directly.
+  const match = /^(https?):\/\/([^\s/?#@]+)(?:[/?#]|$)/i.exec(value);
+  if (!match) return undefined;
+  return `${match[1]!.toLowerCase()}://${match[2]!.toLowerCase()}`.slice(0, 256);
+}
+
+/** Reduces an action to bounded, non-sensitive trace parameters. */
+export function sanitizeSessionControlActionForTrace(action: SessionControlAction): SessionControlTraceParams {
+  switch (action.type) {
+    case 'metadata':
+    case 'requestStop':
+      return {};
+    case 'screenshot': return { format: action.format, fullPage: action.fullPage };
+    case 'accessibilitySnapshot': return { maxNodes: action.maxNodes };
+    case 'navigate': { const origin = safeOrigin(action.url); return { ...(origin ? { origin } : {}), timeoutMs: action.timeoutMs }; }
+    case 'click': return { targetKind: action.target.kind, timeoutMs: action.timeoutMs };
+    case 'type': return { targetKind: action.target.kind, textLength: action.text.length, timeoutMs: action.timeoutMs };
+    case 'key': return { keyClass: action.key.length === 1 ? 'character' : 'named' };
+    case 'scroll': return { deltaX: action.deltaX, deltaY: action.deltaY };
+    case 'waitForCondition': return { condition: action.condition, ...(action.target ? { targetKind: action.target.kind } : {}), timeoutMs: action.timeoutMs };
+  }
+}

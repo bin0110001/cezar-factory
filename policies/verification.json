@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "description": "Verification workflow policy (workflows/verify.yaml). Mandatory checks run on every verification regardless of what the change touches; they are read from this file, never from agent input. Each id must exist in the project's .ai/factory/test-ownership.json.",
+  "mandatoryChecks": ["automation-catalog"],
+  "checkTimeoutSeconds": 1200,
+  "ledger": ".factory/ledger/verification-verdicts.jsonl"
+}
