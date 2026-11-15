@@ -76,9 +76,7 @@ worker and run views. Pages are cursor-paginated (max 100), errors are redacted
 of credentials and host paths and truncated, and `explainScheduling` is a
 side-effect-free dry run that lists why each worker is ineligible.
 
-Not yet delivered (needs the open #70/#108/#127/#128/#135 services): HTTP
-routes and UI, operator mutations with RBAC/audit, per-shard verification
-timelines, trace correlation, and graphical session preview.
+Still open (needs the open #70/#108/#127/#128/#135 services): HTTP routes and UI, trace correlation, and graphical session preview.
 
 ## Scenario operations and operator actions (#219, second slice)
 
@@ -97,8 +95,7 @@ different request is rejected), retry eligibility (infra failure or canceled onl
 and records an audit entry for every outcome. Mutations are delegated to the
 existing controller API through the `apply` callback.
 
-Still open: HTTP routes/UI, graphical session preview, artifact browsing and
-last-successful-run/performance baselines (blocked on #108/#127/#128/#135).
+Still open: HTTP routes/UI and graphical session preview (blocked on #108/#127/#128/#135).
 
 ## Run verification view (#219, third slice)
 
