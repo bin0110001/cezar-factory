@@ -36,6 +36,10 @@
 
 - A Cezar API read timeout during promotion activation (`Cezar API GET ... failed: timed out`) is now a transient error: the candidate is recorded as interrupted and retried within the existing budget instead of failing, opening an issue and feeding the circuit breaker.
 
+## [0.3.125] - 2026-11-15
+
+- Visual evidence verification API, authorized gallery, fixtures and operator docs (#354).
+
 ## [0.3.121] - 2026-11-14
 
 - A generic multi-worker scenario core (#217). `scripts/scenario/scenario_orchestrator.py` validates a versioned manifest of named roles, places them deterministically on workers (distinct physical hosts never downgraded, graphical controls kept as requirements), reserves all workers or none through a TTL and fencing lease store, and runs a prepare-to-terminal coordinator with role barriers, a fault policy (evidence collected, every role torn down, no orphan leases, retry only for safe infra faults) and replay and stale-fence rejection. Tested with a non-Godot echo fixture; see `docs/scenario-orchestration.md`. The authenticated transport, the #112 store adapter and the Godot pilot are not part of this change.
