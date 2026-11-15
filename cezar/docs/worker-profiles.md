@@ -76,8 +76,7 @@ worker and run views. Pages are cursor-paginated (max 100), errors are redacted
 of credentials and host paths and truncated, and `explainScheduling` is a
 side-effect-free dry run that lists why each worker is ineligible.
 
-Still open (needs the open #70/#108/#127/#128/#135 services): HTTP routes and UI, per-shard verification timelines, trace correlation, and
-graphical session preview.
+Still open (needs the open #70/#108/#127/#128/#135 services): HTTP routes and UI, trace correlation, and graphical session preview.
 
 ## Scenario operations and operator actions (#219, second slice)
 
@@ -96,5 +95,17 @@ different request is rejected), retry eligibility (infra failure or canceled onl
 and records an audit entry for every outcome. Mutations are delegated to the
 existing controller API through the `apply` callback.
 
-Still open: HTTP routes/UI, graphical session preview, artifact browsing and
-last-successful-run/performance baselines (blocked on #108/#127/#128/#135).
+Still open: HTTP routes/UI and graphical session preview (blocked on #108/#127/#128/#135).
+
+## Run verification view (#219, third slice)
+
+`server/verification/run-verification-view.ts` composes the scenario projection into
+the existing run page model: a start-ordered per-shard/role timeline (a running
+partition on a stale/offline worker is flagged as disconnected, never healthy),
+abstract topology requirements with a host-count check (`unknown` when not
+determinable), failure class (infra/assertion/both), a performance baseline from
+passing runs only (`regression` stays `unknown` below 3 samples), the last
+successful run, permission-scoped artifact links (max 50 visible, hidden count
+reported, no media bytes) and trace ids marked `authoritative: false`.
+
+Still open: HTTP routes/UI, graphical session preview and takeover grants.
