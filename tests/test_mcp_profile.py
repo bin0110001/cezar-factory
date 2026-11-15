@@ -100,7 +100,8 @@ class LifecycleTests(unittest.TestCase):
         br = Broker()
         out = mp.prepare(BASE, {}, "claude", "demo", "run1", self.rt, br, lister_ok)
         cfg = Path(out["config"])
-        self.assertEqual(stat.S_IMODE(cfg.stat().st_mode), 0o600)
+        if os.name != "nt":  # POSIX mode bits are not represented by Windows' stat result.
+            self.assertEqual(stat.S_IMODE(cfg.stat().st_mode), 0o600)
         self.assertNotIn("secret-hindsight", cfg.read_text())
         self.assertEqual(out["env"], {"CEZ_MCP_TOKEN_HINDSIGHT": "secret-hindsight"})
         mp.cleanup(self.rt, br)

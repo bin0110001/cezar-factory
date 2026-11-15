@@ -167,8 +167,11 @@ if (-not $selection.removable.Count) {
     exit 0
 }
 
-$status = (Invoke-Git $project @('status', '--porcelain', '--untracked-files=all')).Output
-if ($status) { throw "Target '$ProjectId' is dirty; refusing migration." }
+$statusOutput = @(& git -C $project status --porcelain --untracked-files=all 2>$null)
+$statusCode = $LASTEXITCODE
+if ($statusCode -ne 0) { throw "Could not inspect checkout status for target '$ProjectId' (git exited $statusCode)." }
+$status = ($statusOutput -join "`n").Trim()
+if ($status) { throw "Target '$ProjectId' is dirty; refusing migration: $status" }
 $null = Invoke-Git $project @('fetch', 'origin', 'dev')
 $baseSha = (Invoke-Git $project @('rev-parse', 'origin/dev')).Output.Trim()
 if ($baseSha -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { throw "Could not resolve origin/dev for target '$ProjectId'." }

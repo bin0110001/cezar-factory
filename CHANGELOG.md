@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Keep the shared-migration dirty-check based on Git's porcelain output, so line-ending warnings on stderr do not block a clean target; actual status entries and Git failures still stop the migration.
+- Keep the private MCP-config permission assertion POSIX-specific; Windows does not expose the same mode bits through `stat`.
+
+- Project-scoped documentation search/read adapter for agents (#177). `scripts/docs/search.py` is a backend-neutral `docs_search`/`docs_read` layer with per-identity project/repo/ref authorisation before retrieval, bounded anchored snippets carrying source SHA, freshness and an evidence link, timeout/retry/cache, checked-in-doc fallback, untrusted-text neutralisation, licensed-path exclusion and a secret-free audit with latency/size metrics. Contract and agent guidance in `integrations/docs-mcp/README.md`. Obot upstream registration and skill publication wait on the #175/#176 backend decision.
 ## [0.3.126] - 2026-11-15
 
 - Central MCP profile injection for managed agents (#167): `scripts/mcp/profile.py` resolves a versioned, runner-neutral profile (`config/mcp-profiles.json`) through global, project-type, project and task overlays that may only narrow tools, runners and projects (widening, unknown fields, new servers and embedded credentials are rejected); adapters for Claude (`.mcp.json`) and Codex (`config.toml`) emit only environment-variable references, never secrets; `prepare` issues run-bound identities, writes 0600 config outside Git, and preflights gateway reachability, identity and required tools so a failure is a setup error before any agent retry loop (optional servers only warn); retries keep identity and revision; `cleanup` (cancel or completion) revokes identities and removes files, keeping state if revocation fails. Documented in `docs/mcp-profiles.md`; mock tests in `tests/test_mcp_profile.py`. Live gateway smoke test and wiring into the Cezar dispatch path depend on #165/#166 and remain follow-up.
