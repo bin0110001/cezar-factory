@@ -48,6 +48,10 @@ source: skills/factory-fix/SKILL.md
 ### 6. Return to Review
 
 - Update the PR with the fixes.
+- This handoff returns the PR for review; it does not finish the fix or transfer PR
+  ownership. Continue through the configured merge path and verify GitHub reports the
+  PR as `MERGED` before reporting the issue complete. A review approval or queued
+  auto-merge with the PR still open is not completion.
 - Keep the PR mergeable: it is yours until it merges. If the PR is `CONFLICTING`, or `dev`
   has moved since your last push, fetch the base and merge it into the branch
   (`git fetch origin dev`, `git merge origin/dev`; do not rebase a pushed branch), resolve
