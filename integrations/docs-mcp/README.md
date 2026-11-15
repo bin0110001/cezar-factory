@@ -13,16 +13,24 @@ checked-in `docs/` of each repo is the backend, and it stays the fallback.
 | Tool | Arguments | Returns |
 | --- | --- | --- |
 | `docs_search` | project, repo, ref, query, limit (max 5) | anchored snippets (max 600 chars) with path, line, evidence link `project/repo@sha:path#Lline` |
+| `docs_workspace_search` | scopes (1–8 explicit project/repo/ref triples), query (max 500 chars), limit (max 10) | bounded results with per-result project, repo, ref, SHA, freshness, and evidence; each scope carries its backend status |
 | `docs_read` | project, repo, ref, path, max_chars (max 8000) | one page, truncated and flagged |
 
-Every response carries `sha`, `freshness` (`fresh`, `stale`, `index-absent`),
-`status` (`ok`, `fallback`, `stale`, `index-absent`, `unavailable`, `excluded`)
-and `untrusted: true`.
+Single-source responses carry `sha` and `freshness` (`fresh`, `stale`,
+`index-absent`). Workspace search carries those fields on each source and
+result, plus an aggregate `status` (`ok`, `fallback`, `stale`, `index-absent`,
+`unavailable`, or `partial`). Every response is marked `untrusted: true`.
 
 ## Guarantees
 
 - Authorisation (identity -> project/repo/ref grants) runs before any backend is
   contacted; a denial reveals nothing about the target.
+- Workspace search authorizes every requested scope before touching a backend.
+  If one scope is denied, the whole request fails with the same generic denial;
+  authorized scopes never leak partial snippets beside that denial. The caller
+  must name each project, repository, and ref explicitly: the adapter does not
+  discover or widen workspace grants. Results are ordered by project/repo/ref,
+  and the total result budget is divided deterministically across scopes.
 - Bounded results, per-call timeout, one retry, 60 s cache; if the service is
   down the result is `unavailable`, never an exception, and code work continues.
 - Retrieved text is fenced as untrusted: instruction-like phrases and
