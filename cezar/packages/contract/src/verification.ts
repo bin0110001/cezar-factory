@@ -97,6 +97,8 @@ export const verificationVisualEvidenceSchema = z.object({
   verificationId: z.string().min(1).max(128),
   attempt: z.number().int().positive(),
   role: z.string().min(1).max(128),
+  /** Authoritative synchronization barrier/checkpoint id; correlation never relies on host wall clocks. */
+  checkpointId: z.string().min(1).max(128).optional(),
   sessionId: z.string().min(1).max(128),
   testId: z.string().min(1).max(128),
   commitSha: z.string().regex(/^[a-f0-9]{40,64}$/i),
@@ -165,6 +167,78 @@ export const verificationVisualComparisonSchema = z.object({
 }).strict();
 export type VerificationVisualComparison = z.infer<typeof verificationVisualComparisonSchema>;
 export type VerificationVisualPolicy = z.infer<typeof verificationVisualPolicySchema>;
+
+export type VerificationVisualEvidence = z.infer<typeof verificationVisualEvidenceSchema>;
+export type VerificationRoleStatus = 'passed' | 'failed' | 'incomplete' | 'infrastructure-error';
+export interface VerificationRoleExpectation { role: string; checkpoints: string[] }
+export interface VerificationRoleOutcome {
+  role: string;
+  status: VerificationRoleStatus;
+  /** Per checkpoint: the accepted evidence, or null when none was accepted. */
+  checkpoints: Record<string, { sha256: string; workerFingerprint: string } | null>;
+  /** Artifact hashes rejected as stale, cross-session, unknown, or duplicate. */
+  rejected: Array<{ sha256: string; reason: string }>;
+}
+export interface VerificationRoleAggregate {
+  status: 'passed' | 'failed' | 'incomplete' | 'infrastructure-error';
+  roles: VerificationRoleOutcome[];
+}
+
+/**
+ * Correlates multi-role visual evidence by role + checkpoint id (not timestamps) for one verification
+ * attempt and session. A role passes only when each expected checkpoint has exactly one accepted artifact;
+ * a missing/disconnected role makes the aggregate incomplete, a failed role fails it, and a successful
+ * sibling never masks either. Evidence from another verification, attempt or session is rejected.
+ */
+export function aggregateRoleEvidence(input: {
+  verificationId: string;
+  attempt: number;
+  sessionId: string;
+  expected: VerificationRoleExpectation[];
+  evidence: VerificationVisualEvidence[];
+  /** Roles reported failed by the check itself, and roles whose worker disconnected. */
+  failedRoles?: string[];
+  disconnectedRoles?: string[];
+}): VerificationRoleAggregate {
+  const failed = new Set(input.failedRoles ?? []);
+  const disconnected = new Set(input.disconnectedRoles ?? []);
+  const rejectedByRole = new Map<string, VerificationRoleOutcome['rejected']>();
+  const accepted = new Map<string, VerificationVisualEvidence>();
+  const reject = (role: string, sha256: string, reason: string) => {
+    const list = rejectedByRole.get(role) ?? [];
+    list.push({ sha256, reason });
+    rejectedByRole.set(role, list);
+  };
+  for (const item of input.evidence) {
+    if (item.verificationId !== input.verificationId || item.attempt !== input.attempt) { reject(item.role, item.contentSha256, 'stale-attempt'); continue; }
+    if (item.sessionId !== input.sessionId) { reject(item.role, item.contentSha256, 'stale-session'); continue; }
+    const expectation = input.expected.find((entry) => entry.role === item.role);
+    if (!expectation || !item.checkpointId || !expectation.checkpoints.includes(item.checkpointId)) { reject(item.role, item.contentSha256, 'unknown-role-or-checkpoint'); continue; }
+    const key = `${item.role}\u0000${item.checkpointId}`;
+    const existing = accepted.get(key);
+    if (existing) { reject(item.role, item.contentSha256, existing.contentSha256 === item.contentSha256 ? 'duplicate' : 'conflicting-duplicate'); continue; }
+    accepted.set(key, item);
+  }
+  const roles = input.expected.map((expectation): VerificationRoleOutcome => {
+    const checkpoints: VerificationRoleOutcome['checkpoints'] = {};
+    for (const checkpoint of expectation.checkpoints) {
+      const found = accepted.get(`${expectation.role}\u0000${checkpoint}`);
+      checkpoints[checkpoint] = found ? { sha256: found.contentSha256, workerFingerprint: found.workerFingerprint } : null;
+    }
+    const complete = expectation.checkpoints.length > 0 && Object.values(checkpoints).every((entry) => entry !== null);
+    const rejected = rejectedByRole.get(expectation.role) ?? [];
+    const status: VerificationRoleStatus = failed.has(expectation.role) ? 'failed'
+      : disconnected.has(expectation.role) ? 'infrastructure-error'
+        : complete && !rejected.some((entry) => entry.reason === 'conflicting-duplicate') ? 'passed' : 'incomplete';
+    return { role: expectation.role, status, checkpoints, rejected };
+  });
+  const statuses = roles.map((role) => role.status);
+  const status = roles.length === 0 ? 'incomplete'
+    : statuses.includes('failed') ? 'failed'
+      : statuses.includes('infrastructure-error') ? 'infrastructure-error'
+        : statuses.includes('incomplete') ? 'incomplete' : 'passed';
+  return { status, roles };
+}
 
 export const verificationCheckRunSchema = z.object({
   checkId: z.string().min(1).max(128),

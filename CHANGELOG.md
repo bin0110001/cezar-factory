@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Visual evidence correlates multi-role captures by checkpoint and reports aggregate completeness (#353).
+
 - Session-control action trace events (#349). Every graphical session-control request now emits a strict, versioned `SessionControlTraceEvent` bound to the fenced run/attempt/session (and optional scenario) identity, with metadata-only sanitized parameters and an opaque `evidenceRef` for screenshots. Typed text, selectors, URL paths, key values and stop reasons are never recorded. Redaction, attribution, ordering and stale-lease tests added; runbook section 11 documents the feature flag and operator notes.
 
 - Desktop adapter for scoped display observation and control (issue #348). `cezar/packages/cezar/src/session-control/desktop-adapter.ts` serves one session's own display through an injected AT-SPI/Selkies backend. Screenshot, input, clipboard, file transfer and recording are separate opt-in grants, a session is read-only by default, the pixel fallback needs both screenshot and input, and human takeover suspends agent input until a fresh authorization resumes it. It enforces rate, lifetime and capture limits, a non-root backend on the session display, and idempotent cleanup on stop, cancel, disconnect or lease loss. Project-native actions plug in through a generic hook; `godot-pilot.ts` registers `create_room` over the Godot harness as the pilot, and the core has no Godot actions. Tests cover a non-Godot fixture, read-only denial, takeover, cleanup and redaction. See `cezar/docs/desktop-adapter.md`.
