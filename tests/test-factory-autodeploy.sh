@@ -96,8 +96,8 @@ case "$1" in
         [[ "$2" == -c ]] || exit 92
         command="$3"
         if [[ "$command" == *"set -- VERSION workflows"* ]]; then
-          if [[ "${FAKE_CONTAINER_STALE:-0}" == 1 ]]; then echo stale-content-digest; exit 0; fi
-          exec sh -c "$command" sh "$FAKE_FACTORY_DIR"
+          if [[ "${FAKE_CONTAINER_STALE:-0}" == 1 ]]; then echo "deadbeef  VERSION"; exit 0; fi
+          exec sh -c "$command" sh "${FAKE_CONTAINER_DIR:-$FAKE_FACTORY_DIR}"
         fi
         if [[ "$command" == *"tr -d"*"VERSION"* ]]; then
           tr -d '\r\n' < "$FAKE_FACTORY_DIR/VERSION"
@@ -275,6 +275,21 @@ run_auto 22
 [[ "$(wc -l < "$FAKE_SYNC_LOG")" == "$sync_count" ]] || fail 'container drift still triggered sync'
 [[ "$(sha256sum "$TMP/state/last-success.json" | cut -d' ' -f1)" == "$last_success" ]] || fail 'parity failure replaced last success'
 unset FAKE_CONTAINER_STALE
+
+# Generated artifacts differing only in the container runtime tree must not block;
+# a real file difference blocks and the receipt names the differing path.
+rm -rf "$TMP/container-copy"; mkdir "$TMP/container-copy"
+git -C "$TMP/checkout" archive HEAD | tar -x -C "$TMP/container-copy"
+mkdir -p "$TMP/container-copy/scripts/__pycache__"
+printf 'bytecode' > "$TMP/container-copy/scripts/__pycache__/x.cpython-312.pyc"
+printf 'bytecode' > "$TMP/container-copy/scripts/stray.pyc"
+export FAKE_CONTAINER_DIR="$TMP/container-copy"
+run_auto 0
+printf 'drifted\n' >> "$TMP/container-copy/VERSION.drift"; rm "$TMP/container-copy/VERSION.drift"
+echo '# drift' >> "$TMP/container-copy/scripts/deploy/factory-autodeploy.sh"
+run_auto 22
+grep -q 'differing files: .*scripts/deploy/factory-autodeploy.sh' "$TMP/state/last-attempt.json" || fail 'receipt did not name the differing file'
+unset FAKE_CONTAINER_DIR
 
 # A legacy checkout may have exactly the expected generated token untracked.
 # Verify it and advance so the newer ignore rule can take effect.

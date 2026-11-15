@@ -81,16 +81,23 @@ on_exit() {
 }
 trap on_exit EXIT
 
-content_digest() {
-  local root="$1"
-  local paths=(VERSION workflows skills scripts routing automations)
-  [[ -f "$root/config/factory-projects.json" ]] && paths+=(config/factory-projects.json)
-  ( cd "$root"
-    local digest
-    digest="$(find "${paths[@]}" -type f -print0 |
-      LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
-    printf '%s' "${digest%% *}"
-  )
+# One manifest implementation runs on both sides (host and container), so the
+# digested set and its exclusions cannot drift. Generated artifacts (__pycache__,
+# *.pyc) are excluded; every other file is hashed, so a real difference blocks.
+MANIFEST_SCRIPT='
+  cd "$1" || exit 1
+  set -- VERSION workflows skills scripts routing automations
+  [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
+  find "$@" -type d -name __pycache__ -prune -o -type f ! -name "*.pyc" -print0 |
+    LC_ALL=C sort -z | xargs -0 sha256sum
+'
+content_manifest() { sh -c "$MANIFEST_SCRIPT" sh "$1"; }
+manifest_digest() { local d; d="$(printf '%s\n' "$1" | sha256sum)"; printf '%s' "${d%% *}"; }
+# Path-level diff of two manifests: paths whose hash differs or exists on one side only.
+manifest_diff() {
+  diff <(printf '%s\n' "$1" | awk '{h=$1; $1=""; print substr($0,2) "\t" h}' | LC_ALL=C sort) \
+       <(printf '%s\n' "$2" | awk '{h=$1; $1=""; print substr($0,2) "\t" h}' | LC_ALL=C sort) |
+    awk -F'\t' '/^[<>]/ {sub(/^[<>] /,"",$1); print $1}' | LC_ALL=C sort -u | head -n 50 | paste -sd, -
 }
 
 cd "$FACTORY_DIR"
@@ -140,7 +147,8 @@ registry_path="$FACTORY_DIR/config/factory-projects.json"
 if [[ -f "$registry_path" ]]; then
   registry_digest="$(sha256sum "$registry_path" | awk '{print $1}')"
 fi
-host_content_digest="$(content_digest "$FACTORY_DIR")"
+host_manifest="$(content_manifest "$FACTORY_DIR")"
+host_content_digest="$(manifest_digest "$host_manifest")"
 
 # The read-only source mount has its own persistent writable .git volume for
 # Cezar task worktrees. Fast-forward only the root stable index/ref to the
@@ -167,17 +175,15 @@ fi
 
 container_sha="$(podman exec "$CONTAINER" git -C "$RUNTIME_ROOT" rev-parse HEAD)"
 container_version="$(podman exec "$CONTAINER" sh -c "tr -d '\r\\n' < '$RUNTIME_ROOT/VERSION'")"
-container_content_digest="$(podman exec "$CONTAINER" sh -c '
-  cd "$1"
-  set -- VERSION workflows skills scripts routing automations
-  [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
-  digest="$(find "$@" -type f -print0 |
-    LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
-  printf '%s' "${digest%% *}"
-' sh "$RUNTIME_ROOT")"
+container_manifest="$(podman exec "$CONTAINER" sh -c "$MANIFEST_SCRIPT" sh "$RUNTIME_ROOT")"
+container_content_digest="$(manifest_digest "$container_manifest")"
 
 if [[ "$source_sha" != "$container_sha" || "$host_version" != "$container_version" || "$host_content_digest" != "$container_content_digest" ]]; then
   failure="container parity mismatch: source $source_sha/$container_sha; version $host_version/$container_version; content $host_content_digest/$container_content_digest"
+  if [[ "$host_content_digest" != "$container_content_digest" ]]; then
+    differing_files="$(manifest_diff "$host_manifest" "$container_manifest" || true)"
+    failure+="; differing files: ${differing_files:-unknown}"
+  fi
   log "BLOCKED: $failure" >&2
   exit 22
 fi

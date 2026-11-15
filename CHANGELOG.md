@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Autodeploy container parity (#561): host and container content digests now share one manifest implementation that excludes generated `__pycache__`/`*.pyc` files, and a content mismatch names the differing paths in the failure and `last-attempt.json` receipt. SHA, VERSION and real file differences still block.
+
 - Known focused validation failures can be reported as warnings when their ownership-map entry links an open issue in the same project repository. The receipt retains the issue link, and the review gate accepts only current-head changed-stage warnings backed by a live issue; unlinked, closed-issue, full-suite, and verify failures still block.
 
 - Bounded triage/repair loop (#105): `scripts/repair-loop-step.ps1` classifies failing impacted checks (code defect, flaky, infrastructure, untested), routes them per `policies/retry.yaml`, enforces attempt/repeat/safety/security bounds deterministically, records attempts and budget in a ledger and hands persistent failures to the audit path without creating issues or waivers. Workflow `factory-verification-repair`, docs and tests added.
