@@ -117,12 +117,79 @@
                 "minFiles": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "minElapsedHours": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxDelayHours": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "cooldownMinutes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "quietHours": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 23
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 23
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^x-": {}
+                  }
+                },
+                "combinator": {
+                  "enum": [
+                    "any",
+                    "all"
+                  ]
                 }
               },
               "additionalProperties": false,
               "patternProperties": {
                 "^x-": {}
               }
+            },
+            "missedRun": {
+              "enum": [
+                "skip",
+                "coalesce"
+              ]
+            },
+            "missedGraceMinutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "priority": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "schedule",
+                  "change",
+                  "manual"
+                ]
+              },
+              "uniqueItems": true
             }
           },
           "additionalProperties": false,
@@ -360,12 +427,79 @@
                   "minFiles": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "paths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "minElapsedHours": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxDelayHours": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "cooldownMinutes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "quietHours": {
+                    "type": "object",
+                    "properties": {
+                      "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "end": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "patternProperties": {
+                      "^x-": {}
+                    }
+                  },
+                  "combinator": {
+                    "enum": [
+                      "any",
+                      "all"
+                    ]
                   }
                 },
                 "additionalProperties": false,
                 "patternProperties": {
                   "^x-": {}
                 }
+              },
+              "missedRun": {
+                "enum": [
+                  "skip",
+                  "coalesce"
+                ]
+              },
+              "missedGraceMinutes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "priority": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "schedule",
+                    "change",
+                    "manual"
+                  ]
+                },
+                "uniqueItems": true
               }
             },
             "additionalProperties": false,

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Dual-mode release triggers and admission (#591): DST-safe calendar schedules with missed-run coalesce/skip, dev-change rules (thresholds, paths, cooldown, quiet hours, max delay, any/all), source priority, idempotent submission to the candidate store, admission explanations and backoff (`scripts/release/release_triggers.py`, `docs/release-triggers.md`). Config contract gains the matching optional trigger fields. Library only; no scheduler service.
+
 - Durable single-active release candidate store (#590): SQLite-backed candidate, revision, evidence, pending-request and audit tables where a partial unique index enforces one nonterminal candidate per project, with fencing tokens, row versions, immutable revision-bound evidence and idempotent requests/receipts (`scripts/release/release_candidate_store.py`, `docs/release-candidate-store.md`). Library only; the live promoter does not use it yet.
 
 - Release pipeline configuration contract (#589): versioned `release-pipeline/v1` schema with inherited defaults, per-project overrides and presets, validation with explained paths, effective-config hashing bound to candidates, agent-weakening refusal, migration/readback, examples and docs (`scripts/release/release_pipeline_config.py`, `docs/release-pipeline-config.md`). `config/release-pipeline*.json` is now a protected policy asset.
