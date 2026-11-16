@@ -113,7 +113,7 @@ class ProtectedEvidenceManifest(unittest.TestCase):
 
     def test_trust_boundary_doc_names_every_owner(self):
         text = (ROOT / "docs" / "trust-boundaries.md").read_text()
-        for needle in ("#104", "#113", "#101", "#166", "Residual risks"):
+        for needle in ("#104", "#113", "#101", "#166", "Residual risks", "Inputs and attacker capabilities", "Negative-test scenarios"):
             self.assertIn(needle, text)
 
 
