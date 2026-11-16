@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.142] - 2026-11-16
+
+- Durable single-active release candidate state machine with ownership lease and fencing tokens (#590): `scripts/release/factory_candidate_state.py`, `schemas/factory-release/candidate.schema.json`, `docs/candidate-state-machine.md`. One nonterminal candidate per project enforced by a unique index; stale workers and obsolete-revision results are rejected. Additive; not yet wired into promotion.
+
 - Threat model and control ownership map (#578): `docs/trust-boundaries.md` now lists each input with its owner or gap, attacker capabilities and the negative-test scenarios; the docs test checks the new sections.
 - Isolated scanner worker execution profile (#605): allowlist-only env, read-only source/artifact mounts, no egress outside the advisory DB update phase, planted-secret redaction, fail-closed on Windows or without Podman. `server/verification/scanner-worker-profile.ts`, docs in `docs/scanner-worker-profile.md`.
 
