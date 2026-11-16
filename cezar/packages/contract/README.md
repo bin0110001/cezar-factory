@@ -27,6 +27,11 @@ Three consumers, one definition:
 
 ## Verification finding identity
 
+`GET /api/v1/workspace/manifest` returns the explicitly registered project inventory without
+local filesystem paths or file contents. Its contract is `workspaceManifestResponseSchema` in
+`src/projects.ts`; GitHub identity is normalized from the server's sanitized project URL, while
+visibility remains `unknown` unless a future trusted local source can establish it.
+
 Verification check results may include `findingFingerprint`, `findingStrategyId`, and
 `findingStrategyVersion`. The strategy fields are optional for older stored results. New
 fingerprinting code records all three fields; a strategy version change must include explicit

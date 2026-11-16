@@ -12,7 +12,7 @@ import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, verificationRunSchema } from '@open-mercato/cezar-contract';
+import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, verificationRunSchema, workspaceManifestResponseSchema } from '@open-mercato/cezar-contract';
 import { RunStore } from '../runs/store.ts';
 import type { RunManager } from '../workflows/run.ts';
 import {
@@ -58,6 +58,7 @@ interface HealthBody {
     singleProject: boolean;
     automations: boolean;
     tokenMetrics: boolean;
+    graphicalSessions: boolean;
   };
   projects: { id: string; name: string }[];
   bootProject: string;
@@ -239,6 +240,22 @@ describe('workspace projects API', () => {
       const byRoot = new Map(body.projects.map((p) => [p.root, p]));
       expect(byRoot.get(realpathSync(otherRoot))?.maxParallel).toBe(3);
       expect(byRoot.get(realpathSync(repoRoot))?.maxParallel).toBeUndefined();
+    });
+  });
+
+  describe('GET /api/v1/workspace/manifest', () => {
+    it('lists registered projects only and never serializes their roots', async () => {
+      const first = await registerProject(repoRoot);
+      const second = await registerProject(otherRoot);
+      const response = await apiRequest(makeApp(), '/api/v1/workspace/manifest');
+      expect(response.status).toBe(200);
+      const body = workspaceManifestResponseSchema.parse(await response.json());
+      expect(body.schemaVersion).toBe(1);
+      expect(body.revision).toMatch(/^[a-f0-9]{64}$/);
+      expect(body.repositories.map((repo) => repo.projectId)).toEqual([first.id, second.id].sort());
+      expect(body.repositories.every((repo) => repo.repository === null && repo.owner === null && repo.sha === null)).toBe(true);
+      expect(JSON.stringify(body)).not.toContain(repoRoot);
+      expect(JSON.stringify(body)).not.toContain(otherRoot);
     });
   });
 
@@ -1024,6 +1041,7 @@ describe('workspace projects API', () => {
         tokenMetrics: true,
         tokenUsageMetrics: true,
         costMetrics: true,
+        graphicalSessions: false,
       });
       // New fields: registered projects enumerated, boot project named.
       expect(body.projects.map((p) => p.id).sort()).toEqual([boot.id, other.id].sort());

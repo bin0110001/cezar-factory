@@ -84,7 +84,7 @@ describe('tracker snapshot freshness', () => {
     const instruction = await screen.findByLabelText('Custom instruction')
     fireEvent.change(instruction, { target: { value: 'Keep this draft' } })
     await act(async () => { await client.refetchQueries({ queryKey: queryKeys.tracker.detail(association, item.id) }) })
-    expect(await screen.findByText(failureKind === 'transport' ? /cannot reach the cezar server/ : 'Detail unavailable')).toBeTruthy()
+    expect(await screen.findByText(failureKind === 'transport' ? /cannot reach the Cezarium server/ : 'Detail unavailable')).toBeTruthy()
     const launch = screen.getByRole('button', { name: /Run agent/ }) as HTMLButtonElement
     expect(launch.disabled).toBe(true)
     fireEvent.click(launch)

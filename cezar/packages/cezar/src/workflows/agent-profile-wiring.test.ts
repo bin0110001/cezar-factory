@@ -234,12 +234,15 @@ describe('RunManager agent-profile resolution', () => {
     const run = newRun();
     const { env, profileId } = await seam().agentEnvForStep(run.id, 'claude');
     expect(profileId).toBe('default');
-    // The base run env only: the handoff contract (spec 007) plus the task-scoped
-    // temp directory (#785). No ACCOUNT variable, which is this test's subject.
+    // The base run env only: handoff, task-scoped temp, and trace identifiers.
+    // No ACCOUNT variable, which is this test's subject.
     expect(Object.keys(env).sort()).toEqual([
+      'CEZ_ATTEMPT_ID',
       'CEZ_HANDOFF_FILE',
+      'CEZ_RUN_ID',
       'CEZ_TASK_ID',
       'CEZ_TODOS_FILE',
+      'CEZ_TRACE_ID',
       'FACTORY_FENCING_TOKEN',
       'FACTORY_ISSUE',
       'FACTORY_MANAGED',
@@ -249,6 +252,7 @@ describe('RunManager agent-profile resolution', () => {
       'TEMP',
       'TMP',
       'TMPDIR',
+      'TRACEPARENT',
     ]);
     expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
     expect(env.CODEX_HOME).toBeUndefined();
