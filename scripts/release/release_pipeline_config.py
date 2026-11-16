@@ -92,7 +92,9 @@ def merge(base: Any, over: Any) -> Any:
 
 _SHAPE: dict[str, Any] = {
     "mode": str, "stages": list, "triggers": {"manual": bool, "schedule": {"frequency": str, "dayOfWeek": str, "hour": int, "minute": int, "timezone": str},
-                                              "afterChanges": {"enabled": bool, "minCommits": int, "minFiles": int}},
+                                              "afterChanges": {"enabled": bool, "minCommits": int, "minFiles": int, "paths": list, "minElapsedHours": int, "maxDelayHours": int,
+                                                             "cooldownMinutes": int, "quietHours": {"start": int, "end": int, "timezone": str}, "combinator": str},
+                                              "missedRun": str, "missedGraceMinutes": int, "priority": list},
     "admission": {"maxActiveCandidates": int}, "tests": {"suites": list, "required": list},
     "candidateLifetimeHours": int, "repair": {"maxAttempts": int, "backoffMinutes": int},
     "promotion": {"review": str, "stable": str, "soakMinutes": int}, "artifactRetentionDays": int,
@@ -185,6 +187,21 @@ def validate_spec(spec: dict[str, Any], where: str = "spec") -> list[str]:
     ac = g("triggers", "afterChanges") or {}
     if ac.get("enabled") and not (ac.get("minCommits") or ac.get("minFiles")):
         errors.append(f"{where}.triggers.afterChanges: enabled needs minCommits or minFiles")
+    if g("triggers", "missedRun") not in (None, "skip", "coalesce"):
+        errors.append(f"{where}.triggers.missedRun: must be 'skip' or 'coalesce'")
+    if ac.get("combinator") not in (None, "any", "all"):
+        errors.append(f"{where}.triggers.afterChanges.combinator: must be 'any' or 'all'")
+    if ac.get("paths") is not None and not all(isinstance(x, str) and x for x in ac["paths"]):
+        errors.append(f"{where}.triggers.afterChanges.paths: must be a list of non-empty globs")
+    q = ac.get("quietHours")
+    if q is not None:
+        if not all(isinstance(q.get(k), int) and 0 <= q[k] <= 23 for k in ("start", "end")):
+            errors.append(f"{where}.triggers.afterChanges.quietHours: start and end must be hours 0-23")
+        if "timezone" in q and not _timezone_ok(str(q["timezone"])):
+            errors.append(f"{where}.triggers.afterChanges.quietHours.timezone: unknown timezone {q['timezone']!r}")
+    prio = g("triggers", "priority")
+    if prio is not None and (set(prio) - {"schedule", "change", "manual"} or len(set(prio)) != len(prio)):
+        errors.append(f"{where}.triggers.priority: must be unique values from schedule, change, manual")
     if mode == "three-branch" and sched is None and not g("triggers", "manual") and not ac.get("enabled"):
         errors.append(f"{where}.triggers: a three-branch pipeline needs at least one trigger")
 

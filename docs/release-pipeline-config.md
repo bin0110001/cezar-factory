@@ -56,3 +56,10 @@ implementation diff that edits it.
 `effective_config(doc, project)` is both the readback and the dry run: it validates and returns what would apply.
 There is no command-line wrapper: Factory scripts run only from workflow `command:` steps, so a wrapper belongs with
 the workflow that adopts this contract (#590 onward).
+
+## Trigger fields (#591)
+
+`triggers.afterChanges` also accepts `paths` (globs that count as relevant), `minElapsedHours`, `maxDelayHours`,
+`cooldownMinutes`, `quietHours` (`start`/`end` hour, optional `timezone`, may wrap midnight) and `combinator`
+(`any` | `all`). `triggers.missedRun` (`skip` | `coalesce`), `missedGraceMinutes` and `priority` (order of
+`schedule`, `change`, `manual`) apply across sources. Evaluation is in `docs/release-triggers.md`.

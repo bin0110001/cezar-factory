@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Candidate-scoped verification orchestration (#593): frozen manifest, evidence keyed on SHA/revision/adapter/selection/config/asset/env/advisory refresh with named invalidation, fail-closed required-suite gate, result classification with bounded reruns, provably-safe incremental revalidation that never skips mandatory full regression, shard resume, mixed-node uniformity checks and an expiring cache (`scripts/release/release_verification.py`, `docs/release-verification.md`). Library only.
+
+- Immutable regression snapshots (#592): create-only `refs/rc/<id>/<rev>` references, compare-and-swap regression pointer with writer-drift and non-fast-forward blocks, deleted/moved ref detection and recovery, repair revisions that never merge dev, promotion provenance, and audited cleanup (`scripts/release/release_snapshot.py`, `docs/release-snapshot.md`). Library only.
+
+- Dual-mode release triggers and admission (#591): DST-safe calendar schedules with missed-run coalesce/skip, dev-change rules (thresholds, paths, cooldown, quiet hours, max delay, any/all), source priority, idempotent submission to the candidate store, admission explanations and backoff (`scripts/release/release_triggers.py`, `docs/release-triggers.md`). Config contract gains the matching optional trigger fields. Library only; no scheduler service.
+
+- Durable single-active release candidate store (#590): SQLite-backed candidate, revision, evidence, pending-request and audit tables where a partial unique index enforces one nonterminal candidate per project, with fencing tokens, row versions, immutable revision-bound evidence and idempotent requests/receipts (`scripts/release/release_candidate_store.py`, `docs/release-candidate-store.md`). Library only; the live promoter does not use it yet.
+
 - Release pipeline configuration contract (#589): versioned `release-pipeline/v1` schema with inherited defaults, per-project overrides and presets, validation with explained paths, effective-config hashing bound to candidates, agent-weakening refusal, migration/readback, examples and docs (`scripts/release/release_pipeline_config.py`, `docs/release-pipeline-config.md`). `config/release-pipeline*.json` is now a protected policy asset.
 
 - OSV-Scanner adapter and provider-swap proof (#607): second SCA provider behind the same contract, shared fixture suite passing for both, and a fixture-level comparison in `docs/check-provider-comparison.md`.
