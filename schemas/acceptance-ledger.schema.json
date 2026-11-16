@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.local/schemas/acceptance-ledger.schema.json",
+  "title": "Acceptance-criteria verification ledger (schemaVersion 1)",
+  "description": "Per-criterion verification state bound to an exact head commit and policy revision. See docs/acceptance-ledger.md.",
+  "type": "object",
+  "required": ["schemaVersion", "issue", "commitSha", "policyRevision", "criteria"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "issue": { "type": "integer", "minimum": 1 },
+    "commitSha": { "type": "string", "minLength": 1 },
+    "policyRevision": { "type": "string", "minLength": 1 },
+    "reviewDecision": { "type": "string" },
+    "criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } }
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "required": ["id", "text", "state", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^AC-[0-9a-f]{8}$" },
+        "text": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["verified", "unverified", "failed"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "ref", "result", "commitSha", "policyRevision", "recordedAt", "stale"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["test", "file", "commit", "artifact", "human-review", "baseline", "finding", "self-assessment"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "result": { "enum": ["pass", "fail", "inconclusive", "skipped"] },
+        "commitSha": { "type": "string", "minLength": 1 },
+        "policyRevision": { "type": "string", "minLength": 1 },
+        "recordedAt": { "type": "string" },
+        "reviewer": { "type": "string" },
+        "sha256": { "type": "string" },
+        "stale": { "type": "boolean" }
+      }
+    }
+  }
+}
