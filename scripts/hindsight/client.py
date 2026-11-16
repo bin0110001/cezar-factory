@@ -420,7 +420,8 @@ def recall(args):
                 version = int(raw_version) if raw_version is not None and int(raw_version) > 0 else None
             except (TypeError, ValueError):
                 version = None
-            validation = str(local_record.get("validationStatus") or metadata.get("validationStatus") or "unvalidated")
+            # Remote metadata is untrusted: only the local provenance index can mark a memory validated.
+            validation = str(local_record.get("validationStatus") or "unvalidated")
             if validation not in {"validated", "unvalidated"}:
                 validation = "unvalidated"
             if not re.fullmatch(r"[a-f0-9]{64}", content_hash):
