@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Candidate-scoped verification orchestration (#593): frozen manifest, evidence keyed on SHA/revision/adapter/selection/config/asset/env/advisory refresh with named invalidation, fail-closed required-suite gate, result classification with bounded reruns, provably-safe incremental revalidation that never skips mandatory full regression, shard resume, mixed-node uniformity checks and an expiring cache (`scripts/release/release_verification.py`, `docs/release-verification.md`). Library only.
+
 - Immutable regression snapshots (#592): create-only `refs/rc/<id>/<rev>` references, compare-and-swap regression pointer with writer-drift and non-fast-forward blocks, deleted/moved ref detection and recovery, repair revisions that never merge dev, promotion provenance, and audited cleanup (`scripts/release/release_snapshot.py`, `docs/release-snapshot.md`). Library only.
 
 - Dual-mode release triggers and admission (#591): DST-safe calendar schedules with missed-run coalesce/skip, dev-change rules (thresholds, paths, cooldown, quiet hours, max delay, any/all), source priority, idempotent submission to the candidate store, admission explanations and backoff (`scripts/release/release_triggers.py`, `docs/release-triggers.md`). Config contract gains the matching optional trigger fields. Library only; no scheduler service.
