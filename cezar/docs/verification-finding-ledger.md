@@ -22,3 +22,16 @@ Schema version 0 is migrated on open: records receive the owning project's key, 
 observations receive `firstSeenAt`/`lastSeenAt` equal to their `observedAt`. Unknown future schema
 versions and project mismatches fail closed. The data file, lock guard, lock directory, and atomic
 temporary files are ignored by the project's Git state.
+
+## Isolated scanner worker profile
+
+Scanners run under `server/verification/scanner-worker-profile.ts` (#605). The profile describes a
+rootless, unprivileged worker: source and artifact mounts are read-only, scratch is `noexec` tmpfs,
+all capabilities are dropped, and the environment is built from an explicit allowlist (a
+credential-like name in the allowlist is refused). The network is `none` except in the `db-update`
+phase, which needs a non-empty advisory-DB host allowlist and an enforceable egress control.
+Isolation that cannot be enforced fails closed with a reason: Windows has no native read-only mount
+or egress primitive, so it requires a container runtime, as does Linux. Scanner logs, findings and
+artifact text pass through `core/secret-redaction` (plus caller-supplied literals such as a planted
+fixture secret) before the ledger ingests them. No new CI/runner engine is added; the argv is run by
+existing Factory-managed workers.
