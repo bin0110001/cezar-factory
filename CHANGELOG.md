@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Check runner (#618): provider plugin runner with trust gating, timeout, DB-freshness mapping, pinned provenance, and a cache invalidated by scanner/DB/config/input/scope/worker versions (`server/verification/checks/check-runner.ts`).
+
 - Normalized findings (#617): SARIF and generic JSON normalizers with a provider-independent fingerprint, retained source fingerprints, waiver metadata, redacted evidence and a single query (`server/verification/checks/normalized-findings.ts`, docs in `docs/check-provider-contract.md`).
 
 - Check-provider contract (#616): provider-neutral check categories, scope, trigger, policy and status model with `schemas/check-provider.schema.json`; `pass` is never allowed for a failed run, stale/unavailable feed or blocking findings. Docs: `docs/check-provider-contract.md`.

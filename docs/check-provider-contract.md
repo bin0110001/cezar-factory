@@ -36,3 +36,14 @@ secrets before anything is stored. A malformed document throws; it never normali
 
 Assumption: the #52 ledger's finding kinds are a closed contract enum, so persisting these findings through
 `finding-ingest` (a new kind) is done with the gate integration in #619 rather than by widening the contract here.
+
+## Check runner (#618)
+
+`checks/check-runner.ts` runs a `CheckProviderPlugin` (CLI/container invocation in the #605 isolated worker is
+the plugin's job; tests use fake Trivy/Semgrep/custom doubles). `runCheck` applies the optional #604 trust
+policy, a timeout, advisory-DB freshness against `maxAgeHours`, normalization, and `deriveCheckStatus`, so a
+crash, timeout, unparseable output, missing or stale feed, or untrusted scanner is never `pass`. Provenance pins
+source SHA, provider name/version/digest, config digest, DB timestamp, artifact digest, worker profile and scope.
+The cache key covers all of those, so any change misses; a different scope never reuses a result (#593).
+Failures and stale feeds are not cached. `aggregateCategory` combines several providers in one category: worst
+status wins and findings merge by common fingerprint.
