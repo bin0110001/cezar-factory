@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.149] - 2026-11-16
+
 - Immutable regression snapshot (#592): `scripts/release/factory_candidate_snapshot.py` freezes a candidate (merged dev SHA, stable base, policy digest, fingerprints) behind an immutable `rc/<id>/<rev>` tag, moves the optional regression pointer only by compare-and-swap, returns blocked/recovery results for drift, deletion and races, builds repair revisions without merging dev, and cleans refs under retention with an audit log. Docs: `docs/promotion-pipeline.md`.
 - OSV-Scanner adapter and provider-swap proof (#607): second SCA provider behind the same contract, shared fixture suite passing for both, and a fixture-level comparison in `docs/check-provider-comparison.md`.
 
