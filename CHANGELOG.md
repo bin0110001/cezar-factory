@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- OSV-Scanner adapter and provider-swap proof (#607): second SCA provider behind the same contract, shared fixture suite passing for both, and a fixture-level comparison in `docs/check-provider-comparison.md`.
+
 - Trivy adapter (#606): per-domain argv builder, JSON report parsing behind the provider contract, no-lockfile reported as unknown, waived false positives, and run reconciliation (open/fixed) (`server/verification/checks/providers/trivy-adapter.ts`, `reconcile.ts`).
 
 - Check gates and independent schedule (#619): provider-agnostic gate evaluation by category, mandatory/optional and max age, one findings query, and a due-check planner that cannot create a candidate (`server/verification/checks/check-gates.ts`).
