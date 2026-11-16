@@ -45,8 +45,10 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
 4. **Canaries.** Each canary selected by the changed paths queues a schedule automation in Cezar against
    the new release and waits for it to finish. Cezar runs one job at a time, so a canary can queue behind real
    work: only its running time counts against `timeoutSeconds`, and the wait in the queue has its own
-   `queueTimeoutSeconds` (default 2 hours). Any failure restores the previous `dev` release,
-   quarantines the SHA, and stops the candidate.
+   `queueTimeoutSeconds` (default 2 hours). A canary that remains queued past that limit is recorded as
+   `unstarted` infrastructure work. The candidate stays active and blocked, and later ticks resume polling the
+   same run ID; this does not roll back, quarantine, or count against the circuit breaker. A canary that starts
+   and fails still restores the previous `dev` release, quarantines the SHA, and stops the candidate.
 5. **Stable.** After the soak period (and approval, in controlled mode) `origin/stable` is
    fast-forwarded with the GitHub refs API (`force=false`, so ancestry is enforced by GitHub).
 6. **Stable deploy.** `factory-autodeploy.sh` fast-forwards the host, rebuilds the Cezar image only if
@@ -211,3 +213,7 @@ pointer lags until the next candidate passes. Use it to get a fix to the deliver
   the ref to the promoted commit. Look there if work seems to have vanished from the root checkout.
 - `stable` is a git branch, so a person with push access can still move it. The drift check reports it;
   it does not prevent it.
+
+## Deferred stable deploys
+
+When the stable deploy exits 25 (Cezar busy, restart deferred), the promoter reports `deploy-deferred`. It does not count a failed attempt or open a stable-deploy issue, and the drift watcher files no "release drift persists" issue while the deferral is within the 7200s max-defer window. The drift report names the deferral and the time remaining. Past the window, or on any other failure, the deploy counts as a failure and the alert resumes.

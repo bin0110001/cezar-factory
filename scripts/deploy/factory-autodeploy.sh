@@ -8,6 +8,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT_DIR/scripts/deploy/lib-topology.sh"
+. "$ROOT_DIR/scripts/deploy/content-parity-lib.bash"
 load_factory_topology "$ROOT_DIR"
 
 BRANCH="${FACTORY_DEPLOY_BRANCH:-stable}"
@@ -42,6 +43,10 @@ host_content_digest="unknown"
 container_sha="unknown"
 container_version="unknown"
 container_content_digest="unknown"
+host_content_manifest=""
+container_content_manifest=""
+content_difference_count=0
+content_differences=()
 sync_output=""
 failure=""
 
@@ -63,6 +68,14 @@ write_receipt() {
       "$(json_escape "$source_sha")" "$(json_escape "$container_sha")" \
       "$(json_escape "$host_content_digest")" "$(json_escape "$container_content_digest")" \
       "$(json_escape "$host_version")" "$(json_escape "$container_version")"
+    printf '  "contentDifferenceCount": %s,\n' "$content_difference_count"
+    printf '  "contentDifferencesOmitted": %s,\n' "$((content_difference_count - ${#content_differences[@]}))"
+    printf '  "contentDifferences": ['
+    for index in "${!content_differences[@]}"; do
+      (( index == 0 )) || printf ', '
+      printf '"%s"' "$(json_escape "${content_differences[$index]}")"
+    done
+    printf '],\n'
     printf '  "targetReceipts": "%s",\n' "$(json_escape "$sync_output")"
     printf '  "error": "%s"\n' "$(json_escape "$message")"
     printf '}\n'
@@ -81,18 +94,41 @@ on_exit() {
 }
 trap on_exit EXIT
 
-content_digest() {
-  local root="$1"
-  local paths=(VERSION workflows skills scripts routing automations)
-  [[ -f "$root/config/factory-projects.json" ]] && paths+=(config/factory-projects.json)
-  ( cd "$root"
-    local digest
-    digest="$(find "${paths[@]}" \
-      \( -type d -name __pycache__ -prune \) -o \
-      \( -type f ! -name '*.pyc' ! -name '*.pyo' ! -name '*.pyd' -print0 \) |
-      LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
-    printf '%s' "${digest%% *}"
-  )
+manifest_digest() {
+  printf '%s\n' "$1" | sha256sum | awk '{print $1}'
+}
+
+collect_content_differences() {
+  local line path checksum
+  local -A host_files=() container_files=() all_paths=()
+  local ordered_paths=()
+  content_difference_count=0
+  content_differences=()
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    checksum="${line%% *}"
+    path="${line#* }"
+    host_files["$path"]="$checksum"
+    all_paths["$path"]=1
+  done < <(printf '%s\n' "$host_content_manifest")
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    checksum="${line%% *}"
+    path="${line#* }"
+    container_files["$path"]="$checksum"
+    all_paths["$path"]=1
+  done < <(printf '%s\n' "$container_content_manifest")
+
+  mapfile -t ordered_paths < <(printf '%s\n' "${!all_paths[@]}" | LC_ALL=C sort)
+  for path in "${ordered_paths[@]}"; do
+    if [[ "${host_files[$path]:-missing}" != "${container_files[$path]:-missing}" ]]; then
+      ((content_difference_count += 1))
+      if (( ${#content_differences[@]} < 100 )); then
+        content_differences+=("$path (host ${host_files[$path]:-missing}; container ${container_files[$path]:-missing})")
+      fi
+    fi
+  done
 }
 
 cd "$FACTORY_DIR"
@@ -142,7 +178,8 @@ registry_path="$FACTORY_DIR/config/factory-projects.json"
 if [[ -f "$registry_path" ]]; then
   registry_digest="$(sha256sum "$registry_path" | awk '{print $1}')"
 fi
-host_content_digest="$(content_digest "$FACTORY_DIR")"
+host_content_manifest="$(factory_content_manifest "$FACTORY_DIR")"
+host_content_digest="$(manifest_digest "$host_content_manifest")"
 
 # The read-only source mount has its own persistent writable .git volume for
 # Cezar task worktrees. Fast-forward only the root stable index/ref to the
@@ -169,19 +206,25 @@ fi
 
 container_sha="$(podman exec "$CONTAINER" git -C "$RUNTIME_ROOT" rev-parse HEAD)"
 container_version="$(podman exec "$CONTAINER" sh -c "tr -d '\r\\n' < '$RUNTIME_ROOT/VERSION'")"
-container_content_digest="$(podman exec "$CONTAINER" sh -c '
-  cd "$1"
-  set -- VERSION workflows skills scripts routing automations
-  [ -f config/factory-projects.json ] && set -- "$@" config/factory-projects.json
-  digest="$(find "$@" \
-    \( -type d -name __pycache__ -prune \) -o \
-    \( -type f ! -name "*.pyc" ! -name "*.pyo" ! -name "*.pyd" -print0 \) |
-    LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)"
-  printf '%s' "${digest%% *}"
-' sh "$RUNTIME_ROOT")"
+container_content_manifest="$(podman exec "$CONTAINER" bash -c \
+  'source "$1/scripts/deploy/content-parity-lib.bash"; factory_content_manifest "$1"' \
+  _ "$RUNTIME_ROOT")"
+container_content_digest="$(manifest_digest "$container_content_manifest")"
+collect_content_differences
 
 if [[ "$source_sha" != "$container_sha" || "$host_version" != "$container_version" || "$host_content_digest" != "$container_content_digest" ]]; then
   failure="container parity mismatch: source $source_sha/$container_sha; version $host_version/$container_version; content $host_content_digest/$container_content_digest"
+  if (( content_difference_count > 0 )); then
+    difference_summary=""
+    for index in "${!content_differences[@]}"; do
+      (( index < 10 )) || break
+      difference_summary+="${difference_summary:+; }${content_differences[$index]}"
+    done
+    if (( content_difference_count > 10 )); then
+      difference_summary+="; and $((content_difference_count - 10)) more"
+    fi
+    failure+="; differing files: $difference_summary"
+  fi
   log "BLOCKED: $failure" >&2
   exit 22
 fi

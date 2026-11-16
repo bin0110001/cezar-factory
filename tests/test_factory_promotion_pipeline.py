@@ -295,6 +295,17 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once()["promotion"]["status"], "deploy-pending")
         self.assertEqual(scheduler.run_once()["status"], "deploy-pending")
 
+    def test_deferred_deploy_is_not_a_failed_attempt_until_the_max_defer_window_passes(self):
+        scheduler = self.build()
+        scheduler._deploy_stable = lambda sha: (False, "deferred: stable deploy deferred while Cezar is busy")
+        for _ in range(4):
+            last = scheduler.run_once()
+        self.assertEqual(last["status"], "deploy-deferred")
+        self.assertEqual(last["attempts"], 0)
+        self.assertEqual([i for i in self.gh.issues if "stable-deploy" in i], [])
+        scheduler._state_put("deploy_deferred_since", f"{self.sha}|{time.time() - 7300}")
+        self.assertEqual(scheduler.run_once()["status"], "deploy-pending")  # window exceeded: counts as a failure again
+
     def test_stable_already_containing_the_sha_is_not_pushed_again(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
         scheduler = self.build()
@@ -359,10 +370,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once()["status"], "blocked")
         self.assertEqual(self.gh.issues, [])  # a short wait is normal
         with scheduler._db() as db:
-            db.execute("UPDATE promotions SET finished_at=? WHERE sha=?", ("2020-01-01T00:00:00.000Z", self.sha))
+            db.execute("UPDATE promotions SET started_at=? WHERE sha=?", ("2020-01-01T00:00:00.000Z", self.sha))
         self.assertEqual(scheduler.run_once()["status"], "blocked")
         self.assertEqual(len(self.gh.issues), 1)
-        self.assertIn("[promotion] candidate blocked before validation", self.gh.issues[0])
+        self.assertIn("[promotion] candidate blocked on prerequisite", self.gh.issues[0])
         self.assertIn("factory:needs-help", self.gh.issues[0])
         self.assertEqual(scheduler.run_once()["status"], "blocked")
         self.assertEqual(len(self.gh.issues), 1)  # asked once per candidate, not every tick
@@ -430,6 +441,24 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(SchedulerError, "canary health failed"):
             scheduler.run_once()
         self.assertEqual((cezar.runs, self.rollbacks), (1, [self.base_sha]))
+
+    def test_an_unstarted_canary_blocks_without_rollback_quarantine_or_breaker_count_and_resumes(self):
+        scheduler = self.build()
+        results = [[{"id": "health", "automation": "health", "status": "unstarted", "runId": "r1",
+                     "reason": "still queued after 60s; Cezar never started it"}],
+                   [{"id": "health", "automation": "health", "status": "passed", "runId": "r1", "runStatus": "done"}]]
+        scheduler._run_canaries = lambda *_args, **_kwargs: results.pop(0)
+
+        deferred = scheduler.run_once()
+        self.assertEqual(deferred["status"], "blocked")
+        self.assertEqual(scheduler.status(self.sha)["status"], "blocked")
+        self.assertEqual((self.rollbacks, self.quarantined, scheduler.breaker.failures(), self.gh.issues), ([], [], 0, []))
+        record = json.loads(pathlib.Path(deferred["recordPath"]).read_text(encoding="utf-8"))
+        self.assertEqual((record["candidateState"], record["canaries"][0]["status"]), ("active", "unstarted"))
+
+        resumed = scheduler.run_once()
+        self.assertEqual(resumed["status"], "healthy")
+        self.assertEqual((self.rollbacks, self.quarantined, scheduler.breaker.failures()), ([], [], 0))
 
     def test_persistent_drift_is_reported_when_it_changes_and_then_only_as_a_reminder(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)

@@ -20,9 +20,8 @@ EXTRA_SECRET = re.compile(r"(?i)(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-
 HEADER = "incident-memory v1"
 
 def redact(value, limit):
-    text = re.sub(r"(?i)bearer\s+\S+", "[redacted]", str(value))
-    text = client.scrub(text)
-    text = EXTRA_SECRET.sub("[redacted]", text)
+    text = client.scrub(value)
+    text = client._redaction.redact(text, strict=True, marker="[redacted]")
     return re.sub(r"\s+", " ", text)[:limit]
 
 def clean_ids(values, limit=10):

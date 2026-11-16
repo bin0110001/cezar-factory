@@ -7,7 +7,7 @@ import { getDependencyStalls, type StallClass, type StallItem, type StallReport 
 
 const CLASS_LABEL: Record<StallClass, string> = { running: 'Running', runnable: 'Runnable', blocked: 'Blocked by progressing work', waiting: 'Waiting on input', stuck: 'Stuck' }
 const CLASS_STROKE: Record<StallClass, string> = {
-  running: 'var(--primary)', runnable: '#059669', blocked: 'var(--muted-foreground)', waiting: '#d97706', stuck: 'var(--destructive)',
+  running: 'var(--primary)', runnable: 'var(--success)', blocked: 'var(--muted-foreground)', waiting: 'var(--pending-strong)', stuck: 'var(--destructive)',
 }
 const REASON_LABEL: Record<string, string> = {
   'dependency-cycle': 'dependency cycle', 'blocked-by-stuck': 'blocked by stuck work', 'stale-blocked-label': 'blocked label with no blocker',

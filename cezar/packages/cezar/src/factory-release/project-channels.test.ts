@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { factoryControlCenterResponseSchema } from '@open-mercato/cezar-contract';
 import { ProjectChannelService } from './project-channels.ts';
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -10,6 +11,46 @@ let root = '';
 afterEach(async () => { if (root) await rm(root, { recursive: true, force: true }); root = ''; });
 
 describe('ProjectChannelService', () => {
+  it('builds a bounded control-center read model from pointers and validated activation receipts', async () => {
+    root = await mkdtemp(join(tmpdir(), 'cezar-control-center-'));
+    const storeRoot = join(root, 'store');
+    const projectRoot = join(root, 'project');
+    const targetSha = 'a'.repeat(40);
+    const stableSha = 'b'.repeat(40);
+    const now = new Date().toISOString();
+    const channelsDir = join(storeRoot, 'channels');
+    const receiptDir = join(storeRoot, 'receipts', sha('demo').slice(0, 24), '1');
+    await Promise.all([mkdir(channelsDir, { recursive: true }), mkdir(receiptDir, { recursive: true }), mkdir(join(storeRoot, 'quarantine'), { recursive: true })]);
+    for (const [channel, currentSha] of [['dev', targetSha], ['stable', stableSha]] as const) {
+      await writeFile(join(channelsDir, `${channel}.json`), JSON.stringify({
+        schemaVersion: 'factory-release-channel-pointer/v1', channel, currentSha,
+        currentPath: join(storeRoot, 'releases', currentSha), lastGoodSha: currentSha,
+        lastGoodPath: join(storeRoot, 'releases', currentSha), updatedAt: now,
+      }));
+    }
+    await writeFile(join(storeRoot, 'quarantine', `${stableSha}.json`), '{}');
+    await writeFile(join(receiptDir, 'receipt.json'), JSON.stringify({
+      schemaVersion: 'factory-deployment-receipt/v1', receiptId: 'receipt-1', targetId: 'demo',
+      channel: 'dev', desiredSha: targetSha, actualSha: targetSha, observedSha: targetSha,
+      artifactDigest: `sha256:${'c'.repeat(64)}`, idempotencyKey: `sha256:${'d'.repeat(64)}`,
+      activationGeneration: 1, attempt: 1, state: 'active',
+      compatibility: { status: 'compatible', capabilities: [] },
+      requestedAt: now, stagedAt: now, activatedAt: now, observedAt: now,
+    }));
+    const service = new ProjectChannelService({ storeRoot, projectRoot, projectId: 'demo', configuredChannel: 'dev', compatibility: 'unknown', activeTasks: [] });
+    const overview = await service.controlCenter();
+    const response = factoryControlCenterResponseSchema.parse({ schemaVersion: 1, generatedAt: now, projects: [{
+      id: 'demo', name: 'Demo', configuredChannel: overview.state.configuredChannel,
+      compatibility: overview.state.compatibility, freshness: 'fresh', readAt: overview.state.readAt,
+      findings: overview.state.findings, channels: overview.channels, history: overview.history,
+    }] });
+    expect(response.projects[0]?.channels).toMatchObject([
+      { channel: 'dev', desiredSha: targetSha, activatedSha: targetSha, observedSha: targetSha, state: 'healthy' },
+      { channel: 'stable', desiredSha: stableSha, state: 'quarantined' },
+    ]);
+    expect(response.projects[0]?.history).toMatchObject([{ id: 'receipt-1', channel: 'dev', state: 'active' }]);
+  });
+
   it('separates configured and effective state, previews task pins and overrides, and records a token-bound request', async () => {
     root = await mkdtemp(join(tmpdir(), 'cezar-project-channel-'));
     const projectRoot = join(root, 'project');

@@ -35,7 +35,7 @@ describe('backlog api', () => {
     const { store } = setup();
     const rec = backlogRecommendation({ store, repository: R, now: NOW });
     expect(rec.next!.id).toBe('o/r#2');
-    expect(rec.needsHuman.map((n) => n.id)).toEqual(['o/r#3']);
+    expect(rec.needsHuman).toEqual([]); // Missing priority uses the neutral ranking tier; it is not a human gate.
     expect(JSON.stringify(backlogRecommendation({ store, repository: R, now: NOW }))).toBe(JSON.stringify(rec)); // replay-stable
   });
   it('maps edit outcomes to stable statuses', () => {

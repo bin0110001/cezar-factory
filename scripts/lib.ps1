@@ -313,38 +313,48 @@ function Invoke-FactoryValidation {
                 throw "Configured validation.$Stage recursively invokes its Factory wrapper."
             }
         }
-        $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
-        $start.ArgumentList.Add('-NoProfile')
-        $start.ArgumentList.Add('-EncodedCommand')
-        $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
-        $start.WorkingDirectory = $root
-        $start.UseShellExecute = $false
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
-        if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
-        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
-        if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
-        $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
-        $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
-        $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
-        if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
-            $process.Kill($true); $null = $process.WaitForExit(10000)
-            # Preserve the bounded diagnostic output on timeouts too. Without
-            # joining these readers before throwing, a two-hour full-suite
-            # timeout left empty stdout/stderr artifacts and only a generic
-            # non-zero workflow step for the operator to inspect.
-            try {
-                [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
-                $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-                $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
-            } catch { }
-            throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
+        $hostRetries = 0
+        while ($true) {
+            $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
+            $start.ArgumentList.Add('-NoProfile')
+            $start.ArgumentList.Add('-EncodedCommand')
+            $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+            $start.WorkingDirectory = $root
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
+            if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
+            $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+            if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
+            $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
+            $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
+            $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
+            if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
+                $process.Kill($true); $null = $process.WaitForExit(10000)
+                # Preserve the bounded diagnostic output on timeouts too. Without
+                # joining these readers before throwing, a two-hour full-suite
+                # timeout left empty stdout/stderr artifacts and only a generic
+                # non-zero workflow step for the operator to inspect.
+                try {
+                    [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+                    $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+                    $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+                } catch { }
+                throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
+            }
+            [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+            $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+            $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+            $receipt.exitCode = [int]$process.ExitCode
+            # A child pwsh that cannot even start (pids/thread/memory pressure on the host) is an environment fault, not a
+            # validation result: retry it once, and say so in the receipt. Any other failure is never retried.
+            $hostStartFailed = ($process.ExitCode -ne 0 -and
+                [Text.Encoding]::UTF8.GetString($stderr) -match 'Failed to create CoreCLR|System\.Threading\.Thread\.StartCore')
+            if ($hostStartFailed -and $hostRetries -lt 1) { $hostRetries++; Start-Sleep -Seconds 3; continue }
+            break
         }
-        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
-        $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-        $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
-        $receipt.exitCode = [int]$process.ExitCode
+        if ($hostRetries) { $receipt.message = "Retried once after a validation host start failure (CoreCLR/thread creation); see stderr.log." }
         $stdoutText = [Text.Encoding]::UTF8.GetString($stdout)
         $expectedWarningCount = -1
         foreach ($line in ($stdoutText -split "`r?`n")) {
@@ -446,7 +456,7 @@ function Get-TargetPath([string]$Rel) {
 }
 
 # Factory scripts that run inside projects (called by workflows/skills).
-$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-investigation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'failure-summary-lib.ps1', 'summarize-failures.ps1', 'repair-loop-step.ps1', 'repair-loop-lib.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'gh-cache.ps1', 'lifecycle-lib.ps1', 'sweep-lifecycle.ps1', 'assert-no-run-commits.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'audit-shadow-copies.ps1', 'migrate-to-shared.ps1', 'check-release-locks.py', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'hindsight/recall.ps1', 'hindsight/retain.ps1', 'verification-lib.ps1', 'verification-select.ps1', 'verification-invoke.ps1', 'verification-evaluate.ps1')
+$script:RuntimeScripts = @('validate-result.ps1', 'route-state.ps1', 'check-already-resolved.ps1', 'prepare-implementation.ps1', 'ensure-implementation-result.ps1', 'ensure-investigation-result.ps1', 'ensure-pr-closes-issue.ps1', 'factory-startup.ps1', 'sync-automations.ps1', 'watchdog-automations.ps1', 'create-labels.ps1', 'audit-backlog-labels.ps1', 'recover-audit-reservations.ps1', 'audit-factory-failures.ps1', 'failure-summary-lib.ps1', 'summarize-failures.ps1', 'repair-loop-step.ps1', 'repair-loop-lib.ps1', 'publish-failure-audit.ps1', 'write-health-report.ps1', 'refresh-stale-workable.ps1', 'maintain-repository.ps1', 'sync-issue-delivery.ps1', 'gh-cache.ps1', 'lifecycle-lib.ps1', 'sweep-lifecycle.ps1', 'assert-no-run-commits.ps1', 'godot-upgrade.ps1', 'validate-automation-catalog.ps1', 'collect-backlog-snapshot.ps1', 'reconcile-backlog.ps1', 'audit-shadow-copies.ps1', 'migrate-to-shared.ps1', 'check-release-locks.py', 'lease.ps1', 'record-local-evaluation.ps1', 'evaluate-local-promotion.ps1', 'local/run-local-job.ps1', 'openhands/validate-job.ps1', 'hindsight/client.py', 'security/redaction.ps1', 'security/redaction.py', 'security/redaction-patterns.json', 'hindsight/recall.ps1', 'hindsight/retain.ps1', 'verification-lib.ps1', 'verification-select.ps1', 'verification-invoke.ps1', 'verification-evaluate.ps1')
 
 # Retired names stay valid in project configs so an installed project keeps updating; they install nothing (skills)
 # or their replacement (workflows).

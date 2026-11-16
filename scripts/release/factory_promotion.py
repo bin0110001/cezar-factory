@@ -270,22 +270,23 @@ class CanaryRunner:
                 raise error
             self.sleep(min(self.poll_seconds, 5))
 
-    def run(self, canary: dict[str, Any]) -> dict[str, Any]:
+    def run(self, canary: dict[str, Any], *, run_id: str | None = None) -> dict[str, Any]:
         started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         result: dict[str, Any] = {"id": canary["id"], "automation": canary["automation"], "startedAt": started, "status": "failed"}
         try:
-            listing = self._retry("GET", "/automations")
-            items = listing.get("automations", listing) if isinstance(listing, dict) else listing
-            wanted = canary["automation"]
-            match = next((a for a in items if a.get("id") == wanted or a.get("name") in (wanted, f"[factory] {wanted}")), None)
-            if match is None:
-                result["reason"] = f"automation '{wanted}' not found"
-                return result
-            if match.get("kind") != "schedule":
-                result["reason"] = "canaries must be schedule automations they can run directly"
-                return result
-            queued = self._retry("POST", f"/automations/{match['id']}/run")
-            run_id = (queued or {}).get("runId")
+            if run_id is None:
+                listing = self._retry("GET", "/automations")
+                items = listing.get("automations", listing) if isinstance(listing, dict) else listing
+                wanted = canary["automation"]
+                match = next((a for a in items if a.get("id") == wanted or a.get("name") in (wanted, f"[factory] {wanted}")), None)
+                if match is None:
+                    result["reason"] = f"automation '{wanted}' not found"
+                    return result
+                if match.get("kind") != "schedule":
+                    result["reason"] = "canaries must be schedule automations they can run directly"
+                    return result
+                queued = self._retry("POST", f"/automations/{match['id']}/run")
+                run_id = (queued or {}).get("runId")
             if not run_id:
                 result["reason"] = "Cezar did not return a run id"
                 return result
@@ -308,6 +309,9 @@ class CanaryRunner:
                     return result
                 if run.get("status") in WAITING_RUN:
                     if self.clock() >= queue_deadline:
+                        # This is infrastructure starvation, not evidence that the candidate failed.
+                        # Preserve the ID so the scheduler can resume polling this same run next tick.
+                        result["status"] = "unstarted"
                         result["reason"] = f"still {run.get('status')} after {canary['queueTimeoutSeconds']}s; Cezar never started it"
                         return result
                 else:
