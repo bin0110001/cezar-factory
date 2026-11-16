@@ -217,3 +217,15 @@ pointer lags until the next candidate passes. Use it to get a fix to the deliver
 ## Deferred stable deploys
 
 When the stable deploy exits 25 (Cezar busy, restart deferred), the promoter reports `deploy-deferred`. It does not count a failed attempt or open a stable-deploy issue, and the drift watcher files no "release drift persists" issue while the deferral is within the 7200s max-defer window. The drift report names the deferral and the time remaining. Past the window, or on any other failure, the deploy counts as a failure and the alert resumes.
+
+## Immutable regression snapshots
+
+`scripts/release/factory_candidate_snapshot.py` (#592) turns a regression candidate into a frozen record rather than a branch that dev keeps merging into. Policy and candidate id/rev are injected, so the config (#589) and state machine (#590) can be adapted in later; it has no lock, queue, PR merger or promotion.
+
+- **Snapshot**: verifies the SHA is merged into the configured dev branch, records it with the stable base, policy digest, fingerprints and evidence digests in `candidates/<id>/<rev>.json` (written once, sealed by `recordDigest`), and creates the immutable tag `rc/<id>/<rev>` with a create-only CAS. Dev advancing afterwards changes none of it.
+- **Pointer**: the optional regression branch is created or fast-forwarded with `git update-ref` and an expected old value. A non-fast-forward needs `--force-with-lease` and still checks the expected SHA. `dev`, `stable`, `rc/*` and `protectedRefs` are never written. Drift, a deleted pointer or a lost race returns `blocked` with the expected and observed SHAs and writes nothing.
+- **Verify**: `verify` reports a deleted or moved rc tag, or a tampered record, as blocked with the recovery to perform; it never repairs.
+- **Revisions**: a targeted repair builds rev N+1 from the current candidate SHA, marks the prior revision's evidence invalidated (`N.invalidated.json`), and refuses commits that carry newer dev.
+- **Config**: `branches` (dev/stable/regression names), `regressionPointer: false` or `branches.regression: null` to opt out, `legacyTwoBranchMode` (creates no refs), `protectedRefs`, `retentionSeconds`, `auditRetentionSeconds`.
+- **Retention**: only for a terminal candidate with an intact record. The pointer goes after `retentionSeconds`, the rc tag after `auditRetentionSeconds`; the record is never deleted. Each deletion (or `--dry-run` plan) is appended to `cleanup.jsonl`.
+- **Integration data**: `context` exports the candidate for the #199 merge coordinator; `provenance` checks that stable can fast-forward to the exact tested SHA and returns snapshot id, rev and evidence digests. It moves nothing.

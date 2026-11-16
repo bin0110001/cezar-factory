@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Immutable regression snapshot (#592): `scripts/release/factory_candidate_snapshot.py` freezes a candidate (merged dev SHA, stable base, policy digest, fingerprints) behind an immutable `rc/<id>/<rev>` tag, moves the optional regression pointer only by compare-and-swap, returns blocked/recovery results for drift, deletion and races, builds repair revisions without merging dev, and cleans refs under retention with an audit log. Docs: `docs/promotion-pipeline.md`.
+
 - Normalized findings (#617): SARIF and generic JSON normalizers with a provider-independent fingerprint, retained source fingerprints, waiver metadata, redacted evidence and a single query (`server/verification/checks/normalized-findings.ts`, docs in `docs/check-provider-contract.md`).
 
 - Check-provider contract (#616): provider-neutral check categories, scope, trigger, policy and status model with `schemas/check-provider.schema.json`; `pass` is never allowed for a failed run, stale/unavailable feed or blocking findings. Docs: `docs/check-provider-contract.md`.
