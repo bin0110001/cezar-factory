@@ -127,10 +127,32 @@ export const workspaceManifestRepositorySchema = z.object({
 }).strict();
 export type WorkspaceManifestRepository = z.infer<typeof workspaceManifestRepositorySchema>;
 
+/** A deterministic package edge discovered only between explicitly registered projects. */
+export const workspaceManifestEdgeSchema = z.object({
+  fromProjectId: z.string(),
+  toProjectId: z.string(),
+  kind: z.literal('package-dependency'),
+  provenance: z.literal('code-derived'),
+  manifest: z.literal('package.json'),
+  dependencyName: z.string(),
+  versionRange: z.string(),
+}).strict();
+export type WorkspaceManifestEdge = z.infer<typeof workspaceManifestEdgeSchema>;
+
+/** Duplicate package names are reported without selecting a target project. */
+export const workspaceManifestAmbiguitySchema = z.object({
+  fromProjectId: z.string(),
+  dependencyName: z.string(),
+  candidateProjectIds: z.array(z.string()),
+}).strict();
+export type WorkspaceManifestAmbiguity = z.infer<typeof workspaceManifestAmbiguitySchema>;
+
 export const workspaceManifestResponseSchema = z.object({
   schemaVersion: z.literal(1),
   revision: z.string().regex(/^[a-f0-9]{64}$/),
   repositories: z.array(workspaceManifestRepositorySchema),
+  edges: z.array(workspaceManifestEdgeSchema),
+  ambiguities: z.array(workspaceManifestAmbiguitySchema),
 }).strict();
 export type WorkspaceManifestResponse = z.infer<typeof workspaceManifestResponseSchema>;
 

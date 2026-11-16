@@ -52,4 +52,33 @@ describe('workspace manifest', () => {
     ]);
     expect(manifest.repositories[0]).toMatchObject({ repository: null, owner: null });
   });
+
+  it('derives stable package edges only among registered projects and surfaces duplicate targets', async () => {
+    const projects = [
+      project({ id: 'app', root: '/private/app' }),
+      project({ id: 'lib', root: '/private/lib' }),
+      project({ id: 'lib-copy', root: '/private/lib-copy' }),
+      project({ id: 'ui', root: '/private/ui' }),
+      project({ id: 'unregistered', root: '/private/other', unregistered: true }),
+    ];
+    const metadata = new Map<string, { name: string; dependencies: Record<string, string> }>([
+      ['/private/app', { name: '@acme/app', dependencies: { '@acme/lib': '^2.1.0', '@acme/ui': 'workspace:*' } }],
+      ['/private/lib', { name: '@acme/lib', dependencies: {} }],
+      ['/private/lib-copy', { name: '@acme/lib', dependencies: {} }],
+      ['/private/ui', { name: '@acme/ui', dependencies: {} }],
+    ]);
+    const readPackage = async (root: string) => metadata.get(root) ?? null;
+    const first = await buildWorkspaceManifest(projects, async () => null, readPackage);
+    const second = await buildWorkspaceManifest([...projects].reverse(), async () => null, readPackage);
+
+    expect(first.edges).toEqual([{
+      fromProjectId: 'app', toProjectId: 'ui', kind: 'package-dependency', provenance: 'code-derived',
+      manifest: 'package.json', dependencyName: '@acme/ui', versionRange: 'workspace:*',
+    }]);
+    expect(first.ambiguities).toEqual([{
+      fromProjectId: 'app', dependencyName: '@acme/lib', candidateProjectIds: ['lib', 'lib-copy'],
+    }]);
+    expect(first.revision).toBe(second.revision);
+    expect(JSON.stringify(first)).not.toContain('/private');
+  });
 });
