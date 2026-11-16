@@ -1,4 +1,4 @@
-# Coding-agent trust boundaries (#133)
+# Coding-agent trust boundaries and threat model (#133, #578)
 
 Everything an implementation agent reads is **untrusted data**: issue and PR text, repository files, tool output,
 retrieved memory and dependency scripts. Policy and evidence authority lives outside the agent's write scope.
@@ -16,6 +16,30 @@ This document maps each boundary to the control that already owns it; it adds no
 Malicious issue instructions (for example "enable control", "edit policies/", "print the token") have no channel to
 change any of these controls: flags, policy and guard configuration are read from the base revision or the host, never
 from issue or repository text.
+
+## Inputs and attacker capabilities
+
+Attacker capability: can write text to a GitHub issue or PR, commit files to a branch, publish or poison a dependency
+or its install script, or seed a memory entry. Cannot write the base revision, the host, or the evidence store.
+
+| Input | Control owner | Gap |
+| --- | --- | --- |
+| GitHub issue / PR text | Guard and flags read from base revision/host (#104); review gate (#101) | none |
+| Repository content (instruction files, configs) | Governance guard protected assets (#104) | none |
+| Tool output | Collection-boundary redaction | pattern redaction limits (residual risk below) |
+| Retrieved memory | `scripts/hindsight/client.py` provenance check and scrub | none |
+| Dependency scripts | Run network policy; reviewed as code | residual risk below |
+| Model context | Untrusted-data rule above; no authority transfer | none |
+| Runner / sandbox | #113 isolated worktrees; scanner profile `docs/scanner-worker-profile.md` | host credential in child env (#166) |
+| Logs and traces | Redaction at collection | residual risk below |
+| Evidence and policy store | Append-only evidence, head/attempt binding (#580) | none |
+
+## Negative-test scenarios later work must cover
+
+Injected issue body, instruction-bearing repo file, poisoned memory recall, malicious install script, permission
+widening, forged capability token, evidence truncation or rewrite, and a planted secret in every output channel. The
+first five are implemented in `docs/untrusted-input-security.md` (#581); evidence and scanner secrets are covered by
+#580 and `docs/scanner-worker-profile.md`.
 
 ## Tests
 

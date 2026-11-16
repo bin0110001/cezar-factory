@@ -46,3 +46,5 @@ Binding rule: every verdict record carries `attemptId` (`-AttemptId` or `FACTORY
 `attemptId` differs from the current attempt, or that lacks either binding. Pre-existing unbound records are accepted only
 with `-AllowLegacy`, only if `headSha` matches, and with a loud warning. The consumer of a verdict/evidence record must run it
 with the immutable head and attempt id of the run being decided.
+
+See also: `docs/trust-boundaries.md` (threat model and control ownership map).
