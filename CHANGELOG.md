@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Release pipeline configuration contract (#589): versioned `release-pipeline/v1` schema with inherited defaults, per-project overrides and presets, validation with explained paths, effective-config hashing bound to candidates, agent-weakening refusal, migration/readback, examples and docs (`scripts/release/release_pipeline_config.py`, `docs/release-pipeline-config.md`). `config/release-pipeline*.json` is now a protected policy asset.
+
 - OSV-Scanner adapter and provider-swap proof (#607): second SCA provider behind the same contract, shared fixture suite passing for both, and a fixture-level comparison in `docs/check-provider-comparison.md`.
 
 - Trivy adapter (#606): per-domain argv builder, JSON report parsing behind the provider contract, no-lockfile reported as unknown, waived false positives, and run reconciliation (open/fixed) (`server/verification/checks/providers/trivy-adapter.ts`, `reconcile.ts`).

@@ -3,7 +3,7 @@
   "description": "Verification governance assets an implementation or repair diff must not change without an authorized review marker (see docs/governance-guard.md).",
   "waiverLedger": ".factory/ledger/governance-waivers.jsonl",
   "assets": [
-    { "category": "policy", "globs": ["policies/**", "config/promotion-policy.json"] },
+    { "category": "policy", "globs": ["policies/**", "config/promotion-policy.json", "config/release-pipeline*.json"] },
     { "category": "baseline", "globs": ["**/baselines/**", "**/*.baseline", "**/*.baseline.*", "**/*-baseline.*"] },
     { "category": "check-selection", "globs": [".ai/factory/test-ownership.json"], "semantic": "mandatory-checks" },
     { "category": "ledger-evidence", "globs": [".factory/ledger/**", ".factory/verification/**", ".factory/repair-ledger*", ".factory/evaluations/**", ".factory/artifacts/validation/**", ".factory/ship-loop/receipts/**", ".factory/release-reports/**", "ledger/**", "evidence/**"], "appendOnly": true },

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "release-pipeline/v1",
+  "defaults": {},
+  "projects": {
+    "tableflux": {
+      "preset": "weekly-calendar",
+      "triggers": {
+        "schedule": {
+          "dayOfWeek": "thursday",
+          "hour": 3,
+          "minute": 0
+        }
+      },
+      "tests": {
+        "suites": [
+          "unit",
+          "e2e"
+        ],
+        "required": [
+          "unit",
+          "e2e"
+        ]
+      },
+      "promotion": {
+        "review": "approval",
+        "stable": "approval",
+        "soakMinutes": 60
+      }
+    },
+    "cezar-factory": {
+      "preset": "daily-calendar",
+      "triggers": {
+        "schedule": {
+          "hour": 4,
+          "minute": 30
+        },
+        "afterChanges": {
+          "enabled": true,
+          "minCommits": 5
+        }
+      },
+      "tests": {
+        "suites": [
+          "full-suite"
+        ],
+        "required": [
+          "full-suite"
+        ]
+      },
+      "promotion": {
+        "review": "self-review",
+        "stable": "auto",
+        "soakMinutes": 0
+      }
+    },
+    "legacy-project": {}
+  }
+}
