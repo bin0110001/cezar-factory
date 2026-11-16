@@ -11,8 +11,9 @@ Protected assets are declared in `policies/protected-assets.json`:
 | --- | --- |
 | `policy` | any change under `policies/**` or `config/promotion-policy.json` |
 | `baseline` | any change to baseline files (`**/baselines/**`, `*.baseline*`, `*-baseline.*`) |
-| `check-selection` | `.ai/factory/test-ownership.json`: removing a check, dropping a pattern, changing a command or relaxing `unmapped` fails; adding checks/patterns is allowed |
-| `ledger-evidence` | existing records are immutable; adding new records is allowed |
+| `check-selection` | `.ai/factory/test-ownership.json` (deleting or renaming it also fails): removing a check, dropping a pattern, changing a command or relaxing `unmapped` fails; adding checks/patterns is allowed |
+| `ledger-evidence` | append-only: new files and pure appends pass; a modified file must keep the base content as an unchanged byte prefix, so truncation or in-place rewrite fails, as do deletes and renames. Covers `.factory/ledger`, `.factory/verification`, `.factory/repair-ledger*`, `.factory/evaluations`, `.factory/artifacts/validation`, `.factory/ship-loop/receipts`, `.factory/release-reports`, `ledger/`, `evidence/` |
+| `evidence-schema` | the evidence manifest, validation receipt and authorization schemas |
 | `guard` | the guard script and the two workflows that run it |
 
 The ledger (#52) and focused selection (#53) paths are globs in the manifest; update the manifest when their final
@@ -32,3 +33,16 @@ Every accepted waiver is printed, written to `.factory/governance-guard.json`, a
 `.factory/ledger/governance-waivers.jsonl`. Until the #52 ledger lands this file is the waiver record; there are no
 hidden waivers. Tests: `tests/protect-governance.ps1` (negative case per asset class plus forgery cases; uses throwaway
 repos and a fake `gh`, never deploys).
+
+## Threat model and evidence binding (#580)
+
+An implementation agent writes inside its worktree, so it could forge a passing record by editing history (truncate, rewrite,
+delete or rename ledger/receipt files), loosening policy, baselines or mandatory checks, or by copying a genuine passing
+record from another head or attempt. The guard closes the first group by diff against the trusted base; most `.factory/*`
+paths are gitignored, so they are listed for completeness and for any tracked copy.
+
+Binding rule: every verdict record carries `attemptId` (`-AttemptId` or `FACTORY_ATTEMPT_ID`) and `headSha`.
+`scripts/factory/verify-evidence-binding.ps1` rejects (exit 1) a record whose `headSha` differs from the current head, whose
+`attemptId` differs from the current attempt, or that lacks either binding. Pre-existing unbound records are accepted only
+with `-AllowLegacy`, only if `headSha` matches, and with a loud warning. The consumer of a verdict/evidence record must run it
+with the immutable head and attempt id of the run being decided.

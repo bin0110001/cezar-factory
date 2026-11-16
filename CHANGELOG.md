@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Governance guard hardening (#580): append-only evidence is checked by byte prefix (truncation/in-place rewrite fails, pure appends pass), more evidence/schema paths are protected, and `verify-evidence-binding.ps1` rejects evidence not bound to the current head SHA and attempt id; verdicts now record `attemptId`.
+
 - Autodeploy parity now compares one Git-indexed managed-file manifest on host and container, excludes untracked/generated artifacts, and records the differing paths when a real mismatch blocks deployment (#561).
 
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.

@@ -14,7 +14,8 @@ param(
     [string]$OutputPath = '.factory/verification/verdict.json',
     [string]$PolicyPath = '',
     [string]$LedgerPath = '',
-    [string]$Task = ''
+    [string]$Task = '',
+    [string]$AttemptId = ''
 )
 $ErrorActionPreference = 'Stop'
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
@@ -36,11 +37,12 @@ foreach ($check in @($selection.selected)) {
 foreach ($id in ($byId.Keys | Sort-Object)) {
     if ($byId[$id].status -ne 'passed') { $reasons.Add("check '$id' $($byId[$id].status) (exit $($byId[$id].exitCode))") }
 }
+if (-not $AttemptId) { $AttemptId = [string]$env:FACTORY_ATTEMPT_ID }
 $issue = 0
 if ($Task -match '(?:issues/|#)?([1-9][0-9]*)$') { $issue = [int]$Matches[1] }
 $verdict = [ordered]@{
     schemaVersion = 1; verdict = $(if ($reasons.Count) { 'fail' } else { 'pass' }); issue = $issue
-    headSha = [string]$selection.headSha; baseCommit = [string]$selection.baseCommit
+    attemptId = $AttemptId; headSha = [string]$selection.headSha; baseCommit = [string]$selection.baseCommit
     policySha256 = [string]$selection.policy.sha256
     mandatoryChecks = @($policy.mandatoryChecks | ForEach-Object { [string]$_ })
     checks = @($byId.Keys | Sort-Object | ForEach-Object { [ordered]@{ id = $_; status = $byId[$_].status; exitCode = $byId[$_].exitCode } })
