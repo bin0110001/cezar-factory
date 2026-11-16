@@ -22,3 +22,17 @@ unavailable feed, or any blocking finding, so an unavailable feed is never "zero
 Related: `docs/scanner-trust-policy.md` (which scanners are trusted), `docs/scanner-worker-profile.md`
 (isolated execution). Normalized findings are #617; runner, provenance and cache are #618; gates and
 schedule are #619.
+
+## Normalized findings (#617)
+
+`checks/normalized-findings.ts` maps SARIF 2.1.0 (`normalizeSarif`) and a generic JSON list
+(`normalizeGenericJson`) into one shape. The `fingerprint` is provider-independent: the shared advisory id
+(CVE, else GHSA, else OSV) plus ecosystem and dependency name for supply-chain findings, otherwise
+category, CWE (or rule id) and path. Provider-specific fingerprints are kept in `sourceFingerprints`, and
+`mergeByFingerprint` carries them forward so a provider swap keeps history. Findings carry severity,
+confidence, dependency/version, source path and SHA, fix availability, references, waiver status and
+provenance. Messages, rule ids and fingerprints are redacted with `core/secret-redaction` plus caller-supplied
+secrets before anything is stored. A malformed document throws; it never normalizes to zero findings.
+
+Assumption: the #52 ledger's finding kinds are a closed contract enum, so persisting these findings through
+`finding-ingest` (a new kind) is done with the gate integration in #619 rather than by widening the contract here.

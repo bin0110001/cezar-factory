@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Normalized findings (#617): SARIF and generic JSON normalizers with a provider-independent fingerprint, retained source fingerprints, waiver metadata, redacted evidence and a single query (`server/verification/checks/normalized-findings.ts`, docs in `docs/check-provider-contract.md`).
+
 - Check-provider contract (#616): provider-neutral check categories, scope, trigger, policy and status model with `schemas/check-provider.schema.json`; `pass` is never allowed for a failed run, stale/unavailable feed or blocking findings. Docs: `docs/check-provider-contract.md`.
 
 - Scanner trust policy (#604): `server/verification/scanner-trust-policy.ts` rejects floating or unpinned, digest-mismatched, unsigned or untrusted-signer scanners (`fail`) and missing binary or missing/expired advisory DB (`unknown`), never green. Docs: `docs/scanner-trust-policy.md`.
