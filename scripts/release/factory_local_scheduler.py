@@ -885,6 +885,12 @@ class LocalPromotionScheduler:
             return {"status": "unchanged", "sourceSha": sha, "candidateStatus": "failed", "recordPath": existing["record_path"]}
         if existing and existing["status"] not in ("interrupted", "failed", "blocked"):
             return {"status": "unchanged", "sourceSha": sha, "candidateStatus": existing["status"]}
+        quarantined = self.coordinator._load_quarantine(sha) is not None
+        if quarantined and not retry_failed and self._active_sha() != sha:
+            # activate() refuses a quarantined release by design. Re-running it every tick would fail again at
+            # "activation", file a duplicate issue and count toward the breaker; only an explicit retry revalidates.
+            return {"status": "unchanged", "sourceSha": sha, "candidateStatus": "quarantined",
+                    "reason": "release is quarantined; run with retry_failed to revalidate it"}
         if self.policy and self.breaker.is_open() and not retry_failed:
             return {"status": "paused", "sourceSha": sha, "reason": "circuit breaker is open after repeated failures",
                     "resumesAt": dt.datetime.fromtimestamp(self.breaker.open_until(), dt.timezone.utc).isoformat()}
@@ -957,6 +963,13 @@ class LocalPromotionScheduler:
                 record["artifactDigest"] = staged["artifactDigest"]
                 record["manifestDigest"] = staged["manifestDigest"]
                 previous_dev = self._active_sha()
+                if quarantined:
+                    # Explicit retry of a quarantined release: the candidate must revalidate (which clears the
+                    # marker) before activation; a failure is recorded once, at "activation", with its reason.
+                    try:
+                        self.coordinator.revalidate(sha)
+                    except Exception as exc:
+                        raise SchedulerError(f"revalidation of quarantined release failed: {exc}") from exc
                 activation = self.coordinator.activate(sha)
                 record["activation"] = {"status": activation["status"], "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
                 record["candidateState"] = "active"
