@@ -151,7 +151,13 @@ export function jsonZodValidator<
  */
 export function paramZodValidator<S extends z.ZodType>(schema: S, { message }: ErrorOptions = {}) {
   return validator('param', (value, c) => {
-    const parsed = schema.safeParse(value);
+    // The mirrored project router adds `projectId` to scoped paths. That mount
+    // parameter selects the project context; it is not part of the route's own
+    // parameter contract, and strict schemas must not reject it.
+    const routeParams = value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'projectId'))
+      : value;
+    const parsed = schema.safeParse(routeParams);
     return parsed.success ? (parsed.data as z.infer<S>) : reject(c, parsed.error, message);
   });
 }

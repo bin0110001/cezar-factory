@@ -89,7 +89,7 @@ it('retains pages on a transport error and can paginate after a successful resta
   const { client, key, result } = setup()
   await act(async () => { await result.current.restart() })
   expect(client.getQueryData(key)).toEqual(old)
-  await waitFor(() => expect(result.current.error?.message).toContain('cannot reach the cezar server'))
+  await waitFor(() => expect(result.current.error?.message).toContain('cannot reach the Cezarium server'))
   await act(async () => { await result.current.restart() })
   await waitFor(() => expect(result.current.isSuccess).toBe(true))
   await act(async () => { await result.current.fetchNextPage() })

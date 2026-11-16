@@ -30,6 +30,7 @@ interface HealthBody {
     tokenMetrics: boolean;
     tokenUsageMetrics: boolean;
     costMetrics: boolean;
+    graphicalSessions: boolean;
   };
   instanceId?: string;
 }
@@ -117,6 +118,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -172,6 +174,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -215,6 +218,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -229,6 +233,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -248,6 +253,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -273,6 +279,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: true,
       tokenUsageMetrics: true,
       costMetrics: true,
+      graphicalSessions: false,
     });
   });
 
@@ -287,6 +294,7 @@ describe('GET /api/v1/health — forge + capabilities', () => {
       tokenMetrics: false,
       tokenUsageMetrics: false,
       costMetrics: false,
+      graphicalSessions: false,
     });
   });
 

@@ -191,9 +191,11 @@ describe('ProjectGroups', () => {
     const shopNav = within(group('shop')).getByRole('navigation', { name: 'shop navigation' })
     expect(within(shopNav).getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       '/p/shop/',
+      '/p/shop/decisions',
       '/p/shop/git',
       '/p/shop/github',
       '/p/shop/dependencies',
+      '/p/shop/verification',
       '/p/shop/backlog',
       '/p/shop/skills',
       '/p/shop/workflows',

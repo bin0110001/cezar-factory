@@ -70,7 +70,12 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    try {
+      rmSync(repoRoot, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
+    } catch (error) {
+      if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+      console.warn(`[dispatch-engine.test] Windows kept a locked temporary directory for runner cleanup: ${repoRoot}`);
+    }
   });
 
   /** A manager with its own semaphore, so a test can decide how much of the tree may run. */

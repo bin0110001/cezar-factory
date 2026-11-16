@@ -63,7 +63,7 @@ function groupFailures(failures: FailuresPage['items']) {
 }
 
 function statusColor(status: string): string {
-  if (status === 'passed') return 'text-emerald-700 dark:text-emerald-400'
+  if (status === 'passed') return 'text-success'
   if (status === 'failed' || status === 'infrastructure-error') return 'text-destructive'
   return 'text-muted-foreground'
 }
@@ -162,7 +162,7 @@ export function VerificationHistoryRoute() {
         </div>
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor="verification-status-filter">Filter by status</label>
-          <select id="verification-status-filter" aria-label="Filter by status" className="min-h-9 rounded-md border bg-background px-2 text-sm" value={status} onChange={(event) => changeStatus(event.target.value)}>
+          <select id="verification-status-filter" aria-label="Filter by status" className="min-h-9 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={status} onChange={(event) => changeStatus(event.target.value)}>
             <option value="">All statuses</option>
             {['passed', 'failed', 'skipped', 'unknown', 'infrastructure-error', 'cancelled'].map((value) => <option value={value} key={value}>{value}</option>)}
           </select>
@@ -174,7 +174,7 @@ export function VerificationHistoryRoute() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 id="reliability-analytics-heading" className="font-semibold">Reliability analytics</h2><p className="text-xs text-muted-foreground">Evidence-backed validation, repair, failure and pull request outcomes for this project.</p></div>
           <label className="flex items-center gap-2 text-sm">Window
-            <select aria-label="Reliability analytics window" className="min-h-9 rounded-md border bg-background px-2" value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as 7 | 30 | 90)}>
+            <select aria-label="Reliability analytics window" className="min-h-9 rounded-md border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as 7 | 30 | 90)}>
               <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
             </select>
           </label>
@@ -260,7 +260,7 @@ export function VerificationHistoryRoute() {
                   <section>
                     <h2 className="text-sm font-semibold">Failures and recurrence</h2>
                     <ul className="mt-2 space-y-2">{groupFailures(detailQueries.data.failures).map((group) => <li key={group.id} className="rounded border p-3 text-sm" data-testid={`verification-failure-group-${group.id}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-mono">{group.episodeId ? `Finding ${group.episodeId.slice(0, 12)}` : group.items[0]?.testId}</span><span className={group.classification === 'known' ? 'text-amber-700 dark:text-amber-400' : group.classification === 'new' ? 'text-destructive' : 'text-muted-foreground'}>{group.classification}</span></div>
+                      <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-mono">{group.episodeId ? `Finding ${group.episodeId.slice(0, 12)}` : group.items[0]?.testId}</span><span className={group.classification === 'known' ? 'text-pending-strong' : group.classification === 'new' ? 'text-destructive' : 'text-muted-foreground'}>{group.classification}</span></div>
                       <p className="mt-1 text-xs text-muted-foreground">{group.items.length} failure{group.items.length === 1 ? '' : 's'}</p>
                       {group.episodeId && <a className="mt-2 inline-block text-xs text-primary underline underline-offset-2" href={`#verification-episode-${group.episodeId}`}>View recurrence episode</a>}
                       <a className="ml-3 inline-block text-xs text-primary underline underline-offset-2" href="#verification-artifacts">View run evidence</a>
