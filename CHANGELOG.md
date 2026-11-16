@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Collection-boundary secret redaction (#579). One shared, data-driven helper (`scripts/security/redaction.py`, `redaction.ps1`, `redaction-patterns.json`) now redacts Authorization headers, Bearer/Basic tokens, gh*/github_pat_/sk-/AKIA tokens, key=value secrets, URL credentials and literal values of secret-named environment variables. The failure summary, audit publisher, repair diagnostics, incident ledger signatures, Hindsight scrub/incident memory, capability-broker traces and the implementation-context issue text use it; the 40+ char opaque-string catch-all stays opt-in (`strict`) for memory candidates. Tests: `tests/test_factory_redaction.py` (including a PowerShell parity check) and `tests/redaction.ps1`.
+
 - Autodeploy parity now compares one Git-indexed managed-file manifest on host and container, excludes untracked/generated artifacts, and records the differing paths when a real mismatch blocks deployment (#561).
 
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.

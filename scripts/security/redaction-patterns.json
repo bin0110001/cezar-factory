@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "marker": "[REDACTED]",
+  "envNamePattern": "(?i)(secret|token|key|password|passwd|credential)",
+  "envMinLength": 8,
+  "rules": [
+    { "id": "authorization-header", "pattern": "(?i)\\b((?:proxy-)?authorization\\s*:\\s*)[^\\r\\n]+", "replacement": "$1[REDACTED]" },
+    { "id": "bearer-basic", "pattern": "(?i)\\b(bearer|basic)\\s+\\S+", "replacement": "$1 [REDACTED]" },
+    { "id": "url-userinfo", "pattern": "(?i)\\b([a-z][a-z0-9+.-]*://)[^/\\s:@]+:[^/\\s@]+@", "replacement": "$1[REDACTED]@" },
+    { "id": "key-value", "pattern": "(?i)\\b([A-Za-z0-9_-]*(?:token|api[_-]?key|secret|password|passwd))[\"']?\\s*[:=]\\s*[\"']?[^\\s,\"']+", "replacement": "$1=[REDACTED]" },
+    { "id": "token-prefixes", "pattern": "(?i)(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16}|tok\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)", "replacement": "[REDACTED]" }
+  ],
+  "strictRules": [
+    { "id": "long-opaque-string", "pattern": "[A-Za-z0-9+/=_-]{40,}", "replacement": "[REDACTED]" }
+  ]
+}

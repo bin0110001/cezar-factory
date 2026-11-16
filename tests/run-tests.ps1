@@ -101,7 +101,7 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 'routing/automation-catalog.json', 'schemas/automation-catalog.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json', 'docs/hindsight-provenance.md', 'skills/factory-learn/SKILL.md', 'tests/test_hindsight_client.py',
 'schemas/factory-release/README.md', 'schemas/factory-release/manifest.schema.json', 'schemas/factory-release/state.schema.json', 'schemas/factory-release/receipt.schema.json', 'schemas/factory-release/lease.schema.json',
 'schemas/factory-release/fixtures/manifest-valid.json', 'schemas/factory-release/fixtures/manifest-unknown-schema.json', 'schemas/factory-release/fixtures/receipt-active.json', 'schemas/factory-release/fixtures/receipt-incompatible.json', 'schemas/factory-release/fixtures/receipt-staged.json', 'schemas/factory-release/fixtures/state-verified.json', 'schemas/factory-release/fixtures/lease-active.json', 'schemas/factory-release/fixtures/lease-expired.json', 'schemas/factory-release/fixtures/artifact-payload.json', 'schemas/factory-release/fixtures/verification-evidence.json',
-'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
+'scripts/validate-automation-catalog.ps1', 'scripts/collect-backlog-snapshot.ps1', 'scripts/reconcile-backlog.ps1', 'scripts/lease.ps1', 'scripts/hindsight/client.py', 'scripts/security/redaction.py', 'scripts/security/redaction.ps1', 'scripts/security/redaction-patterns.json', 'tests/test_factory_redaction.py', 'tests/redaction.ps1', 'scripts/hindsight/recall.ps1', 'scripts/hindsight/retain.ps1', 'scripts/hindsight/incident.py', 'scripts/hindsight/incident.ps1', 'tests/test_factory_hindsight_incident.py',
 'scripts/record-local-evaluation.ps1', 'scripts/evaluate-local-promotion.ps1', 'scripts/audit-backlog-labels.ps1', 'scripts/audit-shadow-copies.ps1', 'schemas/shadow-audit-receipt.schema.json', 'scripts/push-factory-updates.ps1', 'scripts/onboard-project.ps1', 'scripts/force-update.ps1', 'scripts/update-github-lifecycle.ps1', 'scripts/sync-issue-delivery.ps1', 'scripts/gh-cache.ps1', 'tests/fake-delivery-gh.ps1', 'scripts/refresh-stale-workable.ps1', 'scripts/maintain-repository.ps1', 'config/factory-projects.json.example', 'skills/factory-release/SKILL.md', 'schemas/local-evaluation.schema.json', 'docs/local-model-evaluation.md',
 'scripts/ensure-investigation-result.ps1', 'scripts/recover-audit-reservations.ps1', 'scripts/validate-backlog-label-audit-input.ps1', 'scripts/apply-backlog-label-audit.ps1',
 'docs/execution-inventory.md', 'docs/backlog-reconciler.md', 'docs/factory-automation-status.md', 'docs/workflow-map.md', 'skills/factory-work-backlog/SKILL.md', 'skills/factory-backlog-label-audit/SKILL.md', 'workflows/maintenance.yaml', 'automations/maintenance.json', 'workflows/health.yaml', 'automations/health.json', 'tests/fake-backlog-gh.ps1', 'tests/fixtures/backlog-issues.json',
@@ -2242,6 +2242,11 @@ Write-Host '== failure summary =='
 $failureSummaryOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-summary.ps1') 2>&1 | Out-String
 Write-Host $failureSummaryOutput
 Assert 'failure summary dedups, caps, redacts and orders deterministically' ($LASTEXITCODE -eq 0)
+
+Write-Host '== collection-boundary secret redaction =='
+$redactionOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'redaction.ps1') 2>&1 | Out-String
+Write-Host $redactionOutput
+Assert 'secrets are redacted at collection boundaries (issue context, summaries, audit, shared helper)' ($LASTEXITCODE -eq 0)
 
 Write-Host '== bounded triage/repair loop =='
 $repairLoopOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'repair-loop.ps1') 2>&1 | Out-String
