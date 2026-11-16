@@ -2,9 +2,7 @@
 
 ## [Unreleased]
 
-## [0.3.142] - 2026-11-16
-
-- Durable single-active release candidate state machine with ownership lease and fencing tokens (#590): `scripts/release/factory_candidate_state.py`, `schemas/factory-release/candidate.schema.json`, `docs/candidate-state-machine.md`. One nonterminal candidate per project enforced by a unique index; stale workers and obsolete-revision results are rejected. Additive; not yet wired into promotion.
+- Scanner trust policy (#604): `server/verification/scanner-trust-policy.ts` rejects floating or unpinned, digest-mismatched, unsigned or untrusted-signer scanners (`fail`) and missing binary or missing/expired advisory DB (`unknown`), never green. Docs: `docs/scanner-trust-policy.md`.
 
 - Threat model and control ownership map (#578): `docs/trust-boundaries.md` now lists each input with its owner or gap, attacker capabilities and the negative-test scenarios; the docs test checks the new sections.
 - Isolated scanner worker execution profile (#605): allowlist-only env, read-only source/artifact mounts, no egress outside the advisory DB update phase, planted-secret redaction, fail-closed on Windows or without Podman. `server/verification/scanner-worker-profile.ts`, docs in `docs/scanner-worker-profile.md`.
@@ -14,6 +12,10 @@
 - Coding-agent trust boundaries (#133): `docs/trust-boundaries.md` maps each untrusted input to its owning control (#104/#113/#101) and records residual risks (#166). The Python redactors now also remove bare GitHub/`sk-` tokens, `api_key`, and `Authorization` values, matching the PowerShell collector. Adversarial tests in `tests/test_factory_trust_boundaries.py`.
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 - Promoter: a stable deploy deferred because Cezar is busy (exit 25) is now a distinct `deploy-deferred` outcome. It no longer counts as a failed deploy attempt, and no "release drift persists" issue is filed while the deferral is inside the 7200s max-defer window; the drift report names the deferral and remaining time (#559).
+
+## [0.3.142] - 2026-11-16
+
+- Durable single-active release candidate state machine with ownership lease and fencing tokens (#590): `scripts/release/factory_candidate_state.py`, `schemas/factory-release/candidate.schema.json`, `docs/candidate-state-machine.md`. One nonterminal candidate per project enforced by a unique index; stale workers and obsolete-revision results are rejected. Additive; not yet wired into promotion.
 
 ## [0.3.137] - 2026-11-16
 
