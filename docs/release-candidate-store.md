@@ -1,0 +1,43 @@
+# Release candidate store (#590)
+
+`scripts/release/release_candidate_store.py` is a library (Factory scripts run from workflow steps) holding durable
+candidate state in one SQLite file. It guarantees at most one nonterminal candidate per project across every trigger,
+process and test node. Nothing in the live promoter calls it yet; the trigger work (#591) and the later release
+stages adopt it.
+
+## Invariants
+
+- **One active candidate per project, enforced by the database.** A partial unique index on `project_id` for
+  nonterminal states means a second active row is impossible even if application code is wrong. Writers use
+  `BEGIN IMMEDIATE`, so a race of any size admits one candidate; the rest fold into a single `pending` request that
+  accumulates every trigger and reason. A pending request is handed back by `take_pending` only after the active
+  candidate is terminal, and it never starts a candidate by itself.
+- **Fencing.** `acquire` grants a lease; the fencing token increases whenever ownership changes and never otherwise.
+  Every mutation checks the token, an unexpired lease, and (for transitions) the row `version`, so an owner that
+  crashed, partitioned or was replaced cannot write. An operator `end` also bumps the token and is audited.
+- **Revisions are sequential within one candidate.** `new_revision` is allowed only from `snapshotting` or
+  `repair-required`, SHAs are unique per candidate, and there is no second concurrently running revision.
+- **Evidence is immutable and revision-bound.** `record_result` refuses a result for any revision but the current one
+  and refuses a repeated run id. `ready` requires at least one result for the current revision and none failing, so a
+  delayed result from an obsolete revision can never turn a candidate green.
+- **Idempotency.** `request` replays an `idempotency_key` to its original outcome; `record_promotion` replays a
+  `receipt_id` instead of promoting twice.
+
+## States
+
+`requested, admitted, snapshotting, validating, repair-required, revalidating, ready, awaiting-approval, promoting,
+activating`, then terminal `promoted | abandoned | failed | canceled`. Legal transitions are the `TRANSITIONS` table;
+any nonterminal state may end as abandoned, failed or canceled.
+
+## Recovery
+
+`stale_candidates(now)` lists nonterminal candidates whose lease lapsed (the startup worklist). The caller reconciles
+repository refs, runs and artifacts against it (those checks need Git and the run store, so they belong to the workflow
+that adopts this store) and then either re-acquires the lease or ends the candidate with `end`. A candidate #2 is never
+admitted until #1 is terminal.
+
+## Stored per candidate
+
+Candidate id, project, state, row version, revision, dev SHA, base stable SHA, candidate SHA, config hash (from
+`docs/release-pipeline-config.md`), owner, lease expiry, fencing token, timestamps; plus revisions, results, pending
+request history, promotion receipts and an append-only audit log.
