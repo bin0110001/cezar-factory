@@ -2,11 +2,20 @@
 
 ## [Unreleased]
 
+- Isolated scanner worker execution profile (#605): `cezar/src/server/verification/scanner-worker-profile.ts` with tests and ledger docs.
 - Untrusted-input policy tests and approval negative tests (#581, parent #133). Adversarial fixtures (injected issue body, instruction-bearing repo file, poisoned memory recall, malicious install script, permission widening) are denied by the existing guards with an audit event each: `protect-governance.ps1` now appends a `governance-denial` record to `governance-denials.jsonl` beside its report, the capability broker takes an optional `audit` callback for denials, Hindsight recall no longer trusts remote `validationStatus` metadata, and `scrub` redacts the token in `Authorization: Bearer <token>`. Tests: `tests/untrusted-input-policy.ps1`, `tests/test_untrusted_input_policy.py`. Docs: `docs/untrusted-input-security.md`.
 - Governance guard hardening (#580): append-only evidence is checked by byte prefix (truncation/in-place rewrite fails, pure appends pass), more evidence/schema paths are protected, and `verify-evidence-binding.ps1` rejects evidence not bound to the current head SHA and attempt id; verdicts now record `attemptId`.
 - Coding-agent trust boundaries (#133): `docs/trust-boundaries.md` maps each untrusted input to its owning control (#104/#113/#101) and records residual risks (#166). The Python redactors now also remove bare GitHub/`sk-` tokens, `api_key`, and `Authorization` values, matching the PowerShell collector. Adversarial tests in `tests/test_factory_trust_boundaries.py`.
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 - Promoter: a stable deploy deferred because Cezar is busy (exit 25) is now a distinct `deploy-deferred` outcome. It no longer counts as a failed deploy attempt, and no "release drift persists" issue is filed while the deferral is inside the 7200s max-defer window; the drift report names the deferral and remaining time (#559).
+
+## [0.3.139] - 2026-11-16
+
+- Release heading for the #581 untrusted-input policy tests and the #605 scanner worker profile (see Unreleased).
+
+## [0.3.138] - 2026-11-16
+
+- Release heading for the #580 governance hardening.
 
 ## [0.3.137] - 2026-11-16
 
