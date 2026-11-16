@@ -63,6 +63,15 @@ validation:
     foreach ($stage in 'changed', 'full', 'verify') {
         $run = Run-Stage $stage
         Check "$stage runs configured adapter" ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed' -and $run.Receipt.stage -eq $stage)
+        if (-not ($run.Code -eq 0 -and $run.Receipt.status -eq 'passed')) {
+            # Surface the adapter's own stderr so a promotion issue is diagnosable on its own.
+            Write-Host "    $stage receipt: $($run.Receipt.status) $($run.Receipt.message)"
+            if (-not $run.Receipt) { Write-Host ('    output: ' + ($run.Output.Trim() -split "`n" | Select-Object -First 15 | Out-String)) }
+            foreach ($art in @($run.Receipt.artifactPaths | Where-Object { $_ -like '*stderr.log' })) {
+                $logPath = Join-Path $project $art
+                if (Test-Path $logPath) { Get-Content $logPath -TotalCount 20 | ForEach-Object { Write-Host "    stderr: $_" } }
+            }
+        }
         Check "$stage receipt binds project head" ($run.Receipt.issue -eq 7 -and $run.Receipt.repository -eq 'example/project' -and $run.Receipt.headSha -eq (& git -C $project rev-parse HEAD))
         $expectedTimeout = if ($stage -eq 'changed') { 1200 } else { 7200 }
         Check "$stage declares bounded timeout" ($run.Receipt.timeoutSeconds -eq $expectedTimeout)

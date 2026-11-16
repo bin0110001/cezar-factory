@@ -8,7 +8,7 @@ done
 cd "$repo_root"
 
 if ! command -v pwsh >/dev/null 2>&1; then
-  echo "pre-commit: PowerShell 7 (pwsh) is required to run the Factory tests." >&2
+  echo "pre-commit: PowerShell 7 (pwsh) is required to run the Factory static checks." >&2
   exit 1
 fi
 if ! command -v yamllint >/dev/null 2>&1; then
@@ -16,5 +16,6 @@ if ! command -v yamllint >/dev/null 2>&1; then
   exit 1
 fi
 
-pwsh -NoProfile -File tests/run-tests.ps1
+# Static checks only: the full suite runs on the Linux host (docs/local-validation.md, ship-loop -Action Validate).
+pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly
 yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies templates

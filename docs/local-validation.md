@@ -1,7 +1,9 @@
 # Local pre-commit validation
 
-Run the Factory test suite and YAML lint locally before committing. The pre-commit
-hook runs both checks and blocks the commit when either fails. GitHub Actions does
+The Linux host is the authority for validation. Windows is an authoring environment:
+the pre-commit hook runs only the fast static checks (`tests/run-tests.ps1 -StaticOnly`)
+and YAML lint and blocks the commit when either fails. The full suite runs on Linux for
+the pushed commit (see "Linux before merge"), and its receipt is the validation evidence. GitHub Actions does
 not run this repository's test or lint scripts, and nothing in this repository may
 depend on a GitHub workflow or status check: all validation runs on our own compute
 (local hooks, `scripts/factory/test-changed.ps1`, `promote-stable.ps1`, and the
@@ -20,13 +22,13 @@ git config --local core.hooksPath .githooks
 ## Run manually
 
 ```powershell
-pwsh -NoProfile -File tests/run-tests.ps1
+pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly
 yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies templates
 ```
 
-The full Factory suite takes several minutes. For a quick static check while
-editing, run `pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly`; run the
-full suite and YAML lint before committing.
+Do not rely on a full local run on Windows: it fails on Windows-only problems that
+do not exist on the host, and passes things the host rejects. Push the branch and run
+`ship-loop -Action Validate` instead (about a minute).
 
 The static check includes the script and workflow contract (`tests/workflow-contract.ps1`): every
 PowerShell script under `scripts/`, `tests/` and `.claude/` must parse, and every workflow `command:` step
@@ -56,7 +58,7 @@ Three more static checks cover what a Windows run cannot see by executing code:
 
 ## Linux before merge
 
-The suite passing on Windows does not mean it passes in the Linux container that promotes a candidate.
+This is the default full-suite validation, not an extra step. Push the branch first (the container fetches the commit from GitHub).
 `pwsh -NoProfile -File .claude/ship/ship-loop.ps1 -Action Validate` runs the host's full suite for a pushed
 commit and writes a receipt to `.factory/ship-loop/receipts/linux-<sha>.json`. `AGENTS.md` requires it before
 merging a change to scripts, tests, workflows, automations, policies or config.

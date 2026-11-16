@@ -96,6 +96,10 @@ KILLED_EXIT_CODES = (137, 143)
 CONTAINER_DOWN_RE = re.compile(r"container state improper|can only create exec sessions on running containers|no such container", re.I)
 MAX_INTERRUPTED_RETRIES = 2
 DRIFT_ISSUE_REPEAT_SECONDS = 6 * 3600
+# deploy-cezar-runtime.sh exits 25 when it defers the restart because Cezar is busy; it gives up after MAX_DEFER (7200s).
+DEPLOY_DEFERRED_EXIT = 25
+DEPLOY_DEFERRED_PREFIX = "deferred:"
+DEPLOY_MAX_DEFER_SECONDS = 7200
 PROBE_WINDOW_SECONDS = 45  # how long drift() retries a transient /factory-release failure before calling it unknown
 
 
@@ -588,11 +592,33 @@ class LocalPromotionScheduler:
         except subprocess.TimeoutExpired:
             return False, "stable deploy timed out"
         tail = (result.stdout or b"").decode("utf-8", "replace")[-600:]
+        if result.returncode == DEPLOY_DEFERRED_EXIT:
+            return False, f"{DEPLOY_DEFERRED_PREFIX} stable deploy deferred while Cezar is busy: {tail}"
         if result.returncode:
             return False, f"stable deploy exited {result.returncode}: {tail}"
         if self._stable_pointer() != sha:
             return False, "deploy finished but the stable channel pointer has not reached this SHA yet (deferred while Cezar is busy)"
         return True, tail
+
+    def _note_deferral(self, sha: str, detail: str) -> bool:
+        """Record a Cezar-busy deferral; True while it is still inside the max-defer window (not a failed attempt)."""
+        if not detail.startswith(DEPLOY_DEFERRED_PREFIX):
+            self._state_put("deploy_deferred_since", "")
+            return False
+        since_sha, _, since = self._state_get("deploy_deferred_since", "").partition("|")
+        if since_sha != sha or not since:
+            since = str(time.time())
+            self._state_put("deploy_deferred_since", f"{sha}|{since}")
+        return time.time() - float(since) <= DEPLOY_MAX_DEFER_SECONDS
+
+    def _deferral_in_window(self, tip: str) -> float | None:
+        """Seconds left of the max-defer window when the stable deploy for tip is deferred, else None."""
+        sha, _, since = self._state_get("deploy_deferred_since", "").partition("|")
+        _, _, error = self._state_get("last_stable_deploy_error", "").partition("|")
+        if sha != tip or not since or not error.startswith(DEPLOY_DEFERRED_PREFIX):
+            return None
+        left = DEPLOY_MAX_DEFER_SECONDS - (time.time() - float(since))
+        return left if left > 0 else None
 
     def _advance(self, sha: str) -> dict[str, Any]:
         """Move a dev-validated candidate through soak, approval, the stable ref, and the stable deploy."""
@@ -617,13 +643,16 @@ class LocalPromotionScheduler:
             stage = "stable-promoted"
         if stage == "stable-promoted":
             ok, detail = self._deploy_stable(sha)
-            attempts = int((row["deploy_attempts"] if row else 0) or 0) + (0 if ok else 1)
+            deferred = (not ok) and self._note_deferral(sha, detail)
+            attempts = int((row["deploy_attempts"] if row else 0) or 0) + (0 if ok or deferred else 1)
             if ok:
                 self._set_stage(sha, self.FINAL_STAGE)
                 self.breaker.record_success()
                 return {"status": "promoted", "sourceSha": sha, "stage": self.FINAL_STAGE}
             self._set_stage(sha, "stable-promoted", deploy_attempts=attempts)
             self._state_put("last_stable_deploy_error", f"{sha}|{detail[-300:]}")
+            if deferred:
+                return {"status": "deploy-deferred", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
             if attempts == 3:  # one issue per candidate, not per tick
                 self._failure("stable-deploy", sha, detail, subject="stable")
             return {"status": "deploy-pending", "sourceSha": sha, "stage": stage, "attempts": attempts, "detail": detail[-300:]}
@@ -649,8 +678,12 @@ class LocalPromotionScheduler:
         if ok:
             self._set_stage(tip, self.FINAL_STAGE)
             self._state_put("last_stable_deploy_error", "")
+            self._state_put("deploy_deferred_since", "")
             return {"status": "stable-reconciled", "sourceSha": tip}
+        deferred = self._note_deferral(tip, detail)
         self._state_put("last_stable_deploy_error", f"{tip}|{detail[-300:]}")
+        if deferred:
+            return {"status": "deploy-deferred", "sourceSha": tip, "detail": detail[-300:]}
         return {"status": "deploy-pending", "sourceSha": tip, "detail": detail[-300:]}
 
     def _stalled_step(self, tip: str) -> str:
@@ -661,6 +694,9 @@ class LocalPromotionScheduler:
         parts = [f"stage {row['stage']}"]
         if row["stage"] == "stable-promoted":
             parts.append(f"deploy pending after {int(row['deploy_attempts'] or 0)} attempt(s)")
+        left = self._deferral_in_window(tip)
+        if left is not None:
+            parts.append(f"deploy deferred while Cezar is busy ({int(left)}s of max-defer remaining)")
         sha, _, error = self._state_get("last_stable_deploy_error", "").partition("|")
         if error and sha == tip:
             parts.append(f"last deploy error: {error.strip()[:200]}")
@@ -744,6 +780,8 @@ class LocalPromotionScheduler:
         if not since:
             self._state_put("drift_since", str(time.time()))
         elif time.time() - since > self.policy["driftGraceSeconds"]:
+            if self._deferral_in_window(report.get("seen", {}).get("originStable", "")) is not None:
+                return report  # a busy-Cezar deferral inside the max-defer window is expected, not persistent drift
             summary = "; ".join(report["findings"])
             # The same finding used to add a comment every tick (hundreds on one issue). Report a finding when
             # it first appears or changes, then only as a reminder.
@@ -847,6 +885,12 @@ class LocalPromotionScheduler:
             return {"status": "unchanged", "sourceSha": sha, "candidateStatus": "failed", "recordPath": existing["record_path"]}
         if existing and existing["status"] not in ("interrupted", "failed", "blocked"):
             return {"status": "unchanged", "sourceSha": sha, "candidateStatus": existing["status"]}
+        quarantined = self.coordinator._load_quarantine(sha) is not None
+        if quarantined and not retry_failed and self._active_sha() != sha:
+            # activate() refuses a quarantined release by design. Re-running it every tick would fail again at
+            # "activation", file a duplicate issue and count toward the breaker; only an explicit retry revalidates.
+            return {"status": "unchanged", "sourceSha": sha, "candidateStatus": "quarantined",
+                    "reason": "release is quarantined; run with retry_failed to revalidate it"}
         if self.policy and self.breaker.is_open() and not retry_failed:
             return {"status": "paused", "sourceSha": sha, "reason": "circuit breaker is open after repeated failures",
                     "resumesAt": dt.datetime.fromtimestamp(self.breaker.open_until(), dt.timezone.utc).isoformat()}
@@ -919,6 +963,13 @@ class LocalPromotionScheduler:
                 record["artifactDigest"] = staged["artifactDigest"]
                 record["manifestDigest"] = staged["manifestDigest"]
                 previous_dev = self._active_sha()
+                if quarantined:
+                    # Explicit retry of a quarantined release: the candidate must revalidate (which clears the
+                    # marker) before activation; a failure is recorded once, at "activation", with its reason.
+                    try:
+                        self.coordinator.revalidate(sha)
+                    except Exception as exc:
+                        raise SchedulerError(f"revalidation of quarantined release failed: {exc}") from exc
                 activation = self.coordinator.activate(sha)
                 record["activation"] = {"status": activation["status"], "activationId": activation.get("activationId"), "targetCount": activation.get("targetCount", 0)}
                 record["candidateState"] = "active"

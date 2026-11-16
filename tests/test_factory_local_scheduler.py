@@ -297,6 +297,49 @@ class LocalPromotionSchedulerTests(unittest.TestCase):
         self.assertIn("review was not approved", record["reason"])
         self.assertEqual(self.activations, [])
 
+    def _quarantine(self, revalidate) -> list[str]:
+        marker = {"on": True}
+        calls: list[str] = []
+        self.scheduler.coordinator._load_quarantine = lambda _sha: pathlib.Path("marker") if marker["on"] else None
+
+        def reval(sha: str) -> dict:
+            calls.append(sha)
+            revalidate()
+            marker["on"] = False
+            return {"status": "revalidated", "sourceSha": sha}
+
+        self.scheduler.coordinator.revalidate = reval
+        return calls
+
+    def test_quarantined_candidate_is_unchanged_without_retry(self) -> None:
+        calls = self._quarantine(lambda: None)
+        result = self.scheduler.run_once()
+        self.assertEqual(result["status"], "unchanged")
+        self.assertEqual(result["candidateStatus"], "quarantined")
+        self.assertEqual(self.activations, [])
+        self.assertEqual(calls, [])
+        with self.scheduler._db() as db:
+            self.assertIsNone(db.execute("SELECT 1 FROM promotions WHERE sha=?", (self.sha,)).fetchone())
+
+    def test_explicit_retry_revalidates_before_activating(self) -> None:
+        calls = self._quarantine(lambda: None)
+        result = self.scheduler.run_once(retry_failed=True)
+        self.assertEqual(result["status"], "healthy")
+        self.assertEqual(calls, [self.sha])
+        self.assertEqual(self.activations, [self.sha])
+
+    def test_failed_revalidation_is_recorded_at_activation_and_never_activates(self) -> None:
+        def bad() -> None:
+            raise RuntimeError("candidate artifact is corrupt")
+        self._quarantine(bad)
+        with self.assertRaisesRegex(SchedulerError, "revalidation of quarantined release failed: candidate artifact is corrupt"):
+            self.scheduler.run_once(retry_failed=True)
+        self.assertEqual(self.activations, [])
+        with self.scheduler._db() as db:
+            row = db.execute("SELECT status,reason FROM promotions WHERE sha=?", (self.sha,)).fetchone()
+        self.assertEqual(row["status"], "failed")
+        self.assertIn("candidate artifact is corrupt", row["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
