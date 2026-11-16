@@ -2,6 +2,7 @@
 """Bounded Hindsight HTTP boundary with evidence-backed provenance."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -14,6 +15,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+_spec = importlib.util.spec_from_file_location("factory_redaction", Path(__file__).resolve().parents[1] / "security" / "redaction.py")
+_redaction = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_redaction)
+
 MAX_MEMORIES, MAX_CHARS, MAX_DETERMINISTIC = 8, 12000, 100
 SECRET = re.compile(r"(?i)(authorization|api[_-]?key|token|password|secret)\s*[:=]\s*\S+|bearer\s+\S+")
 DENY = re.compile(r"(?i)(transcript|raw log|source file|credential|password|token|secret|personal data|temporary state)")
@@ -23,7 +27,7 @@ VALIDATED_KINDS = {"run", "commit", "test"}
 
 
 def scrub(value):
-    return SECRET.sub("[redacted]", str(value)).strip()
+    return SECRET.sub("[redacted]", _redaction.redact(value, marker="[redacted]")).strip()
 
 
 def sha256(value):
