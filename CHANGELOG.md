@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Coding-agent trust boundaries (#133): `docs/trust-boundaries.md` maps each untrusted input to its owning control (#104/#113/#101) and records residual risks (#166). The Python redactors now also remove bare GitHub/`sk-` tokens, `api_key`, and `Authorization` values, matching the PowerShell collector. Adversarial tests in `tests/test_factory_trust_boundaries.py`.
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 - Promoter: a stable deploy deferred because Cezar is busy (exit 25) is now a distinct `deploy-deferred` outcome. It no longer counts as a failed deploy attempt, and no "release drift persists" issue is filed while the deferral is inside the 7200s max-defer window; the drift report names the deferral and remaining time (#559).
 
@@ -34,6 +35,7 @@
 - Keep the private MCP-config permission assertion POSIX-specific; Windows does not expose the same mode bits through `stat`.
 
 - Project-scoped documentation search/read adapter for agents (#177). `scripts/docs/search.py` is a backend-neutral `docs_search`/`docs_read` layer with per-identity project/repo/ref authorisation before retrieval, bounded anchored snippets carrying source SHA, freshness and an evidence link, timeout/retry/cache, checked-in-doc fallback, untrusted-text neutralisation, licensed-path exclusion and a secret-free audit with latency/size metrics. Contract and agent guidance in `integrations/docs-mcp/README.md`. Obot upstream registration and skill publication wait on the #175/#176 backend decision.
+
 ## [0.3.126] - 2026-11-15
 
 - Central MCP profile injection for managed agents (#167): `scripts/mcp/profile.py` resolves a versioned, runner-neutral profile (`config/mcp-profiles.json`) through global, project-type, project and task overlays that may only narrow tools, runners and projects (widening, unknown fields, new servers and embedded credentials are rejected); adapters for Claude (`.mcp.json`) and Codex (`config.toml`) emit only environment-variable references, never secrets; `prepare` issues run-bound identities, writes 0600 config outside Git, and preflights gateway reachability, identity and required tools so a failure is a setup error before any agent retry loop (optional servers only warn); retries keep identity and revision; `cleanup` (cancel or completion) revokes identities and removes files, keeping state if revocation fails. Documented in `docs/mcp-profiles.md`; mock tests in `tests/test_mcp_profile.py`. Live gateway smoke test and wiring into the Cezar dispatch path depend on #165/#166 and remain follow-up.
