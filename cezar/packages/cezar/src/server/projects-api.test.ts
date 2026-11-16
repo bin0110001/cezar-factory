@@ -272,6 +272,28 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('POST /api/v1/workspace/factory-release/candidate-actions', () => {
+    const post = (app: ReturnType<typeof makeApp>, body: unknown) => apiRequest(app, '/api/v1/workspace/factory-release/candidate-actions', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    it('denies by default and requires scope, and returns 404 for an unknown project', async () => {
+      const boot = await registerProject(repoRoot);
+      delete process.env.CEZ_OPERATOR_SCOPES;
+      const denied = await post(makeApp(), { projectId: boot.id, action: 'pause', candidateId: 'c-1' });
+      expect(denied.status).toBe(403);
+      expect((await post(makeApp(), { projectId: 'nope', action: 'pause', candidateId: 'c-1' })).status).toBe(404);
+    });
+    it('requires typed confirmation for cancel before reaching the lifecycle', async () => {
+      const boot = await registerProject(repoRoot);
+      process.env.CEZ_OPERATOR_SCOPES = 'candidate:cancel';
+      try {
+        const response = await post(makeApp(), { projectId: boot.id, action: 'cancel', candidateId: 'c-1' });
+        expect(response.status).toBe(409);
+        expect(((await response.json()) as { outcome: string }).outcome).toBe('confirmation_required');
+      } finally { delete process.env.CEZ_OPERATOR_SCOPES; }
+    });
+  });
+
   describe('GET /api/v1/workspace/manifest', () => {
     it('lists registered projects only and never serializes their roots', async () => {
       const first = await registerProject(repoRoot);

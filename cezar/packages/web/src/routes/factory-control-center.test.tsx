@@ -1,10 +1,11 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FactoryControlCenterRoute } from './factory-control-center'
 
 const useFactoryControlCenter = vi.fn()
-vi.mock('@/api/queries', () => ({ useFactoryControlCenter: () => useFactoryControlCenter() }))
+const mutate = vi.fn()
+vi.mock('@/api/queries', () => ({ useFactoryControlCenter: () => useFactoryControlCenter(), useCandidateAction: () => ({ mutate, isPending: false, isError: false, data: undefined }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 const now = '2026-11-15T12:00:00.000Z'
@@ -56,5 +57,18 @@ describe('Factory Control Center route', () => {
     useFactoryControlCenter.mockReturnValue({ isPending: false, isError: true, error: new Error('offline'), isFetching: false, refetch: vi.fn() })
     renderRoute()
     expect(screen.getByRole('alert').textContent).toContain('offline')
+  })
+
+  it('requires the typed phrase for destructive actions and only calls the endpoint', () => {
+    useFactoryControlCenter.mockReturnValue({ data: snapshot, isPending: false, isError: false, isFetching: false, refetch: vi.fn() })
+    renderRoute()
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'cancel' } })
+    fireEvent.change(screen.getByLabelText('Candidate id'), { target: { value: 'c-1' } })
+    const run = screen.getByRole('button', { name: 'Run cancel' }) as HTMLButtonElement
+    expect(run.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Typed confirmation'), { target: { value: 'cancel c-1' } })
+    expect(run.disabled).toBe(false)
+    fireEvent.click(run)
+    expect(mutate).toHaveBeenCalledWith({ projectId: 'shop', action: 'cancel', candidateId: 'c-1', confirmation: 'cancel c-1' })
   })
 })

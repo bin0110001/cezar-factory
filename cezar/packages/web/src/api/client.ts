@@ -1,8 +1,8 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema, candidateActionResponseSchema } from '@open-mercato/cezar-api-client'
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse, VerificationEvidenceResponse } from '@open-mercato/cezar-api-client'
 import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
-import type { FactoryControlCenterResponse } from '@open-mercato/cezar-api-client'
+import type { CandidateActionRequest, CandidateActionResponse, FactoryControlCenterResponse } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
 import type {
@@ -692,6 +692,12 @@ export async function getFactoryControlCenter(opts?: ReadOptions): Promise<Facto
     await cez.api.v1.workspace['factory-release']['control-center'].$get({}, init(opts)),
     '/workspace/factory-release/control-center',
   ))
+}
+
+export async function postCandidateAction(input: CandidateActionRequest): Promise<CandidateActionResponse> {
+  // Non-2xx bodies carry the structured outcome/message, so read them instead of throwing.
+  const response = await cez.api.v1.workspace['factory-release']['candidate-actions'].$post({ json: input }, init())
+  return candidateActionResponseSchema.parse(await response.json())
 }
 
 export async function getSkills(opts?: ReadOptions): Promise<Skill[]> {

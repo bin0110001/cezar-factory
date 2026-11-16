@@ -1,6 +1,7 @@
 import { AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
 import { Link } from 'react-router'
-import { useFactoryControlCenter } from '@/api/queries'
+import { useState } from 'react'
+import { useCandidateAction, useFactoryControlCenter } from '@/api/queries'
 import { Button } from '@/components/ui/button'
 
 const CHANNELS = ['dev', 'stable'] as const
@@ -14,6 +15,37 @@ function stamp(value: string | null) {
   if (!value) return 'Not recorded'
   const date = new Date(value)
   return Number.isNaN(date.valueOf()) ? 'Unknown' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+const ACTIONS = ['create', 'pause', 'resume', 'cancel', 'abandon', 'retry'] as const
+const DESTRUCTIVE = new Set<string>(['cancel', 'abandon'])
+
+/** Operator controls: only calls the server endpoint (which delegates to the lifecycle state machine) and re-reads. */
+function CandidateActions({ projectId }: { projectId: string }) {
+  const mutation = useCandidateAction()
+  const [action, setAction] = useState<(typeof ACTIONS)[number]>('pause')
+  const [candidateId, setCandidateId] = useState('')
+  const [sourceSha, setSourceSha] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const destructive = DESTRUCTIVE.has(action)
+  const phrase = `${action} ${candidateId}`
+  const ready = action === 'create' ? sourceSha.length >= 40 : candidateId.length > 0 && (!destructive || confirmation === phrase)
+  return <form className="mt-3 space-y-2 rounded-md border p-3" aria-label={`${projectId} candidate actions`} onSubmit={(event) => {
+    event.preventDefault()
+    mutation.mutate({ projectId, action, ...(action === 'create' ? { sourceSha } : { candidateId }), ...(destructive ? { confirmation } : {}) })
+  }}>
+    <h4 className="text-sm font-semibold">Candidate actions</h4>
+    <div className="flex flex-wrap gap-2 text-sm">
+      <select aria-label="Action" className="rounded border bg-background px-2 py-1" value={action} onChange={(e) => setAction(e.target.value as typeof action)}>{ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}</select>
+      {action === 'create'
+        ? <input aria-label="Source commit" className="min-w-0 flex-1 rounded border bg-background px-2 py-1 font-mono" placeholder="Source commit SHA" value={sourceSha} onChange={(e) => setSourceSha(e.target.value.trim())} />
+        : <input aria-label="Candidate id" className="min-w-0 flex-1 rounded border bg-background px-2 py-1 font-mono" placeholder="Candidate id" value={candidateId} onChange={(e) => setCandidateId(e.target.value.trim())} />}
+    </div>
+    {destructive && <label className="block text-xs">Type <code>{phrase}</code> to confirm<input aria-label="Typed confirmation" className="mt-1 block w-full rounded border bg-background px-2 py-1 font-mono" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>}
+    <Button type="submit" size="sm" variant={destructive ? 'destructive' : 'outline'} disabled={!ready || mutation.isPending}>Run {action}</Button>
+    {mutation.data && <p role="status" className="text-xs">{mutation.data.outcome}: {mutation.data.message}</p>}
+    {mutation.isError && <p role="alert" className="text-xs text-destructive">{mutation.error.message}</p>}
+  </form>
 }
 
 export function FactoryControlCenterRoute() {
@@ -66,6 +98,7 @@ export function FactoryControlCenterRoute() {
                 </div>
               </section>)}
             </div>
+            <CandidateActions projectId={project.id} />
             {project.findings.length > 0 && <p className="mt-3 rounded border border-amber-500/40 p-2 text-xs" role="note">Findings: {project.findings.join(', ')}</p>}
           </article>)}
         </div>}

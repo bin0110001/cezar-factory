@@ -13,10 +13,12 @@ import {
   dependencyDecisionResearchDispatchResponseSchema,
   dependencyGraphHistoricalTrendsSchema,
   factoryControlCenterResponseSchema,
+  candidateActionRequestSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
 import { ProjectChannelService, type ProjectChannelTask } from '../factory-release/project-channels.ts';
+import { candidateLifecycle, grantedScopes, jsonlAuditSink, runCandidateAction } from '../factory-release/candidate-actions.ts';
 import { FullRegressionScheduler } from '../verification/full-regression-scheduler.ts';
 import { readEvidenceContent, readVerificationEvidence } from '../verification/visual-evidence.ts';
 import { queryReliabilityAnalytics, queryVerificationHistory, readCodingAttemptManifest, readVerificationArtifact } from '../verification/history.ts';
@@ -3254,6 +3256,22 @@ export function createApp(deps: ServerDeps) {
         };
       }));
       return c.json(factoryControlCenterResponseSchema.parse({ schemaVersion: 1, generatedAt, projects: rows }));
+    })
+
+    // Operator candidate actions (#634): authorize scope, check typed confirmation, then DELEGATE to
+    // the lifecycle state machine port. No state is mutated here; one audit entry per attempt.
+    .post('/workspace/factory-release/candidate-actions', jsonZodValidator(candidateActionRequestSchema), async (c) => {
+      const req = c.req.valid('json');
+      const config = await loadWorkspaceConfig();
+      if (!config.projects.some((project) => project.id === req.projectId)) return c.json({ error: 'Unknown project' }, 404);
+      const actor = (c.req.header('x-cez-actor') ?? '').replace(/[^\w.@-]/g, '').slice(0, 64) || 'operator';
+      const result = await runCandidateAction(req, {
+        lifecycle: candidateLifecycle(),
+        audit: jsonlAuditSink(join(bootDataDir, 'candidate-actions-audit.jsonl')),
+        scopes: grantedScopes(),
+        actor,
+      });
+      return c.json(result.body, result.status);
     })
 
     // Live host totals for a REMOTE cockpit (spec `.ai/specs/2026-09-20-host-resource-telemetry.md`):

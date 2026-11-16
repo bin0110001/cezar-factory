@@ -61,6 +61,7 @@ import {
   getFactoryRelease,
   getFactoryChannelState,
   getFactoryControlCenter,
+  postCandidateAction,
   previewFactoryChannel,
   requestFactoryChannelChange,
   getWorkspaceConfig,
@@ -1255,6 +1256,15 @@ export function useFactoryControlCenter() {
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     retry: false,
+  })
+}
+
+/** Operator candidate action. The server owns all state; on settle we only re-read it. */
+export function useCandidateAction() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: postCandidateAction,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.factoryControlCenter }),
   })
 }
 

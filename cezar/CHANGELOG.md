@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Features
+- Control Center operator candidate actions (#634): create/pause/resume/cancel/abandon/retry endpoint with per-action scopes, typed confirmation for cancel/abandon, single-active-candidate refusal and an audit entry per attempt; delegates to the lifecycle port (state machine #590 pending).
 - Bounded coding-run lifecycle (#131): `workspace/coding-run-lifecycle.ts` adds the Prepare→Context→Implement→Validate→Repair→Deliver→Learn stage order, typed failure reasons (`infra`, `capacity`, `parse`, `test`, `policy`, `cancelled`, `budget-exhausted`) with distinct retry/wait/repair/block semantics, ledger-counted budgets, restart-safe resume planning, duplicate-delivery refusal and stale-attempt rejection. Additive: an optional `reason` on ledger events and `strictLifecycle` on `appendCodingRunEvent`; existing producers and stored history are unchanged.
 - Verification History now includes a 7/30/90-day reliability dashboard with deterministic failure classification, linked PR outcomes, model segmentation, evidence IDs, and coverage limits.
 - GitHub issue detail now includes bounded coding-run history with worker, agent, model, attempts, validation, commit/PR references, evidence completeness, optional Langfuse links, and permission-checked evidence downloads.

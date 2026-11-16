@@ -52,3 +52,45 @@ export const factoryControlCenterResponseSchema = z.object({
   })),
 }).strict();
 export type FactoryControlCenterResponse = z.infer<typeof factoryControlCenterResponseSchema>;
+
+/** Operator candidate actions (#634). Scopes are deny-by-default and one per action. */
+export const candidateActionSchema = z.enum(['create', 'pause', 'resume', 'cancel', 'abandon', 'retry']);
+export type CandidateAction = z.infer<typeof candidateActionSchema>;
+export const candidateActionScopes = {
+  create: 'candidate:create', pause: 'candidate:pause', resume: 'candidate:resume',
+  cancel: 'candidate:cancel', abandon: 'candidate:abandon', retry: 'candidate:retry',
+} as const satisfies Record<CandidateAction, string>;
+/** Actions that need the typed confirmation phrase `<action> <candidateId>`. */
+export const destructiveCandidateActions = ['cancel', 'abandon'] as const satisfies readonly CandidateAction[];
+
+export const candidateActionRequestSchema = z.object({
+  projectId: z.string().min(1),
+  action: candidateActionSchema,
+  /** Required for every action except `create`. */
+  candidateId: z.string().min(1).optional(),
+  /** Required for create: the commit the candidate is built from. */
+  sourceSha: shaSchema.optional(),
+  /** Typed confirmation, exactly `<action> <candidateId>`; required for cancel and abandon. */
+  confirmation: z.string().optional(),
+}).strict();
+export type CandidateActionRequest = z.infer<typeof candidateActionRequestSchema>;
+
+export const candidateActionOutcomeSchema = z.enum(['accepted', 'denied', 'rejected', 'confirmation_required', 'failed']);
+export const candidateActionResponseSchema = z.object({
+  schemaVersion: z.literal(1),
+  outcome: candidateActionOutcomeSchema,
+  message: z.string(),
+  candidateId: z.string().nullable(),
+  state: z.string().nullable(),
+}).strict();
+export type CandidateActionResponse = z.infer<typeof candidateActionResponseSchema>;
+
+export const candidateAuditEntrySchema = z.object({
+  at: z.string().datetime(),
+  actor: z.string(),
+  projectId: z.string(),
+  candidateId: z.string().nullable(),
+  action: candidateActionSchema,
+  outcome: candidateActionOutcomeSchema,
+}).strict();
+export type CandidateAuditEntry = z.infer<typeof candidateAuditEntrySchema>;
