@@ -60,6 +60,7 @@ import {
   getWorkflows,
   getFactoryRelease,
   getFactoryChannelState,
+  getFactoryControlCenter,
   previewFactoryChannel,
   requestFactoryChannelChange,
   getWorkspaceConfig,
@@ -393,6 +394,7 @@ export function useCodingRunExplorer(issueNumber: number | undefined) {
  */
 export const workspaceQueryKeys = {
   dashboard: ['workspace', 'dashboard'] as const,
+  factoryControlCenter: ['workspace', 'factory-release', 'control-center'] as const,
   models: (runner: string) => ['workspace', 'models', runner] as const,
   providerStatus: ['workspace', 'providers', 'status'] as const,
   projects: ['workspace', 'projects'] as const,
@@ -1242,6 +1244,17 @@ export function useFactoryChannelState() {
     queryKey: queryKeys.factoryChannelState,
     queryFn: ({ signal }) => getFactoryChannelState({ signal }),
     staleTime: 10_000,
+  })
+}
+
+export function useFactoryControlCenter() {
+  return useQuery({
+    queryKey: workspaceQueryKeys.factoryControlCenter,
+    queryFn: ({ signal }) => getFactoryControlCenter({ signal }),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,
   })
 }
 

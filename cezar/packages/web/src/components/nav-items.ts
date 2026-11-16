@@ -11,6 +11,7 @@ import {
   KanbanIcon,
   ScaleIcon,
   WaypointsIcon,
+  GaugeIcon,
 } from 'lucide-react'
 import type { ComponentType, SVGProps } from 'react'
 import type { TrackerKind } from '@open-mercato/cezar-api-client'
@@ -58,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/tracker', label: 'Tracker', icon: TicketIcon, match: ['/tracker'], tracker: true },
   { to: '/dependencies', label: 'Dependencies', icon: WaypointsIcon, match: ['/dependencies'] },
   { to: '/verification', label: 'Verification', icon: ActivityIcon, match: ['/verification'] },
+  { to: '/factory', label: 'Factory', icon: GaugeIcon, match: ['/factory'] },
   { to: '/backlog', label: 'Backlog', icon: KanbanIcon, match: ['/backlog'] },
   { to: '/automations', label: 'Automations', icon: ZapIcon, match: ['/automations'], automations: true },
   { to: '/skills', label: 'Skills', icon: SparklesIcon, match: ['/skills'], badge: 'skills-update' },

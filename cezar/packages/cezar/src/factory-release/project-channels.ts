@@ -5,6 +5,8 @@ import {
   canonicalizeFactoryJson,
   factoryDeploymentReceiptSchema,
   factoryReleaseChannelPointerSchema,
+  parseFactoryReleaseManifest,
+  parseFactoryReleaseState,
   type FactoryChannel,
 } from '@open-mercato/cezar-contract';
 
@@ -108,6 +110,65 @@ export class ProjectChannelService {
       }
     }
     return records.sort((a, b) => a.requestedAt.localeCompare(b.requestedAt) || a.activationGeneration - b.activationGeneration);
+  }
+
+  async controlCenter() {
+    const [state, receipts, devPointer, stablePointer] = await Promise.all([
+      this.state(), this.receipts(), this.pointer('dev'), this.pointer('stable'),
+    ]);
+    const history = receipts.slice(-20).reverse().map((receipt) => ({
+      id: receipt.receiptId,
+      channel: receipt.channel,
+      desiredSha: receipt.desiredSha,
+      actualSha: receipt.actualSha,
+      observedSha: receipt.observedSha,
+      state: receipt.state,
+      requestedAt: receipt.requestedAt,
+      stagedAt: receipt.stagedAt ?? null,
+      activatedAt: receipt.activatedAt ?? null,
+      observedAt: receipt.observedAt ?? null,
+      compatibility: receipt.compatibility?.status ?? 'unknown',
+      reasonCode: receipt.reasonCode ?? null,
+      message: receipt.message ?? null,
+      logRef: receipt.logRef ?? null,
+    }));
+    const channels = await Promise.all(([
+      ['dev', devPointer], ['stable', stablePointer],
+    ] as const).map(async ([channel, pointer]) => {
+      const latest = [...receipts].reverse().find((receipt) => receipt.channel === channel);
+      const quarantined = Boolean(pointer && this.context.storeRoot && await jsonFile(join(this.context.storeRoot, 'quarantine', `${pointer.currentSha}.json`)));
+      const releaseRoot = pointer && this.context.storeRoot ? join(this.context.storeRoot, 'releases', pointer.currentSha) : undefined;
+      const manifest = releaseRoot ? parseFactoryReleaseManifest(await jsonFile(join(releaseRoot, 'manifest.json'))) : undefined;
+      const release = releaseRoot ? parseFactoryReleaseState(await jsonFile(join(releaseRoot, 'state.json'))) : undefined;
+      const state = !pointer ? 'unknown'
+        : quarantined ? 'quarantined'
+          : latest && ['pending', 'staged', 'activating'].includes(latest.state) && latest.desiredSha === pointer.currentSha ? 'activating'
+            : latest?.state === 'active' && latest.desiredSha === pointer.currentSha && latest.actualSha === pointer.currentSha && latest.observedSha === pointer.currentSha ? 'healthy'
+              : release?.status === 'valid' && release.data.state === 'quarantined' ? 'quarantined'
+                : release?.status === 'valid' && release.data.state === 'verified' ? 'eligible'
+                  : release?.status === 'valid' && release.data.state === 'built' ? 'candidate'
+                    : 'unknown';
+      return {
+        channel,
+        desiredSha: pointer?.currentSha ?? null,
+        activatedSha: latest?.desiredSha ?? null,
+        observedSha: latest?.observedSha ?? null,
+        state,
+        updatedAt: pointer?.updatedAt ?? null,
+        manifestDigest: manifest?.status === 'valid' && manifest.data.source.sha === pointer?.currentSha ? manifest.data.manifestDigest : null,
+        manifest: manifest?.status === 'valid' && manifest.data.source.sha === pointer?.currentSha ? {
+          buildId: manifest.data.build.id,
+          builder: manifest.data.build.builder,
+          workflow: manifest.data.build.workflow,
+          completedAt: manifest.data.build.completedAt,
+          verificationDigest: manifest.data.verification.digest,
+          verificationEvidenceRef: manifest.data.verification.evidenceRef,
+          cezarApi: manifest.data.compatibility.cezarApi,
+          requiredCapabilities: manifest.data.compatibility.requiredCapabilities,
+        } : null,
+      };
+    }));
+    return { state, channels, history };
   }
 
   async state() {

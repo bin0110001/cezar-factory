@@ -94,6 +94,9 @@ const DependencyIntelligenceRoute = lazy(() =>
 const VerificationHistoryRoute = lazy(() =>
   import('./routes/verification-history').then((m) => ({ default: m.VerificationHistoryRoute })),
 )
+const FactoryControlCenterRoute = lazy(() =>
+  import('./routes/factory-control-center').then((m) => ({ default: m.FactoryControlCenterRoute })),
+)
 
 /** Lazy because the builder carries dnd-kit (R6 Step 1.6) — drag machinery only this surface
  *  uses, so only this surface pays for it. */
@@ -467,6 +470,7 @@ export const AppRoutes = memo(function AppRoutes() {
         />
         <Route path="dependencies" element={<Suspense fallback={<ScopeResolving />}><DependencyIntelligenceRoute /></Suspense>} />
         <Route path="verification" element={<Suspense fallback={<div className="p-6 text-sm text-muted-foreground" role="status">Loading verification history…</div>}><VerificationHistoryRoute /></Suspense>} />
+        <Route path="factory" element={<Suspense fallback={<ScopeResolving />}><FactoryControlCenterRoute /></Suspense>} />
         <Route path="recovery" element={<Suspense fallback={<ScopeResolving />}><RecoveryRoute /></Suspense>} />
         <Route path="decisions" element={<Suspense fallback={<ScopeResolving />}><DecisionsRoute /></Suspense>} />
         <Route path="backlog" element={<Suspense fallback={<ScopeResolving />}><BacklogRoute /></Suspense>} />
