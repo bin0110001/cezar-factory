@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Scanner trust policy (#604): `server/verification/scanner-trust-policy.ts` rejects floating or unpinned, digest-mismatched, unsigned or untrusted-signer scanners (`fail`) and missing binary or missing/expired advisory DB (`unknown`), never green. Docs: `docs/scanner-trust-policy.md`.
+
 - Threat model and control ownership map (#578): `docs/trust-boundaries.md` now lists each input with its owner or gap, attacker capabilities and the negative-test scenarios; the docs test checks the new sections.
 - Isolated scanner worker execution profile (#605): allowlist-only env, read-only source/artifact mounts, no egress outside the advisory DB update phase, planted-secret redaction, fail-closed on Windows or without Podman. `server/verification/scanner-worker-profile.ts`, docs in `docs/scanner-worker-profile.md`.
 
