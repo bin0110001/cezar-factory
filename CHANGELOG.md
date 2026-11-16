@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Immutable regression snapshots (#592): create-only `refs/rc/<id>/<rev>` references, compare-and-swap regression pointer with writer-drift and non-fast-forward blocks, deleted/moved ref detection and recovery, repair revisions that never merge dev, promotion provenance, and audited cleanup (`scripts/release/release_snapshot.py`, `docs/release-snapshot.md`). Library only.
+
 - Dual-mode release triggers and admission (#591): DST-safe calendar schedules with missed-run coalesce/skip, dev-change rules (thresholds, paths, cooldown, quiet hours, max delay, any/all), source priority, idempotent submission to the candidate store, admission explanations and backoff (`scripts/release/release_triggers.py`, `docs/release-triggers.md`). Config contract gains the matching optional trigger fields. Library only; no scheduler service.
 
 - Durable single-active release candidate store (#590): SQLite-backed candidate, revision, evidence, pending-request and audit tables where a partial unique index enforces one nonterminal candidate per project, with fencing tokens, row versions, immutable revision-bound evidence and idempotent requests/receipts (`scripts/release/release_candidate_store.py`, `docs/release-candidate-store.md`). Library only; the live promoter does not use it yet.
