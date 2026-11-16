@@ -6,7 +6,8 @@
     { "category": "policy", "globs": ["policies/**", "config/promotion-policy.json"] },
     { "category": "baseline", "globs": ["**/baselines/**", "**/*.baseline", "**/*.baseline.*", "**/*-baseline.*"] },
     { "category": "check-selection", "globs": [".ai/factory/test-ownership.json"], "semantic": "mandatory-checks" },
-    { "category": "ledger-evidence", "globs": [".factory/ledger/**", "ledger/**", "evidence/**"], "appendOnly": true },
+    { "category": "ledger-evidence", "globs": [".factory/ledger/**", ".factory/verification/**", ".factory/repair-ledger*", ".factory/evaluations/**", ".factory/artifacts/validation/**", ".factory/ship-loop/receipts/**", ".factory/release-reports/**", "ledger/**", "evidence/**"], "appendOnly": true },
+    { "category": "evidence-schema", "globs": ["schemas/evidence-manifest.schema.json", "schemas/validation-receipt.schema.json", "schemas/governance-authorization.schema.json"] },
     { "category": "guard", "globs": ["scripts/factory/protect-governance.ps1", "workflows/implement.yaml", "workflows/fix-review.yaml"] }
   ]
 }

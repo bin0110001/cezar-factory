@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Governance guard hardening (#580): append-only evidence is checked by byte prefix (truncation/in-place rewrite fails, pure appends pass), more evidence/schema paths are protected, and `verify-evidence-binding.ps1` rejects evidence not bound to the current head SHA and attempt id; verdicts now record `attemptId`.
 - Coding-agent trust boundaries (#133): `docs/trust-boundaries.md` maps each untrusted input to its owning control (#104/#113/#101) and records residual risks (#166). The Python redactors now also remove bare GitHub/`sk-` tokens, `api_key`, and `Authorization` values, matching the PowerShell collector. Adversarial tests in `tests/test_factory_trust_boundaries.py`.
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 - Promoter: a stable deploy deferred because Cezar is busy (exit 25) is now a distinct `deploy-deferred` outcome. It no longer counts as a failed deploy attempt, and no "release drift persists" issue is filed while the deferral is inside the 7200s max-defer window; the drift report names the deferral and remaining time (#559).
