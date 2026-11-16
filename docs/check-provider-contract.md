@@ -36,3 +36,39 @@ secrets before anything is stored. A malformed document throws; it never normali
 
 Assumption: the #52 ledger's finding kinds are a closed contract enum, so persisting these findings through
 `finding-ingest` (a new kind) is done with the gate integration in #619 rather than by widening the contract here.
+
+## Check runner (#618)
+
+`checks/check-runner.ts` runs a `CheckProviderPlugin` (CLI/container invocation in the #605 isolated worker is
+the plugin's job; tests use fake Trivy/Semgrep/custom doubles). `runCheck` applies the optional #604 trust
+policy, a timeout, advisory-DB freshness against `maxAgeHours`, normalization, and `deriveCheckStatus`, so a
+crash, timeout, unparseable output, missing or stale feed, or untrusted scanner is never `pass`. Provenance pins
+source SHA, provider name/version/digest, config digest, DB timestamp, artifact digest, worker profile and scope.
+The cache key covers all of those, so any change misses; a different scope never reuses a result (#593).
+Failures and stale feeds are not cached. `aggregateCategory` combines several providers in one category: worst
+status wins and findings merge by common fingerprint.
+
+## Gates and independent schedule (#619)
+
+`checks/check-gates.ts` evaluates release gates from normalized records keyed only on category, mandatory/optional
+and max age (plus the source SHA under test). A missing, stale, other-SHA or non-passing (`fail`/`error`/`unknown`)
+mandatory result blocks; verdicts carry no provider names, so swapping a provider changes nothing in the
+evaluation. `queryRecordFindings` is the single findings query across providers.
+
+`planDueChecks` lists the checks due for a `periodic-independent`, `manual` or `risk-event` trigger (periodic is due
+when never run or older than `maxAgeHours`). It returns check ids only, so a scheduled run cannot create a regression
+candidate. Cron/timezone evaluation is left to the automation scheduler that calls it.
+
+## Trivy adapter (#606)
+
+`checks/providers/trivy-adapter.ts` is the only place Trivy is named. `buildTrivyArgv` enables the repository,
+filesystem, image, misconfiguration, secret and license domains independently (each maps to a contract category) and
+can request a CycloneDX SBOM. `trivyPlugin` runs the argv through an injected `exec` (the #605 isolated worker supplies
+the scrubbed environment), parses the JSON report and hands generic findings to the shared normalizer. Secret `Match`
+text is never copied. A report with no lockfile/package result is `unknown` (`not-run`, reason recorded), a non-zero exit,
+non-JSON or malformed report is `error`, and `Status: not_affected` is a waived false positive. Redundant scans are avoided
+with the runner cache (enable `policy.cache`). `reconcile.ts` compares consecutive runs by common fingerprint into
+opened/still-open/fixed; a run that did not complete fixes nothing.
+
+Assumption: persisting reconciled findings through the #52 ledger needs a new finding kind in the contract enum and is
+not done here (see the normalized findings note).

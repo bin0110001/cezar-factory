@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 - Immutable regression snapshot (#592): `scripts/release/factory_candidate_snapshot.py` freezes a candidate (merged dev SHA, stable base, policy digest, fingerprints) behind an immutable `rc/<id>/<rev>` tag, moves the optional regression pointer only by compare-and-swap, returns blocked/recovery results for drift, deletion and races, builds repair revisions without merging dev, and cleans refs under retention with an audit log. Docs: `docs/promotion-pipeline.md`.
+- OSV-Scanner adapter and provider-swap proof (#607): second SCA provider behind the same contract, shared fixture suite passing for both, and a fixture-level comparison in `docs/check-provider-comparison.md`.
+
+- Trivy adapter (#606): per-domain argv builder, JSON report parsing behind the provider contract, no-lockfile reported as unknown, waived false positives, and run reconciliation (open/fixed) (`server/verification/checks/providers/trivy-adapter.ts`, `reconcile.ts`).
+
+- Check gates and independent schedule (#619): provider-agnostic gate evaluation by category, mandatory/optional and max age, one findings query, and a due-check planner that cannot create a candidate (`server/verification/checks/check-gates.ts`).
+
+- Check runner (#618): provider plugin runner with trust gating, timeout, DB-freshness mapping, pinned provenance, and a cache invalidated by scanner/DB/config/input/scope/worker versions (`server/verification/checks/check-runner.ts`).
 
 - Normalized findings (#617): SARIF and generic JSON normalizers with a provider-independent fingerprint, retained source fingerprints, waiver metadata, redacted evidence and a single query (`server/verification/checks/normalized-findings.ts`, docs in `docs/check-provider-contract.md`).
 
