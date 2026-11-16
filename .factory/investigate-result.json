@@ -1,0 +1,10 @@
+{
+  "issue": 631,
+  "failureClassification": "unknown",
+  "evidence": "Issue moved to factory:investigate state due to failed Cezar run. No PR exists for #631, no implementation branch or attempt artifacts found. Dependencies status: PR #630 (#590 durable single-active candidate) merged to dev, PR #638 (#593 candidate-scoped verification) merged to dev. Parent epic #588 and children #589 (#589 release pipeline config) also completed.",
+  "attemptsReviewed": "Issue #631 has no implemented PR or implementation branch. The issue was labeled factory:investigate by factory maintenance after a failed Cezar run. No code changes or test artifacts exist in the repository related to this issue.",
+  "rootCauseHypothesis": "The previous Cezar run that attempted to process issue #631 likely failed due to missing context, race condition in dynamic issue selection, or inability to establish the implementation plan from the complex dependency tree (epic #588 with 11 children in the delivery path).",
+  "confidence": "medium",
+  "recommendedAction": "Re-plan and continue automatically by selecting this issue as the next eligible task from the backlog. All parent dependencies are merged to dev (#589, #590, #593). Begin by establishing a new task branch from origin/dev and implementing the candidate read-model API per the factory-plan comment in issue #631: add zod contract types in cezar/packages/contract, server route under /workspace/factory-release/, web api-client methods, with the check matrix fields from #603.",
+  "automaticRetryAppropriate": true
+}
