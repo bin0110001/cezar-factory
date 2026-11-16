@@ -110,6 +110,12 @@ function Fail-Guard([string]$Why) {
     foreach ($v in $violations) { Write-Host "  [$($v.category)] $($v.path): $($v.reason)" }
     Write-Host "Authorization: a reviewer other than the PR author must submit an APPROVED GitHub review on the head commit whose body contains '$reviewTag', and the marker $AuthorizationPath must reference it (schemas/governance-authorization.schema.json). $Why"
     Write-Report @{ status = 'fail'; base = $Base; head = $head; reason = $Why; requiredReviewTag = $reviewTag; protectedViolations = @($violations) }
+    # Audit event: an append-only denial record beside the report (never edits the waiver ledger).
+    $denialDir = Split-Path -Parent $ReportPath
+    $denialLog = if ($denialDir) { Join-Path $denialDir 'governance-denials.jsonl' } else { 'governance-denials.jsonl' }
+    $denial = [ordered]@{ type = 'governance-denial'; recordedAt = [DateTime]::UtcNow.ToString('o'); head = $head; base = $Base; task = $Task; reason = $Why
+        denied = @($violations | ForEach-Object { [ordered]@{ path = $_.path; category = $_.category; change = $_.change } }) }
+    Add-Content -LiteralPath $denialLog -Value ($denial | ConvertTo-Json -Depth 6 -Compress) -Encoding utf8
     exit 1
 }
 

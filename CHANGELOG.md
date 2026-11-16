@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Untrusted-input policy tests and approval negative tests (#581, parent #133). Adversarial fixtures (injected issue body, instruction-bearing repo file, poisoned memory recall, malicious install script, permission widening) are denied by the existing guards with an audit event each: `protect-governance.ps1` now appends a `governance-denial` record to `governance-denials.jsonl` beside its report, the capability broker takes an optional `audit` callback for denials, Hindsight recall no longer trusts remote `validationStatus` metadata, and `scrub` redacts the token in `Authorization: Bearer <token>`. Tests: `tests/untrusted-input-policy.ps1`, `tests/test_untrusted_input_policy.py`. Docs: `docs/untrusted-input-security.md`.
+
 - Autodeploy parity now compares one Git-indexed managed-file manifest on host and container, excludes untracked/generated artifacts, and records the differing paths when a real mismatch blocks deployment (#561).
 
 - Route the low-complexity jobs (intake, investigate, fix-review/changes-requested, maintenance) back to the local gateway model (`codex` / `factory-gateway/factory-code`, Qwen on the model host). Planning, review, implement and repair stay on Claude. The earlier temporary Claude routing (#321) is reverted for these four only.

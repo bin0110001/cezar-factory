@@ -66,7 +66,8 @@ def narrow_capabilities(granted, project_config):
 
 
 class CapabilityBroker:
-    def __init__(self, secret=None, fence_lookup=None, clock=time.time, env=None):
+    def __init__(self, secret=None, fence_lookup=None, clock=time.time, env=None, audit=None):
+        self._audit = audit  # optional callable(event: dict); receives denials only, never credential material
         self._key = secret or secrets.token_bytes(32)
         self._fence_lookup = fence_lookup or (lambda session: None)
         self._clock = clock
@@ -80,8 +81,26 @@ class CapabilityBroker:
     def _sign(self, body):
         return _b64(hmac.new(self._key, body.encode(), hashlib.sha256).digest())
 
-    def issue(self, *, project, run, attempt, session, fence, capability="observe",
-              ttl=DEFAULT_TTL, project_config=None):
+    def _emit_denial(self, op, reason, **ctx):
+        if self._audit:
+            self._audit({"event": "capability-denied", "op": op, "reason": reason, **ctx})
+
+    def issue(self, **kwargs):
+        try:
+            return self._issue(**kwargs)
+        except Denied as denied:
+            self._emit_denial("issue", denied.reason, capability=kwargs.get("capability"), session=kwargs.get("session"))
+            raise
+
+    def authorize(self, token, **kwargs):
+        try:
+            return self._authorize(token, **kwargs)
+        except Denied as denied:
+            self._emit_denial("authorize", denied.reason, action=kwargs.get("action"), session=kwargs.get("session"))
+            raise
+
+    def _issue(self, *, project, run, attempt, session, fence, capability="observe",
+               ttl=DEFAULT_TTL, project_config=None):
         for v in (project, run, attempt, session):
             if not isinstance(v, str) or not _ID.match(v):
                 raise Denied("identity-invalid")
@@ -115,7 +134,7 @@ class CapabilityBroker:
             raise Denied("wrong-audience")
         return claims
 
-    def authorize(self, token, *, action, project, session, target="session"):
+    def _authorize(self, token, *, action, project, session, target="session"):
         """Return claims when ``action`` on ``session`` is permitted, else raise Denied."""
         claims = self._claims(token)
         if self._clock() >= claims["exp"]:

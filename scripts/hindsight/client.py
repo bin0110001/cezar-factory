@@ -15,7 +15,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 MAX_MEMORIES, MAX_CHARS, MAX_DETERMINISTIC = 8, 12000, 100
-SECRET = re.compile(r"(?i)(authorization|api[_-]?key|token|password|secret)\s*[:=]\s*\S+|bearer\s+\S+")
+SECRET = re.compile(r"(?i)(authorization|api[_-]?key|token|password|secret)\s*[:=]\s*(?:bearer\s+)?\S+|bearer\s+\S+")
 DENY = re.compile(r"(?i)(transcript|raw log|source file|credential|password|token|secret|personal data|temporary state)")
 ALLOWED = {"architecture", "recurring-failure", "successful-fix", "convention", "environment-discovery"}
 EVIDENCE_KINDS = {"run", "issue", "commit", "test", "file"}
@@ -414,7 +414,8 @@ def recall(args):
                 version = int(raw_version) if raw_version is not None and int(raw_version) > 0 else None
             except (TypeError, ValueError):
                 version = None
-            validation = str(local_record.get("validationStatus") or metadata.get("validationStatus") or "unvalidated")
+            # Remote metadata is untrusted: only the local provenance index can mark a memory validated.
+            validation = str(local_record.get("validationStatus") or "unvalidated")
             if validation not in {"validated", "unvalidated"}:
                 validation = "unvalidated"
             if not re.fullmatch(r"[a-f0-9]{64}", content_hash):
