@@ -66,6 +66,26 @@ foreach ($path in ($changes.Keys | Sort-Object)) {
     foreach ($asset in $manifest.assets) {
         if (-not ($asset.globs | Where-Object { $path -match (ConvertTo-Regex $_) })) { continue }
         if ($asset.appendOnly -and $status -eq 'A') { break }   # new ledger records are allowed; edits/deletes/renames of history are not
+        if ($asset.appendOnly -and $status -eq 'M') {
+            # A modified append-only file is allowed only as a pure append: the base content must be an unchanged byte prefix of the new content.
+            $isPrefix = $false
+            try {
+                $tmp = [IO.Path]::GetTempFileName()
+                try {
+                    $psi = [Diagnostics.ProcessStartInfo]::new('git'); $psi.RedirectStandardOutput = $true; $psi.UseShellExecute = $false
+                    foreach ($a in @('-C', $Root, 'show', "${Base}:$path")) { $psi.ArgumentList.Add($a) }
+                    $proc = [Diagnostics.Process]::Start($psi)
+                    $fs = [IO.File]::Create($tmp); $proc.StandardOutput.BaseStream.CopyTo($fs); $fs.Dispose(); [void]$proc.WaitForExit(60000)
+                    if ($proc.ExitCode -eq 0) {
+                        $oldBytes = [IO.File]::ReadAllBytes($tmp); $newBytes = [IO.File]::ReadAllBytes((Join-Path $Root $path))
+                        $isPrefix = $newBytes.Length -ge $oldBytes.Length
+                        for ($i = 0; $isPrefix -and $i -lt $oldBytes.Length; $i++) { if ($oldBytes[$i] -ne $newBytes[$i]) { $isPrefix = $false } }
+                    }
+                } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
+            } catch { $isPrefix = $false }
+            if ($isPrefix) { break }
+            $violations.Add([pscustomobject]@{ path = $path; category = $asset.category; change = $status; reason = 'append-only evidence was truncated or rewritten (base content is not an unchanged prefix)' }); break
+        }
         if ($asset.semantic -eq 'mandatory-checks' -and $status -eq 'M') {
             # Additive edits (new checks, extra patterns) are allowed; removing or altering an existing check is not.
             $problems = @()

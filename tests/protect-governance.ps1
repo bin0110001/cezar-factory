@@ -21,6 +21,7 @@ function New-Repo {
     Write-F 'policies/risk.yaml' 'a: 1'; Write-F 'tests/baselines/x.json' '{}'; Write-F 'src/app.txt' 'one'
     Write-F '.ai/factory/test-ownership.json' $ownership
     Write-F 'ledger/run-1.json' '{"run":1}'
+    Write-F '.factory/release-reports/log.jsonl' ('{"n":1}' + "`n" + '{"n":2}')
     G add -A; G commit -q -m base
     $script:base = ((& git -C $script:repo rev-parse HEAD) -join '').Trim()
 }
@@ -39,9 +40,9 @@ New-Repo
 Write-F 'src/app.txt' 'two'; Write-F 'docs/new.md' 'x'; Commit-All
 $r = Run-Guard
 Check 'unprotected diff passes' ($r.code -eq 0 -and $r.out -match 'PASS')
-G checkout -q -b clean-new; Write-F 'ledger/run-2.json' '{"run":2}'; Write-F '.ai/factory/test-ownership.json' ($ownership -replace '"c/\*\*"', '"c/**","d/**"'); Commit-All
+G checkout -q -b clean-new; Add-Content -LiteralPath (Join-Path $script:repo '.factory/release-reports/log.jsonl') -Value '{"n":3}' -Encoding utf8; Write-F 'ledger/run-2.json' '{"run":2}'; Write-F '.ai/factory/test-ownership.json' ($ownership -replace '"c/\*\*"', '"c/**","d/**"'); Commit-All
 $r = Run-Guard
-Check 'append-only new ledger records and additive selection edits pass' ($r.code -eq 0)
+Check 'append-only new ledger records, pure jsonl appends and additive selection edits pass' ($r.code -eq 0)
 
 $cases = @(
     @{ name = 'policy edit'; cat = 'policy'; file = 'policies/risk.yaml'; act = { Write-F 'policies/risk.yaml' 'a: 2' } },
@@ -52,6 +53,12 @@ $cases = @(
     @{ name = 'ledger evidence edit'; cat = 'ledger-evidence'; file = 'ledger/run-1.json'; act = { Write-F 'ledger/run-1.json' '{"run":9}' } },
     @{ name = 'ledger evidence delete'; cat = 'ledger-evidence'; file = 'ledger/run-1.json'; act = { Remove-Item (Join-Path $script:repo 'ledger/run-1.json') } },
     @{ name = 'ledger evidence rename'; cat = 'ledger-evidence'; file = 'ledger/run-1.json'; act = { G mv ledger/run-1.json src/run-1.json } },
+    @{ name = 'jsonl ledger truncated'; cat = 'ledger-evidence'; file = '.factory/release-reports/log.jsonl'; act = { Set-Content -LiteralPath (Join-Path $script:repo '.factory/release-reports/log.jsonl') -Value '{"n":1}' -Encoding utf8 } },
+    @{ name = 'jsonl ledger record rewritten in place'; cat = 'ledger-evidence'; file = '.factory/release-reports/log.jsonl'; act = { Set-Content -LiteralPath (Join-Path $script:repo '.factory/release-reports/log.jsonl') -Value ('{"n":1}' + "`n" + '{"n":9}') -Encoding utf8 } },
+    @{ name = 'jsonl ledger deleted'; cat = 'ledger-evidence'; file = '.factory/release-reports/log.jsonl'; act = { Remove-Item (Join-Path $script:repo '.factory/release-reports/log.jsonl') } },
+    @{ name = 'evidence schema edit'; cat = 'evidence-schema'; file = 'schemas/evidence-manifest.schema.json'; act = { Write-F 'schemas/evidence-manifest.schema.json' '{}' } },
+    @{ name = 'mandatory-check config deleted'; cat = 'check-selection'; file = '.ai/factory/test-ownership.json'; act = { Remove-Item (Join-Path $script:repo '.ai/factory/test-ownership.json') } },
+    @{ name = 'mandatory-check config renamed'; cat = 'check-selection'; file = '.ai/factory/test-ownership.json'; act = { G mv .ai/factory/test-ownership.json src/own.json } },
     @{ name = 'dropped mandatory check'; cat = 'check-selection'; file = '.ai/factory/test-ownership.json'; act = { Write-F '.ai/factory/test-ownership.json' '{"schemaVersion":1,"unmapped":"full","checks":[{"id":"a","patterns":["a/**","b/**"],"command":"run-a"}]}' } },
     @{ name = 'narrowed check patterns'; cat = 'check-selection'; file = '.ai/factory/test-ownership.json'; act = { Write-F '.ai/factory/test-ownership.json' ($ownership -replace '"a/\*\*","b/\*\*"', '"a/**"') } },
     @{ name = 'weakened check command'; cat = 'check-selection'; file = '.ai/factory/test-ownership.json'; act = { Write-F '.ai/factory/test-ownership.json' ($ownership -replace 'run-a', 'true') } },
@@ -149,6 +156,23 @@ G update-ref refs/remotes/origin/dev HEAD
 $r = Run-GuardAuto
 Check 'a forged local origin/dev ref does not hide the branch own protected change' ($r.code -ne 0 -and $r.out -match 'policies/risk.yaml')
 Remove-Item -Recurse -Force $origin, $other -ErrorAction SilentlyContinue
+
+# Evidence binding: replay of evidence for another head/attempt is rejected fail-closed.
+Write-Host '== verify-evidence-binding =='
+$verifier = Join-Path $factory 'scripts/factory/verify-evidence-binding.ps1'
+$bh = 'a' * 40; $oh = 'b' * 40
+function Bind([hashtable]$Rec, [string[]]$More = @()) {
+    $f = Join-Path ([IO.Path]::GetTempPath()) "ev-$([guid]::NewGuid().ToString('N').Substring(0, 8)).json"
+    ($Rec | ConvertTo-Json -Depth 4) | Set-Content -LiteralPath $f
+    & pwsh -NoProfile -File $verifier -EvidencePath $f -ExpectedHeadSha $bh @More 2>&1 | Out-Null
+    $c = $LASTEXITCODE; Remove-Item $f -ErrorAction SilentlyContinue; $c
+}
+Check 'bound evidence for this head and attempt passes' ((Bind @{ headSha = $bh; attemptId = 'att-1' } @('-ExpectedAttemptId', 'att-1')) -eq 0)
+Check 'evidence replayed from another head is rejected' ((Bind @{ headSha = $oh; attemptId = 'att-1' } @('-ExpectedAttemptId', 'att-1')) -ne 0)
+Check 'evidence replayed from another attempt is rejected' ((Bind @{ headSha = $bh; attemptId = 'att-0' } @('-ExpectedAttemptId', 'att-1')) -ne 0)
+Check 'evidence without a head binding is rejected' ((Bind @{ attemptId = 'att-1' } @('-ExpectedAttemptId', 'att-1')) -ne 0)
+Check 'unbound legacy evidence is rejected by default' ((Bind @{ headSha = $bh } @('-ExpectedAttemptId', 'att-1')) -ne 0)
+Check 'unbound legacy evidence is accepted only with -AllowLegacy and a matching head' ((Bind @{ headSha = $bh } @('-AllowLegacy')) -eq 0 -and (Bind @{ headSha = $oh } @('-AllowLegacy')) -ne 0)
 
 if ($script:failures) { Write-Host "protect-governance: $script:failures failure(s)"; exit 1 }
 Write-Host 'protect-governance: all checks passed'

@@ -313,38 +313,48 @@ function Invoke-FactoryValidation {
                 throw "Configured validation.$Stage recursively invokes its Factory wrapper."
             }
         }
-        $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
-        $start.ArgumentList.Add('-NoProfile')
-        $start.ArgumentList.Add('-EncodedCommand')
-        $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
-        $start.WorkingDirectory = $root
-        $start.UseShellExecute = $false
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
-        if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
-        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
-        if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
-        $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
-        $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
-        $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
-        if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
-            $process.Kill($true); $null = $process.WaitForExit(10000)
-            # Preserve the bounded diagnostic output on timeouts too. Without
-            # joining these readers before throwing, a two-hour full-suite
-            # timeout left empty stdout/stderr artifacts and only a generic
-            # non-zero workflow step for the operator to inspect.
-            try {
-                [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
-                $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-                $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
-            } catch { }
-            throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
+        $hostRetries = 0
+        while ($true) {
+            $start = [Diagnostics.ProcessStartInfo]::new('pwsh')
+            $start.ArgumentList.Add('-NoProfile')
+            $start.ArgumentList.Add('-EncodedCommand')
+            $start.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+            $start.WorkingDirectory = $root
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            $start.Environment['FACTORY_VALIDATION_ROOT'] = $root
+            if ($selection) { $start.Environment['FACTORY_VALIDATION_BASE'] = $selection.baseCommit }
+            $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+            if (-not $process.Start()) { throw "Could not start configured validation.$Stage command." }
+            $outCapture = New-ValidationCapture; $errCapture = New-ValidationCapture
+            $outTask = $process.StandardOutput.BaseStream.CopyToAsync($outCapture)
+            $errTask = $process.StandardError.BaseStream.CopyToAsync($errCapture)
+            if (-not $process.WaitForExit([int]$receipt.timeoutSeconds * 1000)) {
+                $process.Kill($true); $null = $process.WaitForExit(10000)
+                # Preserve the bounded diagnostic output on timeouts too. Without
+                # joining these readers before throwing, a two-hour full-suite
+                # timeout left empty stdout/stderr artifacts and only a generic
+                # non-zero workflow step for the operator to inspect.
+                try {
+                    [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+                    $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+                    $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+                } catch { }
+                throw "Configured validation.$Stage exceeded the $($receipt.timeoutSeconds)-second limit."
+            }
+            [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
+            $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
+            $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
+            $receipt.exitCode = [int]$process.ExitCode
+            # A child pwsh that cannot even start (pids/thread/memory pressure on the host) is an environment fault, not a
+            # validation result: retry it once, and say so in the receipt. Any other failure is never retried.
+            $hostStartFailed = ($process.ExitCode -ne 0 -and
+                [Text.Encoding]::UTF8.GetString($stderr) -match 'Failed to create CoreCLR|System\.Threading\.Thread\.StartCore')
+            if ($hostStartFailed -and $hostRetries -lt 1) { $hostRetries++; Start-Sleep -Seconds 3; continue }
+            break
         }
-        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($outTask, $errTask)).GetAwaiter().GetResult()
-        $stdout = $outCapture.SavedBytes(); $stderr = $errCapture.SavedBytes()
-        $receipt.truncated = ($outCapture.BytesSeen -gt $outCapture.CapturedCapacity -or $errCapture.BytesSeen -gt $errCapture.CapturedCapacity)
-        $receipt.exitCode = [int]$process.ExitCode
+        if ($hostRetries) { $receipt.message = "Retried once after a validation host start failure (CoreCLR/thread creation); see stderr.log." }
         $stdoutText = [Text.Encoding]::UTF8.GetString($stdout)
         $expectedWarningCount = -1
         foreach ($line in ($stdoutText -split "`r?`n")) {

@@ -295,6 +295,17 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once()["promotion"]["status"], "deploy-pending")
         self.assertEqual(scheduler.run_once()["status"], "deploy-pending")
 
+    def test_deferred_deploy_is_not_a_failed_attempt_until_the_max_defer_window_passes(self):
+        scheduler = self.build()
+        scheduler._deploy_stable = lambda sha: (False, "deferred: stable deploy deferred while Cezar is busy")
+        for _ in range(4):
+            last = scheduler.run_once()
+        self.assertEqual(last["status"], "deploy-deferred")
+        self.assertEqual(last["attempts"], 0)
+        self.assertEqual([i for i in self.gh.issues if "stable-deploy" in i], [])
+        scheduler._state_put("deploy_deferred_since", f"{self.sha}|{time.time() - 7300}")
+        self.assertEqual(scheduler.run_once()["status"], "deploy-pending")  # window exceeded: counts as a failure again
+
     def test_stable_already_containing_the_sha_is_not_pushed_again(self):
         subprocess.run(["git", "-C", str(self.repo), "push", "origin", f"{self.sha}:refs/heads/stable"], check=True, capture_output=True)
         scheduler = self.build()
