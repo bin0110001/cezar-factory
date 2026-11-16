@@ -121,7 +121,15 @@ describe('project-route alias parity (unprefixed vs /api/v1/p/<boot> vs /api/v1/
       .replace(':file', 'shot.png')
       .replace(':kind', 'issue')
       .replace(':number', '7')
-      .replace(':name', 'no-such-workflow');
+      .replace(':name', 'no-such-workflow')
+      .replace(':runId', runId)
+      .replace(':attemptId', 'no-such-attempt')
+      .replace(':artifactId', 'no-such-artifact')
+      .replace(':evidenceId', 'no-such-evidence')
+      .replace(':sha256', '0'.repeat(64))
+      .replace(':issueNumber', '7')
+      .replace(':watchId', 'no-such-watch')
+      .replace(':checkId', 'no-such-check');
 
   interface Answer {
     url: string;
@@ -148,7 +156,9 @@ describe('project-route alias parity (unprefixed vs /api/v1/p/<boot> vs /api/v1/
   /** Assert the three spellings of `path` answer byte-identically. Requests
    *  run sequentially so per-route caches can never race the comparison. */
   const expectParity = async (path: string, init?: () => RequestInit | undefined): Promise<void> => {
-    const normalize = path.startsWith('/github') ? stripTimestamps : (body: string): string => body;
+    const normalize = path.startsWith('/github') || path === '/verification/analytics'
+      ? stripTimestamps
+      : (body: string): string => body;
     const [a, b, c] = spellings(bootId, path);
     const unprefixed = await answer(a, init?.());
     const scoped = await answer(b, init?.());

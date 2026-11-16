@@ -12,6 +12,7 @@ export * from './projects.ts';
 export * from './workspace.ts';
 export * from './workflows.ts';
 export * from './releases.ts';
+export * from './factory-control-center.ts';
 export * from './skills.ts';
 export * from './agent-config.ts';
 export * from './agent-profiles.ts';

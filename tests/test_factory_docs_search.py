@@ -98,6 +98,85 @@ class Docs(unittest.TestCase):
         svc.search("alice", "p1", "r1", "main", "scheduler")
         self.assertEqual(len(calls), 1)
 
+    def test_workspace_search_returns_anchored_results_from_each_authorized_scope(self):
+        root2 = Path(self.tmp.name) / "second"
+        (root2 / "docs").mkdir(parents=True)
+        (root2 / "docs" / "api.md").write_text("The scheduler API reports activation state.\n")
+        (root2 / ".docs-sha").write_text("cafebabe")
+        grants = {"alice": [
+            {"project": "p1", "repo": "r1", "refs": ["main"]},
+            {"project": "p2", "repo": "r2", "refs": ["main"]},
+        ]}
+        backend = ds.CheckedInBackend({"r1": Path(self.tmp.name), "r2": root2})
+        svc = ds.DocsService(ds.Policy(grants), fallback=backend, audit_path=self.audit)
+        scopes = [
+            {"project": "p2", "repo": "r2", "ref": "main"},
+            {"project": "p1", "repo": "r1", "ref": "main"},
+        ]
+
+        out = svc.search_workspace("alice", scopes, "scheduler secret=workspace-query-secret")
+
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual([(s["project"], s["repo"], s["sha"]) for s in out["sources"]],
+                         [("p1", "r1", "deadbeef"), ("p2", "r2", "cafebabe")])
+        self.assertEqual({r["repo"] for r in out["results"]}, {"r1", "r2"})
+        self.assertTrue(all(r["project"] in ("p1", "p2") and "@" in r["evidence"] for r in out["results"]))
+        self.assertEqual({r["sha"] for r in out["results"]}, {"deadbeef", "cafebabe"})
+        self.assertLessEqual(len(out["results"]), ds.MAX_WORKSPACE_RESULTS)
+        audit = self.audit.read_text()
+        self.assertIn('"tool": "docs_workspace_search"', audit)
+        self.assertNotIn("workspace-query-secret", audit)
+
+    def test_workspace_search_authorizes_all_scopes_before_backend_access(self):
+        class Spy:
+            name = "spy"
+
+            def __init__(self):
+                self.calls = 0
+
+            def search(self, *args):
+                self.calls += 1
+                return []
+
+            def revision(self, *args):
+                self.calls += 1
+                return "private-sha"
+
+        spy = Spy()
+        svc = ds.DocsService(ds.Policy(GRANTS), fallback=spy)
+        scopes = [
+            {"project": "p1", "repo": "r1", "ref": "main"},
+            {"project": "private-project", "repo": "private/repo", "ref": "main"},
+        ]
+
+        with self.assertRaises(ds.DocsDenied) as cm:
+            svc.search_workspace("alice", scopes, "architecture")
+
+        self.assertEqual(str(cm.exception), "denied")
+        self.assertEqual(spy.calls, 0)
+
+    def test_workspace_search_is_deterministic_and_rejects_duplicate_or_unbounded_scopes(self):
+        root2 = Path(self.tmp.name) / "second"
+        (root2 / "docs").mkdir(parents=True)
+        (root2 / "docs" / "api.md").write_text("Scheduler API documentation.\n")
+        (root2 / ".docs-sha").write_text("cafebabe")
+        grants = {"alice": [
+            {"project": "p1", "repo": "r1", "refs": ["main"]},
+            {"project": "p2", "repo": "r2", "refs": ["main"]},
+        ]}
+        svc = ds.DocsService(ds.Policy(grants), fallback=ds.CheckedInBackend({"r1": Path(self.tmp.name), "r2": root2}))
+        a = {"project": "p1", "repo": "r1", "ref": "main"}
+        b = {"project": "p2", "repo": "r2", "ref": "main"}
+        first = svc.search_workspace("alice", [a, b], "scheduler")
+        second = svc.search_workspace("alice", [b, a], "scheduler")
+        self.assertEqual(first, second)
+        with self.assertRaisesRegex(ValueError, "invalid workspace docs search"):
+            svc.search_workspace("alice", [a, a], "scheduler")
+        with self.assertRaisesRegex(ValueError, "invalid workspace docs search"):
+            svc.search_workspace("alice", [a, b], "x" * (ds.MAX_QUERY_CHARS + 1))
+        with self.assertRaisesRegex(ValueError, "invalid workspace docs search"):
+            svc.search_workspace("alice", [a] * (ds.MAX_WORKSPACE_SCOPES + 1), "scheduler")
+
     def test_audit_records_denial_and_latency_without_secrets_or_raw_query(self):
         with self.assertRaises(ds.DocsDenied):
             self.svc.search("bob", "p1", "r1", "main", "my secret=hunter2")

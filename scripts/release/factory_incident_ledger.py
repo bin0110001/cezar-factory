@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import importlib.util
 import json
 import math
 import pathlib
@@ -42,7 +43,8 @@ _PATH = re.compile(r"(?:\b[A-Za-z]:[\\/]|/)(?:[^\s:'\"<>|]+[\\/])+[^\s:'\"<>|,;]
 _RELATIVE_PATH = re.compile(r"\b(?:[\w.-]+[\\/])+[\w.-]+\.[A-Za-z0-9]{1,12}\b")
 _LABELED_ID = re.compile(r"\b(?:run|task|event|artifact|incident|process|pid|port|id)(?:[_ -]?id)?\s*[:=#]\s*[A-Za-z0-9._-]+", re.IGNORECASE)
 _DURATION = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ms|msec|milliseconds?|seconds?|secs?|minutes?|mins?|hours?)\b", re.IGNORECASE)
-_SECRET = re.compile(r"(?i)(bearer\s+\S+|(?:api[_-]?key|token|secret|password)\s*[=:]\s*\S+|sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,})")
+_spec = importlib.util.spec_from_file_location("factory_redaction", pathlib.Path(__file__).resolve().parents[1] / "security" / "redaction.py")
+_redaction = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_redaction)
 
 
 class IncidentLedgerError(ValueError):
@@ -53,7 +55,7 @@ def normalize_failure(reason: str) -> str:
     """Return a bounded, secret-redacted signature that ignores volatile identifiers."""
     if not isinstance(reason, str):
         raise IncidentLedgerError("failure summary must be text")
-    text = _SECRET.sub("<secret>", reason)
+    text = _redaction.redact(reason, env={}, marker="<secret>")
     text = _ISO_TIME.sub("<time>", text)
     text = _EPOCH.sub("<time>", text)
     text = _UUID.sub("<id>", text)
@@ -99,7 +101,7 @@ def _safe_evidence(candidate_sha: str | None, evidence: Mapping[str, Any] | None
     for key in ("candidateSha", "source", "stage", "evidenceId", "receipt"):
         value = evidence.get(key)
         if isinstance(value, str) and value.strip():
-            output[key] = _SECRET.sub("<secret>", value.strip())[:MAX_EVIDENCE_CHARS]
+            output[key] = _redaction.redact(value.strip(), env={}, marker="<secret>")[:MAX_EVIDENCE_CHARS]
     return output
 
 

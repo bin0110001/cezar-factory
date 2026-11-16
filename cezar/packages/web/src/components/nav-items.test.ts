@@ -75,6 +75,7 @@ describe('NAV_ITEMS', () => {
       'Tracker',
       'Dependencies',
       'Verification',
+      'Factory',
       'Backlog',
       'Automations',
       'Skills',
@@ -103,7 +104,7 @@ describe('visibleNavItems', () => {
 
   it('with everything available, the full nav renders', () => {
     expect(labelsOf({ forge: true, inbox: true, automations: true, tracker: 'jira' })).toEqual([
-      'Tasks', 'Inbox', 'Decisions', 'Git', 'GitHub', 'Jira', 'Dependencies', 'Verification', 'Backlog', 'Automations', 'Skills', 'Workflows', 'Settings',
+      'Tasks', 'Inbox', 'Decisions', 'Git', 'GitHub', 'Jira', 'Dependencies', 'Verification', 'Factory', 'Backlog', 'Automations', 'Skills', 'Workflows', 'Settings',
     ])
   })
 
@@ -121,6 +122,7 @@ describe('visibleNavItems', () => {
       'Git',
       'Dependencies',
       'Verification',
+      'Factory',
       'Backlog',
       'Automations',
       'Skills',
@@ -137,6 +139,7 @@ describe('visibleNavItems', () => {
       'GitHub',
       'Dependencies',
       'Verification',
+      'Factory',
       'Backlog',
       'Automations',
       'Skills',
@@ -154,6 +157,7 @@ describe('visibleNavItems', () => {
       'GitHub',
       'Dependencies',
       'Verification',
+      'Factory',
       'Backlog',
       'Skills',
       'Workflows',
@@ -174,6 +178,7 @@ describe('visibleNavItems', () => {
       'Git',
       'Dependencies',
       'Verification',
+      'Factory',
       'Backlog',
       'Skills',
       'Workflows',
