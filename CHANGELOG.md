@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.135] - 2026-11-16
+
 - Collection-boundary secret redaction (#579). One shared, data-driven helper (`scripts/security/redaction.py`, `redaction.ps1`, `redaction-patterns.json`) now redacts Authorization headers, Bearer/Basic tokens, gh*/github_pat_/sk-/AKIA tokens, key=value secrets, URL credentials and literal values of secret-named environment variables. The failure summary, audit publisher, repair diagnostics, incident ledger signatures, Hindsight scrub/incident memory, capability-broker traces and the implementation-context issue text use it; the 40+ char opaque-string catch-all stays opt-in (`strict`) for memory candidates. Tests: `tests/test_factory_redaction.py` (including a PowerShell parity check) and `tests/redaction.ps1`.
 - Acceptance-criteria verification ledger (#132): per-criterion verified/unverified/failed state bound to commit and policy revision, stale evidence invalidated on new commits, self-assessment never verifies, idempotent PR-description table. See `docs/acceptance-ledger.md`.
 
