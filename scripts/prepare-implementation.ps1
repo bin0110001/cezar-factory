@@ -96,6 +96,17 @@ $context = [ordered]@{
     }
 }
 
+# Collection boundary (#579): secrets in issue text never reach the handoff artifact or the prompt.
+. (Join-Path $PSScriptRoot 'security/redaction.ps1')
+if ($context.issue) {
+    foreach ($field in 'title', 'body') {
+        if ($context.issue.PSObject.Properties[$field] -and $context.issue.$field) { $context.issue.$field = Invoke-FactoryRedact -Text ([string]$context.issue.$field) }
+    }
+    foreach ($comment in @($context.issue.comments)) {
+        if ($comment -and $comment.PSObject.Properties['body'] -and $comment.body) { $comment.body = Invoke-FactoryRedact -Text ([string]$comment.body) }
+    }
+}
+
 $directory = Split-Path -Parent $OutputPath
 if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
 $context | ConvertTo-Json -Depth 12 | Set-Content -Path $OutputPath -Encoding utf8

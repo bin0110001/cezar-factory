@@ -29,10 +29,10 @@ class RepairError(RuntimeError):
 
 
 def redact(text: str) -> str:
-    text = re.sub(r"(?i)\b(?:gh[psu]_[\w]{12,}|github_pat_[\w]{12,}|sk-[\w-]{12,})\b", "[REDACTED]", text)
-    text = re.sub(r"(?i)(Bearer\s+)\S+", r"\1[REDACTED]", text)
-    text = re.sub(r"(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,]+", r"\1=[REDACTED]", text)
-    return re.sub(r"(https?://)[^/\s@]+:[^/\s@]+@", r"\1[REDACTED]@", text)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("factory_redaction", pathlib.Path(__file__).resolve().parent / "security" / "redaction.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    return mod.redact(text)
 
 
 def timestamp(value: str) -> dt.datetime:
