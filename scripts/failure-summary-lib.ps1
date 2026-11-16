@@ -1,8 +1,7 @@
 # Bounded evidence helpers shared by failure summaries and the #30 audit collector (single source of redaction rules).
+. (Join-Path $PSScriptRoot 'security/redaction.ps1')
 function Protect-FailureText([string]$Value, [int]$MaxChars = 400) {
-    $clean = $Value -replace '(?i)\b(?:gh[psu]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b', '[REDACTED]'
-    $clean = $clean -replace '(?i)(Bearer\s+)\S+', '$1[REDACTED]'
-    $clean = $clean -replace '(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,]+', '$1=[REDACTED]'
+    $clean = Invoke-FactoryRedact -Text $Value
     $clean = ($clean -replace '\s+', ' ').Trim()
     if ($clean.Length -gt $MaxChars) { return $clean.Substring(0, $MaxChars) + '…' }
     return $clean

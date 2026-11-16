@@ -10,10 +10,12 @@ Capabilities are split: ``observe`` (read-only) and ``control`` (interactive inp
 import base64
 import hashlib
 import hmac
+import importlib.util
 import json
 import re
 import secrets
 import time
+from pathlib import Path
 
 CAPABILITIES = ("observe", "control")
 ACTIONS = {
@@ -22,6 +24,8 @@ ACTIONS = {
 }
 FLAG_ENV = "FACTORY_SESSION_CONTROL"
 MAX_TTL = 900
+_spec = importlib.util.spec_from_file_location("factory_redaction", Path(__file__).resolve().parents[1] / "security" / "redaction.py")
+_redaction = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_redaction)
 DEFAULT_TTL = 300
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SECRET = re.compile(r"(tok\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+|(?i:bearer)\s+\S+|(?i:token|secret|password)=\S+)")
@@ -36,7 +40,7 @@ class Denied(Exception):
 
 
 def redact(text):
-    return _SECRET.sub("[REDACTED]", str(text))
+    return _redaction.redact(_SECRET.sub("[REDACTED]", str(text)))
 
 
 def _b64(raw):
