@@ -55,15 +55,25 @@ describe('autonomous mode nudges at turn end instead of parking (#autonomous)', 
     currentId = undefined;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (currentId) manager.cancel(currentId); // release the session + repo lock
+    const deadline = Date.now() + 10_000;
+    while (currentId && manager.isActive(currentId)) {
+      if (Date.now() >= deadline) throw new Error('timed out waiting for autonomous run to stop');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     manager.dispose();
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     store.flush();
-    rmSync(repoRoot, { recursive: true, force: true });
+    try {
+      rmSync(repoRoot, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
+    } catch (error) {
+      if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error;
+      console.warn(`[autonomous-nudge.test] Windows kept a locked temporary directory for runner cleanup: ${repoRoot}`);
+    }
   });
 
   const waitFor = async (id: string, pred: (r: RunRecord | undefined) => boolean, ms = 20_000) => {
@@ -95,7 +105,9 @@ describe('autonomous mode nudges at turn end instead of parking (#autonomous)', 
   const trackStatuses = (): string[] => {
     const seen: string[] = [];
     store.on('run', (record: RunRecord) => {
-      if (seen[seen.length - 1] !== record.status) seen.push(record.status);
+      if (seen[seen.length - 1] !== record.status) {
+        seen.push(`${record.status}:${record.activity ?? ''}${record.askParked ? ':ask' : ''}`);
+      }
     });
     return seen;
   };
@@ -117,7 +129,7 @@ describe('autonomous mode nudges at turn end instead of parking (#autonomous)', 
 
     // And the nudged turn ends with CEZ:DONE, so the run settles instead of sitting on a slot.
     await waitFor(record.id, (r) => r?.status === 'done');
-    expect(statuses).not.toContain('waiting');
+    expect(statuses, JSON.stringify(statuses)).not.toContain('waiting');
     expect(store.getRun(record.id)?.steps.every((s) => s.status !== 'waiting')).toBe(true);
   }, 40_000);
 

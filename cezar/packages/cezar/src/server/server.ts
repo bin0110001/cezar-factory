@@ -97,6 +97,7 @@ import { applyProviderEnablement } from '../core/provider-availability.ts';
 import { RunnerModelCatalog } from '../core/runner-model-catalog.ts';
 import { currentUsage, currentTimedUsage, onUsage } from '../core/process-usage.ts';
 import { DashboardReader } from '../workspace/dashboard.ts';
+import { buildWorkspaceManifest } from '../workspace/workspace-manifest.ts';
 import { dashboardRoutes } from './dashboard.ts';
 import { WORKFLOWS_DIR, loadWorkflows } from '../workflows/load.ts';
 import {
@@ -2636,6 +2637,19 @@ export function createApp(deps: ServerDeps) {
       }
       const body: ProjectsResponse = { projects, bootProject, projectsDir };
       return c.json(body);
+    })
+
+    .get('/workspace/manifest', async (c) => {
+      let projects: ProjectListEntry[] = [];
+      try {
+        const selector = capabilities().singleProject
+          ? { projectId: await resolveBootProject() }
+          : undefined;
+        projects = await listProjects(selector);
+      } catch {
+        // An unreadable registry has no known registered repositories.
+      }
+      return c.json(await buildWorkspaceManifest(projects));
     })
 
     .post('/projects', jsonZodValidator(() => registerProjectSchema, { message: 'root must be a non-empty path' }), async (c) => {
