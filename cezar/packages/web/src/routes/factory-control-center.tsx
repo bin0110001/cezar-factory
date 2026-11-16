@@ -42,7 +42,7 @@ function CandidateActions({ projectId }: { projectId: string }) {
         : <input aria-label="Candidate id" className="min-w-0 flex-1 rounded border bg-background px-2 py-1 font-mono" placeholder="Candidate id" value={candidateId} onChange={(e) => setCandidateId(e.target.value.trim())} />}
     </div>
     {destructive && <label className="block text-xs">Type <code>{phrase}</code> to confirm<input aria-label="Typed confirmation" className="mt-1 block w-full rounded border bg-background px-2 py-1 font-mono" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>}
-    <Button type="submit" size="sm" variant={destructive ? 'destructive' : 'outline'} disabled={!ready || mutation.isPending}>Run {action}</Button>
+    <Button type="submit" size="sm" variant={destructive ? 'danger-ghost' : 'outline'} disabled={!ready || mutation.isPending}>Run {action}</Button>
     {mutation.data && <p role="status" className="text-xs">{mutation.data.outcome}: {mutation.data.message}</p>}
     {mutation.isError && <p role="alert" className="text-xs text-destructive">{mutation.error.message}</p>}
   </form>

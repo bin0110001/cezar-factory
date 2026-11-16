@@ -244,6 +244,11 @@ describe('workspace projects API', () => {
   });
 
   describe('GET /api/v1/workspace/factory-release/control-center', () => {
+    // The host exports the running Factory identity; hermetic tests must not inherit it.
+    const factoryEnv = ['CEZ_FACTORY_MANIFEST_DIGEST', 'CEZ_FACTORY_CHANNEL', 'CEZ_FACTORY_RELEASE_STORE', 'CEZ_FACTORY_SHA'] as const;
+    const savedFactoryEnv: Record<string, string | undefined> = {};
+    beforeEach(() => { for (const k of factoryEnv) { savedFactoryEnv[k] = process.env[k]; delete process.env[k]; } });
+    afterEach(() => { for (const k of factoryEnv) { if (savedFactoryEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedFactoryEnv[k]; } });
     it('uses registered project scope and leaves unavailable activation evidence unknown', async () => {
       const boot = await registerProject(repoRoot);
       const other = await registerProject(otherRoot);
