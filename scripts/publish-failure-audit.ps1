@@ -90,10 +90,9 @@ function Find-ExactIssues([string]$Token, [string]$Marker) {
     return @($exact)
 }
 
+. (Join-Path $PSScriptRoot 'security/redaction.ps1')
 function Redact([string]$Value) {
-    $clean = $Value -replace '(?i)\b(?:gh[psu]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})\b', '[REDACTED]'
-    $clean = $clean -replace '(?i)(Bearer\s+)\S+', '$1[REDACTED]'
-    $clean = $clean -replace '(?i)\b(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,]+', '$1=[REDACTED]'
+    $clean = Invoke-FactoryRedact -Text $Value
     if ($clean.Length -gt 400) { $clean = $clean.Substring(0, 400) + '…' }
     return $clean
 }

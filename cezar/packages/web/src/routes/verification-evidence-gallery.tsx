@@ -6,7 +6,7 @@ type Group = VerificationEvidenceResponse['groups'][number]
 type Item = Group['items'][number]
 
 const outcomeTone: Record<string, string> = {
-  passed: 'text-emerald-600', failed: 'text-destructive', incomplete: 'text-amber-600', inconclusive: 'text-amber-600',
+  passed: 'text-success', failed: 'text-destructive', incomplete: 'text-pending-strong', inconclusive: 'text-pending-strong',
 }
 
 function Frame({ verificationId, item, label }: { verificationId: string, item: Item | undefined, label: string }) {
@@ -49,7 +49,7 @@ export function VerificationEvidenceGallery({ verificationId, commitSha }: { ver
             <div key={group.testId} className="rounded-md border p-3" data-testid={`evidence-group-${group.testId}`}>
               <p className="text-sm font-medium">{group.testId} <span className={`text-xs ${outcomeTone[group.outcome]}`}>{group.outcome}</span></p>
               <p className="text-xs text-muted-foreground">{group.reason}{group.withheld > 0 ? ` · ${group.withheld} item(s) withheld by access policy` : ''}</p>
-              {group.missingRoles.length > 0 && <p className="text-xs text-amber-600" role="alert">Missing roles: {group.missingRoles.join(', ')}</p>}
+              {group.missingRoles.length > 0 && <p className="text-xs text-pending-strong" role="alert">Missing roles: {group.missingRoles.join(', ')}</p>}
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <Frame verificationId={verificationId} item={side('expected')} label="Expected" />
                 <Frame verificationId={verificationId} item={side('actual') ?? others[0]} label="Actual" />

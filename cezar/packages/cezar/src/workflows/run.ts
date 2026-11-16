@@ -4895,7 +4895,7 @@ export class RunManager {
         const compacted = event.reason === 'context-compaction';
         const markerless = compacted && markerlessTurn(turnText);
         if (!compacted) state.compactionContinues = 0;
-        const done = interactive && sessionOpen && DONE_MARKER_RE.test(turnText.trimEnd());
+        const done = Boolean(sessionOpen) && DONE_MARKER_RE.test(turnText.trimEnd());
         // The dispatch facts, through the same ONE helper `runContinuation` calls (spec
         // 2026-09-10-dispatch A5). Not gated on `interactive`: a report and a dispatch
         // are the agent telling cezar what it did, and a chained workflow's non-final step that
@@ -4965,7 +4965,8 @@ export class RunManager {
         }
         // `waiting` now also covers a NON-final step parking on an ask or monitor (#917, #1076),
         // which is what holds the workflow at that step instead of running its next check.
-        const waiting = (interactive || parksWorkflow) && sessionOpen;
+        const autonomousCapReached = state.autonomous && (state.autoContinues ?? 0) >= MAX_AUTO_CONTINUES;
+        const waiting = (interactive || parksWorkflow || dispatchTurn.overBudget || autonomousCapReached) && sessionOpen;
         // Autonomous (#autonomous): never hand the ball back to the user. Nudge the agent to keep
         // going (bounded by MAX_AUTO_CONTINUES) instead of parking at `waiting`. The SAME helper
         // `runContinuation`'s twin turn-end calls — this branch was missing here entirely, so an
@@ -4983,7 +4984,7 @@ export class RunManager {
         // line, so the park below behaves exactly as #917 designed it.
         const autoContinued =
           dispatchTurn.rePrompted ||
-          (!monitoring && (waiting ? this.tryAutonomousNudge(runId, state, step.id, ask, dispatchTurn) : false));
+          (!monitoring && (sessionOpen ? this.tryAutonomousNudge(runId, state, step.id, ask, dispatchTurn) : false));
         // The compaction continuation (#955), through the same helper `runContinuation` calls.
         // Deliberately NOT gated on `waiting`: that flag is about who the turn hands control
         // to, and an ordinary intermediate step never hands control to anyone — it is closed

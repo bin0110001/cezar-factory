@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { trackerKindSchema } from './tracker.ts';
 import { automationScheduleSchema } from './automation-schedule.ts';
+import { dependencyEdgeKindSchema } from './dependency-graph.ts';
 
 export const factoryChannelSchema = z.enum(['dev', 'stable']);
 export type FactoryChannel = z.infer<typeof factoryChannelSchema>;
@@ -113,6 +114,47 @@ export const projectsResponseSchema = z.object({
   projectsDir: z.string(),
 });
 export type ProjectsResponse = z.infer<typeof projectsResponseSchema>;
+
+/** Read-only inventory of the explicitly registered repositories in this Cezar workspace. */
+export const workspaceManifestRepositorySchema = z.object({
+  projectId: z.string(),
+  repository: z.string().nullable(),
+  owner: z.string().nullable(),
+  branch: z.string().nullable(),
+  sha: z.string().regex(/^[a-f0-9]{40,64}$/i).nullable(),
+  visibility: z.enum(['public', 'private', 'internal', 'unknown']),
+  dependencyEdgeKinds: z.array(dependencyEdgeKindSchema),
+}).strict();
+export type WorkspaceManifestRepository = z.infer<typeof workspaceManifestRepositorySchema>;
+
+/** A deterministic package edge discovered only between explicitly registered projects. */
+export const workspaceManifestEdgeSchema = z.object({
+  fromProjectId: z.string(),
+  toProjectId: z.string(),
+  kind: z.literal('package-dependency'),
+  provenance: z.literal('code-derived'),
+  manifest: z.literal('package.json'),
+  dependencyName: z.string(),
+  versionRange: z.string(),
+}).strict();
+export type WorkspaceManifestEdge = z.infer<typeof workspaceManifestEdgeSchema>;
+
+/** Duplicate package names are reported without selecting a target project. */
+export const workspaceManifestAmbiguitySchema = z.object({
+  fromProjectId: z.string(),
+  dependencyName: z.string(),
+  candidateProjectIds: z.array(z.string()),
+}).strict();
+export type WorkspaceManifestAmbiguity = z.infer<typeof workspaceManifestAmbiguitySchema>;
+
+export const workspaceManifestResponseSchema = z.object({
+  schemaVersion: z.literal(1),
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  repositories: z.array(workspaceManifestRepositorySchema),
+  edges: z.array(workspaceManifestEdgeSchema),
+  ambiguities: z.array(workspaceManifestAmbiguitySchema),
+}).strict();
+export type WorkspaceManifestResponse = z.infer<typeof workspaceManifestResponseSchema>;
 
 /**
  * `POST /api/v1/projects` (multi-project spec, step 4.2) — what the folder-browser dialog gets
