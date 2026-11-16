@@ -12,6 +12,7 @@ import {
   githubRepositoryKeySchema, type GithubRepositoryKey,
   dependencyDecisionResearchDispatchResponseSchema,
   dependencyGraphHistoricalTrendsSchema,
+  factoryControlCenterResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
@@ -3211,6 +3212,49 @@ export function createApp(deps: ServerDeps) {
   // ---- chained family: workspace settings + GUI prefs (workspace-level) ----
   const workspaceConfigRoutes = new Hono<ProjectApiEnv>()
     .get('/workspace/config', async (c) => c.json(workspaceConfigBody(await loadWorkspaceConfig())))
+
+    .get('/workspace/factory-release/control-center', async (c) => {
+      const config = await loadWorkspaceConfig();
+      const bootId = await resolveBootProject();
+      const projects = capabilities().singleProject
+        ? config.projects.filter((project) => project.id === bootId)
+        : config.projects;
+      const generatedAt = new Date().toISOString();
+      const rows = await Promise.all(projects.map(async (entry) => {
+        const project = entry.id === bootId ? bootContext : contexts.peek(entry.id);
+        const tasks: ProjectChannelTask[] = project?.store.listRuns()
+          .filter((run) => ['queued', 'running', 'waiting'].includes(run.status))
+          .map((run) => {
+            const pin = run.factoryRelease ?? run.workflowDef?.factoryRelease;
+            return { id: run.id, title: run.title, status: run.status, ...(pin ? { channel: pin.channel, sourceSha: pin.sourceSha } : {}) };
+          }) ?? [];
+        const service = new ProjectChannelService({
+          storeRoot: process.env.CEZ_FACTORY_RELEASE_STORE?.trim() || undefined,
+          projectRoot: entry.root,
+          projectId: entry.id,
+          configuredChannel: entry.factoryChannel ?? 'stable',
+          compatibility: 'unknown',
+          activeTasks: tasks,
+        });
+        const overview = await service.controlCenter();
+        return {
+          id: entry.id,
+          name: entry.name || entry.id,
+          configuredChannel: overview.state.configuredChannel,
+          compatibility: overview.state.compatibility,
+          freshness: overview.state.stale || overview.state.configuredSha && overview.state.effectiveSha && overview.state.configuredSha !== overview.state.effectiveSha
+            ? 'stale' as const
+            : overview.state.configuredSha && overview.state.effectiveSha && overview.state.compatibility !== 'unknown'
+              ? 'fresh' as const
+              : 'unknown' as const,
+          readAt: overview.state.readAt,
+          findings: overview.state.findings,
+          channels: overview.channels,
+          history: overview.history,
+        };
+      }));
+      return c.json(factoryControlCenterResponseSchema.parse({ schemaVersion: 1, generatedAt, projects: rows }));
+    })
 
     // Live host totals for a REMOTE cockpit (spec `.ai/specs/2026-09-20-host-resource-telemetry.md`):
     // the local cockpit gets them pushed over the `host` topic, but a remote one opens no

@@ -12,7 +12,7 @@ import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, verificationRunSchema, workspaceManifestResponseSchema } from '@open-mercato/cezar-contract';
+import { PROJECT_TAGS_MAX, PROJECT_TAG_MAX_LENGTH, verificationRunSchema, workspaceManifestResponseSchema, factoryControlCenterResponseSchema } from '@open-mercato/cezar-contract';
 import { RunStore } from '../runs/store.ts';
 import type { RunManager } from '../workflows/run.ts';
 import {
@@ -240,6 +240,35 @@ describe('workspace projects API', () => {
       const byRoot = new Map(body.projects.map((p) => [p.root, p]));
       expect(byRoot.get(realpathSync(otherRoot))?.maxParallel).toBe(3);
       expect(byRoot.get(realpathSync(repoRoot))?.maxParallel).toBeUndefined();
+    });
+  });
+
+  describe('GET /api/v1/workspace/factory-release/control-center', () => {
+    it('uses registered project scope and leaves unavailable activation evidence unknown', async () => {
+      const boot = await registerProject(repoRoot);
+      const other = await registerProject(otherRoot);
+      const response = await apiRequest(makeApp(), '/api/v1/workspace/factory-release/control-center');
+      expect(response.status).toBe(200);
+      const body = factoryControlCenterResponseSchema.parse(await response.json());
+      expect(body.projects.map((project) => project.id)).toEqual([boot.id, other.id]);
+      expect(body.projects[0]).toMatchObject({
+        id: boot.id, name: boot.name, configuredChannel: 'stable',
+        compatibility: 'unknown', freshness: 'unknown', findings: [],
+      });
+      expect(body.projects[0]?.channels).toEqual([
+        { channel: 'dev', desiredSha: null, activatedSha: null, observedSha: null, state: 'unknown', updatedAt: null, manifestDigest: null, manifest: null },
+        { channel: 'stable', desiredSha: null, activatedSha: null, observedSha: null, state: 'unknown', updatedAt: null, manifestDigest: null, manifest: null },
+      ]);
+      expect(JSON.stringify(body)).not.toContain(repoRoot);
+    });
+
+    it('keeps the workspace overview within the boot project in single-project mode', async () => {
+      const boot = await registerProject(repoRoot);
+      await registerProject(otherRoot);
+      process.env.CEZ_SINGLE_PROJECT = '1';
+      const response = await apiRequest(makeApp(), '/api/v1/workspace/factory-release/control-center');
+      const body = factoryControlCenterResponseSchema.parse(await response.json());
+      expect(body.projects.map((project) => project.id)).toEqual([boot.id]);
     });
   });
 
