@@ -1,0 +1,503 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Release pipeline configuration",
+  "description": "Editor aid. scripts/release/release_pipeline_config.py is the authority and also enforces cross-field rules (branch collisions, missing suites, unsafe auto-promotion, schedule completeness).",
+  "type": "object",
+  "required": [
+    "schemaVersion"
+  ],
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {}
+  },
+  "properties": {
+    "schemaVersion": {
+      "const": "release-pipeline/v1"
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "enum": [
+            "weekly-calendar",
+            "daily-calendar"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "two-branch",
+            "three-branch"
+          ]
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "integration",
+                  "regression",
+                  "stable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            },
+            "required": [
+              "id",
+              "branch",
+              "kind"
+            ]
+          }
+        },
+        "triggers": {
+          "type": "object",
+          "properties": {
+            "manual": {
+              "type": "boolean"
+            },
+            "schedule": {
+              "type": "object",
+              "properties": {
+                "frequency": {
+                  "enum": [
+                    "daily",
+                    "weekly"
+                  ]
+                },
+                "dayOfWeek": {
+                  "enum": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday"
+                  ]
+                },
+                "hour": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 23
+                },
+                "minute": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 59
+                },
+                "timezone": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x-": {}
+              }
+            },
+            "afterChanges": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "minCommits": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "minFiles": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x-": {}
+              }
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "admission": {
+          "type": "object",
+          "properties": {
+            "maxActiveCandidates": {
+              "const": 1
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "tests": {
+          "type": "object",
+          "properties": {
+            "suites": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "candidateLifetimeHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720
+        },
+        "repair": {
+          "type": "object",
+          "properties": {
+            "maxAttempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "backoffMinutes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1440
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "promotion": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "enum": [
+                "self-review",
+                "approval"
+              ]
+            },
+            "stable": {
+              "enum": [
+                "auto",
+                "approval"
+              ]
+            },
+            "soakMinutes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10080
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "artifactRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "notifications": {
+          "type": "object",
+          "properties": {
+            "channels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        },
+        "emergencyFix": {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "enum": [
+                "forward-port",
+                "cherry-pick",
+                "none"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          }
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-": {}
+      }
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "enum": [
+              "weekly-calendar",
+              "daily-calendar"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "two-branch",
+              "three-branch"
+            ]
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "integration",
+                    "regression",
+                    "stable"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x-": {}
+              },
+              "required": [
+                "id",
+                "branch",
+                "kind"
+              ]
+            }
+          },
+          "triggers": {
+            "type": "object",
+            "properties": {
+              "manual": {
+                "type": "boolean"
+              },
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "frequency": {
+                    "enum": [
+                      "daily",
+                      "weekly"
+                    ]
+                  },
+                  "dayOfWeek": {
+                    "enum": [
+                      "monday",
+                      "tuesday",
+                      "wednesday",
+                      "thursday",
+                      "friday",
+                      "saturday",
+                      "sunday"
+                    ]
+                  },
+                  "hour": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
+                  },
+                  "minute": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 59
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "patternProperties": {
+                  "^x-": {}
+                }
+              },
+              "afterChanges": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "minCommits": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minFiles": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false,
+                "patternProperties": {
+                  "^x-": {}
+                }
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "admission": {
+            "type": "object",
+            "properties": {
+              "maxActiveCandidates": {
+                "const": 1
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "tests": {
+            "type": "object",
+            "properties": {
+              "suites": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "required": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "candidateLifetimeHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 720
+          },
+          "repair": {
+            "type": "object",
+            "properties": {
+              "maxAttempts": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "backoffMinutes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1440
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "promotion": {
+            "type": "object",
+            "properties": {
+              "review": {
+                "enum": [
+                  "self-review",
+                  "approval"
+                ]
+              },
+              "stable": {
+                "enum": [
+                  "auto",
+                  "approval"
+                ]
+              },
+              "soakMinutes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10080
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "artifactRetentionDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3650
+          },
+          "notifications": {
+            "type": "object",
+            "properties": {
+              "channels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          },
+          "emergencyFix": {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "enum": [
+                  "forward-port",
+                  "cherry-pick",
+                  "none"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-": {}
+            }
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x-": {}
+        }
+      }
+    }
+  }
+}
