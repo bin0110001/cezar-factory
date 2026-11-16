@@ -149,6 +149,7 @@ export function normalizeGenericJson(doc: unknown, ctx: NormalizeContext): Norma
       message: str(f.title) ?? str(f.message) ?? '', path: str(f.path), line: typeof f.line === 'number' ? f.line : undefined,
       dependency: pkg ? { ecosystem: str(f.ecosystem), name: pkg, version: str(f.version) } : undefined,
       fixedVersion: str(f.fixedVersion), references: arr(f.references).map(String), extraIdText: arr(f.cwe).map(String),
+      falsePositive: f.falsePositive === true,
     }, ctx);
   });
 }

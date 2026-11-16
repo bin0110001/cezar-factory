@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Trivy adapter (#606): per-domain argv builder, JSON report parsing behind the provider contract, no-lockfile reported as unknown, waived false positives, and run reconciliation (open/fixed) (`server/verification/checks/providers/trivy-adapter.ts`, `reconcile.ts`).
+
 - Check gates and independent schedule (#619): provider-agnostic gate evaluation by category, mandatory/optional and max age, one findings query, and a due-check planner that cannot create a candidate (`server/verification/checks/check-gates.ts`).
 
 - Check runner (#618): provider plugin runner with trust gating, timeout, DB-freshness mapping, pinned provenance, and a cache invalidated by scanner/DB/config/input/scope/worker versions (`server/verification/checks/check-runner.ts`).

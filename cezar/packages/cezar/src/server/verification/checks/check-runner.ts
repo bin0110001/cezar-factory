@@ -26,6 +26,8 @@ export interface PluginRunOutput {
   document: unknown;
   /** Advisory DB timestamp as reported by the isolated worker; absent when there is no DB. */
   dbUpdatedAt?: string;
+  /** Set when the provider has nothing it can scan (e.g. no lockfile): reported as `unknown` with this reason, never pass. */
+  notApplicable?: string;
   /** Verified identity of the scanner that actually ran. */
   observed?: { digest?: string; signer?: string; binaryPresent?: boolean };
 }
@@ -135,6 +137,9 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   if (output === 'timeout') return failure(def, prov, 'timeout', 'not-applicable', 'provider timed out');
 
   prov.dbUpdatedAt = output.dbUpdatedAt ?? '';
+  if (output.notApplicable) {
+    return { result: { checkId: def.id, provider: def.provider, status: 'unknown', execution: 'not-run', feed: 'not-applicable', findingCount: 0, blockingFindingCount: 0, reason: `not applicable: ${output.notApplicable}`.slice(0, 500) }, findings: [], provenance: prov, cacheHit: false };
+  }
   const key = cacheKey(prov);
 
   if (opts.trustPolicy) {
