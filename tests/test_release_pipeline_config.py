@@ -95,6 +95,14 @@ class Validation(unittest.TestCase):
         self.assertTrue(any("afterChanges" in e for e in self.errors(triggers={"afterChanges": {"enabled": True}})))
         self.assertTrue(any("must be an integer" in e for e in self.errors(candidateLifetimeHours="soon")))
 
+    def test_extended_trigger_fields_validate(self):
+        good = {"afterChanges": {"enabled": True, "minCommits": 5, "paths": ["src/**"], "combinator": "all", "quietHours": {"start": 22, "end": 6}}, "missedRun": "skip", "priority": ["change", "schedule"]}
+        self.assertEqual(self.errors(triggers=good), [])
+        for bad, needle in (({"missedRun": "later"}, "missedRun"), ({"afterChanges": {"enabled": True, "minCommits": 1, "combinator": "some"}}, "combinator"),
+                            ({"afterChanges": {"enabled": True, "minCommits": 1, "quietHours": {"start": 25, "end": 6}}}, "quietHours"),
+                            ({"priority": ["change", "change"]}, "priority")):
+            self.assertTrue(any(needle in e for e in self.errors(triggers=bad)), bad)
+
     def test_bad_preset_is_explained(self):
         errs = rp.validate_document(doc(p={"preset": "monthly"}))
         self.assertTrue(any("unknown preset" in e for e in errs), errs)
