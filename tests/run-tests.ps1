@@ -203,7 +203,7 @@ foreach ($routine in 'VERSION', 'CHANGELOG.md') {
 }
 $documentationOwner = $testOwnership.checks | Where-Object { $_.id -eq 'documentation-diff' }
 $localPreCommitHook = Get-Content -Raw (Join-Path $factory '.githooks/pre-commit')
-Assert 'local pre-commit hook runs the full Factory suite and YAML lint' ($localPreCommitHook -match 'tests/run-tests\.ps1' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
+Assert 'local pre-commit hook runs only the static Factory checks and YAML lint; the full suite runs on Linux' ($localPreCommitHook -match 'tests/run-tests\.ps1 -StaticOnly' -and $localPreCommitHook -notmatch '(?m)run-tests\.ps1\s*$' -and $localPreCommitHook -match 'yamllint 1\.37\.1' -and $localPreCommitHook -match 'yamllint -c \.yamllint\.yaml')
 Assert 'local pre-commit hook clears Git repository environment before isolated fixture tests' ($localPreCommitHook -match 'git rev-parse --local-env-vars' -and $localPreCommitHook -match 'unset "\$git_env"')
 $trackedGitlinks = @(& git -C $factory ls-files -s 2>$null | Where-Object { $_ -match '^160000' } | ForEach-Object { ($_ -split "`t", 2)[1] })
 Assert "no embedded repository (gitlink) is tracked; it breaks deploy parity ($($trackedGitlinks | Select-Object -First 5 | ForEach-Object { $_ }))" ($trackedGitlinks.Count -eq 0)

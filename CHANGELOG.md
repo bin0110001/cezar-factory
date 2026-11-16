@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.136] - 2026-11-16
+
+- Linux-first validation: the pre-commit hook now runs only the static checks and YAML lint; the full suite is validated on the Linux host with `ship-loop -Action Validate`, whose receipt is the validation evidence. Windows is documented as an authoring environment.
+
 ## [0.3.135] - 2026-11-16
 
 - Collection-boundary secret redaction (#579). One shared, data-driven helper (`scripts/security/redaction.py`, `redaction.ps1`, `redaction-patterns.json`) now redacts Authorization headers, Bearer/Basic tokens, gh*/github_pat_/sk-/AKIA tokens, key=value secrets, URL credentials and literal values of secret-named environment variables. The failure summary, audit publisher, repair diagnostics, incident ledger signatures, Hindsight scrub/incident memory, capability-broker traces and the implementation-context issue text use it; the 40+ char opaque-string catch-all stays opt-in (`strict`) for memory candidates. Tests: `tests/test_factory_redaction.py` (including a PowerShell parity check) and `tests/redaction.ps1`.
