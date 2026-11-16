@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Check-provider contract (#616): provider-neutral check categories, scope, trigger, policy and status model with `schemas/check-provider.schema.json`; `pass` is never allowed for a failed run, stale/unavailable feed or blocking findings. Docs: `docs/check-provider-contract.md`.
+
 - Scanner trust policy (#604): `server/verification/scanner-trust-policy.ts` rejects floating or unpinned, digest-mismatched, unsigned or untrusted-signer scanners (`fail`) and missing binary or missing/expired advisory DB (`unknown`), never green. Docs: `docs/scanner-trust-policy.md`.
 
 - Threat model and control ownership map (#578): `docs/trust-boundaries.md` now lists each input with its owner or gap, attacker capabilities and the negative-test scenarios; the docs test checks the new sections.

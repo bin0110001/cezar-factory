@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "checks": {
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "format",
+              "lint",
+              "type",
+              "test",
+              "sast",
+              "sca",
+              "secrets",
+              "iac",
+              "container",
+              "license",
+              "sbom",
+              "complexity",
+              "custom",
+              "ai-audit"
+            ]
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "name",
+              "version",
+              "digest"
+            ],
+            "additionalProperties": false
+          },
+          "applicability": {
+            "default": [],
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "scopes": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "changed-files",
+                "full-repo",
+                "baseline-diff",
+                "binary-image",
+                "git-history"
+              ]
+            }
+          },
+          "triggers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pr-dev",
+                "release-candidate",
+                "periodic-independent",
+                "manual",
+                "risk-event"
+              ]
+            }
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "cron": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "timezone": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "cron",
+              "timezone"
+            ],
+            "additionalProperties": false
+          },
+          "inputs": {
+            "default": [],
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "artifacts": {
+            "default": [],
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "hints": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "cpus": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 64
+              },
+              "memoryMib": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 262144
+              },
+              "expectedSeconds": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 21600
+              },
+              "costUnits": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000
+              }
+            },
+            "additionalProperties": false
+          },
+          "policy": {
+            "type": "object",
+            "properties": {
+              "mandatory": {
+                "type": "boolean"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 21600000
+              },
+              "onFailure": {
+                "default": "error",
+                "type": "string",
+                "enum": [
+                  "fail",
+                  "unknown",
+                  "error"
+                ]
+              },
+              "onFeedUnavailable": {
+                "default": "unknown",
+                "type": "string",
+                "enum": [
+                  "fail",
+                  "unknown",
+                  "error"
+                ]
+              },
+              "maxAgeHours": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 8760
+              },
+              "cache": {
+                "default": {
+                  "enabled": false
+                },
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "ttlHours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 720
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "mandatory",
+              "timeoutMs",
+              "onFailure",
+              "onFeedUnavailable",
+              "cache"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "provider",
+          "applicability",
+          "scopes",
+          "triggers",
+          "inputs",
+          "artifacts",
+          "hints",
+          "policy"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "checks"
+  ],
+  "additionalProperties": false
+}
