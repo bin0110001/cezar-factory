@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.137] - 2026-11-16
+
+- Validation adapters (#586): a configured validation child that cannot start because the host is out of pids/threads (`Failed to create CoreCLR`, `Thread.StartCore` OutOfMemoryException) is retried once and the receipt records it; the adapter test now prints the receipt message and stderr of a failing stage. Root cause of the promotion failure for dadf27ad was environmental (container pid limit exhausted by the nested pwsh chain), not #585.
+
 ## [0.3.136] - 2026-11-16
 
 - Linux-first validation: the pre-commit hook now runs only the static checks and YAML lint; the full suite is validated on the Linux host with `ship-loop -Action Validate`, whose receipt is the validation evidence. Windows is documented as an authoring environment.
