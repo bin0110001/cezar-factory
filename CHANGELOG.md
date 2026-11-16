@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Check gates and independent schedule (#619): provider-agnostic gate evaluation by category, mandatory/optional and max age, one findings query, and a due-check planner that cannot create a candidate (`server/verification/checks/check-gates.ts`).
+
 - Check runner (#618): provider plugin runner with trust gating, timeout, DB-freshness mapping, pinned provenance, and a cache invalidated by scanner/DB/config/input/scope/worker versions (`server/verification/checks/check-runner.ts`).
 
 - Normalized findings (#617): SARIF and generic JSON normalizers with a provider-independent fingerprint, retained source fingerprints, waiver metadata, redacted evidence and a single query (`server/verification/checks/normalized-findings.ts`, docs in `docs/check-provider-contract.md`).

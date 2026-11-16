@@ -47,3 +47,14 @@ source SHA, provider name/version/digest, config digest, DB timestamp, artifact 
 The cache key covers all of those, so any change misses; a different scope never reuses a result (#593).
 Failures and stale feeds are not cached. `aggregateCategory` combines several providers in one category: worst
 status wins and findings merge by common fingerprint.
+
+## Gates and independent schedule (#619)
+
+`checks/check-gates.ts` evaluates release gates from normalized records keyed only on category, mandatory/optional
+and max age (plus the source SHA under test). A missing, stale, other-SHA or non-passing (`fail`/`error`/`unknown`)
+mandatory result blocks; verdicts carry no provider names, so swapping a provider changes nothing in the
+evaluation. `queryRecordFindings` is the single findings query across providers.
+
+`planDueChecks` lists the checks due for a `periodic-independent`, `manual` or `risk-event` trigger (periodic is due
+when never run or older than `maxAgeHours`). It returns check ids only, so a scheduled run cannot create a regression
+candidate. Cron/timezone evaluation is left to the automation scheduler that calls it.
