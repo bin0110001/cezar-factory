@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Release-engine inbox step (#603, #634): `release_inbox_step.py` runs both inboxes once, deciding Control Center waiver requests per project policy and applying operator actions to the candidate store (candidates bound to the fetched dev and stable refs and the effective pipeline config hash), appending decision logs and a pause hold snapshot, with a user systemd timer (`integrations/bazzite/factory-release-inbox.{service,timer}`). It never fetches, pushes, promotes or deploys.
+
 - Engine consumer of Control Center candidate actions (#634): `release_action_inbox.py` applies each `actions.jsonl` request against the durable candidate store (create and retry through the single-pending-request rule, confirmed cancel and abandon through `CandidateStore.end` with fencing), records pause, resume and repair retries as holds and markers for the lease owner, rejects mismatched or finished candidates, and is idempotent (`scripts/release/release_action_inbox.py`).
 
 - Control Center policy editor and candidate actions (#632, #634): edit a project's release pipeline override, preview it (errors with paths, effective hash, next runs) and save it with a reason bound to the loaded hash; and start, pause, resume, retry, cancel or abandon a candidate with a reason and a typed confirmation for the destructive ones. Both only request: the service audits and queues, and the engine applies (`routes/pipeline-policy-editor.tsx`, `routes/release-candidate-actions.tsx`).
