@@ -37,3 +37,22 @@ derive from the run, and a disposition event for the same verification id and ch
 nothing.
 
 Next: deterministic stage rules (#665), idempotent follow-ups (#666) and the end-to-end demonstration (#669) build on this.
+
+## Deterministic rules and stage gates (#665)
+
+`src/verification/disposition-rules.ts` maps dispositions to **CONTINUE**, **RECORD** (follow-up), **RETRY** (rerun or repair) or
+**BLOCK** per stage, instead of treating a nonzero exit as failure. The policy is the `dispositionRules` block of
+`policies/verification.json`, validated by `dispositionPolicySchema` (the JSON schema `schemas/verification-disposition-policy.schema.json`
+is generated from it and drift-tested). `policies/**` is a protected asset, so an implementation change cannot edit the policy,
+baselines or waivers; `policyEditViolations(changedPaths, protectedGlobs)` names the offending paths.
+
+Per stage: `requiredChecks` (the stage minimum gate), `default` actions per disposition, ordered `rules` (first match wins, on
+decision, class, minimum severity, impacted scope and category) and `maxRetries`. The validator refuses any way to CONTINUE past an
+unusable run: `unknown`, `untested` and `infra-failure` can neither default to CONTINUE nor be matched by a CONTINUE rule.
+
+`decideStage(policy, stage, runs)` returns the stage action (the worst across checks), per-finding decisions with the rule that fired,
+follow-up fingerprints to record, checks to retry, rows for the Operations and Verification views, and a one-line agent-facing summary.
+Behaviour with the shipped policy: accepted existing debt (`known`) continues; a new minor finding is recorded as a follow-up; a
+regression in the impacted area blocks; a new high or critical security finding blocks at candidate and stable; a required check
+that did not run (or is unknown or untested) blocks and stays unknown, never a pass; a scanner or runner outage retries, then
+escalates to BLOCK after `maxRetries`.
