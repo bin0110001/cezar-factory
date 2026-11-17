@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Quality gate policy",
+  "description": "Editor aid. scripts/release/quality_gate_policy.py is the authority and also enforces that required security checks fail closed at promotion stages and that waivers are granted only by a human or operator.",
+  "type": "object",
+  "required": ["schemaVersion", "defaults"],
+  "properties": {
+    "schemaVersion": { "const": "quality-gates/v1" },
+    "defaults": { "$ref": "#/$defs/layer" },
+    "repoTypes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/layer" } },
+    "projects": { "type": "object", "additionalProperties": { "$ref": "#/$defs/layer" } }
+  },
+  "additionalProperties": false,
+  "patternProperties": { "^x-": {} },
+  "$defs": {
+    "category": { "enum": ["format", "lint", "type", "test", "sast", "sca", "secrets", "iac", "container", "license", "sbom", "complexity", "custom", "ai-audit"] },
+    "stage": { "enum": ["pr-dev", "candidate", "stable", "periodic", "manual"] },
+    "level": { "enum": ["required", "optional", "advisory", "off"] },
+    "checkSpec": {
+      "oneOf": [
+        { "$ref": "#/$defs/level" },
+        {
+          "type": "object",
+          "required": ["level"],
+          "properties": { "level": { "$ref": "#/$defs/level" }, "onUnavailable": { "enum": ["fail-closed", "fail-open"] } },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "layer": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/category" },
+          "additionalProperties": { "type": "object", "propertyNames": { "$ref": "#/$defs/stage" }, "additionalProperties": { "$ref": "#/$defs/checkSpec" } }
+        },
+        "cadence": { "type": "object", "propertyNames": { "$ref": "#/$defs/category" }, "additionalProperties": { "enum": ["daily", "weekly", "monthly"] } },
+        "riskPatterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "globs"],
+            "properties": {
+              "id": { "type": "string" },
+              "globs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "escalate": { "type": "object", "propertyNames": { "$ref": "#/$defs/category" }, "additionalProperties": { "$ref": "#/$defs/stage" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tolerances": {
+          "type": "object",
+          "properties": {
+            "maxNewFindings": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+            "baselineMaxAgeDays": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "budgets": { "type": "object", "propertyNames": { "$ref": "#/$defs/stage" }, "additionalProperties": { "type": "object", "additionalProperties": { "type": "number", "exclusiveMinimum": 0 } } },
+        "waivers": {
+          "type": "object",
+          "required": ["grantedBy"],
+          "properties": {
+            "grantedBy": { "type": "array", "minItems": 1, "items": { "enum": ["human", "operator"] } },
+            "maxDays": { "type": "integer", "minimum": 1, "maximum": 365 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": { "^x-": {} }
+    }
+  }
+}
