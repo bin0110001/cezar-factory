@@ -38,6 +38,12 @@ const auditEventSchema = z.discriminatedUnion('type', [
   z.object({ ...baseEvent, type: z.literal('override-split'), sourceFindingId: z.string().min(1), newFindingId: z.string().min(1), occurrenceIds: z.array(z.string().min(1)).min(1), prior: z.record(z.string(), z.string()) }).strict(),
   z.object({ ...baseEvent, type: z.literal('override-resolve'), episodeId: z.string().min(1), findingId: z.string().min(1), prior: z.literal('open') }).strict(),
   z.object({ ...baseEvent, type: z.literal('override-reopen'), findingId: z.string().min(1), episodeId: z.string().min(1), prior: z.literal('resolved') }).strict(),
+  /** The per-run disposition of a check's findings (#664): a record of the decision, not a change to any finding or episode. */
+  z.object({
+    ...baseEvent, type: z.literal('disposition-recorded'), verificationId: z.string().min(1).max(256), checkId: z.string().min(1).max(256), commitSha: z.string().min(1).max(128),
+    digest: z.string().min(1).max(128), runDisposition: z.string().min(1).max(64), policyVersion: z.string().min(1).max(128),
+    summary: z.record(z.string(), z.number().int().min(0)), prior: z.null(),
+  }).strict(),
 ]);
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 

@@ -9,6 +9,8 @@ export const FINGERPRINT_STRATEGIES: Readonly<Record<VerificationFindingKind, z.
   'test-failure': { id: 'cezar.verification.test-failure', version: 1, kinds: ['test-failure'] },
   'startup-error': { id: 'cezar.verification.startup-error', version: 1, kinds: ['startup-error'] },
   'performance-finding': { id: 'cezar.verification.performance-finding', version: 1, kinds: ['performance-finding'] },
+  /** Findings from check providers (SAST, SCA, lint, license, ...): the fingerprint is the provider-independent one from the normalizer. */
+  'check-finding': { id: 'cezar.verification.check-finding', version: 1, kinds: ['check-finding'] },
 };
 
 export interface VerificationFindingInput {
