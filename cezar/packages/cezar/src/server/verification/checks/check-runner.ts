@@ -26,6 +26,8 @@ export interface PluginRunOutput {
   document: unknown;
   /** Advisory DB timestamp as reported by the isolated worker; absent when there is no DB. */
   dbUpdatedAt?: string;
+  /** Digest of extra pinned inputs (e.g. a SAST ruleset): part of the cache key, so changing them misses the cache. */
+  inputsDigest?: string;
   /** Set when the provider has nothing it can scan (e.g. no lockfile): reported as `unknown` with this reason, never pass. */
   notApplicable?: string;
   /** Verified identity of the scanner that actually ran. */
@@ -34,7 +36,7 @@ export interface PluginRunOutput {
 
 export interface CheckProviderPlugin {
   /** Cheap pre-run probe of the advisory DB version so a cache hit can skip execution. */
-  probe?(): Promise<{ dbUpdatedAt?: string }>;
+  probe?(): Promise<{ dbUpdatedAt?: string; inputsDigest?: string }>;
   run(input: PluginRunInput): Promise<PluginRunOutput>;
 }
 
@@ -45,6 +47,7 @@ export interface Provenance {
   providerDigest: string;
   configDigest: string;
   dbUpdatedAt: string;
+  inputsDigest: string;
   artifactDigest: string;
   workerProfile: string;
   scope: string;
@@ -81,7 +84,7 @@ export function configDigest(def: CheckDefinition): string {
 
 /** Every dimension that must invalidate a cached result. */
 export function cacheKey(p: Provenance): string {
-  return sha([p.sourceSha, p.providerName, p.providerVersion, p.providerDigest, p.configDigest, p.dbUpdatedAt, p.artifactDigest, p.workerProfile, p.scope]);
+  return sha([p.sourceSha, p.providerName, p.providerVersion, p.providerDigest, p.configDigest, p.dbUpdatedAt, p.inputsDigest, p.artifactDigest, p.workerProfile, p.scope]);
 }
 
 export class CheckResultCache {
@@ -116,13 +119,15 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   const now = (opts.now ?? (() => new Date()))();
   const prov: Provenance = {
     sourceSha: opts.sourceSha, providerName: def.provider.name, providerVersion: def.provider.version, providerDigest: def.provider.digest,
-    configDigest: configDigest(def), dbUpdatedAt: '', artifactDigest: opts.artifactDigest, workerProfile: opts.workerProfile, scope: opts.scope,
+    configDigest: configDigest(def), dbUpdatedAt: '', inputsDigest: '', artifactDigest: opts.artifactDigest, workerProfile: opts.workerProfile, scope: opts.scope,
   };
 
   const cacheOn = def.policy.cache.enabled && opts.cache !== undefined;
   if (cacheOn && plugin.probe) {
     try {
-      prov.dbUpdatedAt = (await plugin.probe()).dbUpdatedAt ?? '';
+      const probed = await plugin.probe();
+      prov.dbUpdatedAt = probed.dbUpdatedAt ?? '';
+      prov.inputsDigest = probed.inputsDigest ?? '';
       const hit = opts.cache!.get(cacheKey(prov), def.policy.cache.ttlHours, now.getTime());
       if (hit) return { ...hit, cacheHit: true };
     } catch { /* a failing probe just means no cache; the run decides the status */ }
@@ -137,6 +142,7 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   if (output === 'timeout') return failure(def, prov, 'timeout', 'not-applicable', 'provider timed out');
 
   prov.dbUpdatedAt = output.dbUpdatedAt ?? '';
+  prov.inputsDigest = output.inputsDigest ?? prov.inputsDigest;
   if (output.notApplicable) {
     return { result: { checkId: def.id, provider: def.provider, status: 'unknown', execution: 'not-run', feed: 'not-applicable', findingCount: 0, blockingFindingCount: 0, reason: `not applicable: ${output.notApplicable}`.slice(0, 500) }, findings: [], provenance: prov, cacheHit: false };
   }
