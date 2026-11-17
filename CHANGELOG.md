@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Quality check catalog (#668): `docs/quality-check-catalog.md` maps each epic #663 check family to one owner, provider, category, stage and verified status, with overlap rules. Docs only.
+
 - Opt-in AI audit controls (#602): disabled-by-default decision logic with selectors, any/all combinator, cooldown, per-run and monthly caps, receipt reuse by diff hash, a read-only no-network sandbox spec, scrubbed fenced context manifests that flag injection text, citation-checked findings that are always needs-verification, and confirmation only by deterministic validation or authorized review (`scripts/release/ai_audit_policy.py`, `docs/ai-audit.md`). Makes no model calls.
 
 - Quality gate pipeline (#612-#615): scanner status model (clean/findings/unknown/outage/stale) with bounded backoff and last-good tracking, periodic cadence and advisory-snapshot freshness that never touches a candidate, finding evaluation with expiring baselines and human-only scoped suppressions with receipts, bounded actionable issues, and a redacted per-stage gate receipt (`scripts/release/scanner_status.py`, `quality_findings.py`, `quality_stage_gate.py`, `docs/quality-gate-pipeline.md`). Libraries only; the promoter does not call them yet.
@@ -478,6 +480,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+- Quality check catalog (#668): `docs/quality-check-catalog.md` maps each epic #663 check family to one owner, provider, category, stage and verified status, with overlap rules. Docs only.
 
 
 

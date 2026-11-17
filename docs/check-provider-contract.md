@@ -1,5 +1,7 @@
 # Check-provider contract (#616)
 
+See `docs/quality-check-catalog.md` for the family-to-provider catalog.
+
 A provider-neutral contract for quality, security and supply-chain checks, in
 `cezar/packages/cezar/src/server/verification/checks/check-provider.ts`. The JSON schema
 `schemas/check-provider.schema.json` is generated from it (a test fails if they drift). Scanner brands
