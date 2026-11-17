@@ -28,6 +28,8 @@ export interface PluginRunOutput {
   dbUpdatedAt?: string;
   /** Digest of extra pinned inputs (e.g. a SAST ruleset): part of the cache key, so changing them misses the cache. */
   inputsDigest?: string;
+  /** The provider has no advisory feed (e.g. a static analyser): a missing feed timestamp is not an outage. */
+  noFeed?: boolean;
   /** Set when the provider has nothing it can scan (e.g. no lockfile): reported as `unknown` with this reason, never pass. */
   notApplicable?: string;
   /** Verified identity of the scanner that actually ran. */
@@ -163,7 +165,7 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   const age = output.dbUpdatedAt ? now.getTime() - Date.parse(output.dbUpdatedAt) : NaN;
   const stale = def.policy.maxAgeHours !== undefined && !(age <= def.policy.maxAgeHours * 3_600_000);
   const feed: CheckResult['feed'] = output.dbUpdatedAt === undefined ? 'not-applicable' : stale ? 'stale' : 'fresh';
-  if (def.policy.maxAgeHours !== undefined && output.dbUpdatedAt === undefined) return failure(def, prov, 'completed', 'unavailable', 'advisory feed missing');
+  if (def.policy.maxAgeHours !== undefined && output.dbUpdatedAt === undefined && !output.noFeed) return failure(def, prov, 'completed', 'unavailable', 'advisory feed missing');
 
   let findings: NormalizedFinding[];
   try {

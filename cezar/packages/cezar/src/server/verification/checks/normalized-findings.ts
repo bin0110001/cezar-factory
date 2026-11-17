@@ -81,7 +81,10 @@ export function commonFingerprint(f: Pick<NormalizedFinding, 'category' | 'commo
   const advisory = f.commonIds.cve[0] ?? f.commonIds.ghsa[0] ?? f.commonIds.osv[0];
   const parts = advisory && f.dependency
     ? ['advisory', f.category, advisory, f.dependency.ecosystem ?? '', f.dependency.name.toLowerCase()]
-    : ['rule', f.category, f.commonIds.cwe[0] ?? f.ruleId.toLowerCase(), (f.path ?? '').replace(/\\/g, '/')];
+    : f.dependency
+      // A rule hit on a specific dependency (e.g. a license) is identified per package, not per rule.
+      ? ['dependency-rule', f.category, f.ruleId.toLowerCase(), f.dependency.ecosystem ?? '', f.dependency.name.toLowerCase()]
+      : ['rule', f.category, f.commonIds.cwe[0] ?? f.ruleId.toLowerCase(), (f.path ?? '').replace(/\\/g, '/')];
   return createHash('sha256').update(parts.join('\u0000')).digest('hex');
 }
 
