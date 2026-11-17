@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "stages": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "requiredChecks": {
+            "default": [],
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "default": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "new",
+                "known",
+                "worsened",
+                "resolved",
+                "reopened",
+                "untested",
+                "unknown",
+                "infra-failure"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "CONTINUE",
+                "RECORD",
+                "RETRY",
+                "BLOCK"
+              ]
+            }
+          },
+          "rules": {
+            "default": [],
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+                },
+                "when": {
+                  "type": "object",
+                  "properties": {
+                    "decision": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "known",
+                          "worsened",
+                          "resolved",
+                          "reopened",
+                          "untested",
+                          "unknown",
+                          "infra-failure"
+                        ]
+                      }
+                    },
+                    "class": {
+                      "type": "string",
+                      "enum": [
+                        "security",
+                        "quality-debt"
+                      ]
+                    },
+                    "minSeverity": {
+                      "type": "string",
+                      "enum": [
+                        "info",
+                        "low",
+                        "medium",
+                        "high",
+                        "critical"
+                      ]
+                    },
+                    "impacted": {
+                      "type": "boolean"
+                    },
+                    "category": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "CONTINUE",
+                    "RECORD",
+                    "RETRY",
+                    "BLOCK"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "id",
+                "when",
+                "action",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "maxRetries": {
+            "default": 2,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "requiredChecks",
+          "default",
+          "rules",
+          "maxRetries"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "stages"
+  ],
+  "additionalProperties": false
+}
