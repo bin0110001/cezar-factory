@@ -108,6 +108,26 @@ class Step(unittest.TestCase):
         self.assertEqual(self.run_step()["actions"]["applied"], 1)
         self.assertIsNone(CandidateStore(str(self.store)).active("tableflux"))
 
+    def test_a_granted_waiver_flows_through_the_inbox_into_the_stage_gate_and_expires(self):
+        from scripts.release import quality_stage_gate as sg
+        doc = json.loads(self.policy.read_text(encoding="utf8"))
+        good = {"test": {"status": "pass"}, "secrets": {"status": "pass"}, "sca": {"status": "pass"}}
+        f = {"fingerprint": "a" * 64, "category": "sca", "severity": "critical", "advisoryId": "CVE-2021-0001", "path": "package-lock.json", "fixAvailable": True}
+
+        def gate(now, suppressions):
+            return sg.evaluate_stage(doc=doc, project="tableflux", repo_type=None, stage="stable", changed_paths=[], checks=good, findings=[f], baseline=[],
+                                     suppressions=suppressions, now=now)
+
+        self.assertFalse(gate(NOW, [])["allowed"])  # a new critical finding blocks stable
+        jl(self.rel / "waivers.jsonl", self.waiver("w1"), self.waiver("w2", reviewerKind="agent"))
+        self.run_step()
+        active = step.granted_suppressions(self.rel, "tableflux", now=NOW)
+        self.assertEqual(len(active), 1)  # the agent's request granted nothing
+        self.assertTrue(gate(NOW, active)["allowed"])
+        self.assertFalse(gate(NOW, active)["findings"]["blocked"])
+        later = NOW + 8 * 86400
+        self.assertFalse(gate(later, step.granted_suppressions(self.rel, "tableflux", now=later))["allowed"])  # expired: blocks again
+
     def test_missing_remote_refs_reject_create_instead_of_guessing(self):
         git(self.repo, "update-ref", "-d", "refs/remotes/origin/stable")
         jl(self.rel / "actions.jsonl", self.action("a1", "create"))

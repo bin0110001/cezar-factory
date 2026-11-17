@@ -126,6 +126,11 @@ def run(release_dir: pathlib.Path, store_path: pathlib.Path, repo: pathlib.Path,
     return summary
 
 
+def granted_suppressions(release_dir: pathlib.Path, project: str, *, now: float | None = None) -> list[dict[str, Any]]:
+    """The unexpired operator-granted waivers for a project: pass these as `suppressions` to `quality_stage_gate.evaluate_stage`."""
+    return waivers.active_suppressions(_read(release_dir / "waiver-decisions.jsonl"), project=project, now=time.time() if now is None else now)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--release-dir", required=True, type=pathlib.Path, help="directory holding the Control Center files (CEZ_HOME/release)")
