@@ -1,0 +1,16 @@
+[Unit]
+Description=Apply Control Center waiver requests and operator candidate actions to the release engine
+After=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+CPUQuota=50%
+MemoryMax=512M
+Nice=10
+# %h/.cezar/release is the Control Center's CEZ_HOME/release directory (bind-mounted from the Cezar container); the store is the durable candidate store the
+# container already mounts. The step reads only the fetched origin/dev and origin/stable refs and never fetches, pushes, promotes or deploys.
+ExecStart=/usr/bin/python3 %h/cezar-factory/scripts/release/release_inbox_step.py --release-dir %h/.cezar/release --store %h/.local/share/cezar-factory/release-store/candidates.db --repo %h/cezar-factory --remote origin
+TimeoutStartSec=2min
