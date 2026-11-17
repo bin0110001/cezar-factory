@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.159] - 2026-11-17
+
 - Reusable Godot verification provider (#662): `schemas/godot-provider-manifest.schema.json` and `godot-provider.ts` declare version, capabilities, engine/GdUnit compatibility, discovery, provenance, worker profile, asset mounts and environment hash. The Godot adapter takes an optional provider context: environment problems (missing asset mount, engine/GdUnit mismatch), crashes and runner timeouts are infrastructure outcomes, known warning debt and new runtime errors get separate fingerprints, and excerpts are redacted and bounded. Two fixture projects share one provider.
 
 - Opt-in AI audit controls (#602): disabled-by-default decision logic with selectors, any/all combinator, cooldown, per-run and monthly caps, receipt reuse by diff hash, a read-only no-network sandbox spec, scrubbed fenced context manifests that flag injection text, citation-checked findings that are always needs-verification, and confirmation only by deterministic validation or authorized review (`scripts/release/ai_audit_policy.py`, `docs/ai-audit.md`). Makes no model calls.
