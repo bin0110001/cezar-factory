@@ -58,3 +58,28 @@ records in the snapshot). A figure with no recorded input is `null` with zero sa
 
 The snapshot contract gained optional fields for this (`timing`, `cost`, `openedAt`, `scheduledChecks`, `aiAudit`); the engine-side
 exporter that fills them is not part of this change, so an older snapshot simply shows "not recorded".
+
+## Quality actions (#603)
+
+Server side of the quality and security view; the check matrix, known versus new findings, feed freshness and waiver counts per candidate are
+already in the candidate read model (`docs/release-candidate-read-model.md`), and the independent scheduled-check history and AI audit cost are
+in the metrics.
+
+- `POST /api/v1/workspace/release-quality/dry-run`: applies a `quality-gates/v1` policy (usually the one being edited) to the last candidate's
+  check matrix at every stage (pr-dev, candidate, stable, periodic, manual) and returns what would block, per check, with its level, its
+  `onUnavailable` mode and a note. A failed scan (`error`, fails closed) and a confirmed new blocking CVE (`fail`) are different statuses, so
+  they stay distinguishable, and a required check with no result counts as `unknown`, never a pass. It also returns the recorded compute cost
+  as an estimate (or says none was recorded) and warns when a scanner feed is stale or unavailable. It saves nothing. An invalid policy is refused
+  with error paths, including the rule that a required security check must fail closed at a promotion stage.
+- `POST /api/v1/workspace/release-quality/waivers`: a review-only waiver request. It must name a fingerprint or an advisory, the stages it covers, a
+  reason of at least 10 characters and an expiry (no blanket or open-ended waivers), and it is refused above the maximum lifetime (30 days here; the
+  engine applies the policy's own maximum when it records the waiver), for an unknown project or candidate, and from a remote cockpit. An accepted
+  request appends one redacted, audited entry (`~/.cezar/release/waivers.jsonl`, reviewer kind `operator`) and is queued for the engine; this view
+  never grants a waiver itself. Waiver requests appear in the history view.
+
+`isBlocking` and the stage matrix are a TypeScript port of `scripts/release/quality_gate_policy.py`. `tests/fixtures/quality-gate-cases.json` is generated
+from the Python library (every category, stage and status for the shipped policy and for an override case); both the Python and the TypeScript tests check
+it, so a dry run agrees with the gates. After changing the Python rules, regenerate the fixture and fix the port until both pass.
+
+Gap: the UI forms (waiver request, policy dry-run table) are not built; the endpoints and the client methods `requestWaiver` and `dryRunQualityPolicy` are their
+contract. Pilots on real projects and the scanner-swap trend over time need real runs; swap-preserves-history is covered by `provider-swap-ledger.test.ts`.

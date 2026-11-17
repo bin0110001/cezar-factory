@@ -15,6 +15,7 @@ export * from './releases.ts';
 export * from './factory-control-center.ts';
 export * from './release-candidates.ts';
 export * from './release-pipeline-policy.ts';
+export * from './release-quality.ts';
 export * from './skills.ts';
 export * from './agent-config.ts';
 export * from './agent-profiles.ts';
@@ -37,3 +38,4 @@ export * from './worker-profile.ts';
 export * from './dependency-graph.ts';
 export * from './coding-run.ts';
 export * from './decisions.ts';
+

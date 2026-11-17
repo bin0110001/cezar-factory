@@ -357,6 +357,48 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('release quality actions (#603)', () => {
+    const post = (path: string, body: unknown) => apiRequest(makeApp(), `/api/v1/workspace/release-quality/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const publish = () => {
+      const dir = join(process.env.CEZ_HOME!, 'release');
+      mkdirSync(dir, { recursive: true });
+      const c = {
+        id: 'c1', state: 'validating', revision: 1, devSha: 'a'.repeat(40), baseStableSha: 'b'.repeat(40), candidateSha: null, configHash: `sha256:${'d'.repeat(64)}`,
+        createdAt: '2026-11-16T08:00:00Z', updatedAt: '2026-11-16T11:00:00Z', lease: { owner: 'w', expiresAt: '2099-01-01T00:00:00Z', stale: false },
+        tests: { status: 'running', shards: { total: 1, passed: 0, failed: 0 }, assetVersion: null }, devDrift: { commitsAhead: 0, newestDevSha: null },
+        blockers: [], repairObligations: [], receipts: [], pending: { count: 0, coalescedReason: null, triggers: [] }, nextScheduledAttempt: null, links: { pullRequests: [], issues: [] }, warnings: [],
+        checkMatrix: [{ category: 'sca', status: 'error', blocking: true, newFindings: 0, knownFindings: 0, provider: null, feed: 'unavailable', scope: null, sbomDigest: null, activeWaivers: 0 }],
+      };
+      writeFileSync(join(dir, 'candidates.json'), JSON.stringify({ snapshotAt: new Date().toISOString(), projects: { shop: { candidates: [c] } } }));
+      return join(dir, 'waivers.jsonl');
+    };
+    const gates = { schemaVersion: 'quality-gates/v1', defaults: { checks: { sca: { stable: { level: 'required', onUnavailable: 'fail-closed' } } }, waivers: { grantedBy: ['human', 'operator'], maxDays: 30 } } };
+
+    it('dry-runs a policy against the last candidate, flagging a failed scan that fails closed', async () => {
+      publish();
+      const res = (await (await post('dry-run', { projectId: 'shop', policy: gates })).json()) as { valid: boolean; candidateId: string; stages: Array<{ stage: string; wouldBlock: boolean; checks: Array<{ category: string; status: string; blocks: boolean }> }>; warnings: string[] };
+      expect(res).toMatchObject({ valid: true, candidateId: 'c1' });
+      expect(res.stages.find((s) => s.stage === 'stable')).toMatchObject({ wouldBlock: true, checks: [{ category: 'sca', status: 'error', blocks: true }] });
+      expect(res.warnings.join(' ')).toContain('fail closed');
+      const invalid = (await (await post('dry-run', { projectId: 'shop', policy: { schemaVersion: 'x', defaults: {} } })).json()) as { valid: boolean; errors: string[] };
+      expect(invalid.valid).toBe(false);
+    });
+
+    it('queues an audited waiver request, and refuses blanket, over-long and remote requests', async () => {
+      const audit = publish();
+      const ok = await post('waivers', { projectId: 'shop', fingerprint: 'a'.repeat(64), stages: ['stable'], reason: 'vendor patch next week', expiresInDays: 14 });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ accepted: true, status: 'queued', maxDays: 30 });
+      expect(readFileSync(audit, 'utf8').trim().split('\n')).toHaveLength(1);
+      expect((await post('waivers', { projectId: 'shop', stages: ['stable'], reason: 'no fingerprint here', expiresInDays: 14 })).status).toBe(400);
+      expect((await post('waivers', { projectId: 'shop', fingerprint: 'a'.repeat(64), stages: ['stable'], reason: 'too long a waiver', expiresInDays: 90 })).status).toBe(400);
+      process.env.CEZ_REMOTE = '1';
+      expect((await post('waivers', { projectId: 'shop', fingerprint: 'a'.repeat(64), stages: ['stable'], reason: 'remote attempt here', expiresInDays: 7 })).status).toBe(403);
+      delete process.env.CEZ_REMOTE;
+      expect(readFileSync(audit, 'utf8').trim().split('\n')).toHaveLength(1); // refusals write nothing
+    });
+  });
+
   describe('release history and metrics (#635)', () => {
     it('serves metrics computed from the snapshot and history from the audit logs, with no snapshot meaning unavailable', async () => {
       const none = await apiRequest(makeApp(), '/api/v1/workspace/release-metrics');

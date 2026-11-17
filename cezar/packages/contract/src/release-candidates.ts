@@ -125,7 +125,7 @@ export type CandidateActionResponse = z.infer<typeof candidateActionResponseSche
 export const releaseHistoryEntrySchema = z.object({
   id: z.string().max(64),
   at: iso,
-  kind: z.enum(['operator-action', 'policy-change']),
+  kind: z.enum(['operator-action', 'policy-change', 'waiver']),
   projectId: z.string().max(256),
   actor: z.string().max(128),
   summary: z.string().max(300),
