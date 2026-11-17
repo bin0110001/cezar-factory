@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Control Center policy editor and candidate actions (#632, #634): edit a project's release pipeline override, preview it (errors with paths, effective hash, next runs) and save it with a reason bound to the loaded hash; and start, pause, resume, retry, cancel or abandon a candidate with a reason and a typed confirmation for the destructive ones. Both only request: the service audits and queues, and the engine applies (`routes/pipeline-policy-editor.tsx`, `routes/release-candidate-actions.tsx`).
+
 - Engine consumer of Control Center waiver requests (#603): `release_waiver_inbox.py` decides each `waivers.jsonl` request against the policy (allowed grantors, maximum lifetime, named fingerprint or advisory, expiry), records a granted operator suppression with an exception receipt or a rejection with reasons, is idempotent, and exposes the unexpired grants per project (`scripts/release/release_waiver_inbox.py`).
 
 - Control Center quality forms (#603): a policy dry run (shows what would block at each stage, a failed scan apart from a confirmed finding, stale-feed warnings and the cost estimate) and a waiver request form (names a fingerprint or advisory, stages, reason and expiry; queued for the engine, never granted in the view) in `routes/release-quality-actions.tsx`.

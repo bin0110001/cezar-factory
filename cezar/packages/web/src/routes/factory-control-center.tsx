@@ -1,10 +1,11 @@
 import { AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
 import { Link } from 'react-router'
-import { useFactoryControlCenter, useReleaseCandidates, useReleaseHistory, useReleaseMetrics } from '@/api/queries'
+import { useFactoryControlCenter, usePipelinePolicy, useReleaseCandidates, useReleaseHistory, useReleaseMetrics } from '@/api/queries'
 import { ReleaseCandidatesSection } from './release-candidates'
 import { ReleaseMetricsSection } from './release-metrics'
 import { QualityActionsSection } from './release-quality-actions'
-import { dryRunQualityPolicy, requestWaiver } from '@/api/client'
+import { PipelinePolicyEditor } from './pipeline-policy-editor'
+import { dryRunQualityPolicy, postCandidateAction, previewPipelinePolicy, requestWaiver, savePipelinePolicy } from '@/api/client'
 import { Button } from '@/components/ui/button'
 
 const CHANNELS = ['dev', 'stable'] as const
@@ -25,6 +26,8 @@ export function FactoryControlCenterRoute() {
   const candidates = useReleaseCandidates()
   const releaseMetrics = useReleaseMetrics()
   const releaseHistory = useReleaseHistory()
+  const pipelinePolicy = usePipelinePolicy()
+  const releaseProjectIds = (candidates.data?.projects ?? []).map((p) => p.projectId)
   const projects = query.data?.projects ?? []
   const events = projects.flatMap((project) => project.history.map((event) => ({ ...event, projectId: project.id, projectName: project.name })))
     .sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt)).slice(0, 20)
@@ -42,9 +45,10 @@ export function FactoryControlCenterRoute() {
     {query.isError && <section role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"><AlertCircleIcon className="mr-2 inline size-4" />Control Center data is unavailable: {query.error.message}</section>}
 
     {query.data && <>
-      <ReleaseCandidatesSection query={candidates} />
+      <ReleaseCandidatesSection query={candidates} send={(r) => postCandidateAction(r)} />
       <ReleaseMetricsSection metrics={releaseMetrics} history={releaseHistory} />
-      <QualityActionsSection projectIds={(candidates.data?.projects ?? []).map((p) => p.projectId)} dryRun={(r) => dryRunQualityPolicy(r)} requestWaiver={(r) => requestWaiver(r)} />
+      <PipelinePolicyEditor projectIds={releaseProjectIds} initial={pipelinePolicy.data?.projects ?? {}} preview={(r) => previewPipelinePolicy(r)} save={async (r) => { const saved = await savePipelinePolicy(r); void pipelinePolicy.refetch(); return saved }} />
+      <QualityActionsSection projectIds={releaseProjectIds} dryRun={(r) => dryRunQualityPolicy(r)} requestWaiver={(r) => requestWaiver(r)} />
       <section aria-labelledby="channel-summary-heading" className="space-y-3">
         <div><h2 id="channel-summary-heading" className="font-semibold">Release channels</h2><p className="text-xs text-muted-foreground">State comes from the configured channel pointer and its latest activation receipt.</p></div>
         <div className="grid gap-3 sm:grid-cols-2">

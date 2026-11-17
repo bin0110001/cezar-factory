@@ -1,8 +1,9 @@
-import type { Candidate, ReleaseCandidatesResponse } from '@open-mercato/cezar-api-client'
+import type { Candidate, CandidateActionRequest, CandidateActionResponse, ReleaseCandidatesResponse } from '@open-mercato/cezar-api-client'
+import { CandidateActions } from './release-candidate-actions'
 
 /**
  * Release candidates inside the existing Control Center (#633): detail and timeline for each project's active candidate, the queue
- * (pending triggers, next attempt, stale lease or blocked state), and the check matrix. Read-only; actions are #634. Human approval
+ * (pending triggers, next attempt, stale lease or blocked state), and the check matrix. Read-only unless given `send`, which adds the operator actions (#634). Human approval
  * is visibly different from failure: awaiting approval is a waiting state, never styled or worded as an error.
  */
 
@@ -82,7 +83,7 @@ export function CandidateCard({ projectId, candidate }: { projectId: string; can
   </article>
 }
 
-export function ReleaseCandidatesSection({ query }: { query: Query }) {
+export function ReleaseCandidatesSection({ query, send }: { query: Query; send?: (req: CandidateActionRequest) => Promise<CandidateActionResponse> }) {
   return <section aria-labelledby="release-candidates-heading" className="space-y-3" data-testid="release-candidates">
     <div><h2 id="release-candidates-heading" className="font-semibold">Release candidates</h2>
       <p className="text-xs text-muted-foreground">One active candidate per project. The release engine writes this snapshot; this view only reads it.</p></div>
@@ -93,6 +94,7 @@ export function ReleaseCandidatesSection({ query }: { query: Query }) {
     {query.data?.available && <div className="grid gap-3 lg:grid-cols-2">
       {query.data.projects.map((p) => <div key={p.projectId} className="space-y-2">
         {p.warnings.map((w) => <p key={w} className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-sm" role="alert">{w}</p>)}
+        {send && <CandidateActions projectId={p.projectId} active={p.active} lastState={p.history[0]?.state ?? null} send={send} />}
         {p.active ? <CandidateCard projectId={p.projectId} candidate={p.active} /> : <p className="rounded-lg border p-4 text-sm text-muted-foreground" data-testid={`no-active-${p.projectId}`}>{p.projectId}: no active candidate.{p.history[0] ? ` Last: ${STATE_LABEL[p.history[0].state]}.` : ''}</p>}
       </div>)}
     </div>}
