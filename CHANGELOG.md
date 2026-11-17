@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Architecture boundary, dependency-cycle and public API compatibility check provider (#670): opt-in and incremental, with versioned per-project rules, boundary and cycle findings (Tarjan SCC) limited to changed files, public-contract signature comparison, planned-versus-actual scope from the impact manifest, quality-debt findings that block only per policy and keep baselined violations visible, and NOT_APPLICABLE when no rules are configured (`providers/architecture-adapter.ts`, `docs/check-architecture.md`).
+
 - Historical file/module/contract risk intelligence (#660): deterministic, repository-isolated risk evidence with five dimensions, incident dedupe, attribution-aware weighting, time decay and resolved-incident decay, churn kept out of the overall score, contract fan-out impact, rename-following roll-ups, mandatory history-independent floors for sensitive paths that a model suggestion can raise but never lower, audited overrides, and minimum guards derived without a model (`src/verification/risk-intelligence.ts`, `docs/risk-intelligence.md`).
 
 - Release history, audits and metrics (#635): `GET /api/v1/workspace/release-history` (operator-action and policy-change audit plus candidates, newest first, per-project retention) and `GET /api/v1/workspace/release-metrics` (queue wait, suite cost, regressions, forward-port lag, stable age, scheduled checks, AI audit cost, computed only from recorded data and `not recorded` otherwise), and a metrics and history section in the Control Center; the snapshot contract gains optional timing, cost, obligation age, scheduled-check and AI-audit fields (`src/release-candidates/history-metrics.ts`, `packages/web/src/routes/release-metrics.tsx`).
