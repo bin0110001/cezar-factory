@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider": { "name": "godot-verify", "version": "1.0.0" },
+  "capabilities": ["parse", "startup", "gdunit"],
+  "compatibility": { "engine": { "min": "4.2", "max": "4.9" }, "gdunit": { "min": "4.0" } },
+  "install": { "discovery": ["env:GODOT_BIN", "path", "cezar/godot-select.sh"] },
+  "provenance": { "tools": [{ "name": "godot", "version": "4.3", "source": "godotengine.org" }, { "name": "gdunit4", "version": "4.3" }] },
+  "workerProfile": { "renderer": "none", "display": "headless", "os": ["linux", "windows"] },
+  "assetMounts": [{ "name": "game-assets" }, { "name": "optional-textures", "optional": true }],
+  "environmentHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

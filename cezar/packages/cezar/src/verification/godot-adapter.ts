@@ -3,6 +3,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import type { VerificationCheckRun } from '@open-mercato/cezar-contract';
 import type { VerificationAdapter, VerificationAdapterContext } from './executor.ts';
+import { checkGodotEnvironment, detectGodotCrash, extractRuntimeErrors, godotDiagnosticFingerprint, redactExcerpt, type GodotProviderContext } from './godot-provider.ts';
 
 /**
  * Wraps existing Godot project scripts (parse/resource validation, startup checks, GdUnit)
@@ -18,6 +19,8 @@ type Artifact = VerificationCheckRun['artifacts'][number];
 export interface GodotAdapterOptions {
   /** Directories (relative to the check cwd) searched for JUnit XML. Defaults to `reports`. */
   junitDirs?: string[];
+  /** Versioned provider manifest plus the worker environment and project-owned debt baselines (#662). */
+  provider?: GodotProviderContext;
 }
 
 /** GdUnit4 exit codes: 100 = test failures, 101 = passed with warnings. */
@@ -132,17 +135,50 @@ export function createGodotVerificationAdapter(options: GodotAdapterOptions = {}
     async execute(context, runCommand) {
       const kind = godotCheckKind(context.checkId);
       const since = Date.now();
-      const result: Run = await runCommand();
       const diagnostics: Diagnostic[] = [];
       let artifacts: Artifact[] = [];
+      if (options.provider) {
+        // Environment problems (missing asset mount, engine/GdUnit mismatch) are infrastructure outcomes, never code regressions.
+        const problems = checkGodotEnvironment(options.provider.manifest, options.provider.environment);
+        if (problems.length > 0) {
+          for (const p of problems) diagnostics.push({ code: p.code, severity: 'error', message: cap(p.message) });
+          evidence.set(key(context), { diagnostics, artifacts });
+          return { status: 'infrastructure-error', code: null, output: redactExcerpt(problems.map((p) => `${p.code}: ${p.message}`).join('\n')), truncated: false, durationMs: 0 };
+        }
+      }
+      const result: Run = await runCommand();
       let { status } = result;
       let note: string | undefined;
       if (status === 'cancelled' || result.code === null || result.truncated) {
+        if (options.provider && status !== 'cancelled') {
+          // Timeout/spawn failure/signal: runner failure, kept distinct from findings in the code under test.
+          diagnostics.push({ code: result.truncated ? 'godot.output-truncated' : 'godot.runner-failure', severity: 'error', message: cap(redactExcerpt(result.output.slice(-400)) || 'runner did not exit normally') });
+        }
         evidence.set(key(context), { diagnostics, artifacts });
         return result;
       }
+      if (options.provider && detectGodotCrash(result.output, result.code)) {
+        diagnostics.push({ code: 'godot.crash', severity: 'error', message: cap(redactExcerpt(result.output.slice(-400))) });
+        evidence.set(key(context), { diagnostics, artifacts });
+        return { ...result, status: 'infrastructure-error' };
+      }
       const classified = classifyGodotOutput(result.output);
-      diagnostics.push(...classified.warnings);
+      const known = new Set(options.provider?.knownWarningFingerprints ?? []);
+      for (const w of classified.warnings) {
+        if (!options.provider) { diagnostics.push(w); continue; }
+        const fp = godotDiagnosticFingerprint('warning', w.message);
+        diagnostics.push({ ...w, code: known.has(fp) ? 'godot.warning.known' : 'godot.warning', severity: known.has(fp) ? 'info' : 'warning', message: cap(`${redactExcerpt(w.message)} [fp:${fp.slice(0, 16)}]`) });
+      }
+      let newErrors = 0;
+      if (options.provider) {
+        const knownErrors = new Set(options.provider.knownErrorFingerprints ?? []);
+        for (const line of extractRuntimeErrors(result.output)) {
+          const fp = godotDiagnosticFingerprint('error', line);
+          const isKnown = knownErrors.has(fp);
+          if (!isKnown) newErrors++;
+          diagnostics.push({ code: isKnown ? 'godot.error.known' : 'godot.error.new', severity: isKnown ? 'info' : 'error', message: cap(`${redactExcerpt(line.trim())} [fp:${fp.slice(0, 16)}]`) });
+        }
+      }
       if (kind === 'gdunit') {
         const junit = await ingestJunit(context, dirs, since);
         artifacts = junit.artifacts;
@@ -178,6 +214,7 @@ export function createGodotVerificationAdapter(options: GodotAdapterOptions = {}
           if (!hasParse && status === 'passed') { status = 'infrastructure-error'; note = 'editor/startup errors reported'; }
         }
       }
+      if (newErrors > 0 && (status === 'passed' || status === 'unknown')) { status = 'failed'; note = `${newErrors} new runtime error(s) not in the known-error baseline`; }
       evidence.set(key(context), { diagnostics: diagnostics.slice(0, 200), artifacts, ...(note ? { note } : {}) });
       return { ...result, status, output: note ? `${result.output}\n[godot-adapter] ${note}` : result.output };
     },

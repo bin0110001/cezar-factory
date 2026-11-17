@@ -1,0 +1,1 @@
+{ "provider": "godot-verify", "providerVersion": "1.0.0", "suites": { "quick": ["godot-parse"], "full": ["godot-parse", "gdunit"] } }
