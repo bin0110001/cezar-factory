@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stable promotion, approvals and rollback (#595): authorization from exact SHA, evidence, approval (agents cannot approve), forward-port and freshness policy; one promotion at a time; compare-and-swap fast-forward of stable; separate activation phase where only passing probe receipts mark a promotion active; rollback by CAS with quarantine and audit; interrupted-activation listing and drift detection (`scripts/release/release_promotion.py`, `docs/release-promotion.md`). Library only.
+
 - Candidate-scoped verification orchestration (#593): frozen manifest, evidence keyed on SHA/revision/adapter/selection/config/asset/env/advisory refresh with named invalidation, fail-closed required-suite gate, result classification with bounded reruns, provably-safe incremental revalidation that never skips mandatory full regression, shard resume, mixed-node uniformity checks and an expiring cache (`scripts/release/release_verification.py`, `docs/release-verification.md`). Library only.
 
 - Immutable regression snapshots (#592): create-only `refs/rc/<id>/<rev>` references, compare-and-swap regression pointer with writer-drift and non-fast-forward blocks, deleted/moved ref detection and recovery, repair revisions that never merge dev, promotion provenance, and audited cleanup (`scripts/release/release_snapshot.py`, `docs/release-snapshot.md`). Library only.
