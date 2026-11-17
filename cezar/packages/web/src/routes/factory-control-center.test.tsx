@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FactoryControlCenterRoute } from './factory-control-center'
 
 const useFactoryControlCenter = vi.fn()
-vi.mock('@/api/queries', () => ({ useFactoryControlCenter: () => useFactoryControlCenter() }))
+const useReleaseCandidates = vi.fn(() => ({ data: { schemaVersion: 1, generatedAt: '2026-11-15T12:00:00.000Z', available: false, snapshotAt: null, projects: [] }, isPending: false, isError: false }))
+vi.mock('@/api/queries', () => ({ useFactoryControlCenter: () => useFactoryControlCenter(), useReleaseCandidates: () => useReleaseCandidates() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 const now = '2026-11-15T12:00:00.000Z'
