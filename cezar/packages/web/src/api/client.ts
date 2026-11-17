@@ -1,8 +1,8 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema, releaseCandidatesResponseSchema, candidateActionResponseSchema, pipelinePolicyDocumentResponseSchema, pipelinePolicyPreviewResponseSchema, pipelinePolicySaveResponseSchema } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema, releaseCandidatesResponseSchema, candidateActionResponseSchema, pipelinePolicyDocumentResponseSchema, pipelinePolicyPreviewResponseSchema, pipelinePolicySaveResponseSchema, releaseHistoryResponseSchema, releaseMetricsResponseSchema } from '@open-mercato/cezar-api-client'
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse, VerificationEvidenceResponse } from '@open-mercato/cezar-api-client'
 import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
-import type { FactoryControlCenterResponse, ReleaseCandidatesResponse, CandidateActionRequest, CandidateActionResponse, PipelinePolicyDocumentResponse, PipelinePolicyPreviewRequest, PipelinePolicyPreviewResponse, PipelinePolicySaveRequest, PipelinePolicySaveResponse } from '@open-mercato/cezar-api-client'
+import type { FactoryControlCenterResponse, ReleaseCandidatesResponse, CandidateActionRequest, CandidateActionResponse, PipelinePolicyDocumentResponse, PipelinePolicyPreviewRequest, PipelinePolicyPreviewResponse, PipelinePolicySaveRequest, PipelinePolicySaveResponse, ReleaseHistoryResponse, ReleaseMetricsResponse } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
 import type {
@@ -726,6 +726,20 @@ export async function savePipelinePolicy(request: PipelinePolicySaveRequest, opt
   return pipelinePolicySaveResponseSchema.parse(await unwrap(
     await cez.api.v1.workspace['release-pipeline-policy'].$post({ json: request }, init(opts)),
     '/workspace/release-pipeline-policy',
+  ))
+}
+
+export async function getReleaseHistory(opts?: ReadOptions): Promise<ReleaseHistoryResponse> {
+  return releaseHistoryResponseSchema.parse(await unwrap(
+    await cez.api.v1.workspace['release-history'].$get({}, init(opts)),
+    '/workspace/release-history',
+  ))
+}
+
+export async function getReleaseMetrics(opts?: ReadOptions): Promise<ReleaseMetricsResponse> {
+  return releaseMetricsResponseSchema.parse(await unwrap(
+    await cez.api.v1.workspace['release-metrics'].$get({}, init(opts)),
+    '/workspace/release-metrics',
   ))
 }
 
