@@ -41,3 +41,13 @@ admitted until #1 is terminal.
 Candidate id, project, state, row version, revision, dev SHA, base stable SHA, candidate SHA, config hash (from
 `docs/release-pipeline-config.md`), owner, lease expiry, fencing token, timestamps; plus revisions, results, pending
 request history, promotion receipts and an append-only audit log.
+
+## Operator action inbox (#634)
+
+`scripts/release/release_action_inbox.py` is the engine side of the Control Center candidate actions. The Control Center appends audited requests to `~/.cezar/release/actions.jsonl`; `process()` applies each one not yet decided against this store, which stays the authority, and returns one decision per request for `action-decisions.jsonl`, so a rerun applies nothing twice.
+
+- `create` and a retry of a failed candidate go through `CandidateStore.request` (trigger `manual` or `retry`, idempotent on the request id), so a project with an active candidate gets the single pending request and never a second candidate. The engine supplies the dev and stable SHAs and the bound configuration hash; with none, the request is rejected.
+- `cancel` and `abandon` need `confirmed` and end only the named active candidate through `CandidateStore.end`, which fences out the lease holder.
+- `pause`, `resume` and retry of a candidate in `repair-required` are recorded, not applied: the store has no state for them and only the lease owner moves a candidate. `paused_projects()` and `retry_requests()` are what the owning worker reads.
+
+A request naming a candidate that is not the active one, a finished candidate, or an action that does not fit the state is rejected with the reason. Gap: the scheduled engine step that reads and appends the files, and the worker that honors holds and retry markers, are not wired yet.
