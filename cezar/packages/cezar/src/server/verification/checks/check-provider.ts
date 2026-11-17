@@ -21,7 +21,11 @@ export const scanScopeSchema = z.enum(SCAN_SCOPES);
 export const TRIGGER_SOURCES = ['pr-dev', 'release-candidate', 'periodic-independent', 'manual', 'risk-event'] as const;
 export const triggerSourceSchema = z.enum(TRIGGER_SOURCES);
 
-export const CHECK_STATUSES = ['pass', 'fail', 'warn', 'unknown', 'error'] as const;
+/**
+ * `not-applicable` is decided by capability planning (the project has no such ecosystem or tool), never by a scanner that
+ * failed to find something: it is explicit, carries a reason, and is non-blocking, distinct from `unknown` and `error`.
+ */
+export const CHECK_STATUSES = ['pass', 'fail', 'warn', 'unknown', 'error', 'not-applicable'] as const;
 export const checkStatusSchema = z.enum(CHECK_STATUSES);
 export type CheckStatus = z.infer<typeof checkStatusSchema>;
 
@@ -95,6 +99,11 @@ export const checkResultSchema = z.object({
     if (r.blockingFindingCount > 0) add('pass is not allowed with blocking findings');
   }
   if (r.execution !== 'completed' && (r.status === 'warn')) add('warn requires a completed execution');
+  if (r.status === 'not-applicable') {
+    if (r.execution !== 'not-run') add('not-applicable means the check was never run');
+    if (r.findingCount > 0) add('not-applicable cannot carry findings');
+    if (!r.reason) add('not-applicable needs a reason (ecosystem absent or tool missing)');
+  }
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 
