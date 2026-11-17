@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Optional local-model triage advisor (#667): off by default, local endpoints only, call/token/cost budgets; advice is returned beside an untouched stage decision and can never flip a BLOCK, waive a check or change policy; uncited or unknown claims are dropped; disabled, failing or over-budget advisors yield no advice (`src/verification/triage-advisor.ts`, `docs/verification-dispositions.md`).
+
 - Quality integration demonstration and acceptance (#669, #673): a JUnit unit-test adapter, a bridge from check outcomes into the ledger and the disposition rules, an end-to-end fixture where Trivy, a unit-test provider and ESLint share one ledger and are dispositioned by stage (a new critical blocks candidate and stable while accepted debt continues; crashes, unexecuted suites and unavailable feeds never pass), a duplicate-gate guard, provider-swap-with-history and no-hardcoded-machine-profile tests, and an acceptance map (`docs/quality-acceptance.md`).
 
 - Idempotent follow-ups and bounded remediation for dispositions (#666): one tracked issue per canonical finding through an injected publisher keyed by fingerprint (ledger, then publisher search by marker, then create; concurrent and post-crash callers never duplicate), a bounded remediation ladder with per-step and total budgets and a human decision only when truly blocked, and replay-safe `followup-recorded` and `remediation-recorded` audit events (`src/verification/followups.ts`).

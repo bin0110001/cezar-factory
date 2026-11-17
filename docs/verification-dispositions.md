@@ -73,3 +73,15 @@ escalates to BLOCK after `maxRetries`.
 - **Replay-safe.** `recordRemediation` is idempotent per (fingerprint, step, attempt) and both event types are in the ledger's
   audit log (`followup-recorded`, `remediation-recorded`), so a restart sees the same history, computes the same plan
   (`remediationDigest` is unchanged) and repeats no work.
+
+## Optional triage advisor (#667)
+
+`src/verification/triage-advisor.ts` offers advice (semantic duplicates, causal and test-obsolescence hypotheses, suggested
+follow-ups) next to a disposition record. It is off by default, accepts only a local model endpoint (loopback or private network; a
+remote host makes the configuration invalid), and has call, token and cost budgets.
+
+It is advisory by construction: `triage` returns the original stage decision object untouched and the advice separately, so advice
+cannot flip a BLOCK to CONTINUE, waive a mandatory check, change policy or approve anything. Each claim must cite evidence the decision
+actually has (fingerprint, check id, rule id or stage) and name a known finding, with a known kind; anything else is dropped and
+counted. A disabled, invalid, failing, malformed or over-budget advisor yields no advice and the dispositions are unchanged. The
+advisor sees only identifiers (fingerprint, check id, decision, rule id), never raw evidence.
