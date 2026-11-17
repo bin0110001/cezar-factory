@@ -182,7 +182,7 @@ def is_blocking(eff: dict[str, Any], category: str, stage: str, status: str) -> 
     spec = _spec(eff, category, stage)
     if spec["level"] in ("off", "advisory"):
         return False
-    if status in ("pass", "warn"):
+    if status in ("pass", "warn", "not-applicable"):  # not-applicable is decided by capability planning and never blocks
         return False
     if status == "fail":
         return spec["level"] == "required"

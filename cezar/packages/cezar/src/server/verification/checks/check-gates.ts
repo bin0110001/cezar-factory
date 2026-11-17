@@ -43,8 +43,8 @@ export interface GateEvaluation {
   blocking: CheckCategory[];
 }
 
-const RANK: Record<CheckStatus, number> = { error: 4, fail: 3, unknown: 2, warn: 1, pass: 0 };
-const OK: ReadonlySet<CheckStatus> = new Set(['pass', 'warn']);
+const RANK: Record<CheckStatus, number> = { error: 4, fail: 3, unknown: 2, warn: 1, pass: 0, 'not-applicable': 0 };
+const OK: ReadonlySet<CheckStatus> = new Set(['pass', 'warn', 'not-applicable']);
 
 export function evaluateGates(
   requirements: readonly GateRequirement[], records: readonly CheckRunRecord[], ctx: { sourceSha: string; now: Date },
@@ -61,7 +61,9 @@ export function evaluateGates(
       if (!OK.has(r.result.status)) reasons.add('not-passing');
     }
     if (!usable.length && inCategory.length) reasons.add(reasons.has('stale') ? 'stale' : 'wrong-source');
-    const status = usable.length ? usable.reduce<CheckStatus>((w, r) => (RANK[r.result.status] > RANK[w] ? r.result.status : w), 'pass') : 'unknown';
+    const allNotApplicable = usable.length > 0 && usable.every((r) => r.result.status === 'not-applicable');
+    const status = allNotApplicable ? 'not-applicable'
+      : usable.length ? usable.reduce<CheckStatus>((w, r) => (RANK[r.result.status] > RANK[w] ? r.result.status : w), 'pass') : 'unknown';
     const satisfied = usable.length > 0 && usable.every((r) => OK.has(r.result.status));
     return { category: req.category, mandatory: req.mandatory, satisfied, status, reasons: [...reasons] };
   });

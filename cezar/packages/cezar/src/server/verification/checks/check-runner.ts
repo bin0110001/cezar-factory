@@ -178,7 +178,7 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   return outcome;
 }
 
-const RANK: Record<CheckStatus, number> = { error: 4, fail: 3, unknown: 2, warn: 1, pass: 0 };
+const RANK: Record<CheckStatus, number> = { error: 4, fail: 3, unknown: 2, warn: 1, pass: 0, 'not-applicable': 0 };
 
 /** Several providers for one category: worst status wins, findings merge by common fingerprint. */
 export function aggregateCategory(outcomes: readonly RunCheckOutcome[]): { status: CheckStatus; findings: NormalizedFinding[] } {

@@ -110,6 +110,7 @@ class Decisions(unittest.TestCase):
         self.assertTrue(b("sca", "stable", "unknown"))  # mandatory security check fails closed
         self.assertTrue(b("sca", "stable", "error"))
         self.assertFalse(b("sca", "stable", "pass"))
+        self.assertFalse(b("sca", "stable", "not-applicable"))  # no ecosystem or tool: explicit and non-blocking, unlike unknown
         self.assertFalse(b("sca", "pr-dev", "fail"))  # advisory at PR time
         self.assertFalse(b("sca", "periodic", "unknown"))  # explicitly fail-open on the periodic refresh
         self.assertFalse(b("sast", "candidate", "fail"))
