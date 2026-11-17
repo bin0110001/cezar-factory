@@ -100,6 +100,24 @@ class Overrides(unittest.TestCase):
             qg.load(d)
 
 
+class SharedFixtureParity(unittest.TestCase):
+    """The TypeScript dry run (cezar/packages/cezar/src/release-candidates/quality-actions.ts) is checked against the same fixture."""
+
+    def test_python_authority_still_matches_the_committed_fixture(self):
+        fixture = json.loads((ROOT / "tests" / "fixtures" / "quality-gate-cases.json").read_text(encoding="utf8"))
+        statuses = ["pass", "fail", "warn", "unknown", "error", "not-applicable"]
+        checked = 0
+        for name, d in fixture["documents"].items():
+            eff = qg.effective(d["doc"], project=d["project"], repo_type=d["repoType"])
+            for row in d["rows"]:
+                spec = qg._spec(eff, row["category"], row["stage"])
+                self.assertEqual((spec["level"], spec["onUnavailable"]), (row["level"], row["onUnavailable"]), f"{name} {row['category']}@{row['stage']}")
+                for s in statuses:
+                    self.assertEqual(qg.is_blocking(eff, row["category"], row["stage"], s), row["blocks"][s], f"{name} {row['category']}@{row['stage']} {s}")
+                    checked += 1
+        self.assertGreater(checked, 800)
+
+
 class Decisions(unittest.TestCase):
     def setUp(self):
         self.eff = qg.effective(shipped(), project=None, repo_type=None)

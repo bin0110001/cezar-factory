@@ -40,7 +40,7 @@ export function ReleaseMetricsSection({ metrics, history }: { metrics: Q<Release
       <p className="text-xs text-muted-foreground">Retention: {Object.entries(history.data.retentionDays).map(([id, d]) => `${id} ${d} days`).join(', ') || 'default 30 days'}.</p>
       {history.data.entries.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No operator actions or policy changes within retention.</p> : <ul className="mt-2 divide-y text-sm">
         {history.data.entries.map((e) => <li key={e.id} className="py-1.5" data-testid={`history-${e.id}`} data-kind={e.kind}>
-          <span className="mr-2 rounded bg-muted px-1.5 py-0.5 text-xs">{e.kind === 'policy-change' ? 'Policy change' : 'Operator action'}</span>
+          <span className="mr-2 rounded bg-muted px-1.5 py-0.5 text-xs">{e.kind === 'policy-change' ? 'Policy change' : e.kind === 'waiver' ? 'Waiver request' : 'Operator action'}</span>
           <span className="font-medium">{e.projectId}</span> · {e.summary} <span className="text-xs text-muted-foreground">· {e.actor} · {stamp(e.at)}</span>
           {e.afterHash && <span className="ml-2 font-mono text-xs text-muted-foreground">{(e.beforeHash ?? 'none').slice(7, 15)} → {e.afterHash.slice(7, 15)}</span>}
         </li>)}

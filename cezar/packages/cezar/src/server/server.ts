@@ -2,6 +2,7 @@ import { buildReleaseCandidates, readSnapshot, snapshotPath } from '../release-c
 import { evaluateAction, recordAction } from '../release-candidates/actions.ts';
 import { previewPolicy, readPolicyDocument, savePolicy } from '../release-candidates/pipeline-policy-store.ts';
 import { buildHistory, computeMetrics } from '../release-candidates/history-metrics.ts';
+import { DEFAULT_MAX_WAIVER_DAYS, dryRunPolicy, evaluateWaiver, recordWaiver } from '../release-candidates/quality-actions.ts';
 import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
@@ -22,6 +23,10 @@ import {
   candidateActionResponseSchema,
   pipelinePolicyDocumentResponseSchema,
   releaseHistoryResponseSchema,
+  waiverRequestSchema,
+  waiverResponseSchema,
+  qualityDryRunRequestSchema,
+  qualityDryRunResponseSchema,
   releaseMetricsResponseSchema,
   pipelinePolicyPreviewRequestSchema,
   pipelinePolicyPreviewResponseSchema,
@@ -3273,6 +3278,21 @@ export function createApp(deps: ServerDeps) {
     // Release candidates (#631): the host-written snapshot, validated and redacted. Read-only; an absent snapshot is `available: false`.
     .get('/workspace/release-candidates', (c) => c.json(releaseCandidatesResponseSchema.parse(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()))))
     // Operator actions (#634): validated against the snapshot and queued, with an audit entry, for the host engine. Never mutates state here.
+    // Quality actions (#603): a review-only waiver request (validated, audited, queued for the host engine) and a policy dry run.
+    .post('/workspace/release-quality/waivers', jsonZodValidator(waiverRequestSchema, { message: 'a fingerprint or advisory id, stages, a reason of at least 10 characters and an expiry are required' }), (c) => {
+      const request = c.req.valid('json')
+      const now = new Date()
+      const model = buildReleaseCandidates(readSnapshot(snapshotPath()), now)
+      const decision = evaluateWaiver(model, request, { localHandoff: capabilities().localHandoff, maxDays: DEFAULT_MAX_WAIVER_DAYS })
+      if (!decision.ok) return c.json({ error: decision.error }, decision.status)
+      try {
+        return c.json(waiverResponseSchema.parse(recordWaiver(request, decision, now)), 200)
+      } catch {
+        return c.json({ error: 'The waiver request could not be recorded in the audit log, so it was not accepted.' }, 500)
+      }
+    })
+    .post('/workspace/release-quality/dry-run', jsonZodValidator(qualityDryRunRequestSchema, { message: 'projectId and a quality-gates policy object are required' }), (c) =>
+      c.json(qualityDryRunResponseSchema.parse(dryRunPolicy(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()), c.req.valid('json')))))
     // History and metrics (#635): computed from the candidate snapshot and the audit logs; read-only; retention per project.
     .get('/workspace/release-history', (c) => c.json(releaseHistoryResponseSchema.parse(buildHistory(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()), new Date()))))
     .get('/workspace/release-metrics', (c) => c.json(releaseMetricsResponseSchema.parse(computeMetrics(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()), new Date()))))

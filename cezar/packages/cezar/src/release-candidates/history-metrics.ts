@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { Candidate, ProjectMetrics, ReleaseCandidatesResponse, ReleaseHistoryResponse, ReleaseMetricsResponse } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
 import { actionsPath } from './actions.ts';
+import { waiversPath } from './quality-actions.ts';
 import { effectiveConfig } from './pipeline-policy.ts';
 import { loadPolicyDocument, policyAuditPath, policyPath } from './pipeline-policy-store.ts';
 
@@ -57,11 +58,12 @@ export function retentionByProject(projectIds: readonly string[], policyFile = p
   return out;
 }
 
-export function buildHistory(model: ReleaseCandidatesResponse, now: Date, files: { actions?: string; policyAudit?: string; policy?: string } = {}): ReleaseHistoryResponse {
+export function buildHistory(model: ReleaseCandidatesResponse, now: Date, files: { actions?: string; policyAudit?: string; policy?: string; waivers?: string } = {}): ReleaseHistoryResponse {
   const secrets = collectSecretValues();
   const actions = readJsonl(files.actions ?? actionsPath());
   const policy = readJsonl(files.policyAudit ?? policyAuditPath());
-  const ids = [...new Set([...model.projects.map((p) => p.projectId), ...actions.map((a) => String(a.projectId)), ...policy.map((a) => String(a.projectId))])];
+  const waivers = readJsonl(files.waivers ?? waiversPath());
+  const ids = [...new Set([...model.projects.map((p) => p.projectId), ...actions.map((a) => String(a.projectId)), ...policy.map((a) => String(a.projectId)), ...waivers.map((a) => String(a.projectId))])];
   const retention = retentionByProject(ids, files.policy);
   const within = (project: string, at: string) => now.getTime() - Date.parse(at) <= (retention[project] ?? DEFAULT_RETENTION_DAYS) * 86_400_000;
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -71,6 +73,10 @@ export function buildHistory(model: ReleaseCandidatesResponse, now: Date, files:
     ...actions.flatMap((a) => (str(a.at) && Date.parse(str(a.at)) && within(str(a.projectId), str(a.at))
       ? [{ id: str(a.id), at: new Date(str(a.at)).toISOString(), kind: 'operator-action' as const, projectId: str(a.projectId), actor: str(a.actor) || 'unknown',
         summary: redactSecrets(`${str(a.action)}${a.candidateId ? ` ${str(a.candidateId)}` : ''}: ${str(a.reason)}`, secrets).slice(0, 300), candidateId: a.candidateId ? str(a.candidateId) : null, beforeHash: null, afterHash: null }]
+      : [])),
+    ...waivers.flatMap((a) => (str(a.at) && Date.parse(str(a.at)) && within(str(a.projectId), str(a.at))
+      ? [{ id: str(a.id), at: new Date(str(a.at)).toISOString(), kind: 'waiver' as const, projectId: str(a.projectId), actor: str(a.actor) || 'unknown',
+        summary: redactSecrets(`waiver requested until ${str(a.expiresAt).slice(0, 10)}: ${str(a.reason)}`, secrets).slice(0, 300), candidateId: a.candidateId ? str(a.candidateId) : null, beforeHash: null, afterHash: null }]
       : [])),
     ...policy.flatMap((a) => (str(a.at) && Date.parse(str(a.at)) && within(str(a.projectId), str(a.at))
       ? [{ id: str(a.id), at: new Date(str(a.at)).toISOString(), kind: 'policy-change' as const, projectId: str(a.projectId), actor: str(a.actor) || 'unknown',
