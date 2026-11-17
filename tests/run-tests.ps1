@@ -901,7 +901,11 @@ try {
         }
         finally { $listener.Stop() }
     }
-    Start-Sleep -Seconds 2
+    # Wait until the job's listener accepts connections; a fixed sleep fails when the host is loaded (#701).
+    $wdReady = $false
+    for ($wdTry = 0; $wdTry -lt 100 -and -not $wdReady; $wdTry++) {
+        try { $probe = [System.Net.Sockets.TcpClient]::new(); $probe.Connect('127.0.0.1', $wdPort); $probe.Dispose(); $wdReady = $true } catch { Start-Sleep -Milliseconds 200 }
+    }
     $wd = Run 'watchdog-automations.ps1' @{ ApiUrl = "http://127.0.0.1:$wdPort"; ProjectId = 'p'; MaxRunMinutes = 30; Workflow = 'factory-maintenance,factory-intake'; ExcludeRunId = 'r-self' }
     Stop-Job $wdJob -ErrorAction SilentlyContinue; Remove-Job $wdJob -Force -ErrorAction SilentlyContinue
     $wdCancelled = @(if (Test-Path $wdLog) { Get-Content $wdLog })
