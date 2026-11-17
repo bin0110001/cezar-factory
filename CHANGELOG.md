@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Deterministic disposition rules and stage minimum gates (#665): `scripts/release/verification_disposition.py` maps normalized verification outcomes to CONTINUE / RECORD / RETRY / BLOCK per stage (accepted existing debt continues, new minor findings are recorded, new focused or acceptance regressions block, missing coverage stays unknown, outages retry within bounds then escalate, unrecognized input blocks). `policies/verification.json` gains schema-validated `stageGates` and `protectedPaths` (`schemas/verification-policy.schema.json`); policy, baseline and waiver edits from implementation changes are rejected. Library only; includes a concise agent summary and a UI payload.
+
 - Opt-in AI audit controls (#602): disabled-by-default decision logic with selectors, any/all combinator, cooldown, per-run and monthly caps, receipt reuse by diff hash, a read-only no-network sandbox spec, scrubbed fenced context manifests that flag injection text, citation-checked findings that are always needs-verification, and confirmation only by deterministic validation or authorized review (`scripts/release/ai_audit_policy.py`, `docs/ai-audit.md`). Makes no model calls.
 
 - Quality gate pipeline (#612-#615): scanner status model (clean/findings/unknown/outage/stale) with bounded backoff and last-good tracking, periodic cadence and advisory-snapshot freshness that never touches a candidate, finding evaluation with expiring baselines and human-only scoped suppressions with receipts, bounded actionable issues, and a redacted per-stage gate receipt (`scripts/release/scanner_status.py`, `quality_findings.py`, `quality_stage_gate.py`, `docs/quality-gate-pipeline.md`). Libraries only; the promoter does not call them yet.
