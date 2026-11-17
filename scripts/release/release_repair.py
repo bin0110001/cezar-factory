@@ -190,7 +190,8 @@ def classify_forward_port(repo: str, *, dev_tip: str, fix_sha: str, base_sha: st
     marks = [line[:1] for line in cherry.stdout.splitlines() if line.strip()]
     if marks and all(m == "-" for m in marks):
         return "equivalent"
-    merged = _git(repo, "merge-tree", "--write-tree", f"--merge-base={base_sha}", dev_tip, fix_sha)
+    # No --merge-base (git 2.40+): git picks it, which for a repair that descends from the candidate is the same commit.
+    merged = _git(repo, "merge-tree", "--write-tree", dev_tip, fix_sha)
     return "pending" if merged.returncode == 0 else "conflict"
 
 
