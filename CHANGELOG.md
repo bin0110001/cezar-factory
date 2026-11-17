@@ -46,6 +46,10 @@
 - Promoter no longer fails at activation (and files a duplicate issue / counts toward the breaker) for a quarantined release (#560). A quarantined candidate is reported `unchanged`/`quarantined` unless run with `retry_failed`, which revalidates it via `coordinator.revalidate()` before activating; a failed revalidation is recorded once at `activation`.
 - Promoter: a stable deploy deferred because Cezar is busy (exit 25) is now a distinct `deploy-deferred` outcome. It no longer counts as a failed deploy attempt, and no "release drift persists" issue is filed while the deferral is inside the 7200s max-defer window; the drift report names the deferral and remaining time (#559).
 
+## [0.3.158] - 2026-11-17
+
+- Release heading for 0.3.158; the entries above it were not yet filed under a release.
+
 ## [0.3.137] - 2026-11-16
 
 - Validation adapters (#586): a configured validation child that cannot start because the host is out of pids/threads (`Failed to create CoreCLR`, `Thread.StartCore` OutOfMemoryException) is retried once and the receipt records it; the adapter test now prints the receipt message and stderr of a failing stage. Root cause of the promotion failure for dadf27ad was environmental (container pid limit exhausted by the nested pwsh chain), not #585.
