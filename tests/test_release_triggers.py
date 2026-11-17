@@ -152,6 +152,15 @@ class WithTheStore(unittest.TestCase):
         self.assertTrue(all(r.get("replayed") for r in again))
         self.assertEqual(len(self.store.pending_request("p")["history"]), 2)
 
+    def test_an_unchanged_dev_consumes_the_schedule_tick_without_requesting(self):
+        unchanged = dev(last_accepted_sha="d" * 40)
+        decisions = rt.evaluate({"manual": True, "schedule": DAILY}, project="p", now=self.now, dev=unchanged, last_schedule_fired=None, default_tz=TZ)
+        sched = [d for d in decisions if d.trigger == "schedule"][0]
+        self.assertEqual(sched.action, "skip")
+        self.assertIsNotNone(sched.occurrence)  # the tick is recorded as consumed
+        manual = rt.evaluate({"manual": True, "schedule": DAILY}, project="p", now=self.now, dev=unchanged, last_schedule_fired=None, manual_request="op", default_tz=TZ)
+        self.assertEqual([d.action for d in manual if d.trigger == "manual"], ["request"])  # an explicit request is always honoured
+
     def test_priority_orders_decisions_and_disabled_manual_is_refused(self):
         self.triggers["priority"] = ["change", "schedule", "manual"]
         self.assertEqual([d.trigger for d in self.sources()], ["change", "schedule", "manual"])
