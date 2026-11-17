@@ -72,8 +72,14 @@ function ConvertFrom-BaselineComparison {
     # a regression named by a criterion's test IDs is failing evidence, otherwise passing.
     param([Parameter(Mandatory)]$Baseline, [Parameter(Mandatory)][string[]]$TestIds, [Parameter(Mandatory)][string]$CommitSha, [Parameter(Mandatory)][string]$PolicyRevision)
     $regressions = @($Baseline.regressions)
+    # Optional per-run dispositions (#664): { testId = <disposition class> }. Blocking classes fail,
+    # unknown / infra-failure / untested are inconclusive and never pass.
+    $dispositions = $Baseline.dispositions
     foreach ($t in $TestIds) {
-        $res = if ($regressions -contains $t) { 'fail' } else { 'pass' }
+        $d = if ($dispositions) { $dispositions.$t } else { $null }
+        $res = if ($d -in @('new', 'worsened', 'reopened')) { 'fail' }
+               elseif ($d -in @('unknown', 'infra-failure', 'untested')) { 'inconclusive' }
+               elseif ($regressions -contains $t) { 'fail' } else { 'pass' }
         New-AcceptanceEvidence -Kind baseline -Ref "$($Baseline.baselineRunId):$t" -Result $res -CommitSha $CommitSha -PolicyRevision $PolicyRevision
     }
 }

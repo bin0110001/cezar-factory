@@ -37,6 +37,8 @@ const auditEventSchema = z.discriminatedUnion('type', [
   z.object({ ...baseEvent, type: z.literal('override-alias'), sourceFindingId: z.string().min(1), targetFindingId: z.string().min(1), prior: z.string().nullable() }).strict(),
   z.object({ ...baseEvent, type: z.literal('override-split'), sourceFindingId: z.string().min(1), newFindingId: z.string().min(1), occurrenceIds: z.array(z.string().min(1)).min(1), prior: z.record(z.string(), z.string()) }).strict(),
   z.object({ ...baseEvent, type: z.literal('override-resolve'), episodeId: z.string().min(1), findingId: z.string().min(1), prior: z.literal('open') }).strict(),
+  z.object({ ...baseEvent, type: z.literal('disposition-recorded'), runId: z.string().min(1), counts: z.record(z.string(), z.number().int().nonnegative()), policyVersion: z.number().int().positive(), prior: z.null() }).strict(),
+  z.object({ ...baseEvent, type: z.literal('waiver-granted'), waiverId: z.string().min(1), fingerprint: z.string().min(1), expiresAt: z.string().datetime(), prior: z.null() }).strict(),
   z.object({ ...baseEvent, type: z.literal('override-reopen'), findingId: z.string().min(1), episodeId: z.string().min(1), prior: z.literal('resolved') }).strict(),
 ]);
 export type AuditEvent = z.infer<typeof auditEventSchema>;
@@ -51,11 +53,15 @@ export interface AuditState {
   resolutions: Record<string, { at: string; actor: string; reason: string; evidenceRefs: string[]; manual: boolean }>;
   /** episode ids opened by a human reopen, per finding. */
   reopened: Record<string, string[]>;
+  /** run id -> disposition summary recorded for that run. */
+  dispositionRuns: Record<string, { at: string; actor: string; counts: Record<string, number>; policyVersion: number }>;
+  /** waiver id -> grant summary. */
+  waivers: Record<string, { at: string; grantedBy: string; fingerprint: string; expiresAt: string }>;
   eventCount: number;
 }
 
 export function emptyAuditState(projectId: string): AuditState {
-  return { projectId, mergedInto: {}, occurrenceOwner: {}, resolutions: {}, reopened: {}, eventCount: 0 };
+  return { projectId, mergedInto: {}, occurrenceOwner: {}, resolutions: {}, reopened: {}, dispositionRuns: {}, waivers: {}, eventCount: 0 };
 }
 
 /** Pure: returns a new state; the input is never mutated. */
@@ -77,6 +83,12 @@ export function reduceAudit(state: AuditState, event: AuditEvent): AuditState {
       break;
     case 'override-split':
       for (const id of event.occurrenceIds) next.occurrenceOwner[id] = event.newFindingId;
+      break;
+    case 'disposition-recorded':
+      next.dispositionRuns[event.runId] = { at: event.at, actor: event.actor, counts: event.counts, policyVersion: event.policyVersion };
+      break;
+    case 'waiver-granted':
+      next.waivers[event.waiverId] = { at: event.at, grantedBy: event.actor, fingerprint: event.fingerprint, expiresAt: event.expiresAt };
       break;
     case 'override-reopen':
       (next.reopened[event.findingId] ??= []).push(event.episodeId);

@@ -8,6 +8,7 @@ import {
   type VerificationCheckRun,
   type VerificationRun,
 } from '@open-mercato/cezar-contract';
+import { dispositionSchema, waiverSchema, type DispositionRecord, type WaiverRecord } from './disposition-schema.ts';
 import { collectSecretValues, redactDeep } from '../core/secret-redaction.ts';
 
 export const FINDING_LEDGER_SCHEMA_VERSION = 1;
@@ -90,6 +91,9 @@ const ledgerFileSchema = z.object({
   occurrences: z.array(occurrenceSchema).max(1_000_000),
   episodes: z.array(episodeSchema).max(1_000_000),
   aliases: z.array(aliasSchema).max(1_000_000),
+  // Additive (disposition layer): absent in older ledger files, which load with empty arrays.
+  dispositions: z.array(dispositionSchema).max(1_000_000).default([]),
+  waivers: z.array(waiverSchema).max(1_000_000).default([]),
 }).strict().superRefine((ledger, ctx) => {
   const ids = new Set<string>();
   const fingerprints = new Set<string>();
@@ -98,6 +102,8 @@ const ledgerFileSchema = z.object({
     occurrences: ledger.occurrences,
     episodes: ledger.episodes,
     aliases: ledger.aliases,
+    dispositions: ledger.dispositions,
+    waivers: ledger.waivers,
   })) {
     for (const [index, record] of records.entries()) {
       if (record.projectId !== ledger.projectId) ctx.addIssue({ code: 'custom', path: [kind, index, 'projectId'], message: 'record project id must match its ledger' });
@@ -185,6 +191,8 @@ export interface FindingLedgerSnapshot {
   occurrences: OccurrenceRecord[];
   episodes: EpisodeRecord[];
   aliases: FindingAliasRecord[];
+  dispositions: DispositionRecord[];
+  waivers: WaiverRecord[];
 }
 
 /**
@@ -207,6 +215,10 @@ export interface FindingLedgerStore {
   appendOccurrenceToEpisode(episodeId: string, occurrenceId: string): EpisodeRecord;
   resolveEpisode(episodeId: string, resolvedAt: string): EpisodeRecord;
   appendAlias(input: AppendFindingAliasInput): FindingAliasRecord;
+  /** Append-only and idempotent: the same record again is a no-op; a different record under the same id throws. */
+  appendDisposition(record: DispositionRecord): DispositionRecord;
+  appendWaiver(record: WaiverRecord): WaiverRecord;
+  dispositionsForRun(runId: string): DispositionRecord[];
   prune(): { occurrences: number; episodes: number };
 }
 
@@ -397,6 +409,42 @@ export class FileFindingLedgerStore implements FindingLedgerStore {
     });
   }
 
+  appendDisposition(record: DispositionRecord): DispositionRecord {
+    const parsed = dispositionSchema.parse({ ...record, projectId: this.assertProject(record.projectId) });
+    return this.mutate((data) => {
+      const existing = data.dispositions.find((item) => item.id === parsed.id);
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(parsed)) throw new Error(`disposition id already exists with different content: ${parsed.id}`);
+        return existing;
+      }
+      data.dispositions.push(parsed);
+      return parsed;
+    });
+  }
+
+  appendWaiver(record: WaiverRecord): WaiverRecord {
+    const parsed = waiverSchema.parse({ ...record, projectId: this.assertProject(record.projectId) });
+    return this.mutate((data) => {
+      const existing = data.waivers.find((item) => item.id === parsed.id);
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(parsed)) throw new Error(`waiver id already exists with different content: ${parsed.id}`);
+        return existing;
+      }
+      data.waivers.push(parsed);
+      return parsed;
+    });
+  }
+
+  dispositionsForRun(runId: string): DispositionRecord[] {
+    this.refresh();
+    return clone(this.data.dispositions.filter((record) => record.runId === runId));
+  }
+
+  private assertProject(projectId: string): string {
+    if (projectId !== this.projectId) throw new Error('record project id does not match the ledger project');
+    return projectId;
+  }
+
   prune(): { occurrences: number; episodes: number } {
     return this.withLock(() => {
       const loaded = this.readFromDisk();
@@ -486,7 +534,7 @@ export class FileFindingLedgerStore implements FindingLedgerStore {
 }
 
 function emptyLedger(projectId: string): LedgerFile {
-  return { schemaVersion: FINDING_LEDGER_SCHEMA_VERSION, projectId, findings: [], occurrences: [], episodes: [], aliases: [] };
+  return { schemaVersion: FINDING_LEDGER_SCHEMA_VERSION, projectId, findings: [], occurrences: [], episodes: [], aliases: [], dispositions: [], waivers: [] };
 }
 
 function latest(a: string, b: string): string { return Date.parse(a) >= Date.parse(b) ? a : b; }

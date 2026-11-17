@@ -55,6 +55,8 @@ Check 'policy change stales evidence' ($l.criteria[0].state -eq 'unverified')
 # Reuse of baseline comparison and findings outputs.
 $bl = ConvertFrom-BaselineComparison -Baseline ([pscustomobject]@{ baselineRunId = 'run-a'; regressions = @('t-2') }) -TestIds @('t-1', 't-2') -CommitSha $A -PolicyRevision 'p1'
 Check 'baseline regression becomes failing evidence' (($bl | Where-Object ref -eq 'run-a:t-2').result -eq 'fail' -and ($bl | Where-Object ref -eq 'run-a:t-1').result -eq 'pass')
+$dl = ConvertFrom-BaselineComparison -Baseline ([pscustomobject]@{ baselineRunId = 'run-b'; regressions = @(); dispositions = [pscustomobject]@{ 't-1' = 'known'; 't-2' = 'unknown'; 't-3' = 'infra-failure'; 't-4' = 'new'; 't-5' = 'resolved' } }) -TestIds @('t-1', 't-2', 't-3', 't-4', 't-5') -CommitSha $A -PolicyRevision 'p1'
+Check 'dispositions: known/resolved pass, unknown/infra never pass, new fails' ((($dl | Where-Object ref -eq 'run-b:t-1').result -eq 'pass') -and (($dl | Where-Object ref -eq 'run-b:t-5').result -eq 'pass') -and (($dl | Where-Object ref -eq 'run-b:t-2').result -eq 'inconclusive') -and (($dl | Where-Object ref -eq 'run-b:t-3').result -eq 'inconclusive') -and (($dl | Where-Object ref -eq 'run-b:t-4').result -eq 'fail'))
 Check 'blocking finding fails' ((ConvertFrom-FindingsSummary -Findings @([pscustomobject]@{ blocking = $true }) -Ref 'f' -CommitSha $A -PolicyRevision 'p1').result -eq 'fail')
 
 if ($script:failures) { Write-Host "$script:failures failed"; exit 1 }
