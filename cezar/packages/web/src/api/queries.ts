@@ -64,6 +64,7 @@ import {
   getReleaseCandidates,
   getReleaseHistory,
   getReleaseMetrics,
+  getPipelinePolicy,
   previewFactoryChannel,
   requestFactoryChannelChange,
   getWorkspaceConfig,
@@ -401,6 +402,7 @@ export const workspaceQueryKeys = {
   releaseCandidates: ['workspace', 'release-candidates'] as const,
   releaseHistory: ['workspace', 'release-history'] as const,
   releaseMetrics: ['workspace', 'release-metrics'] as const,
+  releasePipelinePolicy: ['workspace', 'release-pipeline-policy'] as const,
   models: (runner: string) => ['workspace', 'models', runner] as const,
   providerStatus: ['workspace', 'providers', 'status'] as const,
   projects: ['workspace', 'projects'] as const,
@@ -1266,6 +1268,10 @@ export function useReleaseCandidates() {
 
 export function useReleaseHistory() {
   return useQuery({ queryKey: workspaceQueryKeys.releaseHistory, queryFn: ({ signal }) => getReleaseHistory({ signal }), staleTime: 15_000, refetchInterval: 60_000, refetchIntervalInBackground: false, retry: false })
+}
+
+export function usePipelinePolicy() {
+  return useQuery({ queryKey: workspaceQueryKeys.releasePipelinePolicy, queryFn: ({ signal }) => getPipelinePolicy({ signal }), staleTime: 15_000, retry: false })
 }
 
 export function useReleaseMetrics() {
