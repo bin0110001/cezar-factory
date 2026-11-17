@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stage runner (#603, #634): `release_stage_runner.py` evaluates one gate stage with operator pauses honored (a paused project is held, never passed) and operator-granted waivers applied (an expired or other-project waiver does not apply, and a waiver never excuses a failed required check), returning the gate receipt unchanged (`scripts/release/release_stage_runner.py`).
+
 - Waiver grants reach the stage gate (#603): `release_inbox_step.granted_suppressions` returns a project's unexpired operator grants for `quality_stage_gate.evaluate_stage`, with an end-to-end test from request to allowed stable to expiry (`scripts/release/release_inbox_step.py`).
 
 - Release-engine inbox step (#603, #634): `release_inbox_step.py` runs both inboxes once, deciding Control Center waiver requests per project policy and applying operator actions to the candidate store (candidates bound to the fetched dev and stable refs and the effective pipeline config hash), appending decision logs and a pause hold snapshot, with a user systemd timer (`integrations/bazzite/factory-release-inbox.{service,timer}`). It never fetches, pushes, promotes or deploys.
