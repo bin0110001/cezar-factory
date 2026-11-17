@@ -56,3 +56,20 @@ Behaviour with the shipped policy: accepted existing debt (`known`) continues; a
 regression in the impacted area blocks; a new high or critical security finding blocks at candidate and stable; a required check
 that did not run (or is unknown or untested) blocks and stays unknown, never a pass; a scanner or runner outage retries, then
 escalates to BLOCK after `maxRetries`.
+
+## Follow-ups and bounded remediation (#666)
+
+`src/verification/followups.ts` creates follow-ups and remediation exactly once per canonical finding.
+
+- **One issue per finding.** `ensureFollowUp` goes through an injected `Publisher` (the existing canonical GitHub publisher; nothing
+  here talks to GitHub). The idempotency key is `quality-followup:<project>:<fingerprint>` and is written into the issue body as a
+  marker. Order: the ledger's `followup-recorded` event, then the publisher's own search by key, then create. So repeated
+  detections across many executions give one issue, concurrent callers in a process share one creation, and a crash between creating
+  the issue and recording it is recovered by finding the issue by key instead of creating a second.
+- **Bounded remediation.** `nextRemediation` climbs `auto-fix`, `return-to-agent`, `scoped-rerun`, `planning-escalation`, then
+  `human-decision`, with a per-step attempt budget and a total cap (`DEFAULT_BUDGET`). Steps that do not apply (no safe auto-fix,
+  agent unreachable) are skipped. A persistent human decision task is created only once the ladder is spent and the finding is truly
+  blocked; otherwise the finding stays recorded as a follow-up. A recorded successful fix ends it.
+- **Replay-safe.** `recordRemediation` is idempotent per (fingerprint, step, attempt) and both event types are in the ledger's
+  audit log (`followup-recorded`, `remediation-recorded`), so a restart sees the same history, computes the same plan
+  (`remediationDigest` is unchanged) and repeats no work.
