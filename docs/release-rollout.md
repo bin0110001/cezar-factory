@@ -36,3 +36,5 @@ hours, merge conflicts and mean repair time for a window and before/after a cuto
 
 Local sandbox scenarios covering these paths are in `tests/test_release_engine_scenarios.py`; the inventory and the incident map are
 in `docs/release-migration-inventory.md`.
+
+Pilot configs, procedure and the before/after evidence format are in `docs/release-pilot-adoption.md`.

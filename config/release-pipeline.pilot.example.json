@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "release-pipeline/v1",
+  "defaults": {},
+  "projects": {
+    "cezar-factory": {
+      "preset": "daily-calendar",
+      "triggers": { "schedule": { "hour": 4, "minute": 30, "timezone": "America/Detroit" } },
+      "tests": { "suites": ["full-suite"], "required": ["full-suite"] },
+      "candidateLifetimeHours": 24,
+      "repair": { "maxAttempts": 3, "backoffMinutes": 30 },
+      "promotion": { "review": "self-review", "stable": "auto", "soakMinutes": 0 }
+    },
+    "tableflux": {
+      "preset": "weekly-calendar",
+      "triggers": { "schedule": { "dayOfWeek": "thursday", "hour": 3, "minute": 0, "timezone": "America/Detroit" } },
+      "tests": { "suites": ["unit", "e2e"], "required": ["unit", "e2e"] },
+      "candidateLifetimeHours": 72,
+      "repair": { "maxAttempts": 2, "backoffMinutes": 60 },
+      "promotion": { "review": "approval", "stable": "approval", "soakMinutes": 60 }
+    }
+  }
+}

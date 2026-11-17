@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Pilot adoption (#644): `config/release-pipeline.pilot.example.json` puts cezar-factory (daily) and TableFlux (weekly) on the same release engine as config-only differences, with tests for config-only difference, shadow receipts, audited rollout and rollback drill, and `docs/release-pilot-adoption.md` (procedure, before/after evidence format; live flag-on pending).
+
 - Engine consumer of Control Center candidate actions (#634): `release_action_inbox.py` applies each `actions.jsonl` request against the durable candidate store (create and retry through the single-pending-request rule, confirmed cancel and abandon through `CandidateStore.end` with fencing), records pause, resume and repair retries as holds and markers for the lease owner, rejects mismatched or finished candidates, and is idempotent (`scripts/release/release_action_inbox.py`).
 
 - Control Center policy editor and candidate actions (#632, #634): edit a project's release pipeline override, preview it (errors with paths, effective hash, next runs) and save it with a reason bound to the loaded hash; and start, pause, resume, retry, cancel or abandon a candidate with a reason and a typed confirmation for the destructive ones. Both only request: the service audits and queues, and the engine applies (`routes/pipeline-policy-editor.tsx`, `routes/release-candidate-actions.tsx`).

@@ -181,5 +181,54 @@ class Rollout(unittest.TestCase):
         self.assertEqual((empty["releases"], empty["meanRepairHours"]), (0, None))  # nothing is invented
 
 
+def pilot():
+    return json.loads((ROOT / "config" / "release-pipeline.pilot.example.json").read_text(encoding="utf8"))
+
+
+class Pilots(unittest.TestCase):
+    """#644: cezar-factory (daily) and TableFlux (weekly) are config-only differences on one engine."""
+
+    def test_pilots_differ_only_in_config_and_need_no_hardware(self):
+        self.assertEqual(cfg.validate_document(pilot()), [])
+        a, b = cfg.effective_config(pilot(), "cezar-factory"), cfg.effective_config(pilot(), "tableflux")
+        self.assertEqual((a["triggers"]["schedule"]["frequency"], b["triggers"]["schedule"]["frequency"]), ("daily", "weekly"))
+        self.assertEqual(b["triggers"]["schedule"]["dayOfWeek"], "thursday")
+        self.assertNotEqual(cfg.config_hash(a), cfg.config_hash(b))
+        text = json.dumps(pilot()).lower()
+        for word in ("gpu", "hardware", "host", "bazzite"):
+            self.assertNotIn(word, text)
+        src = (ROOT / "scripts" / "release" / "release_shadow.py").read_text(encoding="utf8").lower()
+        self.assertNotIn("tableflux", src)
+        self.assertNotIn("cezar-factory", src)
+
+    def test_shadow_receipts_for_both_pilots_use_the_same_engine(self):
+        for project in ("cezar-factory", "tableflux"):
+            r = run(project, doc=pilot())
+            self.assertEqual(r["mutations"], [])
+            self.assertEqual(r["receiptDigest"], run(project, doc=pilot())["receiptDigest"])
+            self.assertEqual(len(r["nextScheduledTicks"]), 3)
+
+    def test_pilot_rollout_audit_and_rollback(self):
+        flags = None
+        for project in ("cezar-factory", "tableflux"):
+            flags = ro.set_engine(flags, project, "shadow", actor="op", reason="pilot shadow", now=1.0)
+            flags = ro.set_engine(flags, project, "new", actor="op", reason="pilot flag-on", now=2.0)
+            self.assertTrue(ro.route(project, flags)["newEngineActs"])
+        self.assertEqual(len(flags["audit"]), 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            sh_ = lambda *a: subprocess.run(["git", "-C", tmp, *a], capture_output=True, text=True, check=True).stdout.strip()  # noqa: E731
+            sh_("init", "-q", "-b", "dev")
+            for k, v in (("user.email", "t@example.org"), ("user.name", "t"), ("commit.gpgsign", "false")):
+                sh_("config", k, v)
+            write(os.path.join(tmp, "f"), "x")
+            sh_("add", "-A")
+            sh_("commit", "-q", "-m", "c")
+            sh_("branch", "stable", "HEAD")
+            for project in ("cezar-factory", "tableflux"):
+                drill = ro.rollback_drill(flags, project, rs.Git(tmp), stable_branch="stable", actor="op", now=3.0)
+                self.assertTrue(drill["ok"])
+                self.assertEqual(drill["route"]["engine"], "legacy")
+
+
 if __name__ == "__main__":
     unittest.main()
