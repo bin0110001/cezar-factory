@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Non-Godot verification pilot (#115): a .NET-shaped project is verified through the generic executor and contract only (pass and fail), and a lint keeps Godot identifiers out of the core verification modules and the generic contract, with the Godot adapter and its fixture excluded on purpose (`src/verification/non-godot-pilot.test.ts`, `docs/non-godot-pilot.md`).
+
 - Stage runner (#603, #634): `release_stage_runner.py` evaluates one gate stage with operator pauses honored (a paused project is held, never passed) and operator-granted waivers applied (an expired or other-project waiver does not apply, and a waiver never excuses a failed required check), returning the gate receipt unchanged (`scripts/release/release_stage_runner.py`).
 
 - Waiver grants reach the stage gate (#603): `release_inbox_step.granted_suppressions` returns a project's unexpired operator grants for `quality_stage_gate.evaluate_stage`, with an end-to-end test from request to allowed stable to expiry (`scripts/release/release_inbox_step.py`).
