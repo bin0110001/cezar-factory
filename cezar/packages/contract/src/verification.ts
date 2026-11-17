@@ -62,11 +62,11 @@ export const verificationDiagnosticSchema = z.object({
   column: z.number().int().positive().optional(),
 }).strict();
 
-export const verificationFindingKindSchema = z.enum(['parse-error', 'test-failure', 'startup-error', 'performance-finding']);
+export const verificationFindingKindSchema = z.enum(['parse-error', 'test-failure', 'startup-error', 'performance-finding', 'check-finding']);
 export const verificationFingerprintStrategySchema = z.object({
   id: z.string().min(1).max(128),
   version: z.number().int().positive(),
-  kinds: z.array(verificationFindingKindSchema).min(1).max(4),
+  kinds: z.array(verificationFindingKindSchema).min(1).max(8),
 }).strict();
 
 export const verificationMetricSchema = z.object({
