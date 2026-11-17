@@ -3,6 +3,8 @@ import { Link } from 'react-router'
 import { useFactoryControlCenter, useReleaseCandidates, useReleaseHistory, useReleaseMetrics } from '@/api/queries'
 import { ReleaseCandidatesSection } from './release-candidates'
 import { ReleaseMetricsSection } from './release-metrics'
+import { QualityActionsSection } from './release-quality-actions'
+import { dryRunQualityPolicy, requestWaiver } from '@/api/client'
 import { Button } from '@/components/ui/button'
 
 const CHANNELS = ['dev', 'stable'] as const
@@ -42,6 +44,7 @@ export function FactoryControlCenterRoute() {
     {query.data && <>
       <ReleaseCandidatesSection query={candidates} />
       <ReleaseMetricsSection metrics={releaseMetrics} history={releaseHistory} />
+      <QualityActionsSection projectIds={(candidates.data?.projects ?? []).map((p) => p.projectId)} dryRun={(r) => dryRunQualityPolicy(r)} requestWaiver={(r) => requestWaiver(r)} />
       <section aria-labelledby="channel-summary-heading" className="space-y-3">
         <div><h2 id="channel-summary-heading" className="font-semibold">Release channels</h2><p className="text-xs text-muted-foreground">State comes from the configured channel pointer and its latest activation receipt.</p></div>
         <div className="grid gap-3 sm:grid-cols-2">

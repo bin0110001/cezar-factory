@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Control Center quality forms (#603): a policy dry run (shows what would block at each stage, a failed scan apart from a confirmed finding, stale-feed warnings and the cost estimate) and a waiver request form (names a fingerprint or advisory, stages, reason and expiry; queued for the engine, never granted in the view) in `routes/release-quality-actions.tsx`.
+
 - Watchdog test no longer races its mock server: it waits until the listener accepts connections instead of a fixed 2 second sleep, which failed a promotion validation under load (#701).
 
 - Quality actions for the Control Center (#603): a policy dry run against the last candidate (what would block at each stage, a failed scan distinguishable from a confirmed blocking finding, required checks with no result counted as unknown, recorded compute cost as the estimate) and a review-only waiver request (names what it covers, expires, audited and queued for the engine, local machine only), with a TypeScript port of the gate rules checked against a fixture generated from the Python authority; waiver requests appear in the history view (`src/release-candidates/quality-actions.ts`, `tests/fixtures/quality-gate-cases.json`).
