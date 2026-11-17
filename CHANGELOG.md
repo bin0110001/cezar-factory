@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Quality check adapters (#646, #647, #648): Semgrep SAST with digest-pinned rulesets (unavailable or tampered rules are an error; ruleset digest is provenance and part of the cache key), native ESLint/tsc/Ruff/.NET-SARIF lint adapters, and a Godot/GDScript adapter that reuses the existing output classifier (parse error blocks, warnings are quality debt); the runner gains `inputsDigest` (`server/verification/checks/providers/`, `docs/check-adapters.md`).
+
 - Check capability detection and profiles (#645): ecosystem detection from repository contents, Factory (.NET/TS/Python) and Godot profiles selectable by id or auto, tool-by-name planning, and an explicit non-blocking `not-applicable` status (new in the check contract, produced only by planning, distinct from unknown/error) honoured by the gates and the quality policy (`server/verification/checks/capabilities.ts`, `docs/check-capabilities.md`).
 
 - Opt-in AI audit controls (#602): disabled-by-default decision logic with selectors, any/all combinator, cooldown, per-run and monthly caps, receipt reuse by diff hash, a read-only no-network sandbox spec, scrubbed fenced context manifests that flag injection text, citation-checked findings that are always needs-verification, and confirmation only by deterministic validation or authorized review (`scripts/release/ai_audit_policy.py`, `docs/ai-audit.md`). Makes no model calls.
