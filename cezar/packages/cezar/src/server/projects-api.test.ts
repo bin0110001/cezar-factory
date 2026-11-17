@@ -357,6 +357,30 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('release history and metrics (#635)', () => {
+    it('serves metrics computed from the snapshot and history from the audit logs, with no snapshot meaning unavailable', async () => {
+      const none = await apiRequest(makeApp(), '/api/v1/workspace/release-metrics');
+      expect(await none.json()).toMatchObject({ available: false, projects: [] });
+      const dir = join(process.env.CEZ_HOME!, 'release');
+      mkdirSync(dir, { recursive: true });
+      const c = (id: string) => ({
+        id, state: 'promoted', revision: 2, devSha: 'a'.repeat(40), baseStableSha: 'b'.repeat(40), candidateSha: null, configHash: `sha256:${'d'.repeat(64)}`,
+        createdAt: new Date(Date.now() - 3600_000).toISOString(), updatedAt: new Date().toISOString(), lease: { owner: null, expiresAt: null, stale: false },
+        tests: { status: 'passed', shards: { total: 1, passed: 1, failed: 0 }, assetVersion: null }, devDrift: { commitsAhead: 0, newestDevSha: null },
+        blockers: [], repairObligations: [], receipts: [{ id: 'r', kind: 'promotion', at: new Date().toISOString(), ok: true }], pending: { count: 0, coalescedReason: null, triggers: [] },
+        nextScheduledAttempt: null, links: { pullRequests: [], issues: [] }, warnings: [], checkMatrix: [], cost: { computeSeconds: 7200 },
+      });
+      writeFileSync(join(dir, 'candidates.json'), JSON.stringify({ snapshotAt: new Date().toISOString(), projects: { shop: { candidates: [c('c1')] } } }));
+      writeFileSync(join(dir, 'actions.jsonl'), JSON.stringify({ id: 'act-1', at: new Date().toISOString(), actor: 'local-operator', action: 'pause', projectId: 'shop', candidateId: 'c1', reason: 'check it' }) + '\n');
+      const metrics = (await (await apiRequest(makeApp(), '/api/v1/workspace/release-metrics')).json()) as { available: boolean; projects: Array<{ suiteCostHours: { total: number }; regressions: { candidatesWithRepair: number } }> };
+      expect(metrics.available).toBe(true);
+      expect(metrics.projects[0]).toMatchObject({ suiteCostHours: { total: 2 }, regressions: { candidatesWithRepair: 1 } });
+      const history = (await (await apiRequest(makeApp(), '/api/v1/workspace/release-history')).json()) as { entries: Array<{ id: string; kind: string }>; retentionDays: Record<string, number> };
+      expect(history.entries).toEqual([expect.objectContaining({ id: 'act-1', kind: 'operator-action' })]);
+      expect(history.retentionDays.shop).toBe(30);
+    });
+  });
+
   describe('release pipeline policy (#632)', () => {
     const weekly = { preset: 'weekly-calendar', triggers: { schedule: { dayOfWeek: 'thursday', hour: 3 } }, tests: { suites: ['unit'], required: ['unit'] } };
     const post = (path: string, body: unknown) => apiRequest(makeApp(), `/api/v1/workspace/release-pipeline-policy${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

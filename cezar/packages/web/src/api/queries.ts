@@ -62,6 +62,8 @@ import {
   getFactoryChannelState,
   getFactoryControlCenter,
   getReleaseCandidates,
+  getReleaseHistory,
+  getReleaseMetrics,
   previewFactoryChannel,
   requestFactoryChannelChange,
   getWorkspaceConfig,
@@ -397,6 +399,8 @@ export const workspaceQueryKeys = {
   dashboard: ['workspace', 'dashboard'] as const,
   factoryControlCenter: ['workspace', 'factory-release', 'control-center'] as const,
   releaseCandidates: ['workspace', 'release-candidates'] as const,
+  releaseHistory: ['workspace', 'release-history'] as const,
+  releaseMetrics: ['workspace', 'release-metrics'] as const,
   models: (runner: string) => ['workspace', 'models', runner] as const,
   providerStatus: ['workspace', 'providers', 'status'] as const,
   projects: ['workspace', 'projects'] as const,
@@ -1258,6 +1262,14 @@ export function useReleaseCandidates() {
     refetchIntervalInBackground: false,
     retry: false,
   })
+}
+
+export function useReleaseHistory() {
+  return useQuery({ queryKey: workspaceQueryKeys.releaseHistory, queryFn: ({ signal }) => getReleaseHistory({ signal }), staleTime: 15_000, refetchInterval: 60_000, refetchIntervalInBackground: false, retry: false })
+}
+
+export function useReleaseMetrics() {
+  return useQuery({ queryKey: workspaceQueryKeys.releaseMetrics, queryFn: ({ signal }) => getReleaseMetrics({ signal }), staleTime: 15_000, refetchInterval: 60_000, refetchIntervalInBackground: false, retry: false })
 }
 
 export function useFactoryControlCenter() {

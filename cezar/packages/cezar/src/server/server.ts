@@ -1,6 +1,7 @@
 import { buildReleaseCandidates, readSnapshot, snapshotPath } from '../release-candidates/read-model.ts';
 import { evaluateAction, recordAction } from '../release-candidates/actions.ts';
 import { previewPolicy, readPolicyDocument, savePolicy } from '../release-candidates/pipeline-policy-store.ts';
+import { buildHistory, computeMetrics } from '../release-candidates/history-metrics.ts';
 import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
@@ -20,6 +21,8 @@ import {
   candidateActionRequestSchema,
   candidateActionResponseSchema,
   pipelinePolicyDocumentResponseSchema,
+  releaseHistoryResponseSchema,
+  releaseMetricsResponseSchema,
   pipelinePolicyPreviewRequestSchema,
   pipelinePolicyPreviewResponseSchema,
   pipelinePolicySaveRequestSchema,
@@ -3270,6 +3273,9 @@ export function createApp(deps: ServerDeps) {
     // Release candidates (#631): the host-written snapshot, validated and redacted. Read-only; an absent snapshot is `available: false`.
     .get('/workspace/release-candidates', (c) => c.json(releaseCandidatesResponseSchema.parse(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()))))
     // Operator actions (#634): validated against the snapshot and queued, with an audit entry, for the host engine. Never mutates state here.
+    // History and metrics (#635): computed from the candidate snapshot and the audit logs; read-only; retention per project.
+    .get('/workspace/release-history', (c) => c.json(releaseHistoryResponseSchema.parse(buildHistory(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()), new Date()))))
+    .get('/workspace/release-metrics', (c) => c.json(releaseMetricsResponseSchema.parse(computeMetrics(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()), new Date()))))
     // Release pipeline policy editor (#632): validate, preview the effective config and next runs, save with an audit entry.
     .get('/workspace/release-pipeline-policy', (c) => c.json(pipelinePolicyDocumentResponseSchema.parse(readPolicyDocument())))
     .post('/workspace/release-pipeline-policy/preview', jsonZodValidator(pipelinePolicyPreviewRequestSchema, { message: 'projectId and a policy object are required' }), (c) =>

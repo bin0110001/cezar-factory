@@ -32,3 +32,29 @@ entry (id, time, actor, action, project, candidate, redacted reason, snapshot ti
 
 Gaps: the host engine's consumer of `actions.jsonl` is not part of this change; UI buttons and the confirmation dialog are not built
 yet (the endpoints and the client method `postCandidateAction` are the contract for them).
+
+## History, audits and metrics (#635)
+
+Read-only views in the existing Control Center (`packages/web/src/routes/release-metrics.tsx`), backed by
+`GET /api/v1/workspace/release-history` and `GET /api/v1/workspace/release-metrics`
+(`src/release-candidates/history-metrics.ts`). No new permission is needed to read; the actions that change anything stay local-only
+(`docs/release-candidate-read-model.md`, `docs/release-pipeline-config.md`).
+
+**History** merges the operator-action audit (`actions.jsonl`) and the policy-change audit (`pipeline-policy-audit.jsonl`), newest first,
+with candidate rows from the snapshot. It respects retention: each project's window is its effective `artifactRetentionDays` (default 30
+days); older audit entries and terminal candidates are omitted, active candidates always show. A damaged audit line is skipped, not fatal.
+Reasons are redacted.
+
+**Metrics**, per project, only from recorded data (`timing`, `cost`, obligation `openedAt`, receipts, scheduled-check and AI-audit
+records in the snapshot). A figure with no recorded input is `null` with zero samples and the UI says "not recorded"; nothing is estimated.
+
+- Queue wait: queued to admitted, mean and worst, in minutes.
+- Suite cost: compute hours, total and mean.
+- Regressions: candidates that needed a repair revision (revision above 1) out of the candidates counted.
+- Forward-port lag: age of the oldest unresolved obligation that recorded when it opened, and how many are unresolved.
+- Stable age: hours since the latest successful promotion receipt.
+- Scheduled checks: independent periodic runs, how many failing, the last run.
+- AI audit (opt-in): runs, skips, dollars and tokens, so an operator sees why it ran or was skipped and what it consumed.
+
+The snapshot contract gained optional fields for this (`timing`, `cost`, `openedAt`, `scheduledChecks`, `aiAudit`); the engine-side
+exporter that fills them is not part of this change, so an older snapshot simply shows "not recorded".

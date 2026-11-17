@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  TERMINAL_CANDIDATE_STATES, candidateSchema, releaseCandidatesResponseSchema, type Candidate, type ReleaseCandidatesResponse,
+  TERMINAL_CANDIDATE_STATES, aiAuditRunSchema, candidateSchema, releaseCandidatesResponseSchema, scheduledCheckRunSchema, type Candidate, type ReleaseCandidatesResponse,
 } from '@open-mercato/cezar-contract';
 import { cezarHomeDir } from '../paths.ts';
 import { collectSecretValues, redactDeep } from '../core/secret-redaction.ts';
@@ -58,7 +58,12 @@ export function buildReleaseCandidates(snapshot: unknown, now: Date, extraSecret
       if (current) current = { ...current, warnings: [...current.warnings, { kind: 'integrity', message: `${active.length} nonterminal candidates exist for this project` }] };
     }
     const history = candidates.filter((c) => c.id !== current?.id).slice(0, 50);
-    return { projectId, active: current, history, warnings };
+    // Independent scheduled-check history and AI audit records: validated one by one, redacted, newest first; a bad record is skipped.
+    const keep = <T,>(raw: unknown, schema: { safeParse: (v: unknown) => { success: boolean; data?: T } }, time: (v: T) => string): T[] =>
+      (Array.isArray(raw) ? raw : []).flatMap((item) => { const r = schema.safeParse(redactDeep(item, secrets)); return r.success ? [r.data as T] : [] }).sort((a, b) => Date.parse(time(b)) - Date.parse(time(a))).slice(0, 200)
+    const scheduledChecks = keep(obj(raw).scheduledChecks, scheduledCheckRunSchema, (v) => v.ranAt)
+    const aiAudit = keep(obj(raw).aiAudit, aiAuditRunSchema, (v) => v.at)
+    return { projectId, active: current, history, scheduledChecks, aiAudit, warnings };
   }).sort((a, b) => a.projectId.localeCompare(b.projectId));
 
   return releaseCandidatesResponseSchema.parse({ schemaVersion: 1, generatedAt, available: true, snapshotAt, projects });

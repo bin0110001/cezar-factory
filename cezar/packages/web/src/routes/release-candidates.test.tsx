@@ -15,7 +15,7 @@ const base: Candidate = {
 }
 const response = (active: Candidate | null, over: Partial<ReleaseCandidatesResponse['projects'][number]> = {}): ReleaseCandidatesResponse => ({
   schemaVersion: 1, generatedAt: '2026-11-16T12:00:00.000Z', available: true, snapshotAt: '2026-11-16T11:59:00.000Z',
-  projects: [{ projectId: 'tableflux', active, history: [], warnings: [], ...over }],
+  projects: [{ projectId: 'tableflux', active, history: [], scheduledChecks: [], aiAudit: [], warnings: [], ...over }],
 })
 const show = (data: ReleaseCandidatesResponse | undefined, extra: object = {}) => render(<ReleaseCandidatesSection query={{ data, ...extra }} />)
 
