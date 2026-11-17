@@ -1,8 +1,8 @@
-import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema, releaseCandidatesResponseSchema } from '@open-mercato/cezar-api-client'
+import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryResponseSchema, verificationQueryWireSchema, verificationArtifactContentSchema, codingRunExplorerResponseSchema, reliabilityAnalyticsResponseSchema, verificationEvidenceResponseSchema, factoryControlCenterResponseSchema, releaseCandidatesResponseSchema, candidateActionResponseSchema } from '@open-mercato/cezar-api-client'
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse, VerificationEvidenceResponse } from '@open-mercato/cezar-api-client'
 import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
-import type { FactoryControlCenterResponse, ReleaseCandidatesResponse } from '@open-mercato/cezar-api-client'
+import type { FactoryControlCenterResponse, ReleaseCandidatesResponse, CandidateActionRequest, CandidateActionResponse } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
 import type {
@@ -698,6 +698,13 @@ export async function getReleaseCandidates(opts?: ReadOptions): Promise<ReleaseC
   return releaseCandidatesResponseSchema.parse(await unwrap(
     await cez.api.v1.workspace['release-candidates'].$get({}, init(opts)),
     '/workspace/release-candidates',
+  ))
+}
+
+export async function postCandidateAction(request: CandidateActionRequest, opts?: ReadOptions): Promise<CandidateActionResponse> {
+  return candidateActionResponseSchema.parse(await unwrap(
+    await cez.api.v1.workspace['release-candidates'].actions.$post({ json: request }, init(opts)),
+    '/workspace/release-candidates/actions',
   ))
 }
 

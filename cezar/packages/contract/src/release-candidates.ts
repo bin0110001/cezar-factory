@@ -76,3 +76,36 @@ export const releaseCandidatesResponseSchema = z.object({
   }).strict()),
 }).strict();
 export type ReleaseCandidatesResponse = z.infer<typeof releaseCandidatesResponseSchema>;
+
+// ---- operator actions (#634) --------------------------------------------------------------------------------------------------
+// The service never mutates candidate state. It validates an action against the published snapshot (permission, typed
+// confirmation, the one-active-candidate rule) and appends an audited request for the host release engine to apply through its
+// lifecycle state machine.
+
+export const CANDIDATE_ACTIONS = ['create', 'pause', 'resume', 'cancel', 'abandon', 'retry'] as const;
+export const DESTRUCTIVE_CANDIDATE_ACTIONS = ['cancel', 'abandon'] as const;
+export const candidateActionSchema = z.enum(CANDIDATE_ACTIONS);
+export type CandidateAction = z.infer<typeof candidateActionSchema>;
+
+export const candidateActionRequestSchema = z.object({
+  action: candidateActionSchema,
+  projectId: z.string().min(1).max(256),
+  /** Required for every action except `create`. */
+  candidateId: z.string().min(1).max(128).optional(),
+  reason: z.string().trim().min(3).max(300),
+  /** For cancel and abandon: the operator types the candidate id to confirm. */
+  confirm: z.string().max(128).optional(),
+}).strict();
+export type CandidateActionRequest = z.infer<typeof candidateActionRequestSchema>;
+
+export const candidateActionResponseSchema = z.object({
+  accepted: z.literal(true),
+  requestId: z.string().min(1).max(64),
+  action: candidateActionSchema,
+  projectId: z.string().min(1).max(256),
+  candidateId: z.string().max(128).nullable(),
+  /** The request is queued for the host engine; the candidate changes state only when the engine applies it. */
+  status: z.literal('queued'),
+  message: z.string().max(300),
+}).strict();
+export type CandidateActionResponse = z.infer<typeof candidateActionResponseSchema>;
