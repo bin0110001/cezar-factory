@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Candidate and queue view in the Control Center (#633): a release candidates section in the existing Factory Control Center route shows each project's active candidate (SHAs, revision, config hash, tests and shards, dev drift, blockers, forward-port blockers, receipts, warnings, PR/issue links), the queue (pending triggers and coalescing reason, next attempt, stale lease), and the blocking-versus-advisory check matrix; human approval is a distinct waiting state, not a failure (`packages/web/src/routes/release-candidates.tsx`, `useReleaseCandidates`).
+
 - Release candidate read model (#631): `GET /api/v1/workspace/release-candidates` and a typed client method serve the host-written candidate snapshot, validated and redacted, with the one-active-candidate representation, derived stale leases and the per-check matrix; contract in `packages/contract/src/release-candidates.ts`. The existing control-center route is now listed in the BACKWARD_COMPATIBILITY inventory (`docs/release-candidate-read-model.md`).
 
 - Optional local-model triage advisor (#667): off by default, local endpoints only, call/token/cost budgets; advice is returned beside an untouched stage decision and can never flip a BLOCK, waive a check or change policy; uncited or unknown claims are dropped; disabled, failing or over-budget advisors yield no advice (`src/verification/triage-advisor.ts`, `docs/verification-dispositions.md`).

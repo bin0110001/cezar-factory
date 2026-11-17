@@ -1,6 +1,7 @@
 import { AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
 import { Link } from 'react-router'
-import { useFactoryControlCenter } from '@/api/queries'
+import { useFactoryControlCenter, useReleaseCandidates } from '@/api/queries'
+import { ReleaseCandidatesSection } from './release-candidates'
 import { Button } from '@/components/ui/button'
 
 const CHANNELS = ['dev', 'stable'] as const
@@ -18,6 +19,7 @@ function stamp(value: string | null) {
 
 export function FactoryControlCenterRoute() {
   const query = useFactoryControlCenter()
+  const candidates = useReleaseCandidates()
   const projects = query.data?.projects ?? []
   const events = projects.flatMap((project) => project.history.map((event) => ({ ...event, projectId: project.id, projectName: project.name })))
     .sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt)).slice(0, 20)
@@ -35,6 +37,7 @@ export function FactoryControlCenterRoute() {
     {query.isError && <section role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"><AlertCircleIcon className="mr-2 inline size-4" />Control Center data is unavailable: {query.error.message}</section>}
 
     {query.data && <>
+      <ReleaseCandidatesSection query={candidates} />
       <section aria-labelledby="channel-summary-heading" className="space-y-3">
         <div><h2 id="channel-summary-heading" className="font-semibold">Release channels</h2><p className="text-xs text-muted-foreground">State comes from the configured channel pointer and its latest activation receipt.</p></div>
         <div className="grid gap-3 sm:grid-cols-2">
