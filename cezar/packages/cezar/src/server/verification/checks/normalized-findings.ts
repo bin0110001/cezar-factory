@@ -18,6 +18,8 @@ export const normalizedFindingSchema = z.object({
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   sourceFingerprints: z.array(z.object({ provider: z.string().min(1), value: z.string().min(1).max(512) }).strict()).max(16),
   category: checkCategorySchema,
+  /** Security findings (vulnerabilities, secrets, misconfiguration) are separate from quality debt (style, complexity, warnings). */
+  class: z.enum(['security', 'quality-debt']).default('security'),
   ruleId: z.string().min(1).max(256),
   commonIds: z.object({
     cve: z.array(z.string()).default([]), ghsa: z.array(z.string()).default([]),
@@ -37,6 +39,13 @@ export const normalizedFindingSchema = z.object({
   evidence: z.string().max(4000),
 }).strict();
 export type NormalizedFinding = z.infer<typeof normalizedFindingSchema>;
+
+const SECURITY_CATEGORIES: ReadonlySet<string> = new Set(['sast', 'sca', 'secrets', 'iac', 'container', 'license', 'sbom']);
+
+/** Security versus quality debt is decided by category, never by the severity a tool reports. */
+export function classOfCategory(category: string): 'security' | 'quality-debt' {
+  return SECURITY_CATEGORIES.has(category) ? 'security' : 'quality-debt';
+}
 
 export interface NormalizeContext {
   provider: z.infer<typeof providerIdentitySchema>;
@@ -93,7 +102,7 @@ function build(raw: RawFinding, ctx: NormalizeContext): NormalizedFinding {
   return normalizedFindingSchema.parse({
     fingerprint: commonFingerprint(partial),
     sourceFingerprints: raw.providerFingerprint ? [{ provider: ctx.provider.name, value: redact(raw.providerFingerprint) }] : [],
-    category: ctx.category, ruleId: redact(raw.ruleId), commonIds,
+    category: ctx.category, class: classOfCategory(ctx.category), ruleId: redact(raw.ruleId), commonIds,
     severity: mapSeverity(raw.severity),
     confidence: (['high', 'medium', 'low'] as const).find((c) => c === (raw.confidence ?? '').toLowerCase()) ?? 'unknown',
     dependency: raw.dependency, path: partial.path, line: raw.line, sourceSha: ctx.sourceSha,
