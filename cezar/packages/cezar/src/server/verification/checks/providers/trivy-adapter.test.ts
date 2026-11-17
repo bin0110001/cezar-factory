@@ -19,7 +19,7 @@ function run(domain: TrivyDomain, json: unknown, over: { exitCode?: number; stdo
   const definition = checkProviderConfigSchema.parse({ version: 1, checks: [{
     id: `trivy-${domain}`, category, provider: { name: 'trivy', version: '0.60.0', digest: DIGEST }, scopes: ['full-repo'], triggers: ['pr-dev'],
     policy: { mandatory: true, timeoutMs: 1000, maxAgeHours: 48, cache: { enabled: true, ttlHours: 24 } },
-  }] }).checks[0];
+  }] }).checks[0]!;
   let execs = 0;
   const plugin = trivyPlugin({
     domain, target: '/src', readDbUpdatedAt: async () => FRESH,
