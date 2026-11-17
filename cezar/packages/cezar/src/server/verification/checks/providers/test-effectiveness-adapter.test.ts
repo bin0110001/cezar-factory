@@ -9,7 +9,7 @@ const SECRET = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 const def = checkProviderConfigSchema.parse({ version: 1, checks: [{
   id: 'test-effectiveness', category: 'test', provider: { name: 'test-effectiveness', version: '1.0.0', digest: DIGEST },
   scopes: ['changed-files'], triggers: ['pr-dev'], policy: { mandatory: true, timeoutMs: 1000 },
-}] }).checks[0];
+}] }).checks[0]!;
 
 const base: TestEffectivenessInputs = {
   weakening: { exitCode: 0, stderr: '' }, selectedSuites: ['unit'], executedSuites: ['unit'], failures: [], quarantine: [],
@@ -28,8 +28,8 @@ describe('test-effectiveness provider', () => {
     const o1 = await run({ weakening: { exitCode: 1, stderr: 'guard\n  - deleted test tests/a.test.ts\n' } });
     const o2 = await run({ weakening: { exitCode: 1, stderr: '  - deleted test tests/a.test.ts' } });
     expect(o1.result.status).toBe('fail');
-    expect(o1.findings[0].ruleId).toBe('test-weakening.deletion');
-    expect(o1.findings[0].fingerprint).toBe(o2.findings[0].fingerprint);
+    expect(o1.findings[0]!.ruleId).toBe('test-weakening.deletion');
+    expect(o1.findings[0]!.fingerprint).toBe(o2.findings[0]!.fingerprint);
   });
   it('guard exit 2, crash or unrecognized output is error, never pass', async () => {
     expect((await run({ weakening: { exitCode: 2, stderr: '' } })).result.status).toBe('error');
@@ -56,7 +56,7 @@ describe('test-effectiveness provider', () => {
   it('valid quarantine downgrades to warn and links the #54 baseline', async () => {
     const o = await run({ failures: [{ testId: 't1', environmentKey: 'linux' }], quarantine: [q()] });
     expect(o.result.status).toBe('warn');
-    expect(o.findings[0].references).toContain('baseline:linux:bl-1');
+    expect(o.findings[0]!.references).toContain('baseline:linux:bl-1');
   });
   it('quarantine evaluation fails closed on scope and expiry', () => {
     const f = { testId: 't1', environmentKey: 'linux' };
