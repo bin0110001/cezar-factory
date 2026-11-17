@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Quality integration demonstration and acceptance (#669, #673): a JUnit unit-test adapter, a bridge from check outcomes into the ledger and the disposition rules, an end-to-end fixture where Trivy, a unit-test provider and ESLint share one ledger and are dispositioned by stage (a new critical blocks candidate and stable while accepted debt continues; crashes, unexecuted suites and unavailable feeds never pass), a duplicate-gate guard, provider-swap-with-history and no-hardcoded-machine-profile tests, and an acceptance map (`docs/quality-acceptance.md`).
+
 - Idempotent follow-ups and bounded remediation for dispositions (#666): one tracked issue per canonical finding through an injected publisher keyed by fingerprint (ledger, then publisher search by marker, then create; concurrent and post-crash callers never duplicate), a bounded remediation ladder with per-step and total budgets and a human decision only when truly blocked, and replay-safe `followup-recorded` and `remediation-recorded` audit events (`src/verification/followups.ts`).
 
 - Deterministic disposition rules and stage minimum gates (#665): `dispositionRules` in `policies/verification.json` (schema-validated, protected) map dispositions to CONTINUE/RECORD/RETRY/BLOCK per stage; the validator forbids continuing past unknown, untested or infra-failure; `decideStage` returns per-finding decisions with the firing rule, follow-ups, retries, UI rows and a one-line agent summary; outages retry then escalate; implementation edits to the policy are rejected (`src/verification/disposition-rules.ts`, `schemas/verification-disposition-policy.schema.json`).
