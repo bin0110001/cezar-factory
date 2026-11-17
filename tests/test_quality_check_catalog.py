@@ -54,12 +54,15 @@ class CatalogMatchesTheCode(unittest.TestCase):
                     found += 1
         self.assertGreaterEqual(found, 6)
 
-    def test_open_rows_name_no_code_and_open_owners_are_linked_once(self):
-        open_rows = [r for r in rows() if r["status"] == "open"]
+    def test_open_rows_name_no_code_and_open_owners_are_linked(self):
+        open_rows = []
+        for line in CATALOG.splitlines():
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if "open" in cells and (len(cells) == 4 or (len(cells) == 8 and cells[0].isdigit())):
+                open_rows.append(cells)
         self.assertTrue(open_rows)
-        for r in open_rows:
-            self.assertEqual(r["code"], "—", f"open row {r['check']} must not claim code")
-        self.assertIn("#662", CATALOG)
+        for cells in open_rows:
+            self.assertEqual(cells[-1], "—", f"open row {cells[1]} must not claim code")
         self.assertIn("#603", CATALOG)
 
     def test_one_provider_per_maintainability_category_and_no_duplicate_owners_for_a_check(self):

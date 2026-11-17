@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reusable versioned Godot verification provider (#662): a manifest with capabilities, engine and GdUnit compatibility, required worker profile and asset mounts; capability matching and an environment hash used as provenance and cache key; project-owned configuration so distinct Godot projects share one provider; normalization of parse errors, line-insensitive warnings, GdUnit JUnit and `res://` references; and typed environment errors so infrastructure problems and missing asset mounts are never findings or code regressions (`providers/godot-provider.ts`, `docs/check-godot-provider.md`).
+
 - Test-effectiveness safeguards provider and quality check catalog (#671, #668): a provider that wraps `scripts/check-weakening.ps1`, detects deleted, skipped and weakened tests, flags unexecuted impacted suites as `unknown` (new runner `unknown` flag), optionally checks changed-line coverage and applies scoped, reviewed, expiring flaky quarantine; and `docs/quality-check-catalog.md`, a catalog of epic #663's families verified against the code by `tests/test_quality_check_catalog.py` (`providers/test-effectiveness-adapter.ts`, `docs/check-test-effectiveness.md`).
 
 - Documentation reference and decision drift check provider (#672): broken links, anchors, repository paths and `path#Symbol` references checked only in changed docs, existing decision drift results exposed as findings with their evidence as provenance, quality-debt findings that are baselined without blocking and block only per policy (`providers/doc-drift-adapter.ts`, `docs/check-doc-drift.md`).

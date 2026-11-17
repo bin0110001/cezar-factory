@@ -10,7 +10,7 @@ Common path prefix: `cezar/packages/cezar/src/server/verification/checks/` is wr
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Native TypeScript, Python and .NET lint, format and type checks | lint | pr-dev, candidate | #646 | native-lint | delivered | `cezar/packages/cezar/src/server/verification/checks/providers/native-lint-adapter.ts` |
 | 1 | Godot/GDScript parse and warnings | lint | pr-dev, candidate | #648 | godot-check | delivered | `cezar/packages/cezar/src/server/verification/checks/providers/godot-check-adapter.ts` |
-| 1 | Reusable Godot providers across projects | lint | pr-dev, candidate | #662 | godot-check | open | — |
+| 1 | Reusable versioned Godot provider (manifest, capability matching, environment hash) | lint | pr-dev, candidate | #662 | godot-check | delivered | `cezar/packages/cezar/src/server/verification/checks/providers/godot-provider.ts` |
 | 1 | Capability detection and NOT_APPLICABLE | — | all | #645 | capabilities | delivered | `cezar/packages/cezar/src/server/verification/checks/capabilities.ts` |
 | 2 | Dependency CVE, secret, image and config scanning (default) | sca | candidate, stable, periodic | #606 (of #599) | trivy | delivered | `cezar/packages/cezar/src/server/verification/checks/providers/trivy-adapter.ts` |
 | 2 | Alternative dependency scanner (provider swap proof) | sca | candidate, stable, periodic | #607 | osv-scanner | delivered | `cezar/packages/cezar/src/server/verification/checks/providers/osv-adapter.ts` |
@@ -50,5 +50,5 @@ Common path prefix: `cezar/packages/cezar/src/server/verification/checks/` is wr
 - Dependency scanning has a default provider (`trivy`) and a documented alternative (`osv-scanner`) selected by configuration; both are never
   mandatory together.
 
-Open owners as of this catalog: #662 (reusable Godot providers) and #603 (dashboard and pilots). #644 (pilot adoption) and #588 (release epic)
+Open owner as of this catalog: #603 (dashboard and pilots). #644 (pilot adoption) and #588 (release epic)
 are release-engine work tracked there, not check families.
