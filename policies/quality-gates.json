@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "quality-gates/v1",
+  "defaults": {
+    "checks": {
+      "format": { "pr-dev": "required" },
+      "lint": { "pr-dev": "required", "candidate": "required" },
+      "type": { "pr-dev": "required", "candidate": "required" },
+      "test": { "pr-dev": "required", "candidate": "required", "stable": "required" },
+      "secrets": {
+        "pr-dev": { "level": "required", "onUnavailable": "fail-closed" },
+        "candidate": { "level": "required", "onUnavailable": "fail-closed" },
+        "stable": { "level": "required", "onUnavailable": "fail-closed" },
+        "periodic": "advisory"
+      },
+      "sca": {
+        "pr-dev": "advisory",
+        "candidate": { "level": "required", "onUnavailable": "fail-closed" },
+        "stable": { "level": "required", "onUnavailable": "fail-closed" },
+        "periodic": { "level": "required", "onUnavailable": "fail-open" }
+      },
+      "sast": { "pr-dev": "advisory", "candidate": "advisory", "periodic": "advisory" },
+      "iac": { "candidate": "advisory", "periodic": "advisory" },
+      "container": { "candidate": "advisory", "periodic": "advisory" },
+      "license": { "periodic": "advisory", "manual": "advisory" },
+      "sbom": { "stable": "advisory" },
+      "ai-audit": { "manual": "optional" }
+    },
+    "cadence": { "sca": "daily", "sast": "weekly", "license": "monthly" },
+    "riskPatterns": [
+      {
+        "id": "dependency-manifests",
+        "globs": ["package-lock.json", "**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "requirements*.txt", "**/requirements*.txt", "**/go.sum", "**/Cargo.lock"],
+        "escalate": { "sca": "pr-dev" }
+      },
+      {
+        "id": "build-and-infra",
+        "globs": ["**/Dockerfile", "Dockerfile", "**/*.tf", "**/docker-compose*.yml"],
+        "escalate": { "container": "pr-dev", "iac": "pr-dev" }
+      }
+    ],
+    "tolerances": { "maxNewFindings": { "critical": 0, "high": 0 }, "baselineMaxAgeDays": 90 },
+    "budgets": { "pr-dev": { "maxMinutes": 10 }, "candidate": { "maxMinutes": 90 }, "periodic": { "maxMinutes": 60 } },
+    "waivers": { "grantedBy": ["human", "operator"], "maxDays": 30 }
+  },
+  "repoTypes": {},
+  "projects": {}
+}

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Quality gate policy (#611): `policies/quality-gates.json` and `schemas/quality-gate-policy.schema.json` define the check category by stage matrix, cadence defaults, risk patterns, tolerances, budgets and waiver rules with repo-type and project overrides; the validator rejects invalid policy, requires mandatory security checks to fail closed at promotion stages and forbids agent-granted waivers (`scripts/release/quality_gate_policy.py`, `docs/quality-gates.md`). Library only.
+
 - Stable promotion, approvals and rollback (#595): authorization from exact SHA, evidence, approval (agents cannot approve), forward-port and freshness policy; one promotion at a time; compare-and-swap fast-forward of stable; separate activation phase where only passing probe receipts mark a promotion active; rollback by CAS with quarantine and audit; interrupted-activation listing and drift detection (`scripts/release/release_promotion.py`, `docs/release-promotion.md`). Library only.
 - Regression repair and forward-port reconciliation (#594): idempotent bounded repair tasks (attempt/cost/time caps escalate instead of looping), forward-port obligations unique per patch with receipts and operator-only waivers, git-based equivalent/pending/conflict detection, single-resolver conflict claims, stable-blocking policy, and emergency-fix reconciliation (`scripts/release/release_repair.py`, `docs/release-repair.md`). Library only.
 
