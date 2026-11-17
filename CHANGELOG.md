@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.158] - 2026-11-17
+
 - Quality check catalog (#668): `docs/quality-check-catalog.md` maps each epic #663 check family to one owner, provider, category, stage and verified status, with overlap rules. Docs only.
 
 - Opt-in AI audit controls (#602): disabled-by-default decision logic with selectors, any/all combinator, cooldown, per-run and monthly caps, receipt reuse by diff hash, a read-only no-network sandbox spec, scrubbed fenced context manifests that flag injection text, citation-checked findings that are always needs-verification, and confirmation only by deterministic validation or authorized review (`scripts/release/ai_audit_policy.py`, `docs/ai-audit.md`). Makes no model calls.
