@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply queued Control Center waiver requests and candidate actions every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+Persistent=true
+Unit=factory-release-inbox.service
+
+[Install]
+WantedBy=timers.target
