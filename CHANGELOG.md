@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Supply-chain hygiene checks (#652, #653, #654): SBOM (CycloneDX/SPDX) validation with SHA-bound provenance and an evidence-manifest-compatible entry; license policy with SPDX expression evaluation, expiring exceptions and unknown handling; static Dockerfile and Terraform policy checks (unpinned base image, public exposure, unencrypted storage); and an opt-in, disabled-by-default, report-only OpenSSF Scorecard on its own periodic schedule that can never block (`server/verification/checks/sbom.ts`, `license-policy.ts`, `infra-policy.ts`, `providers/scorecard-adapter.ts`, `docs/check-supply-chain.md`).
+
 - Quality findings policy and metrics (#649, #650, #651): normalized findings gain a security versus quality-debt `class` decided by category; baseline diff with expiring entries, trend, and a gate where new security findings block while existing debt stays visible; reviewed, expiring suppressions and path exclusions (unreviewed or agent-reviewed ignored, expired blocks again); and per-SHA maintainability metrics with coverage delta whose signals are capped below security severity (`server/verification/checks/finding-policy.ts`, `quality-metrics.ts`, `docs/check-findings-policy.md`).
 
 - Quality check adapters (#646, #647, #648): Semgrep SAST with digest-pinned rulesets (unavailable or tampered rules are an error; ruleset digest is provenance and part of the cache key), native ESLint/tsc/Ruff/.NET-SARIF lint adapters, and a Godot/GDScript adapter that reuses the existing output classifier (parse error blocks, warnings are quality debt); the runner gains `inputsDigest` (`server/verification/checks/providers/`, `docs/check-adapters.md`).
