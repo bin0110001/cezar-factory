@@ -272,6 +272,43 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('GET /api/v1/workspace/release-candidates (#631)', () => {
+    const sha = (c: string) => c.repeat(40);
+    const candidate = (id: string, over: Record<string, unknown> = {}) => ({
+      id, state: 'validating', revision: 1, devSha: sha('a'), baseStableSha: sha('b'), candidateSha: sha('c'), configHash: `sha256:${'d'.repeat(64)}`,
+      createdAt: '2026-11-16T08:00:00Z', updatedAt: '2026-11-16T11:00:00Z', lease: { owner: 'worker-1', expiresAt: '2099-01-01T00:00:00Z', stale: false },
+      tests: { status: 'running', shards: { total: 2, passed: 1, failed: 0 }, assetVersion: null }, devDrift: { commitsAhead: 0, newestDevSha: null },
+      blockers: [], repairObligations: [], receipts: [], pending: { count: 0, coalescedReason: null, triggers: [] }, nextScheduledAttempt: null,
+      links: { pullRequests: [], issues: [] }, warnings: [], checkMatrix: [], ...over,
+    });
+    const writeSnapshot = (projects: Record<string, unknown>) => {
+      const dir = join(process.env.CEZ_HOME!, 'release');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'candidates.json'), JSON.stringify({ snapshotAt: new Date().toISOString(), projects }));
+    };
+
+    it('answers available:false with an empty list when the host has written no snapshot', async () => {
+      const response = await apiRequest(makeApp(), '/api/v1/workspace/release-candidates');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ schemaVersion: 1, available: false, projects: [] });
+    });
+
+    it('serves the validated snapshot with one active candidate per project and no secrets', async () => {
+      const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+      writeSnapshot({
+        tableflux: { candidates: [candidate('c2', { blockers: [{ code: 'scan', message: `leaked ${token}` }] }), candidate('c1', { state: 'promoted', updatedAt: '2026-11-01T00:00:00Z' })] },
+      });
+      const response = await apiRequest(makeApp(), '/api/v1/workspace/release-candidates');
+      const text = await response.text();
+      expect(text).not.toContain(token);
+      const body = JSON.parse(text) as { available: boolean; projects: Array<{ projectId: string; active: { id: string } | null; history: Array<{ id: string }> }> };
+      expect(body.available).toBe(true);
+      expect(body.projects).toHaveLength(1);
+      expect(body.projects[0]).toMatchObject({ projectId: 'tableflux', active: { id: 'c2' } });
+      expect(body.projects[0]!.history.map((c) => c.id)).toEqual(['c1']);
+    });
+  });
+
   describe('GET /api/v1/workspace/manifest', () => {
     it('lists registered projects only and never serializes their roots', async () => {
       const first = await registerProject(repoRoot);
