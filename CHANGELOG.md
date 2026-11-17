@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Test-effectiveness safeguards provider and quality check catalog (#671, #668): a provider that wraps `scripts/check-weakening.ps1`, detects deleted, skipped and weakened tests, flags unexecuted impacted suites as `unknown` (new runner `unknown` flag), optionally checks changed-line coverage and applies scoped, reviewed, expiring flaky quarantine; and `docs/quality-check-catalog.md`, a catalog of epic #663's families verified against the code by `tests/test_quality_check_catalog.py` (`providers/test-effectiveness-adapter.ts`, `docs/check-test-effectiveness.md`).
+
 - Documentation reference and decision drift check provider (#672): broken links, anchors, repository paths and `path#Symbol` references checked only in changed docs, existing decision drift results exposed as findings with their evidence as provenance, quality-debt findings that are baselined without blocking and block only per policy (`providers/doc-drift-adapter.ts`, `docs/check-doc-drift.md`).
 
 - Architecture boundary, dependency-cycle and public API compatibility check provider (#670): opt-in and incremental, with versioned per-project rules, boundary and cycle findings (Tarjan SCC) limited to changed files, public-contract signature comparison, planned-versus-actual scope from the impact manifest, quality-debt findings that block only per policy and keep baselined violations visible, and NOT_APPLICABLE when no rules are configured (`providers/architecture-adapter.ts`, `docs/check-architecture.md`).

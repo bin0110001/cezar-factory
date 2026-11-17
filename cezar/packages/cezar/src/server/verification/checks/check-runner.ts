@@ -30,6 +30,8 @@ export interface PluginRunOutput {
   inputsDigest?: string;
   /** The provider has no advisory feed (e.g. a static analyser): a missing feed timestamp is not an outage. */
   noFeed?: boolean;
+  /** The run completed but part of what it needed to examine did not run (e.g. an impacted suite): a clean result becomes `unknown` with this reason; a failing one stays failing. */
+  unknown?: string;
   /** Set when the provider has nothing it can scan (e.g. no lockfile): reported as `unknown` with this reason, never pass. */
   notApplicable?: string;
   /** Verified identity of the scanner that actually ran. */
@@ -176,9 +178,11 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   }
   const active = findings.filter((f) => f.waiver.status === 'none');
   const blocking = active.filter((f) => BLOCKING.has(f.severity)).length;
-  const status = deriveCheckStatus({ execution: 'completed', feed, findingCount: active.length, blockingFindingCount: blocking, policy: def.policy });
+  const derived = deriveCheckStatus({ execution: 'completed', feed, findingCount: active.length, blockingFindingCount: blocking, policy: def.policy });
+  // Incomplete coverage can only make a clean result unknown; it never hides a finding and never turns a failure into a pass.
+  const status: CheckStatus = output.unknown && (derived === 'pass' || derived === 'warn') ? 'unknown' : derived;
   const outcome: RunCheckOutcome = {
-    result: { checkId: def.id, provider: def.provider, status, execution: 'completed', feed, findingCount: active.length, blockingFindingCount: blocking },
+    result: { checkId: def.id, provider: def.provider, status, execution: 'completed', feed, findingCount: active.length, blockingFindingCount: blocking, ...(output.unknown ? { reason: output.unknown.slice(0, 500) } : {}) },
     findings, provenance: prov, cacheHit: false,
   };
   // Only a clean, fresh run is reusable; failures and stale feeds are always re-evaluated.
