@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Documentation reference and decision drift check provider (#672): broken links, anchors, repository paths and `path#Symbol` references checked only in changed docs, existing decision drift results exposed as findings with their evidence as provenance, quality-debt findings that are baselined without blocking and block only per policy (`providers/doc-drift-adapter.ts`, `docs/check-doc-drift.md`).
+
 - Architecture boundary, dependency-cycle and public API compatibility check provider (#670): opt-in and incremental, with versioned per-project rules, boundary and cycle findings (Tarjan SCC) limited to changed files, public-contract signature comparison, planned-versus-actual scope from the impact manifest, quality-debt findings that block only per policy and keep baselined violations visible, and NOT_APPLICABLE when no rules are configured (`providers/architecture-adapter.ts`, `docs/check-architecture.md`).
 
 - Historical file/module/contract risk intelligence (#660): deterministic, repository-isolated risk evidence with five dimensions, incident dedupe, attribution-aware weighting, time decay and resolved-incident decay, churn kept out of the overall score, contract fan-out impact, rename-following roll-ups, mandatory history-independent floors for sensitive paths that a model suggestion can raise but never lower, audited overrides, and minimum guards derived without a model (`src/verification/risk-intelligence.ts`, `docs/risk-intelligence.md`).
