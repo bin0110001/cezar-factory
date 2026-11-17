@@ -72,3 +72,14 @@ opened/still-open/fixed; a run that did not complete fixes nothing.
 
 Assumption: persisting reconciled findings through the #52 ledger needs a new finding kind in the contract enum and is
 not done here (see the normalized findings note).
+
+## Test-effectiveness adapter (#671)
+
+`checks/providers/test-effectiveness-adapter.ts` is a `test`-category plugin. The weakening guard result (exit code and
+stderr), #53 selected/executed suites, failures, quarantine entries and #54 baselines are injected through `collect`; the
+module spawns nothing. Guard exit 1 maps each `  - message` line to a blocking finding with a stable fingerprint; exit 2,
+an unrecognized format or a crash is `error`. A selected-but-unexecuted suite is `unknown` with reason `not-run` (or a
+medium finding when other findings exist), never `pass`. A quarantine entry needs test id, environment key, reviewer and
+expiry (at most 30 days); invalid, expired or mismatched entries are ignored so the test counts as a normal failure, and a
+valid one downgrades it to a warning. Failure findings reference `baseline:<env>:<id>`. Changed-line coverage is optional
+(`requireCoverage` makes its absence `unknown`); coverage trend stays with #649.
