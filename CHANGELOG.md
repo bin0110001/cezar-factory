@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Quality gate pipeline (#612-#615): scanner status model (clean/findings/unknown/outage/stale) with bounded backoff and last-good tracking, periodic cadence and advisory-snapshot freshness that never touches a candidate, finding evaluation with expiring baselines and human-only scoped suppressions with receipts, bounded actionable issues, and a redacted per-stage gate receipt (`scripts/release/scanner_status.py`, `quality_findings.py`, `quality_stage_gate.py`, `docs/quality-gate-pipeline.md`). Libraries only; the promoter does not call them yet.
+
 - Quality gate policy (#611): `policies/quality-gates.json` and `schemas/quality-gate-policy.schema.json` define the check category by stage matrix, cadence defaults, risk patterns, tolerances, budgets and waiver rules with repo-type and project overrides; the validator rejects invalid policy, requires mandatory security checks to fail closed at promotion stages and forbids agent-granted waivers (`scripts/release/quality_gate_policy.py`, `docs/quality-gates.md`). Library only.
 
 - Stable promotion, approvals and rollback (#595): authorization from exact SHA, evidence, approval (agents cannot approve), forward-port and freshness policy; one promotion at a time; compare-and-swap fast-forward of stable; separate activation phase where only passing probe receipts mark a promotion active; rollback by CAS with quarantine and audit; interrupted-activation listing and drift detection (`scripts/release/release_promotion.py`, `docs/release-promotion.md`). Library only.
