@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Engine consumer of Control Center waiver requests (#603): `release_waiver_inbox.py` decides each `waivers.jsonl` request against the policy (allowed grantors, maximum lifetime, named fingerprint or advisory, expiry), records a granted operator suppression with an exception receipt or a rejection with reasons, is idempotent, and exposes the unexpired grants per project (`scripts/release/release_waiver_inbox.py`).
+
 - Control Center quality forms (#603): a policy dry run (shows what would block at each stage, a failed scan apart from a confirmed finding, stale-feed warnings and the cost estimate) and a waiver request form (names a fingerprint or advisory, stages, reason and expiry; queued for the engine, never granted in the view) in `routes/release-quality-actions.tsx`.
 
 - Watchdog test no longer races its mock server: it waits until the listener accepts connections instead of a fixed 2 second sleep, which failed a promotion validation under load (#701).

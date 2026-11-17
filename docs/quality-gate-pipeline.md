@@ -41,3 +41,9 @@ with its validation receipts.
 
 Not done here: changing the live promoter and `config/promotion-policy.json` to call `evaluate_stage` is the adoption step; the
 libraries are deliberately inert until a workflow `command:` step uses them.
+
+## Waiver inbox (#603)
+
+`scripts/release/release_waiver_inbox.py` is the engine side of the Control Center waiver request. The Control Center appends audited requests to `~/.cezar/release/waivers.jsonl`; `process()` decides each request not yet decided against the effective policy (`waivers.grantedBy`, `maxDays`, a named fingerprint or advisory, an expiry, never blanket) using `quality_findings.suppression_problems`, and returns one decision per request for `waiver-decisions.jsonl`: a granted operator suppression with an exception receipt, or a rejection with the reasons. Decided requests are skipped, so a rerun records nothing twice, and `active_suppressions()` returns the unexpired grants for one project, which the stage gate evaluates findings against. An expired grant blocks again.
+
+Gap: this is a library; the scheduled engine step that reads and appends the files and feeds the grants to `quality_stage_gate` is not wired yet.
