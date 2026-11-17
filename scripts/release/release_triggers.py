@@ -155,8 +155,12 @@ def evaluate(triggers: dict[str, Any], *, project: str, now: datetime, dev: DevS
             decisions.append(Decision("skip", "manual", ["manual triggers are disabled for this project"]))
     sched = triggers.get("schedule")
     if sched:
-        decisions.append(schedule_decision(sched, last_fired=last_schedule_fired, now=now, missed=triggers.get("missedRun", "coalesce"),
-                                           grace_minutes=triggers.get("missedGraceMinutes", 60)))
+        sd = schedule_decision(sched, last_fired=last_schedule_fired, now=now, missed=triggers.get("missedRun", "coalesce"),
+                               grace_minutes=triggers.get("missedGraceMinutes", 60))
+        if sd.action == "request" and dev.last_accepted_sha is not None and dev.dev_sha == dev.last_accepted_sha:
+            # No-change suppression applies to the calendar too: the tick is consumed (occurrence kept) but nothing is requested.
+            sd = Decision("skip", "schedule", sd.reasons + ["dev SHA equals the last accepted candidate; tick consumed without a request"], occurrence=sd.occurrence)
+        decisions.append(sd)
     if triggers.get("afterChanges"):
         tz = (sched or {}).get("timezone", default_tz)
         decisions.append(change_decision(triggers["afterChanges"], dev, now=now, default_tz=tz))
