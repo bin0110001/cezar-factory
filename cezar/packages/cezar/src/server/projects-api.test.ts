@@ -309,6 +309,54 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('POST /api/v1/workspace/release-candidates/actions (#634)', () => {
+    const sha = (c: string) => c.repeat(40);
+    const candidate = (id: string, state = 'validating') => ({
+      id, state, revision: 1, devSha: sha('a'), baseStableSha: sha('b'), candidateSha: null, configHash: `sha256:${'d'.repeat(64)}`,
+      createdAt: '2026-11-16T08:00:00Z', updatedAt: '2026-11-16T11:00:00Z', lease: { owner: 'w', expiresAt: '2099-01-01T00:00:00Z', stale: false },
+      tests: { status: 'running', shards: { total: 1, passed: 0, failed: 0 }, assetVersion: null }, devDrift: { commitsAhead: 0, newestDevSha: null },
+      blockers: [], repairObligations: [], receipts: [], pending: { count: 0, coalescedReason: null, triggers: [] }, nextScheduledAttempt: null,
+      links: { pullRequests: [], issues: [] }, warnings: [], checkMatrix: [],
+    });
+    const publish = () => {
+      const dir = join(process.env.CEZ_HOME!, 'release');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'candidates.json'), JSON.stringify({ snapshotAt: new Date().toISOString(), projects: { shop: { candidates: [candidate('c1')] } } }));
+      return join(dir, 'actions.jsonl');
+    };
+    const post = (body: unknown) => apiRequest(makeApp(), '/api/v1/workspace/release-candidates/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('rejects a second active candidate with a clear message and writes no audit entry', async () => {
+      const audit = publish();
+      const response = await post({ action: 'create', projectId: 'shop', reason: 'start another one' });
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { error: string }).error).toContain('already has an active candidate');
+      expect(() => readFileSync(audit, 'utf8')).toThrow();
+    });
+
+    it('requires typed confirmation for destructive actions and then queues an audited request', async () => {
+      const audit = publish();
+      const unconfirmed = await post({ action: 'cancel', projectId: 'shop', candidateId: 'c1', reason: 'it is stuck' });
+      expect(unconfirmed.status).toBe(400);
+      expect(((await unconfirmed.json()) as { error: string }).error).toContain('type the candidate id');
+      const ok = await post({ action: 'cancel', projectId: 'shop', candidateId: 'c1', reason: 'it is stuck', confirm: 'c1' });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ accepted: true, status: 'queued', action: 'cancel', candidateId: 'c1' });
+      const entries = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { action: string; actor: string });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ action: 'cancel', actor: 'local-operator' });
+    });
+
+    it('denies actions from a remote cockpit and validates the body', async () => {
+      publish();
+      process.env.CEZ_REMOTE = '1';
+      const denied = await post({ action: 'pause', projectId: 'shop', candidateId: 'c1', reason: 'operator request' });
+      expect(denied.status).toBe(403);
+      delete process.env.CEZ_REMOTE;
+      expect((await post({ action: 'pause', projectId: 'shop' })).status).toBe(400); // no reason
+    });
+  });
+
   describe('GET /api/v1/workspace/manifest', () => {
     it('lists registered projects only and never serializes their roots', async () => {
       const first = await registerProject(repoRoot);

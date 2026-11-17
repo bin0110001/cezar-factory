@@ -1,4 +1,5 @@
 import { buildReleaseCandidates, readSnapshot, snapshotPath } from '../release-candidates/read-model.ts';
+import { evaluateAction, recordAction } from '../release-candidates/actions.ts';
 import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
@@ -15,6 +16,8 @@ import {
   dependencyGraphHistoricalTrendsSchema,
   factoryControlCenterResponseSchema,
   releaseCandidatesResponseSchema,
+  candidateActionRequestSchema,
+  candidateActionResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
@@ -3260,6 +3263,20 @@ export function createApp(deps: ServerDeps) {
 
     // Release candidates (#631): the host-written snapshot, validated and redacted. Read-only; an absent snapshot is `available: false`.
     .get('/workspace/release-candidates', (c) => c.json(releaseCandidatesResponseSchema.parse(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()))))
+    // Operator actions (#634): validated against the snapshot and queued, with an audit entry, for the host engine. Never mutates state here.
+    .post('/workspace/release-candidates/actions', jsonZodValidator(candidateActionRequestSchema, { message: 'action, projectId and a reason of at least 3 characters are required' }), (c) => {
+      const request = c.req.valid('json')
+      const now = new Date()
+      const snapshot = buildReleaseCandidates(readSnapshot(snapshotPath()), now)
+      const decision = evaluateAction(snapshot, request, { localHandoff: capabilities().localHandoff })
+      if (!decision.ok) return c.json({ error: decision.error }, decision.status)
+      try {
+        return c.json(candidateActionResponseSchema.parse(recordAction(request, decision, snapshot, now)), 200)
+      } catch {
+        // No audit entry means no action: a request that cannot be recorded is not accepted.
+        return c.json({ error: 'The action could not be recorded in the audit log, so it was not accepted.' }, 500)
+      }
+    })
 
     // Live host totals for a REMOTE cockpit (spec `.ai/specs/2026-09-20-host-resource-telemetry.md`):
     // the local cockpit gets them pushed over the `host` topic, but a remote one opens no
