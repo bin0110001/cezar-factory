@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Engine consumer of Control Center candidate actions (#634): `release_action_inbox.py` applies each `actions.jsonl` request against the durable candidate store (create and retry through the single-pending-request rule, confirmed cancel and abandon through `CandidateStore.end` with fencing), records pause, resume and repair retries as holds and markers for the lease owner, rejects mismatched or finished candidates, and is idempotent (`scripts/release/release_action_inbox.py`).
+
 - Control Center policy editor and candidate actions (#632, #634): edit a project's release pipeline override, preview it (errors with paths, effective hash, next runs) and save it with a reason bound to the loaded hash; and start, pause, resume, retry, cancel or abandon a candidate with a reason and a typed confirmation for the destructive ones. Both only request: the service audits and queues, and the engine applies (`routes/pipeline-policy-editor.tsx`, `routes/release-candidate-actions.tsx`).
 
 - Engine consumer of Control Center waiver requests (#603): `release_waiver_inbox.py` decides each `waivers.jsonl` request against the policy (allowed grantors, maximum lifetime, named fingerprint or advisory, expiry), records a granted operator suppression with an exception receipt or a rejection with reasons, is idempotent, and exposes the unexpired grants per project (`scripts/release/release_waiver_inbox.py`).
