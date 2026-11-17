@@ -357,6 +357,36 @@ describe('workspace projects API', () => {
     });
   });
 
+  describe('release pipeline policy (#632)', () => {
+    const weekly = { preset: 'weekly-calendar', triggers: { schedule: { dayOfWeek: 'thursday', hour: 3 } }, tests: { suites: ['unit'], required: ['unit'] } };
+    const post = (path: string, body: unknown) => apiRequest(makeApp(), `/api/v1/workspace/release-pipeline-policy${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('previews, saves with an audit entry, and lists the change', async () => {
+      const empty = await apiRequest(makeApp(), '/api/v1/workspace/release-pipeline-policy');
+      expect(await empty.json()).toMatchObject({ available: false, projects: {}, audit: [] });
+      const preview = await post('/preview', { projectId: 'tableflux', policy: weekly });
+      expect(await preview.json()).toMatchObject({ valid: true, nextRuns: [expect.stringMatching(/T08:00:00Z$/), expect.any(String), expect.any(String)] });
+      const saved = await post('', { projectId: 'tableflux', policy: weekly, reason: 'weekly regression' });
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ saved: true, appliesTo: 'future-candidates' });
+      const after = (await (await apiRequest(makeApp(), '/api/v1/workspace/release-pipeline-policy')).json()) as { available: boolean; audit: Array<{ reason: string }>; projects: Record<string, unknown> };
+      expect(after.available).toBe(true);
+      expect(Object.keys(after.projects)).toEqual(['tableflux']);
+      expect(after.audit[0]!.reason).toBe('weekly regression');
+    });
+
+    it('rejects an invalid policy with its error paths, and refuses changes from a remote cockpit', async () => {
+      const bad = await post('', { projectId: 'p', policy: { promotion: { bogus: 1 } }, reason: 'try it' });
+      expect(bad.status).toBe(400);
+      expect(((await bad.json()) as { errors: string[] }).errors[0]).toContain('projects.p.promotion.bogus');
+      process.env.CEZ_REMOTE = '1';
+      const denied = await post('', { projectId: 'p', policy: weekly, reason: 'remote try' });
+      expect(denied.status).toBe(403);
+      delete process.env.CEZ_REMOTE;
+      expect((await post('', { projectId: 'p', policy: weekly })).status).toBe(400); // reason required
+    });
+  });
+
   describe('GET /api/v1/workspace/manifest', () => {
     it('lists registered projects only and never serializes their roots', async () => {
       const first = await registerProject(repoRoot);

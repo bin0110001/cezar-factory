@@ -167,5 +167,19 @@ class SecurityPolicy(unittest.TestCase):
         self.assertEqual(schema["properties"]["defaults"]["properties"]["admission"]["properties"]["maxActiveCandidates"]["const"], 1)
 
 
+class SharedFixtureParity(unittest.TestCase):
+    """The TypeScript preview port is checked against the same fixture (cezar/packages/cezar/src/release-candidates/pipeline-policy.test.ts)."""
+
+    def test_python_authority_still_matches_the_committed_fixture(self):
+        fixture = json.loads((ROOT / "tests" / "fixtures" / "release-pipeline-cases.json").read_text(encoding="utf8"))
+        for case in fixture["cases"]:
+            errors = rp.validate_document(case["doc"])
+            self.assertEqual(errors, case["errors"], case["name"])
+            if not errors:
+                spec = rp.effective_config(case["doc"], case["project"])
+                self.assertEqual(spec, case["effective"], case["name"])
+                self.assertEqual(rp.config_hash(spec), case["hash"], case["name"])
+
+
 if __name__ == "__main__":
     unittest.main()

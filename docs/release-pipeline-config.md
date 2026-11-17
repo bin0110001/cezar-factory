@@ -63,3 +63,29 @@ the workflow that adopts this contract (#590 onward).
 `cooldownMinutes`, `quietHours` (`start`/`end` hour, optional `timezone`, may wrap midnight) and `combinator`
 (`any` | `all`). `triggers.missedRun` (`skip` | `coalesce`), `missedGraceMinutes` and `priority` (order of
 `schedule`, `change`, `manual`) apply across sources. Evaluation is in `docs/release-triggers.md`.
+
+## Policy editor API (#632)
+
+Server side of the Control Center's project policy editor, in `cezar/packages/cezar/src/release-candidates/` (contract:
+`packages/contract/src/release-pipeline-policy.ts`).
+
+- `POST /api/v1/workspace/release-pipeline-policy/preview`: validates a project's override against the whole document and returns every
+  error with its path, the effective configuration, its hash, the hash of what is saved today, and the next three runs (UTC, DST-correct,
+  from the project's timezone). It writes nothing.
+- `POST /api/v1/workspace/release-pipeline-policy`: local machine only (403 from a remote cockpit); requires a reason; validates; refuses
+  a stale editor (`expectedCurrentHash` is compared with the saved effective hash, 409); appends an audit entry (id, time, actor, project,
+  before and after hash, redacted reason) and then writes `~/.cezar/release/pipeline-policy.json` atomically. The audit entry is written
+  first so a change cannot exist unrecorded; a failed write returns 500 and nothing is reported saved. Existing candidates keep the
+  configuration they were bound to (`appliesTo: future-candidates`).
+- `GET /api/v1/workspace/release-pipeline-policy`: the saved overrides (redacted), each project's effective hash, and the last 50 audit
+  entries.
+
+The policy lives under the home directory, outside any repository, so a coding agent's change to a repository cannot reach it.
+
+**Parity.** The release engine reads the Python library; the preview is a TypeScript port. `tests/fixtures/release-pipeline-cases.json`
+is generated from the Python authority (23 cases including both pilot schedules and the unsafe ones). The Python test and the TypeScript
+test both check it: validity, error paths and the effective hash must agree, so the editor shows what the engine will enforce. After
+changing the Python rules, regenerate the fixture and fix the port until both suites pass.
+
+Gap: the editor form itself (the React UI that calls these endpoints, via `getPipelinePolicy`, `previewPipelinePolicy` and
+`savePipelinePolicy`) is not built in this change.
