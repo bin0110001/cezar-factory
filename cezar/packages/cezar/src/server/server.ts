@@ -1,5 +1,6 @@
 import { buildReleaseCandidates, readSnapshot, snapshotPath } from '../release-candidates/read-model.ts';
 import { evaluateAction, recordAction } from '../release-candidates/actions.ts';
+import { previewPolicy, readPolicyDocument, savePolicy } from '../release-candidates/pipeline-policy-store.ts';
 import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
@@ -18,6 +19,11 @@ import {
   releaseCandidatesResponseSchema,
   candidateActionRequestSchema,
   candidateActionResponseSchema,
+  pipelinePolicyDocumentResponseSchema,
+  pipelinePolicyPreviewRequestSchema,
+  pipelinePolicyPreviewResponseSchema,
+  pipelinePolicySaveRequestSchema,
+  pipelinePolicySaveResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
@@ -3264,6 +3270,16 @@ export function createApp(deps: ServerDeps) {
     // Release candidates (#631): the host-written snapshot, validated and redacted. Read-only; an absent snapshot is `available: false`.
     .get('/workspace/release-candidates', (c) => c.json(releaseCandidatesResponseSchema.parse(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()))))
     // Operator actions (#634): validated against the snapshot and queued, with an audit entry, for the host engine. Never mutates state here.
+    // Release pipeline policy editor (#632): validate, preview the effective config and next runs, save with an audit entry.
+    .get('/workspace/release-pipeline-policy', (c) => c.json(pipelinePolicyDocumentResponseSchema.parse(readPolicyDocument())))
+    .post('/workspace/release-pipeline-policy/preview', jsonZodValidator(pipelinePolicyPreviewRequestSchema, { message: 'projectId and a policy object are required' }), (c) =>
+      c.json(pipelinePolicyPreviewResponseSchema.parse(previewPolicy(c.req.valid('json'), new Date()))))
+    .post('/workspace/release-pipeline-policy', jsonZodValidator(pipelinePolicySaveRequestSchema, { message: 'projectId, a policy object and a reason of at least 3 characters are required' }), (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'The release pipeline policy can only be changed from the local machine, not a remote cockpit.' }, 403)
+      const result = savePolicy(c.req.valid('json'), new Date())
+      if (!result.ok) return c.json({ error: result.error, ...(result.errors ? { errors: result.errors } : {}) }, result.status)
+      return c.json(pipelinePolicySaveResponseSchema.parse(result.response), 200)
+    })
     .post('/workspace/release-candidates/actions', jsonZodValidator(candidateActionRequestSchema, { message: 'action, projectId and a reason of at least 3 characters are required' }), (c) => {
       const request = c.req.valid('json')
       const now = new Date()
