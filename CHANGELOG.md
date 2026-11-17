@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Waiver grants reach the stage gate (#603): `release_inbox_step.granted_suppressions` returns a project's unexpired operator grants for `quality_stage_gate.evaluate_stage`, with an end-to-end test from request to allowed stable to expiry (`scripts/release/release_inbox_step.py`).
+
 - Release-engine inbox step (#603, #634): `release_inbox_step.py` runs both inboxes once, deciding Control Center waiver requests per project policy and applying operator actions to the candidate store (candidates bound to the fetched dev and stable refs and the effective pipeline config hash), appending decision logs and a pause hold snapshot, with a user systemd timer (`integrations/bazzite/factory-release-inbox.{service,timer}`). It never fetches, pushes, promotes or deploys.
 
 - Engine consumer of Control Center candidate actions (#634): `release_action_inbox.py` applies each `actions.jsonl` request against the durable candidate store (create and retry through the single-pending-request rule, confirmed cancel and abandon through `CandidateStore.end` with fencing), records pause, resume and repair retries as holds and markers for the lease owner, rejects mismatched or finished candidates, and is idempotent (`scripts/release/release_action_inbox.py`).
