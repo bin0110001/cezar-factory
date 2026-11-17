@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Watchdog test no longer races its mock server: it waits until the listener accepts connections instead of a fixed 2 second sleep, which failed a promotion validation under load (#701).
+
 - Quality actions for the Control Center (#603): a policy dry run against the last candidate (what would block at each stage, a failed scan distinguishable from a confirmed blocking finding, required checks with no result counted as unknown, recorded compute cost as the estimate) and a review-only waiver request (names what it covers, expires, audited and queued for the engine, local machine only), with a TypeScript port of the gate rules checked against a fixture generated from the Python authority; waiver requests appear in the history view (`src/release-candidates/quality-actions.ts`, `tests/fixtures/quality-gate-cases.json`).
 
 - Reusable versioned Godot verification provider (#662): a manifest with capabilities, engine and GdUnit compatibility, required worker profile and asset mounts; capability matching and an environment hash used as provenance and cache key; project-owned configuration so distinct Godot projects share one provider; normalization of parse errors, line-insensitive warnings, GdUnit JUnit and `res://` references; and typed environment errors so infrastructure problems and missing asset mounts are never findings or code regressions (`providers/godot-provider.ts`, `docs/check-godot-provider.md`).
