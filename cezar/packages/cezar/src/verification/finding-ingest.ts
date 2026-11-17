@@ -44,6 +44,16 @@ const auditEventSchema = z.discriminatedUnion('type', [
     digest: z.string().min(1).max(128), runDisposition: z.string().min(1).max(64), policyVersion: z.string().min(1).max(128),
     summary: z.record(z.string(), z.number().int().min(0)), prior: z.null(),
   }).strict(),
+  /** One tracked follow-up per canonical finding (#666): the idempotency key and the issue it maps to. */
+  z.object({
+    ...baseEvent, type: z.literal('followup-recorded'), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), key: z.string().min(1).max(256),
+    issueNumber: z.number().int().positive().nullable(), prior: z.null(),
+  }).strict(),
+  /** One remediation step taken for a finding (#666); (fingerprint, step, attempt) is unique, so a replay records nothing new. */
+  z.object({
+    ...baseEvent, type: z.literal('remediation-recorded'), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), step: z.string().min(1).max(64),
+    attempt: z.number().int().min(1).max(100), outcome: z.string().min(1).max(64), prior: z.null(),
+  }).strict(),
 ]);
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 
