@@ -13,6 +13,7 @@ export * from './workspace.ts';
 export * from './workflows.ts';
 export * from './releases.ts';
 export * from './factory-control-center.ts';
+export * from './release-candidates.ts';
 export * from './skills.ts';
 export * from './agent-config.ts';
 export * from './agent-profiles.ts';

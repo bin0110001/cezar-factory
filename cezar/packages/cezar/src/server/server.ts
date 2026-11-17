@@ -1,3 +1,4 @@
+import { buildReleaseCandidates, readSnapshot, snapshotPath } from '../release-candidates/read-model.ts';
 import { execFile as backlogExecFileCb } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
@@ -13,6 +14,7 @@ import {
   dependencyDecisionResearchDispatchResponseSchema,
   dependencyGraphHistoricalTrendsSchema,
   factoryControlCenterResponseSchema,
+  releaseCandidatesResponseSchema,
 } from '@open-mercato/cezar-contract';
 import { createTrackerService } from './tracker/index.ts';
 import { factoryReleaseProvenance, resolveConfiguredFactoryRelease, resolveFactoryRelease, type FactoryChannel } from '../factory-release/resolver.ts';
@@ -3255,6 +3257,9 @@ export function createApp(deps: ServerDeps) {
       }));
       return c.json(factoryControlCenterResponseSchema.parse({ schemaVersion: 1, generatedAt, projects: rows }));
     })
+
+    // Release candidates (#631): the host-written snapshot, validated and redacted. Read-only; an absent snapshot is `available: false`.
+    .get('/workspace/release-candidates', (c) => c.json(releaseCandidatesResponseSchema.parse(buildReleaseCandidates(readSnapshot(snapshotPath()), new Date()))))
 
     // Live host totals for a REMOTE cockpit (spec `.ai/specs/2026-09-20-host-resource-telemetry.md`):
     // the local cockpit gets them pushed over the `host` topic, but a remote one opens no
