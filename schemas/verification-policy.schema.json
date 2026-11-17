@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verification policy (policies/verification.json)",
+  "type": "object",
+  "required": ["schemaVersion", "mandatoryChecks", "stageGates", "protectedPaths"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "description": { "type": "string" },
+    "mandatoryChecks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "checkTimeoutSeconds": { "type": "integer", "minimum": 1 },
+    "ledger": { "type": "string" },
+    "protectedPaths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "stageGates": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["pr-dev", "candidate", "stable"] },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["requiredChecks", "blockAtOrAbove", "maxOutageRetries"],
+        "additionalProperties": false,
+        "properties": {
+          "requiredChecks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "blockAtOrAbove": { "enum": ["info", "low", "medium", "high", "critical"] },
+          "maxOutageRetries": { "type": "integer", "minimum": 0, "maximum": 5 }
+        }
+      }
+    }
+  }
+}

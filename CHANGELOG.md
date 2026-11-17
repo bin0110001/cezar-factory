@@ -753,3 +753,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured output with status, stage, passed/failed counts, failure details, and artifact paths
 - Reliable exit codes for CI integration
 - -Verbose and -Quiet flags for all validation scripts
+
+## [Unreleased]
+
+- Check capability detection and profiles (#645): ecosystem detection from repository contents, Factory (.NET/TS/Python) and Godot profiles selectable by id or auto, tool-by-name planning, and an explicit non-blocking `not-applicable` status (new in the check contract, produced only by planning, distinct from unknown/error) honoured by the gates and the quality policy (`server/verification/checks/capabilities.ts`, `docs/check-capabilities.md`).
+
+- Deterministic disposition rules and stage minimum gates (#665): `scripts/release/verification_disposition.py` maps normalized verification outcomes to CONTINUE / RECORD / RETRY / BLOCK per stage (accepted existing debt continues, new minor findings are recorded, new focused or acceptance regressions block, missing coverage stays unknown, outages retry within bounds then escalate, unrecognized input blocks). `policies/verification.json` gains schema-validated `stageGates` and `protectedPaths` (`schemas/verification-policy.schema.json`); policy, baseline and waiver edits from implementation changes are rejected. Library only; includes a concise agent summary and a UI payload.
+
