@@ -1,0 +1,37 @@
+# Opt-in AI code and architecture audit controls (#602)
+
+`scripts/release/ai_audit_policy.py` (library only) decides whether an AI audit may run, builds its context safely and
+normalizes what comes back. It never calls a model itself: the adopting workflow does, only when `decide` says `run`.
+
+## Defaults
+
+Disabled. A project must opt in (`enabled: true`); a disabled or invalid configuration yields zero model calls
+(`llmCalls: 0`). Default scopes are `pr-diff` and `candidate-delta`; the architecture-wide scope runs only for a
+`periodic` or `manual` trigger and must be listed in `scopes`, so a full-repo audit is never the default on every candidate.
+
+## Deciding
+
+`decide(config, request, state, now)` is pure and returns `run`, `skip` or `fail` with a reason and the selectors that matched.
+Selectors: manual, periodic (weekly or monthly), changed sensitive paths, change size, dependency major upgrade and a minimum
+deterministic-finding score, combined with `any` or `all`. Then, in order: a valid receipt for the same diff hash, model family,
+prompt/policy version and scopes (reused unless `force`), cooldown, concurrency, per-diff attempts, the per-run token and dollar
+caps, and the monthly dollar cap. A budget breach skips or fails per `onBudgetExceeded`. Every cap is mandatory (the validator
+rejects a missing or non-positive one).
+
+## Context and sandbox
+
+`sandbox_spec` is read-only, no network, no tools, no repo write, no promotion and no mounted secrets. `build_context` scrubs
+every file (token shapes plus known secret values) before it can reach a model, sorts files, caps bytes, records a path, commit,
+line range and SHA-256 per entry, and wraps content as `untrusted-repository-file` data with a system notice that it is never
+instructions. Instruction-like text in a repository file is counted and flagged, never followed. The manifest hash is
+deterministic for the same inputs.
+
+## Findings
+
+`normalize_findings` keeps only findings whose path, line and commit resolve to the manifest, so invented references are dropped.
+Every kept finding is `needs-verification` with `gateEffect: advisory`. `confirm` is the only way to strengthen one, and only
+through `deterministic-validation` or `authorized-review` with evidence; a model's own assertion is never a CVE gate.
+`make_receipt` and `spend_summary` record cost for the operator view (#603).
+
+Prompt and policy are versioned through `promptVersion`, which is part of the receipt key. Observability (#128/#129), issue dedupe
+and agent triage (#105) are consumers of the receipt and findings, not part of this library.
