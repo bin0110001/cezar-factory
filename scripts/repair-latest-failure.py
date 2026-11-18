@@ -89,7 +89,7 @@ def request(base: str, project: str, suffix: str, limit: int = 8_388_608) -> byt
     return value
 
 
-def load_failure(api: str, project: str, exclude: str) -> dict | None:
+def load_failure(api: str, project: str, exclude: str, handled=None) -> dict | None:
     runs = json.loads(request(api, project, "/runs"))
     if isinstance(runs, dict):
         runs = runs.get("runs")
@@ -98,6 +98,9 @@ def load_failure(api: str, project: str, exclude: str) -> dict | None:
     run = latest_failure(runs, exclude)
     if run is None:
         return None
+    # Abort before the history/handoff fetches when this exact run was already attempted or skipped.
+    if handled is not None and handled(run["id"]):
+        return {"runId": run["id"], "handled": True}
     steps = [step for step in run.get("steps", []) if step.get("status") == "failed"]
     step = steps[-1].get("id", "") if steps else ""
     errors = [str(run.get("error", ""))] + [str(item.get("error", "")) for item in steps]
@@ -183,6 +186,11 @@ class History:
                 last_seen=excluded.last_seen,run_id=excluded.run_id""",
                 (project, failure["fingerprint"], classification, now, now, failure["runId"], json.dumps(failure)))
         return dict(self.db.execute("SELECT * FROM failures WHERE project=? AND fingerprint=?", (project, failure["fingerprint"])).fetchone())
+
+    def run_handled(self, project: str, run_id: str) -> bool:
+        """True when this run was already repaired/attempted or classified operational (nothing left to do)."""
+        return self.db.execute("SELECT 1 FROM failures WHERE project=? AND run_id=? AND (attempts>0 OR state='skipped-operational') LIMIT 1",
+                               (project, run_id)).fetchone() is not None
 
     def reserve(self, project: str, key: str) -> bool:
         with self.db:
@@ -700,9 +708,13 @@ def main(argv=None) -> int:
             scratch.unlink(missing_ok=True)
         history = History(args.history or (scratch if debug_mode() else common.parent / ".ai/cezar/failure-repair.sqlite"))
         if args.phase != "deploy":
-            failure = load_failure(args.api_url, args.project, os.environ.get("CEZ_TASK_ID", ""))
+            failure = load_failure(args.api_url, args.project, os.environ.get("CEZ_TASK_ID", ""),
+                                   lambda run_id: history.run_handled(args.project, run_id))
             if failure is None:
                 receipt.update(status="skipped", reason="no-failed-run")
+                return 0
+            if failure.get("handled"):
+                receipt.update(status="skipped", reason="run-already-handled", runId=failure["runId"])
                 return 0
             rules = json.loads((FACTORY / "config/known-failures.json").read_text(encoding="utf-8"))["rules"]
             verdict = classify(failure.get("diagnostics", failure["evidence"]), rules)
