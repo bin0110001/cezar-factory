@@ -89,6 +89,35 @@ describe('DecisionsRoute', () => {
     expect(within(card).getByText('Full Factory comment')).toBeTruthy()
   })
 
+  it('explains what the Factory found and offers its suggested fix on an escalation that had no paths', async () => {
+    const withFix: DecisionItem = {
+      ...legacy,
+      background: [
+        { label: 'Investigator’s root cause', text: 'The fixture is stale.' },
+        { label: 'Current hypothesis', text: 'Scope is too broad.' },
+      ],
+      decisions: [{
+        id: 'open-question',
+        question: 'Which data source is authoritative?',
+        recommendedOptionId: 'investigator-fix',
+        options: [{ id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' }],
+      }],
+    }
+    renderRoute({ available: true, items: [withFix] })
+    const card = await screen.findByRole('listitem')
+    const blocks = [...card.querySelectorAll('[data-slot="decision-background-block"]')]
+    expect(blocks.map((b) => b.textContent)).toEqual(['Investigator’s root causeThe fixture is stale.', 'Current hypothesisScope is too broad.'])
+    const option = card.querySelector('[data-option="investigator-fix"]')
+    expect(option?.textContent).toContain('Regenerate the fixture.')
+    expect(option?.textContent).toContain('Recommended')
+  })
+
+  it('shows no background section when the Factory had nothing to add', async () => {
+    renderRoute({ available: true, items: [structured] })
+    const card = await screen.findByRole('listitem')
+    expect(card.querySelector('[data-slot="decision-background"]')).toBeNull()
+  })
+
   it('keeps Send disabled until a path is chosen, then posts the answer and removes the card', async () => {
     answerDecision.mockResolvedValue({ number: 7, state: 'factory:needs-plan' })
     // After the answer the server no longer lists the issue, so the reconciling refetch is empty.

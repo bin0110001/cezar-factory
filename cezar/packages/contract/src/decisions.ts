@@ -31,6 +31,17 @@ export const decisionRequestSchema = z.object({
 });
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
 
+/**
+ * One labelled block of what the Factory learned before asking (observed problem, attempts,
+ * hypothesis, the investigator's root cause and recommended action…). Lets the card explain
+ * *why* a call is needed, not just state it.
+ */
+export const decisionBackgroundSchema = z.object({
+  label: z.string().min(1),
+  text: z.string().min(1),
+});
+export type DecisionBackground = z.infer<typeof decisionBackgroundSchema>;
+
 export const decisionItemSchema = z.object({
   number: z.number().int().positive(),
   title: z.string(),
@@ -43,6 +54,8 @@ export const decisionItemSchema = z.object({
   askedAt: z.string().optional(),
   source: z.enum(['structured', 'legacy']),
   decisions: z.array(decisionRequestSchema),
+  /** What the Factory found and tried, in reading order; absent when the issue carries none of it. */
+  background: z.array(decisionBackgroundSchema).optional(),
   /** Markdown of the Factory's own escalation comment, for details the structure does not carry. */
   details: z.string(),
 });

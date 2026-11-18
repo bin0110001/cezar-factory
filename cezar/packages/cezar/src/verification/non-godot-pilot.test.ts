@@ -73,7 +73,7 @@ describe('a .NET project verified through the generic path', () => {
     const root = await dotnetProject('pass', 0, 'Passed!  - Failed: 0, Passed: 12, Skipped: 0');
     const result = await executeVerification({ worktreePath: root, cezarRunId: 'pilot-pass', projectId: 'dotnet-pilot', suite: 'quick' });
     expect(result.run.status).toBe('passed');
-    expect(result.run.checks.map((c) => c.id ?? c.checkId)).toContain('unit');
+    expect(result.run.checks.map((c) => c.checkId)).toContain('unit');
     const artifact = await readFile(result.artifactPath, 'utf8');
     expect(artifact).not.toMatch(GODOT);
     expect(JSON.parse(artifact).verificationId).toBe(result.run.verificationId);

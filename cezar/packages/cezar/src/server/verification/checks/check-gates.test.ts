@@ -11,7 +11,7 @@ const DIGEST = `sha256:${'a'.repeat(64)}`;
 const def = (name: string, over: Record<string, unknown> = {}): CheckDefinition => checkProviderConfigSchema.parse({ version: 1, checks: [{
   id: `${name}-sca`, category: 'sca', provider: { name, version: '1', digest: DIGEST }, scopes: ['full-repo'], triggers: ['pr-dev', 'periodic-independent', 'manual'],
   schedule: { cron: '0 3 * * *', timezone: 'UTC' }, policy: { mandatory: true, timeoutMs: 1000, maxAgeHours: 48 }, ...over,
-}] }).checks[0];
+}] }).checks[0]!;
 const plugin = (doc: PluginRunOutput): CheckProviderPlugin => ({ run: async () => doc });
 const vulnerable: PluginRunOutput = { format: 'json', dbUpdatedAt: FRESH, document: { findings: [{ id: 'CVE-2021-23337', severity: 'high', package: 'lodash', ecosystem: 'npm' }] } };
 const clean: PluginRunOutput = { format: 'json', dbUpdatedAt: FRESH, document: { findings: [] } };
@@ -40,8 +40,8 @@ describe('gates', () => {
   it('blocks on missing, stale, other-source and non-passing mandatory results', async () => {
     const ok = await record('p', clean);
     expect(evaluateGates(req, [], { sourceSha: SHA, now: NOW })).toMatchObject({ allowed: false, blocking: ['sca'] });
-    expect(evaluateGates(req, [{ ...ok, finishedAt: '2026-11-10T00:00:00Z' }], { sourceSha: SHA, now: NOW }).verdicts[0].reasons).toContain('stale');
-    expect(evaluateGates(req, [{ ...ok, sourceSha: 'd'.repeat(40) }], { sourceSha: SHA, now: NOW }).verdicts[0].reasons).toContain('wrong-source');
+    expect(evaluateGates(req, [{ ...ok, finishedAt: '2026-11-10T00:00:00Z' }], { sourceSha: SHA, now: NOW }).verdicts[0]!.reasons).toContain('stale');
+    expect(evaluateGates(req, [{ ...ok, sourceSha: 'd'.repeat(40) }], { sourceSha: SHA, now: NOW }).verdicts[0]!.reasons).toContain('wrong-source');
     const unknown = await record('p', { ...clean, dbUpdatedAt: '2026-11-01T00:00:00Z' });
     expect(unknown.result.status).toBe('unknown');
     expect(evaluateGates(req, [unknown], { sourceSha: SHA, now: NOW }).allowed).toBe(false);
@@ -49,7 +49,7 @@ describe('gates', () => {
   it('does not block on an optional category', async () => {
     const ev = evaluateGates([{ category: 'sca', mandatory: false, maxAgeHours: 24 }], [], { sourceSha: SHA, now: NOW });
     expect(ev.allowed).toBe(true);
-    expect(ev.verdicts[0].satisfied).toBe(false);
+    expect(ev.verdicts[0]!.satisfied).toBe(false);
   });
   it('answers one findings query across providers', async () => {
     const recs = [await record('fake-trivy', vulnerable), await record('fake-semgrep', vulnerable)];
@@ -62,7 +62,7 @@ describe('independent schedule', () => {
   it('lists periodic checks only when never run or aged out, and produces no candidate', () => {
     const due = planDueChecks(defs, {}, 'periodic-independent', NOW);
     expect(due).toEqual([{ checkId: 'a-sca', trigger: 'periodic-independent' }]);
-    expect(Object.keys(due[0])).toEqual(['checkId', 'trigger']);
+    expect(Object.keys(due[0]!)).toEqual(['checkId', 'trigger']);
     expect(planDueChecks(defs, { 'a-sca': '2026-11-16T06:00:00Z' }, 'periodic-independent', NOW)).toEqual([]);
     expect(planDueChecks(defs, { 'a-sca': '2026-11-10T00:00:00Z' }, 'periodic-independent', NOW)).toHaveLength(1);
   });
