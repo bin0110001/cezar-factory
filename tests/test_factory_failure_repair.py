@@ -160,6 +160,18 @@ class FailureRepairTests(unittest.TestCase):
         self.assertEqual("pr-open", receipt["previousState"])
         self.assertEqual("https://github.com/o/r/pull/1", receipt["pr"])
 
+    def test_already_handled_run_aborts_before_detail_fetches(self):
+        f = failure(run_id="r9")
+        self.history.observe("p", f, "unknown")
+        self.assertFalse(self.history.run_handled("p", "r9"), "an unattempted observation must stay retryable")
+        self.history.reserve("p", f["fingerprint"])
+        self.assertTrue(self.history.run_handled("p", "r9"))
+        run = dict(id="r9", workflow="w", status="failed", finishedAt="2026-11-04T12:00:00Z")
+        with patch.object(repair, "request", side_effect=[json.dumps([run]).encode()]) as req:
+            selected = repair.load_failure("http://localhost", "p", "", lambda rid: self.history.run_handled("p", rid))
+        self.assertEqual({"runId": "r9", "handled": True}, selected)
+        self.assertEqual(1, req.call_count)
+
     def test_configuration_requires_allowlist_and_explicit_nonstable_targets(self):
         config = {"schemaVersion": 1, "model": "gpt-test", "projects": {"p": self.setting}}
         repair.project_settings(config, [{"projectId": "p"}], "p")

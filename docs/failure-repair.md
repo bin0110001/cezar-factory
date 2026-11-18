@@ -20,7 +20,7 @@ occurrences, latest source run, attempt count, repair/review result, PR, and
 deployment status. Run IDs, timestamps and artifact hashes are normalized while
 error codes and source diagnostics remain significant. SQLite reserves one
 attempt atomically. An interrupted or unsuccessful attempt remains visible and
-does not regain its budget on the next hourly run. A repeated unknown error is
+does not regain its budget on the next daily run. A repeated unknown error is
 reported with its previous state and PR rather than charged another repair.
 
 Unknown failures receive one bounded repair attempt through `codex exec` with the hosted
@@ -86,7 +86,7 @@ self-review plus actual validation evidence satisfies the repository's gate;
 unresolved findings stop publication. Auto-merge is requested with the validated
 head SHA. CI and repository branch protections still apply.
 
-The following deployment command, and subsequent hourly invocations, reconcile
+The following deployment command, and subsequent daily invocations, reconcile
 pending PRs without a model call. A merged PR must retain its validated head/base
 and complete passing CI before deployment. Closing a PR without merging records
 that outcome. A failed publication after push is retried from its history
