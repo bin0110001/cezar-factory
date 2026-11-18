@@ -408,6 +408,25 @@ switch ($Event) {
         # person decides what to do with it, and is told exactly what the choice is.
         $investigations = @($comments | Where-Object { $_ -match '<!-- factory:investigate-result:' }).Count + 1
         if ($investigations -ge $maxInvestigations) {
+            # Ask a question with paths a person can pick, not just "decide something". The investigator's
+            # own diagnosis rides along as context and, when it named a fix, as one of the paths.
+            $because = (Text $result.rootCauseHypothesis).Trim()
+            $fixText = (Text $result.recommendedAction).Trim()
+            $paths = @(
+                [ordered]@{ id = 'narrow-scope'; label = 'Narrow the scope'; summary = 'Cut the issue down to the part that can be delivered and verified on its own, and plan only that.'; tradeoffs = 'The remainder is dropped unless someone files it again.' },
+                [ordered]@{ id = 'split'; label = 'Split into smaller issues'; summary = 'Decompose the issue into children that are planned and implemented in dependency order.'; tradeoffs = 'More issues and more review, but each one can converge on its own.' }
+            )
+            if ($fixText) {
+                $paths = @([ordered]@{ id = 'apply-fix'; label = 'Apply the investigator''s recommended fix'; summary = $fixText; tradeoffs = 'It has not converged so far, so treat it as a hypothesis rather than a known cure.' }) + $paths
+            }
+            $ask = [pscustomobject]@{ decisions = @([ordered]@{
+                id = 'unconverging-issue'
+                question = "How should #$Issue proceed? It has failed and been investigated $investigations times without converging."
+                context = $(if ($because) { "Latest root cause: $because" } else { 'The investigations did not agree on a single root cause; see the Factory investigation comments above.' })
+                options = $paths
+                recommendedOptionId = 'split'
+            }) }
+            Add-Comment (New-DecisionComment $ask)
             Add-Comment (New-Escalation "This issue has failed and been investigated $investigations times without converging." 'Automatic retry and re-planning are exhausted for this issue.' '(see the investigation comments above)' 'The issue as written is not converging; another automatic attempt is unlikely to end differently.' 'Decide one: narrow the scope, split it into smaller issues, or close it. Then relabel factory:needs-plan.')
             $to = Get-Outcome 'investigate-result' 'escalate'; Set-State $to; Done $to 'investigation limit reached'
         }

@@ -157,6 +157,18 @@ function DecisionCard({ item }: { item: DecisionItem }) {
         ) : null}
       </div>
 
+      {item.background && item.background.length > 0 ? (
+        <section data-slot="decision-background" aria-label={`What the Factory found on #${item.number}`} className="flex flex-col gap-2 rounded-md bg-muted/40 p-3">
+          <h3 className="text-xs font-medium text-muted-foreground">What the Factory found</h3>
+          {item.background.map((block) => (
+            <div key={block.label} data-slot="decision-background-block" className="flex flex-col gap-0.5 text-[13px]">
+              <span className="text-xs font-medium text-foreground">{block.label}</span>
+              <p className="leading-relaxed whitespace-pre-wrap text-muted-foreground">{block.text}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       {item.decisions.map((decision) => (
         <DecisionQuestion
           key={decision.id}
@@ -256,7 +268,7 @@ function DecisionQuestion({
                     {option.label}
                     {recommended ? <Badge variant="secondary">Recommended</Badge> : null}
                   </span>
-                  {option.summary ? <span className="text-muted-foreground">{option.summary}</span> : null}
+                  {option.summary ? <span className="whitespace-pre-wrap text-muted-foreground">{option.summary}</span> : null}
                   {option.tradeoffs ? (
                     <span className="text-xs text-soft-foreground">
                       <span className="font-medium">Trade-offs:</span> {option.tradeoffs}

@@ -65,6 +65,48 @@ describe('buildDecisionItem', () => {
     expect(item.decisions[0]?.context).toContain('billing');
   });
 
+  const fullEscalation = {
+    createdAt: '2026-10-01T10:00:00Z',
+    body: [
+      '## Factory escalation', '',
+      '**Observed problem**', 'It keeps failing.', '',
+      '**Attempts made**', 'Retried twice.', '',
+      '**Relevant logs/artifacts**', '(see the investigation comments above)', '',
+      '**Current hypothesis**', 'Scope is too broad.', '',
+      '**Recommended next step / major architectural decision**', 'Decide one: narrow, split or close.',
+    ].join('\n'),
+  };
+  const investigation = (action: string, createdAt = '2026-09-30T10:00:00Z') => ({
+    createdAt,
+    body: `## Factory investigation\n\n**Classification:** test (confidence: high)\n\n**Root cause:** The fixture is stale.\n\n**Recommended action:** ${action}\n\n<!-- factory:investigate-result:abc -->`,
+  });
+
+  it('surfaces the escalation hypothesis and the newest investigation as background, dropping pointers', () => {
+    const item = buildDecisionItem(issue({ comments: [investigation('old advice', '2026-09-01T00:00:00Z'), investigation('Regenerate the fixture.'), fullEscalation] }), 'factory:needs-help');
+    const labels = item.background?.map((b) => b.label);
+    expect(labels).toEqual(['Investigator’s root cause', 'Investigator’s recommended action', 'Current hypothesis', 'Attempts made', 'Factory’s recommended next step']);
+    expect(item.background?.find((b) => b.label === 'Investigator’s recommended action')?.text).toBe('Regenerate the fixture.');
+    expect(item.background?.find((b) => b.label === 'Investigator’s root cause')?.text).toBe('The fixture is stale.');
+  });
+
+  it('offers the investigator’s recommended action as the starting-point path on a legacy ask', () => {
+    const item = buildDecisionItem(issue({ comments: [investigation('Regenerate the fixture.'), fullEscalation] }), 'factory:needs-help');
+    expect(item.decisions[0]?.options).toEqual([{ id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' }]);
+    expect(item.decisions[0]?.recommendedOptionId).toBe('investigator-fix');
+  });
+
+  it('leaves a structured ask’s own paths alone and adds only investigation background', () => {
+    const item = buildDecisionItem(issue({ comments: [investigation('Regenerate the fixture.'), structuredComment(), fullEscalation] }), 'factory:needs-help');
+    expect(item.source).toBe('structured');
+    expect(item.decisions[0]?.options.map((o) => o.id)).toEqual(['registry', 'local']);
+    expect(item.background?.map((b) => b.label)).toEqual(['Investigator’s root cause', 'Investigator’s recommended action']);
+  });
+
+  it('omits background entirely when the issue carries nothing to show', () => {
+    const bare = { createdAt: '2026-10-01T10:00:00Z', body: '## Factory escalation\n\n**Observed problem**\nWhich source wins?' };
+    expect(buildDecisionItem(issue({ comments: [bare] }), 'factory:needs-help').background).toBeUndefined();
+  });
+
   it('still produces an answerable question when there is no escalation comment at all', () => {
     const item = buildDecisionItem(issue(), 'factory:human-review');
     expect(item).toMatchObject({ source: 'legacy', state: 'factory:human-review' });
@@ -159,6 +201,11 @@ describe('answerDecision', () => {
 });
 
 describe('renderAnswerComment', () => {
+  it('spells out what a chosen path means for the planner', () => {
+    const text = renderAnswerComment(ask.decisions, { answers: [{ decisionId: 'state-owner', optionId: 'registry' }] });
+    expect(text).toContain('> One owner');
+  });
+
   it('keeps the marker JSON from closing the comment', () => {
     const text = renderAnswerComment(ask.decisions, { answers: [{ decisionId: 'state-owner', optionId: 'local', note: 'a --> b' }] });
     const payload = /<!-- factory-decision-answer:v1 (.*) -->$/.exec(text)?.[1] ?? '';

@@ -23,9 +23,20 @@ The **Decisions** screen (`/decisions` in a project) lists every open issue in
 question, the details the agent gathered, and the suggested paths with the
 recommended one marked. Choose a path (or answer in your own words), add optional
 instructions for the planner, and press **Send answer and resume**. Cezarium posts the
-answer as an issue comment and returns the issue to `factory:needs-plan`, so it resumes
+answer as an issue comment (including the text of the path you chose, which the planner
+reads) and returns the issue to `factory:needs-plan`, so it resumes
 through the normal workflow. If the issue moved in the meantime the answer is refused and
 nothing is written.
+
+Above the questions, **What the Factory found** lists the context the agent had when it
+stopped: the newest investigation's root cause and recommended action, and, on older
+free-text escalations, the current hypothesis, attempts made and the Factory's recommended
+next step. When an investigation named a fix, an escalation that carries no paths of its
+own still offers it as **Apply the investigator's recommended fix** (marked recommended).
+It is a starting point, not a verdict: nothing is preselected, and you can answer in your
+own words instead. An issue that keeps failing without converging asks a structured
+question (narrow the scope, split into smaller issues, or the investigator's fix) rather
+than a bare "decide something".
 
 ## Decision request format
 

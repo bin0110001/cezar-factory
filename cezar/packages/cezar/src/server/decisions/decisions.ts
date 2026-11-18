@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import {
   decisionRequestSchema,
   type AnswerDecisionBody,
+  type DecisionBackground,
   type DecisionItem,
   type DecisionRequest,
   type DecisionsResponse,
@@ -77,6 +78,62 @@ function legacyObserved(body: string): string | null {
   return text ? text : null;
 }
 
+/**
+ * Split a Factory comment into its bold-headed blocks (`**Root cause:** …`, `**Attempts made**\n…`).
+ * Text on the heading's own line belongs to the block; the next bold line at column 0 ends it.
+ */
+function boldSections(rawBody: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  const body = rawBody.replace(/<!--[\s\S]*?-->/g, '');
+  const heading = /^\*\*([^*\n]+?)\*\*[ \t]*/gm;
+  const hits = [...body.matchAll(heading)];
+  hits.forEach((hit, i) => {
+    const label = hit[1]!.trim().replace(/:$/, '').trim();
+    const end = hits[i + 1]?.index ?? body.length;
+    const text = body.slice(hit.index! + hit[0].length, end).replace(/^:/, '').trim();
+    if (text && !sections.has(label)) sections.set(label, text);
+  });
+  return sections;
+}
+
+/** A pointer like "(see the plan above)" tells a reader nothing on a screen that hides the thread. */
+const isPointer = (text: string) => /^\(see\b[^)]*\)\.?$/i.test(text.trim());
+
+const INVESTIGATOR_FIX = 'investigator-fix';
+
+/** The newest comment that starts with `heading`, folded into its sections; null when there is none. */
+function latestSections(comments: IssueComment[], heading: string): Map<string, string> | null {
+  for (let i = comments.length - 1; i >= 0; i--) {
+    if (comments[i]!.body.includes(heading)) return boldSections(comments[i]!.body);
+  }
+  return null;
+}
+
+/**
+ * What the Factory knew when it parked the issue. The escalation comment (legacy ones only: a
+ * structured ask already carries its own context) and the newest investigation supply the
+ * hypothesis, the attempts and, above all, a suggested fix.
+ */
+function backgroundFor(comments: IssueComment[], includeEscalation: boolean): DecisionBackground[] {
+  const out: DecisionBackground[] = [];
+  const add = (label: string, text: string | undefined) => {
+    if (text && !isPointer(text)) out.push({ label, text });
+  };
+  const investigation = latestSections(comments, '## Factory investigation');
+  if (investigation) {
+    add('Investigator’s root cause', investigation.get('Root cause'));
+    add('Investigator’s recommended action', investigation.get('Recommended action'));
+  }
+  const escalation = includeEscalation ? latestSections(comments, '## Factory escalation') : null;
+  if (escalation) {
+    add('Current hypothesis', escalation.get('Current hypothesis'));
+    add('Attempts made', escalation.get('Attempts made'));
+    add('Relevant logs/artifacts', escalation.get('Relevant logs/artifacts'));
+    add('Factory’s recommended next step', escalation.get('Recommended next step / major architectural decision'));
+  }
+  return out;
+}
+
 function firstLine(text: string): string {
   const line = text.split('\n').map((l) => l.replace(/^[-*]\s+/, '').trim()).find((l) => l.length > 0) ?? '';
   return line.length > 300 ? `${line.slice(0, 297)}...` : line;
@@ -87,12 +144,26 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
   const comments = issue.comments ?? [];
   const labels = (issue.labels ?? []).map((l) => l.name);
   const base = { number: issue.number, title: issue.title, url: issue.url, state, labels, updatedAt: issue.updatedAt ?? '' };
+  const withBackground = (includeEscalation: boolean) => {
+    const background = backgroundFor(comments, includeEscalation);
+    return background.length > 0 ? { background } : {};
+  };
+  // A legacy ask has no paths of its own, but a completed investigation names a fix: offer it as
+  // the starting point (the user can still answer in their own words beside it).
+  const investigatorFix = (): Pick<DecisionRequest, 'options' | 'recommendedOptionId'> => {
+    const action = latestSections(comments, '## Factory investigation')?.get('Recommended action');
+    if (!action || isPointer(action)) return { options: [] };
+    return {
+      options: [{ id: INVESTIGATOR_FIX, label: 'Apply the investigator’s recommended fix', summary: action }],
+      recommendedOptionId: INVESTIGATOR_FIX,
+    };
+  };
 
   for (let i = comments.length - 1; i >= 0; i--) {
     const comment = comments[i]!;
     const decisions = parseDecisionMarker(comment.body);
     if (decisions) {
-      return { ...base, ...(comment.createdAt ? { askedAt: comment.createdAt } : {}), source: 'structured', decisions, details: readable(comment.body) };
+      return { ...base, ...(comment.createdAt ? { askedAt: comment.createdAt } : {}), source: 'structured', decisions, ...withBackground(false), details: readable(comment.body) };
     }
   }
 
@@ -105,7 +176,8 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
       ...base,
       ...(comment.createdAt ? { askedAt: comment.createdAt } : {}),
       source: 'legacy',
-      decisions: [{ id: 'open-question', question, ...(observed ? { context: observed } : {}), options: [] }],
+      decisions: [{ id: 'open-question', question, ...(observed ? { context: observed } : {}), ...investigatorFix() }],
+      ...withBackground(true),
       details: comment.body.trim(),
     };
   }
@@ -113,7 +185,8 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
   return {
     ...base,
     source: 'legacy',
-    decisions: [{ id: 'open-question', question: `${issue.title} is waiting for your decision`, options: [] }],
+    decisions: [{ id: 'open-question', question: `${issue.title} is waiting for your decision`, ...investigatorFix() }],
+    ...withBackground(false),
     details: '',
   };
 }
@@ -152,7 +225,11 @@ export function renderAnswerComment(decisions: DecisionRequest[], body: AnswerDe
     const decision = decisions.find((d) => d.id === answer.decisionId);
     const option = decision?.options.find((o) => o.id === answer.optionId);
     lines.push(`### ${decision?.question ?? answer.decisionId}`);
-    if (option) lines.push(`**Decision:** ${option.label}${option.id === decision?.recommendedOptionId ? ' (recommended path)' : ''}`);
+    if (option) {
+      lines.push(`**Decision:** ${option.label}${option.id === decision?.recommendedOptionId ? ' (recommended path)' : ''}`);
+      // The planner reads this comment, not the card: a chosen path must say what it means.
+      if (option.summary) lines.push('', option.summary.split('\n').map((l) => `> ${l}`).join('\n'));
+    }
     const note = answer.note?.trim();
     if (note) lines.push(option ? '' : '**Decision (own words):**', note.split('\n').map((l) => `> ${l}`).join('\n'));
     lines.push('');
