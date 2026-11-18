@@ -48,7 +48,7 @@ describe('check results never pass on failure or unavailable feed', () => {
     expect(checkResultSchema.safeParse(result({ status: 'unknown', feed: 'unavailable' })).success).toBe(true);
   });
   it('derives statuses from the policy', () => {
-    const p = checkProviderConfigSchema.parse(cfg([check()])).checks[0].policy;
+    const p = checkProviderConfigSchema.parse(cfg([check()])).checks[0]!.policy;
     const base = { execution: 'completed' as const, feed: 'fresh' as const, findingCount: 0, blockingFindingCount: 0, policy: p };
     expect(deriveCheckStatus(base)).toBe('pass');
     expect(deriveCheckStatus({ ...base, feed: 'unavailable' })).toBe('unknown');

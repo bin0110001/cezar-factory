@@ -36,7 +36,7 @@ const providers: Array<{ name: string; make: Make }> = [
 const definition = (provider: string): CheckDefinition => checkProviderConfigSchema.parse({ version: 1, checks: [{
   id: 'sca-main', category: 'sca', provider: { name: provider, version: '1.0.0', digest: DIGEST }, scopes: ['full-repo'], triggers: ['pr-dev'],
   policy: { mandatory: true, timeoutMs: 1000, maxAgeHours: 48 },
-}] }).checks[0];
+}] }).checks[0]!;
 
 async function runFixture(p: { name: string; make: Make }, fx: Fixture) {
   const d = definition(p.name);
@@ -54,14 +54,14 @@ describe.each(providers)('shared fixture suite: $name', (p) => {
     expect(JSON.stringify(o)).not.toContain(PLANTED);
   });
   it('treats a crash and non-JSON as an error, never a pass', async () => {
-    expect((await runFixture(p, { ...fixtures[2], trivy: { exitCode: 2, json: {} }, osv: { exitCode: 2, json: {} } })).o.result.status).toBe('error');
+    expect((await runFixture(p, { ...fixtures[2]!, trivy: { exitCode: 2, json: {} }, osv: { exitCode: 2, json: {} } })).o.result.status).toBe('error');
   });
 });
 
 describe('provider swap by config only', () => {
   it('yields the same status, fingerprints and gate verdicts for either provider', async () => {
     for (const fx of fixtures) {
-      const [a, b] = await Promise.all(providers.map((p) => runFixture(p, fx)));
+      const [a, b] = (await Promise.all(providers.map((p) => runFixture(p, fx)))) as [Awaited<ReturnType<typeof runFixture>>, Awaited<ReturnType<typeof runFixture>>];
       expect(a.o.result.status, fx.name).toBe(b.o.result.status);
       const active = (r: typeof a) => r.o.findings.filter((f) => f.waiver.status === 'none').map((f) => f.fingerprint);
       expect(active(a), fx.name).toEqual(active(b));

@@ -26,9 +26,9 @@ describe('ecosystem detection', () => {
 describe('profiles', () => {
   it('built-in profiles are valid and have unique check ids', () => {
     for (const p of BUILTIN_PROFILES) expect(checkProfileSchema.safeParse(p).success).toBe(true);
-    const dup = { ...BUILTIN_PROFILES[0], checks: [BUILTIN_PROFILES[0].checks[0], BUILTIN_PROFILES[0].checks[0]] };
+    const dup = { ...BUILTIN_PROFILES[0]!, checks: [BUILTIN_PROFILES[0]!.checks[0]!, BUILTIN_PROFILES[0]!.checks[0]!] };
     expect(checkProfileSchema.safeParse(dup).success).toBe(false);
-    expect(checkProfileSchema.safeParse({ ...BUILTIN_PROFILES[0], checks: [{ ...BUILTIN_PROFILES[0].checks[0], tool: '/usr/bin/dotnet' }] }).success).toBe(false); // names, not paths
+    expect(checkProfileSchema.safeParse({ ...BUILTIN_PROFILES[0]!, checks: [{ ...BUILTIN_PROFILES[0]!.checks[0]!, tool: '/usr/bin/dotnet' }] }).success).toBe(false); // names, not paths
   });
 
   it('auto-selects the Factory profile for a .NET/TS/Python repo and the Godot profile for TableFlux-style repos', () => {
@@ -52,7 +52,7 @@ describe('planning', () => {
   });
 
   it('a project lacking a language needs no scanner for it: NOT_APPLICABLE with a reason', () => {
-    const plan = planChecks(BUILTIN_PROFILES[0], detectEcosystems(['web/tsconfig.json', 'web/src/a.ts']), all);
+    const plan = planChecks(BUILTIN_PROFILES[0]!, detectEcosystems(['web/tsconfig.json', 'web/src/a.ts']), all);
     expect(plan.find((c) => c.checkId === 'dotnet-format')).toMatchObject({ action: 'not-applicable', reason: 'ecosystem-absent' });
     expect(plan.find((c) => c.checkId === 'python-lint')?.action).toBe('not-applicable');
     expect(plan.find((c) => c.checkId === 'ts-lint')?.action).toBe('run');
@@ -61,14 +61,14 @@ describe('planning', () => {
   it('a missing tool is NOT_APPLICABLE and distinguishable from a missing language; detection never assumes a path', () => {
     const found = detectEcosystems(godotRepo);
     const asked: string[] = [];
-    const plan = planChecks(BUILTIN_PROFILES[1], found, (name) => { asked.push(name); return false; });
+    const plan = planChecks(BUILTIN_PROFILES[1]!, found, (name) => { asked.push(name); return false; });
     expect(plan[0]).toMatchObject({ action: 'not-applicable', reason: 'tool-missing' });
     expect(asked).toEqual(['godot']);
   });
 });
 
 describe('NOT_APPLICABLE semantics', () => {
-  const plan = planChecks(BUILTIN_PROFILES[1], new Set(['godot']), () => false)[0];
+  const plan = planChecks(BUILTIN_PROFILES[1]!, new Set(['godot']), () => false)[0]!;
 
   it('produces a contract-valid result that is never run, has no findings and carries its reason', () => {
     const r = notApplicableResult(plan, provider);

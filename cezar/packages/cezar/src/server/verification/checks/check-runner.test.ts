@@ -11,7 +11,7 @@ function def(name: string, over: Record<string, unknown> = {}, policy: Record<st
   return checkProviderConfigSchema.parse({ version: 1, checks: [{
     id: `${name}-check`, category: 'sca', provider: { name, version: '1.0.0', digest: DIGEST }, scopes: ['full-repo'], triggers: ['pr-dev'],
     policy: { mandatory: true, timeoutMs: 1000, maxAgeHours: 48, cache: { enabled: true, ttlHours: 24 }, ...policy }, ...over,
-  }] }).checks[0];
+  }] }).checks[0]!;
 }
 
 const sarif = (cve = 'CVE-2021-23337', severity = 'HIGH'): PluginRunOutput => ({
