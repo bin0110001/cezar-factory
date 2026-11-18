@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.190] - 2026-11-18
+
 - Repair-latest-failure runs daily (02:15) instead of hourly, and aborts before fetching run history or handoff when the latest failed run was already attempted or classified operational (`run-already-handled`, zero model calls).
 
 - Candidate validation step (#588): `release_candidate_validator.py` runs the candidate gate for a validating candidate through the stage runner, records one immutable result and moves it to `ready` (tests passed and gate allows) or `repair-required`, with operator pauses returning `held`, fencing enforced by the store, and a failed, missing or unknown result never reported green (`scripts/release/release_candidate_validator.py`).
