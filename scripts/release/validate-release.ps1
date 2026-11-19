@@ -1,12 +1,13 @@
 #!/usr/bin/env pwsh
 [CmdletBinding()]
-param([switch]$SkipTests)
+param([switch]$SkipTests, [switch]$AllowUnreleasedVersion)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $version = (Get-Content -Raw (Join-Path $root 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION is not semver: $version" }
 $changelog = Get-Content -Raw (Join-Path $root 'CHANGELOG.md')
-if ($changelog -notmatch "(?m)^## \[$([regex]::Escape($version))\](?: - \d{4}-\d{2}-\d{2})?$") {
+if ($changelog -notmatch "(?m)^## \[$([regex]::Escape($version))\](?: - \d{4}-\d{2}-\d{2})?$" -and
+    -not ($AllowUnreleasedVersion -and $changelog -match '(?m)^## \[Unreleased\]$')) {
     throw "CHANGELOG.md has no release heading for $version"
 }
 foreach ($path in @('VERSION','CHANGELOG.md','tests/run-tests.ps1','scripts/install.ps1','scripts/update.ps1','scripts/diff.ps1','scripts/verify.ps1')) {

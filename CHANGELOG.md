@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Allow project verification to accept the current dev version under `[Unreleased]`, while keeping numbered release-heading validation strict by default.
+
 ## [0.3.190] - 2026-11-18
 
 - Repair-latest-failure runs daily (02:15) instead of hourly, and aborts before fetching run history or handoff when the latest failed run was already attempted or classified operational (`run-already-handled`, zero model calls).
