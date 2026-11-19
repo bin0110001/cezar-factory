@@ -486,7 +486,13 @@ export function reconstructLabelEvents(
 ): GithubCandidate[] {
   const labelEntries = narrow(timeline, labelTimelineEventSchema);
   const current = new Set(item.labels.map((label) => label.name));
-  const ordered = [...labelEntries].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // GitHub's timeline is chronological. Reverse its original order for a backward label-set
+  // reconstruction too: multiple labels changed by one edit can share a timestamp, and a stable
+  // timestamp-only sort would otherwise replay those tied events in the wrong direction.
+  const ordered = labelEntries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.created_at.localeCompare(a.entry.created_at) || b.index - a.index)
+    .map(({ entry }) => entry);
   const rows: GithubCandidate[] = [];
   for (const entry of ordered) {
     const postLabels = [...current];

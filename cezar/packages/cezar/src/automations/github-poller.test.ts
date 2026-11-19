@@ -158,6 +158,30 @@ describe('GithubPoller', () => {
     expect(rows[0]?.eventId).toContain('issue.unlabeled:9');
   });
 
+  it('reconstructs same-second state-label swaps in reverse timeline order', () => {
+    const timestamp = '2026-07-26T02:00:00.000Z';
+    const rows = reconstructLabelEvents('acme', 'demo', {
+      ...item,
+      labels: [{ name: 'factory:ready' }, { name: 'complexity:medium' }],
+    }, [
+      { id: 1, event: 'unlabeled', created_at: timestamp, label: { name: 'factory:blocked' } },
+      { id: 2, event: 'labeled', created_at: timestamp, label: { name: 'factory:ready' } },
+    ]);
+    const ready = rows.find((row) => row.event === 'issue.labeled' && row.changedLabel === 'factory:ready');
+    expect(ready?.labels).toEqual(expect.arrayContaining(['factory:ready', 'complexity:medium']));
+    expect(ready?.labels).not.toContain('factory:blocked');
+    expect(matchesFilters(ready!, {
+      ...definition,
+      events: ['issue.labeled'],
+      filters: {
+        ...definition.filters,
+        changedLabels: ['factory:ready'],
+        allLabels: ['factory:ready', 'complexity:medium'],
+        excludeLabels: ['factory:blocked'],
+      },
+    })).toBe(true);
+  });
+
   it('reconstructs a submitted review as pull_request.reviewed, carrying the reviewer', () => {
     const rows = reconstructReviewEvents('acme', 'demo', item, [
       { id: 1, event: 'reviewed', submitted_at: '2026-07-26T02:00:00.000Z', user: { login: 'carol' } },
