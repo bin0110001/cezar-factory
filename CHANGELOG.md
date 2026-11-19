@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 - Verification progression policy (#100): `policies/verification-coverage.json` plus `verification_progression.py` judge one baseline-comparison result for iteration, merge and release (release strictest): known debt continues development but can block release, an impacted new/worsened/reopened failure stops every stage, untested/unknown/infra or unknown coverage is never green, and per-stage coverage minimums are enforced and validated for ordering (`docs/verification-dispositions.md`).
+- Graphical session rows, view-only preview and artifact browsing (#719, #219 slice 6): session rows with fail-closed stream freshness, bounded authenticated view-only preview, a separate audited takeover grant that suspends agent input, cursor-paginated permission-scoped artifact listing and download authorization, and a multi-node checkpoint timeline in the run view (schema version 2, additive) (`cezar/packages/cezar/src/server/verification/graphical-session-view.ts`).
+- Operator controls service (#718, #219 slice 5): RBAC from authenticated roles, idempotent audited actions, per-target serialisation with stale-target rejection, and cancel/revoke applied through one state so worker and run views agree (`cezar/packages/cezar/src/server/verification/operator-controls.ts`).
+- Allow project verification to accept the current dev version under `[Unreleased]`, while keeping numbered release-heading validation strict by default.
+
+## [0.3.190] - 2026-11-18
 
 - Repair-latest-failure runs daily (02:15) instead of hourly, and aborts before fetching run history or handoff when the latest failed run was already attempted or classified operational (`run-already-handled`, zero model calls).
 
