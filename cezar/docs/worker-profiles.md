@@ -122,3 +122,27 @@ successful run, permission-scoped artifact links (max 50 visible, hidden count
 reported, no media bytes) and trace ids marked `authoritative: false`.
 
 Still open: HTTP routes/UI, graphical session preview and takeover grants.
+
+## Operator controls (#219, slice 5)
+
+`server/verification/operator-controls.ts` binds the `OperatorActionGuard` to the
+controller. Actor and permissions come from the authenticated principal
+(`viewer`, `operator`, `admin` roles mapped to permissions server-side; unknown
+roles grant nothing); permissions in a request body are ignored. Request and
+response payloads carry `schemaVersion: 1`.
+
+- Actions: enroll-link, revoke, drain, undrain, quarantine, cancel,
+  retry (infra-failure/canceled partitions only, outcome read server-side),
+  set-profile and schedule-dry-run (read-only explanation).
+- Idempotency: the same key from the same actor for the same action and target
+  applies once and returns `replayed: true`; reuse for anything else is `invalid`.
+- Denied, rejected and replayed requests are all audited; reasons are redacted
+  (no secrets or host paths).
+- Concurrency: actions on one target are serialised in arrival order, and an
+  optional `expectedVersion` rejects stale targets (`invalid`, audited, not cached).
+- Cancel/revoke mutate the partition state that both the worker read model
+  and the run verification view project, so the two views agree on status and
+  lease release. A newly enrolled worker is `unknown`, never healthy.
+- Limitation: idempotency and audit are bounded in-memory (default 10 000
+  entries) and are lost on restart. HTTP routes and UI controls are not yet
+  mounted; this service is the contract they will call.

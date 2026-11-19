@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Operator controls service (#718, #219 slice 5): RBAC from authenticated roles, idempotent audited actions, per-target serialisation with stale-target rejection, and cancel/revoke applied through one state so worker and run views agree (`cezar/packages/cezar/src/server/verification/operator-controls.ts`).
 - Allow project verification to accept the current dev version under `[Unreleased]`, while keeping numbered release-heading validation strict by default.
 
 ## [0.3.190] - 2026-11-18
