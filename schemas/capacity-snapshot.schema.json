@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Capacity snapshot",
-  "description": "Minimal local schema; align with the subscription profile schema (#89) when it lands.",
+  "description": "One window snapshot; field names align with windows in schemas/subscription-profile.schema.json (#89).",
   "type": "object",
   "required": ["provider", "window", "source", "confidence", "freshness", "timestamp", "resetAt", "error"],
   "properties": {
