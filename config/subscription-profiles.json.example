@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "profiles": [
+    {
+      "id": "claude-personal",
+      "provider": "claude",
+      "accountLabel": "Personal Max",
+      "adapters": ["claude-code"],
+      "enabled": true,
+      "maxConcurrency": 3,
+      "allowedModelIds": ["claude-opus-5-5", "claude-sonnet-5-5"],
+      "credentialRef": "credstore:claude/personal",
+      "windows": [
+        {"name": "5h", "kind": "rolling", "durationSeconds": 18000, "resetAt": "2026-11-18T15:00:00Z", "unit": "messages", "limit": 200, "remaining": 120, "confidence": "estimated", "source": "manual", "observedAt": "2026-11-18T12:00:00Z", "stalenessSeconds": 900},
+        {"name": "weekly", "kind": "fixed", "durationSeconds": 604800, "resetAt": "2026-11-23T00:00:00Z", "unit": "messages", "limit": 2000, "remaining": 1500, "confidence": "estimated", "source": "manual", "observedAt": "2026-11-18T12:00:00Z", "stalenessSeconds": 3600}
+      ]
+    },
+    {
+      "id": "claude-work",
+      "provider": "claude",
+      "accountLabel": "Work Pro",
+      "adapters": ["claude-code", "cezar"],
+      "enabled": true,
+      "maxConcurrency": 1,
+      "allowedModelIds": ["claude-sonnet-5-5", "claude-haiku-5-5"],
+      "credentialRef": "credstore:claude/work",
+      "windows": [
+        {"name": "5h", "kind": "rolling", "durationSeconds": 18000, "resetAt": "2026-11-18T14:00:00Z", "unit": "messages", "limit": 45, "remaining": 4, "confidence": "estimated", "source": "observed", "observedAt": "2026-11-18T12:00:00Z", "stalenessSeconds": 600}
+      ]
+    }
+  ]
+}

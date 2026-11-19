@@ -2,8 +2,8 @@
 
 `scripts/capacity/capacity_telemetry.py` gives the UI and scheduler one consistent capacity
 snapshot per provider and window (`5h`, `weekly`; schema: `schemas/capacity-snapshot.schema.json`).
-Consumers: #88, #91-#94. The profile/window schema itself belongs to #89; this is a minimal local
-schema to be aligned when it lands.
+Consumers: #88, #91-#94. The profile/window schema is defined in `docs/subscription-profiles.md`
+(`schemas/subscription-profile.schema.json`); a snapshot field set matches one profile window.
 
 ## Sources and honesty rules
 

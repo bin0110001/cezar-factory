@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Subscription profiles",
+  "description": "Subscription accounts and their independent capacity windows. Secrets are never stored: credentialRef is an opaque reference into the existing credential store.",
+  "type": "object",
+  "required": ["schemaVersion", "profiles"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "profiles": {"type": "array", "items": {"$ref": "#/definitions/profile"}}
+  },
+  "definitions": {
+    "window": {
+      "type": "object",
+      "required": ["name", "kind", "durationSeconds", "resetAt", "unit", "limit", "remaining", "confidence", "source", "observedAt", "stalenessSeconds"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["rolling", "fixed"]},
+        "durationSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "resetAt": {"type": ["string", "null"]},
+        "unit": {"type": ["string", "null"]},
+        "limit": {"type": ["number", "null"], "minimum": 0},
+        "remaining": {"type": ["number", "null"], "minimum": 0},
+        "confidence": {"enum": ["exact", "estimated", "unknown"]},
+        "source": {"enum": ["native", "manual", "observed", "unsupported"]},
+        "observedAt": {"type": ["string", "null"]},
+        "stalenessSeconds": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "required": ["id", "provider", "accountLabel", "adapters", "enabled", "maxConcurrency", "allowedModelIds", "credentialRef", "windows"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "accountLabel": {"type": "string", "minLength": 1},
+        "adapters": {"type": "array", "items": {"type": "string"}},
+        "enabled": {"type": "boolean"},
+        "maxConcurrency": {"type": "integer", "minimum": 1},
+        "allowedModelIds": {"type": "array", "items": {"type": "string"}},
+        "credentialRef": {"type": "string", "minLength": 1, "description": "Opaque credential-store reference; never the secret."},
+        "windows": {"type": "array", "items": {"$ref": "#/definitions/window"}}
+      }
+    },
+    "apiBillingUsage": {
+      "description": "API billing is a separate type and never counts as subscription usage.",
+      "type": "object",
+      "required": ["type", "provider", "amount", "currency"],
+      "properties": {
+        "type": {"const": "apiBilling"},
+        "provider": {"type": "string"},
+        "amount": {"type": "number", "minimum": 0},
+        "currency": {"type": "string"},
+        "period": {"type": ["string", "null"]}
+      }
+    },
+    "state": {"enum": ["unknown", "available", "constrained", "exhausted", "stale", "disabled"]}
+  }
+}
