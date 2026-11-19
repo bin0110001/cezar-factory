@@ -94,6 +94,7 @@ function Test-Decisions($decisions) {
         elseif ($seen -contains $d.id) { $errors.Add("decisions[$i].id duplicates an earlier decision") }
         else { $seen += $d.id }
         if (Blank $d.question) { $errors.Add("decisions[$i].question is required") }
+        if (Blank $d.context) { $errors.Add("decisions[$i].context must explain the relevant facts and why a decision is needed") }
         $options = @($d.options)
         if ($d.options -isnot [array] -or $options.Count -lt 2) { $errors.Add("decisions[$i].options needs at least two suggested paths"); continue }
         $optionIds = @()
@@ -104,8 +105,9 @@ function Test-Decisions($decisions) {
             elseif ($optionIds -contains $o.id) { $errors.Add("decisions[$i].options[$j].id duplicates an earlier option") }
             else { $optionIds += $o.id }
             if (Blank $o.label) { $errors.Add("decisions[$i].options[$j].label is required") }
+            if (Blank $o.summary) { $errors.Add("decisions[$i].options[$j].summary must explain what choosing this path means") }
         }
-        if ($d.ContainsKey('recommendedOptionId') -and $optionIds -notcontains $d.recommendedOptionId) { $errors.Add("decisions[$i].recommendedOptionId does not match any option id") }
+        if (-not $d.ContainsKey('recommendedOptionId') -or $optionIds -notcontains $d.recommendedOptionId) { $errors.Add("decisions[$i].recommendedOptionId must match an option id") }
     }
 }
 if (-not $errors.Count -and $result.ContainsKey('decisions') -and $Kind -in 'intake', 'plan', 'investigation') { Test-Decisions $result.decisions }
@@ -115,8 +117,10 @@ if (-not $errors.Count) {
         'intake' {
             # A genuine unanswered question is a valid intake outcome; the router
             # sends it to factory:needs-help instead of silently planning it.
+            if (-not (Blank $result.unresolvedQuestions) -and -not @($result.decisions | Where-Object { $_ }).Count) { $errors.Add('unresolvedQuestions requires structured decisions with context, options, and a recommendation') }
         }
         'plan' {
+            if ($result.readyNotReadyStatus -eq 'not-ready' -and -not @($result.decisions | Where-Object { $_ }).Count) { $errors.Add('not-ready plans require structured decisions with context, options, and a recommendation') }
             if ($result.readyNotReadyStatus -eq 'decomposed') {
                 $policies = Join-Path $SchemaDir '../policies'
                 $labelText = Get-Content -Raw (Join-Path $policies 'labels.yaml')

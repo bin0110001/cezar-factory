@@ -1352,6 +1352,7 @@ try {
     $plan = @{ issue = 7; objective = 'o'; acceptanceCriteria = 'a'; nonGoals = 'n'; risks = 'r'; dependencies = 'd'; suggestedWorkBreakdown = '1. do'; requiredProjectSkills = @('s'); unresolvedQuestions = ''; complexity = 'complexity:medium'; readyNotReadyStatus = 'ready' }
     $intake = @{ issue = 7; type = 'type:bug'; risk = 'risk:low'; summary = 'clear bug'; unresolvedQuestions = '' }
     Assert 'validate: good intake passes' ((Test-Validate 'intake' $intake) -eq 0)
+    Assert 'validate: intake questions require a structured recommendation' ((Test-Validate 'intake' (With $intake @{ unresolvedQuestions = 'Which source?'})) -ne 0)
     Set-Gh @('factory:new')
     $selectorState = @{
         labels = @(); comments = @();
@@ -1392,16 +1393,18 @@ try {
     Set-Gh @('factory:new')
     Assert 'route: intake -> needs-plan' ((Invoke-Route 'intake-result' $intake) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -contains 'type:bug' -and (Get-Gh).labels -contains 'risk:low')
     Set-Gh @('factory:new')
-    Assert 'route: intake question -> needs-help' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    $intakeDecision = @{ id = 'data-source'; question = 'Which data source is authoritative?'; context = 'The issue references two competing stores.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Use the shared registry.' }, @{ id = 'database'; label = 'Database'; summary = 'Use the project database.' }) }
+    Assert 'route: intake question -> needs-help with complete decision' ((Invoke-Route 'intake-result' (With $intake @{ unresolvedQuestions = 'Which data source is authoritative?'; decisions = @($intakeDecision) })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     Assert 'validate: good plan passes' ((Test-Validate 'plan' $plan) -eq 0)
     $memoryPlan = With $plan @{ memoryRecall = @{ banksQueried = @('project-7'); memoryIds = @('m1'); memoryCount = 1; contextChars = 4200 } }
     Assert 'validate: bounded memory recall passes' ((Test-Validate 'plan' $memoryPlan) -eq 0)
     Assert 'validate: ready plan with open questions fails' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'which db?' })) -ne 0)
     $bad = $plan.Clone(); $bad.Remove('issue')
     Assert 'validate: missing issue fails' ((Test-Validate 'plan' $bad) -ne 0)
-    Assert 'validate: not-ready plan with questions passes' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -eq 0)
-    $decisionPlan = With $plan @{ unresolvedQuestions = 'Where should state live?'; readyNotReadyStatus = 'not-ready'; decisions = @(@{ id = 'state-owner'; question = 'Where should state live?'; context = 'Two stores exist --> pick one.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Shared'; tradeoffs = 'Migration' }, @{ id = 'local'; label = 'Local file' }) }) }
+    Assert 'validate: not-ready plan without structured decisions fails' ((Test-Validate 'plan' (With $plan @{ unresolvedQuestions = 'q'; readyNotReadyStatus = 'not-ready' })) -ne 0)
+    $decisionPlan = With $plan @{ unresolvedQuestions = 'Where should state live?'; readyNotReadyStatus = 'not-ready'; decisions = @(@{ id = 'state-owner'; question = 'Where should state live?'; context = 'Two stores exist --> pick one.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Shared'; tradeoffs = 'Migration' }, @{ id = 'local'; label = 'Local file'; summary = 'Keep data local.' }) }) }
     Assert 'validate: structured decisions pass' ((Test-Validate 'plan' $decisionPlan) -eq 0)
+    Assert 'validate: decision without context fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; recommendedOptionId = 'a'; options = @(@{ id = 'a'; label = 'A'; summary = 'Choose A' }, @{ id = 'b'; label = 'B'; summary = 'Choose B' }) }) })) -ne 0)
     Assert 'validate: a plan that is not ready must say what has to be answered' ((Test-Validate 'plan' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = '' })) -ne 0 -and (Test-Validate 'plan' $decisionPlan) -eq 0)
     Assert 'validate: decision with one option fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }) }) })) -ne 0)
     Assert 'validate: decision with unknown recommendation fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'x'; question = 'q'; recommendedOptionId = 'zzz'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
@@ -1568,7 +1571,7 @@ try {
     Set-Gh @('factory:needs-plan', 'risk:high')
     Assert 'route: risk:high plan proceeds without user approval' ((Invoke-Route 'plan-result' $plan) -eq 0 -and (Get-Gh).labels -contains 'factory:ready' -and (Get-Gh).labels -notcontains 'factory:needs-help')
     Set-Gh @('factory:needs-plan')
-    Assert 'route: not-ready -> needs-help' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
+    Assert 'route: not-ready plan without decision is refused' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -ne 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:needs-plan')
     Assert 'route: structured decision -> needs-help' ((Invoke-Route 'plan-result' $decisionPlan) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help')
     $decisionBody = @((Get-Gh).comments | Where-Object { $_ -match 'factory-decision:v1' })[0]
@@ -1577,7 +1580,7 @@ try {
     Assert 'route: decision marker cannot be closed by agent text' ($decisionBody -match 'pick one' -and $decisionBody -match '<!-- factory-decision:v1 ((?:(?!-->).)+) -->' -and $decisionJson.decisions[0].context -eq 'Two stores exist --> pick one.')
     Assert 'route: decision comment is readable on GitHub' ($decisionBody -match 'Suggested paths' -and $decisionBody -match 'recommended')
     Set-Gh @('factory:needs-plan')
-    Assert 'route: plain not-ready posts no decision marker' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -eq 0 -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-decision:v1' }).Count -eq 0)
+    Assert 'route: plain not-ready is refused before creating a blank decision' ((Invoke-Route 'plan-result' (With $plan @{ readyNotReadyStatus = 'not-ready'; unresolvedQuestions = 'q' })) -ne 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and @((Get-Gh).comments | Where-Object { $_ -match 'factory-decision:v1' }).Count -eq 0)
     Set-Gh @('factory:review')
     Assert 'route: plan-result from wrong state refused' ((Invoke-Route 'plan-result' $plan) -ne 0)
     Assert 'route: wrong-state refusal leaves labels alone' (((Get-Gh).labels -join ',') -eq 'factory:review')
@@ -1657,7 +1660,7 @@ try {
     Set-Gh @('factory:investigate')
     Assert 'route: low-confidence investigation re-plans automatically' ((Invoke-Route 'investigate-result' (With $inv @{ confidence = 'low' })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan')
     Set-Gh @('factory:investigate')
-    $architectureDecision = @(@{ id = 'state-owner'; question = 'Where should state live?'; options = @(@{ id = 'registry'; label = 'Registry' }, @{ id = 'ledger'; label = 'Ledger' }) })
+    $architectureDecision = @(@{ id = 'state-owner'; question = 'Where should state live?'; context = 'Two stores exist.'; recommendedOptionId = 'registry'; options = @(@{ id = 'registry'; label = 'Registry'; summary = 'Use the registry.' }, @{ id = 'ledger'; label = 'Ledger'; summary = 'Use the ledger.' }) })
     Assert 'route: major architecture investigation with a stated decision requests user input' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false; decisions = $architectureDecision })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-help' -and @((Get-Gh).comments | Where-Object { $_ -match 'Where should state live' }).Count -ge 1)
     Set-Gh @('factory:investigate')
     Assert 'route: an architecture classification that states no decision is re-planned, not parked with nothing to answer' ((Invoke-Route 'investigate-result' (With $inv @{ failureClassification = 'architecture'; automaticRetryAppropriate = $false })) -eq 0 -and (Get-Gh).labels -contains 'factory:needs-plan' -and (Get-Gh).labels -notcontains 'factory:needs-help' -and @((Get-Gh).comments | Where-Object { $_ -match 'stated no decision to make' }).Count -eq 1)

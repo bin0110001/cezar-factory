@@ -17,7 +17,7 @@ const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
 export const decisionOptionSchema = z.object({
   id: slug,
   label: z.string().min(1),
-  summary: z.string().optional(),
+  summary: z.string().min(1).optional(),
   tradeoffs: z.string().optional(),
 });
 export type DecisionOption = z.infer<typeof decisionOptionSchema>;
@@ -25,10 +25,10 @@ export type DecisionOption = z.infer<typeof decisionOptionSchema>;
 export const decisionRequestSchema = z.object({
   id: z.string().min(1).max(40),
   question: z.string().min(1),
-  context: z.string().optional(),
-  options: z.array(decisionOptionSchema),
-  recommendedOptionId: z.string().optional(),
-});
+  context: z.string().trim().min(1),
+  options: z.array(decisionOptionSchema).min(2),
+  recommendedOptionId: z.string().min(1),
+}).refine((d) => d.options.some((o) => o.id === d.recommendedOptionId), { message: 'recommendedOptionId must match an option' });
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
 
 /**

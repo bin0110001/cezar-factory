@@ -31,16 +31,15 @@ nothing is written.
 Above the questions, **What the Factory found** lists the context the agent had when it
 stopped: the newest investigation's root cause and recommended action, and, on older
 free-text escalations, the current hypothesis, attempts made and the Factory's recommended
-next step. When an investigation named a fix, an escalation that carries no paths of its
-own still offers it as **Apply the investigator's recommended fix** (marked recommended).
-It is a starting point, not a verdict: nothing is preselected, and you can answer in your
-own words instead. An issue that keeps failing without converging asks a structured
-question (narrow the scope, split into smaller issues, or the investigator's fix) rather
-than a bare "decide something".
+next step. Legacy issues without a structured marker still receive a complete card: the
+issue body and escalation comments supply context, and the card includes a recommended next
+step plus a free-text alternative. New requests cannot be routed to a person without
+context, explained options, and a recommendation. An issue that keeps failing without
+converging asks a structured question rather than a bare "decide something".
 
 ## Decision request format
 
-Agents ask with the optional `decisions` array on an intake, plan or investigation result
+Agents ask with the `decisions` array on an intake, plan or investigation result
 (`schemas/decision.schema.json`, checked by `validate-result.ps1`):
 
 | Field | Meaning |
@@ -48,14 +47,14 @@ Agents ask with the optional `decisions` array on an intake, plan or investigati
 | `id` | Stable lowercase slug, unique within the issue. |
 | `question` | One focused question. |
 | `context` | Observed problem and evidence (Markdown). |
-| `options[]` | At least two paths: `id`, `label`, `summary`, `tradeoffs`. |
-| `recommendedOptionId` | The path the agent recommends. |
+| `options[]` | At least two paths, each with `id`, `label`, and a meaningful `summary`; include `tradeoffs`. |
+| `recommendedOptionId` | The recommended path, which must match an option. Explain why it is preferred and its key tradeoff in the context. |
 
 `unresolvedQuestions` stays as the human-readable summary. The router posts a readable
 "Factory decision needed" comment carrying a `<!-- factory-decision:v1 {...} -->` marker
 (with `<` and `>` escaped so text cannot close the comment). The answer is recorded as a
-`factory-decision-answer:v1` comment. Escalations without the marker (older issues, or
-results with only `unresolvedQuestions`) still appear, as one open question answered in free text.
+`factory-decision-answer:v1` comment. Older escalations without a marker are expanded from
+the issue body and comments so the user sees a contextual recommended next step.
 
 ## What should not use `factory:needs-help`
 
