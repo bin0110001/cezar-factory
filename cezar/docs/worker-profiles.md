@@ -121,4 +121,25 @@ passing runs only (`regression` stays `unknown` below 3 samples), the last
 successful run, permission-scoped artifact links (max 50 visible, hidden count
 reported, no media bytes) and trace ids marked `authoritative: false`.
 
-Still open: HTTP routes/UI, graphical session preview and takeover grants.
+Still open: HTTP routes/UI (graphical sessions: see the next section).
+
+## Graphical sessions, preview and artifacts (#219, sixth slice)
+
+`server/verification/graphical-session-view.ts` adds pure projections and guards (no
+streaming transport, store or media bytes; live streaming stays with #108/#127/#128/#135):
+
+- **Session rows**: display/renderer/browser fingerprint (host paths and secrets redacted),
+  run/attempt/scenario/role, owner, state, reserved resources, startup duration and last frame.
+  `stream` is `live` only with a fresh frame from a running, connected session; otherwise
+  `stale` or `unknown`, never healthy.
+- **Preview**: opt-in (`preview:view`), authenticated, always `view-only`, FPS and bandwidth
+  clamped to `PREVIEW_LIMITS`; unavailable unless the stream is live.
+- **Takeover**: `TakeoverGuard` requires the distinct `takeover:grant` permission plus an
+  unexpired grant bound to the actor and session. Agent input is suspended while active;
+  request, deny, grant, suspend, release, resume and expire are each audited (#329).
+- **Artifact browsing**: `listArtifacts` is cursor-paginated (max 50), permission-scoped,
+  retention-aware and name-redacted; `authorizeDownload` returns only an id for the canonical
+  artifact layer. Out-of-scope artifacts report `forbidden` or `not-found`.
+- **Checkpoints**: the run view (schema version 2, additive) carries a per-node checkpoint
+  timeline marking `missing` and `disconnected` captures, with warnings. Runs without
+  checkpoints get an empty list; everything else is unchanged.
