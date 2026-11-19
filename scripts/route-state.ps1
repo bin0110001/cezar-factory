@@ -227,6 +227,7 @@ function Done([string]$To, [string]$Note = '') {
 switch ($Event) {
     'intake-result' {
         Assert-Source (Get-EventSources 'intake-result')
+        if (-not [string]::IsNullOrWhiteSpace([string]$result.unresolvedQuestions) -and -not (New-DecisionComment $result)) { throw 'Intake has unresolved questions but no complete structured decisions; refusing to create a blank decision request.' }
         Set-Classification ([string]$result.type) ([string]$result.risk)
         Add-Comment "## Factory intake`n`n$(Text $result.summary)`n`n**Type:** $($result.type)`n**Risk:** $($result.risk)"
         if (-not [string]::IsNullOrWhiteSpace([string]$result.unresolvedQuestions)) {
@@ -249,6 +250,7 @@ switch ($Event) {
     }
     'plan-result' {
         Assert-Source (Get-EventSources 'plan-result')
+        if ($result.readyNotReadyStatus -eq 'not-ready' -and -not (New-DecisionComment $result)) { throw 'Plan is not ready but has no complete structured decisions; refusing to create a blank decision request.' }
         Set-Complexity $result.complexity
         $plan = "## Factory plan`n`n**Objective**`n$(Text $result.objective)`n`n**Acceptance criteria**`n$(Text $result.acceptanceCriteria)`n`n**Non-goals**`n$(Text $result.nonGoals)`n`n**Risks**`n$(Text $result.risks)`n`n**Dependencies**`n$(Text $result.dependencies)`n`n**Work breakdown**`n$(Text $result.suggestedWorkBreakdown)`n`n**Project skills**`n$(Text $result.requiredProjectSkills)"
         if ($result.readyNotReadyStatus -eq 'decomposed') {

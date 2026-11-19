@@ -59,6 +59,7 @@ Use the following classification framework:
   - Retry implementation (only for implementation failures with clear fixes).
   - Investigate further (for environment, dependency, or unknown causes).
   - Request a user decision only for a major architectural choice.
+  When requesting one, include a `decisions` entry with evidence-backed context, at least two explained options, and a matching recommended option. State why that path is recommended and its key tradeoff; the workflow validates this before routing to a person.
   - Describe environment or dependency failures with concrete evidence. The
     investigation result alone cannot establish an external blocker; unless a
     deterministic operational gate or operator confirms one, recommend an

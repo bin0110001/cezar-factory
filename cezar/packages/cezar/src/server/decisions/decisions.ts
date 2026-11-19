@@ -34,6 +34,7 @@ interface IssueComment { body: string; createdAt?: string }
 interface RawIssue {
   number: number;
   title: string;
+  body?: string;
   url: string;
   state?: string;
   updatedAt?: string;
@@ -99,8 +100,6 @@ function boldSections(rawBody: string): Map<string, string> {
 /** A pointer like "(see the plan above)" tells a reader nothing on a screen that hides the thread. */
 const isPointer = (text: string) => /^\(see\b[^)]*\)\.?$/i.test(text.trim());
 
-const INVESTIGATOR_FIX = 'investigator-fix';
-
 /** The newest comment that starts with `heading`, folded into its sections; null when there is none. */
 function latestSections(comments: IssueComment[], heading: string): Map<string, string> | null {
   for (let i = comments.length - 1; i >= 0; i--) {
@@ -139,7 +138,7 @@ function firstLine(text: string): string {
   return line.length > 300 ? `${line.slice(0, 297)}...` : line;
 }
 
-/** Fold one issue's comments into the decision the user is being asked to make. */
+/** Fold one issue's body and comments into an answerable decision. */
 export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state']): DecisionItem {
   const comments = issue.comments ?? [];
   const labels = (issue.labels ?? []).map((l) => l.name);
@@ -148,22 +147,50 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
     const background = backgroundFor(comments, includeEscalation);
     return background.length > 0 ? { background } : {};
   };
-  // A legacy ask has no paths of its own, but a completed investigation names a fix: offer it as
-  // the starting point (the user can still answer in their own words beside it).
-  const investigatorFix = (): Pick<DecisionRequest, 'options' | 'recommendedOptionId'> => {
-    const action = latestSections(comments, '## Factory investigation')?.get('Recommended action');
-    if (!action || isPointer(action)) return { options: [] };
+  const fallbackContext = () => {
+    const observed = [...comments].reverse().find((c) => c.body.includes('## Factory escalation'));
+    const investigation = latestSections(comments, '## Factory investigation');
+    const parts = [
+      issue.body?.trim(),
+      observed ? legacyObserved(observed.body) : undefined,
+      investigation?.get('Root cause'),
+      investigation?.get('Recommended action'),
+    ].filter((v): v is string => Boolean(v && !isPointer(v)));
+    return parts.join('\n\n');
+  };
+  const completeLegacy = (question: string, context: string, recommendation?: string): DecisionRequest => {
+    const title = (issue.title ?? '').toLowerCase();
+    const body = issue.body ?? '';
+    const recommended = recommendation?.trim() || (title.includes('[promotion]') && title.includes('blocked')
+      ? `Keep the promotion gate in place. Satisfy the missing prerequisite identified in the issue details (including the required review/self-review evidence and merged PR, when cited), then rerun validation for this exact candidate. Do not bypass the gate.`
+      : title.includes('[promotion]') && title.includes('circuit breaker')
+        ? 'Keep automatic promotion paused. Investigate and repair the latest quarantined failure, validate the repaired candidate, and reset the breaker only after the evidence shows it is safe.'
+        : body.toLowerCase().includes('self-review') && body.toLowerCase().includes('merged pr')
+          ? 'Complete and record the required self-review, merge the PR for this change to dev, then let the normal validation gate retry.'
+          : 'Keep the issue blocked until the missing facts are reviewed and the safe next step is clear.');
     return {
-      options: [{ id: INVESTIGATOR_FIX, label: 'Apply the investigator’s recommended fix', summary: action }],
-      recommendedOptionId: INVESTIGATOR_FIX,
+      id: 'open-question', question,
+      context: context || `The issue “${issue.title}” is waiting for a decision. Review the issue details and linked evidence before choosing a path.`,
+      options: [
+        { id: 'recommended-next-step', label: 'Follow the recommended next step', summary: recommended },
+        { id: 'provide-direction', label: 'Provide a different direction', summary: 'Use the answer field to explain the preferred path and any constraints.' },
+      ],
+      recommendedOptionId: 'recommended-next-step',
     };
   };
-
+  // A legacy ask has no paths of its own, but a completed investigation names a fix: offer it as
+  // the starting point (the user can still answer in their own words beside it).
   for (let i = comments.length - 1; i >= 0; i--) {
     const comment = comments[i]!;
     const decisions = parseDecisionMarker(comment.body);
     if (decisions) {
-      return { ...base, ...(comment.createdAt ? { askedAt: comment.createdAt } : {}), source: 'structured', decisions, ...withBackground(false), details: readable(comment.body) };
+      const context = fallbackContext();
+      const complete = decisions.map((d) => ({
+        ...d,
+        context: d.context?.trim() || context || `Issue #${issue.number}: ${issue.title}. Review the issue details and linked evidence before choosing a path.`,
+        recommendedOptionId: d.recommendedOptionId || d.options[0]?.id || 'recommended-next-step',
+      }));
+      return { ...base, ...(comment.createdAt ? { askedAt: comment.createdAt } : {}), source: 'structured', decisions: complete, ...withBackground(false), details: readable(comment.body) };
     }
   }
 
@@ -176,7 +203,7 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
       ...base,
       ...(comment.createdAt ? { askedAt: comment.createdAt } : {}),
       source: 'legacy',
-      decisions: [{ id: 'open-question', question, ...(observed ? { context: observed } : {}), ...investigatorFix() }],
+      decisions: [completeLegacy(question, fallbackContext(), latestSections(comments, '## Factory escalation')?.get('Recommended next step / major architectural decision') ?? latestSections(comments, '## Factory investigation')?.get('Recommended action'))],
       ...withBackground(true),
       details: comment.body.trim(),
     };
@@ -185,13 +212,13 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
   return {
     ...base,
     source: 'legacy',
-    decisions: [{ id: 'open-question', question: `${issue.title} is waiting for your decision`, ...investigatorFix() }],
+    decisions: [completeLegacy(`${issue.title} is waiting for your decision`, fallbackContext(), latestSections(comments, '## Factory investigation')?.get('Recommended action'))],
     ...withBackground(false),
     details: '',
   };
 }
 
-const LIST_FIELDS = 'number,title,url,updatedAt,labels,comments';
+const LIST_FIELDS = 'number,title,body,url,updatedAt,labels,comments';
 
 /** Every open issue parked for a user decision, oldest ask first. */
 export async function listDecisions(gh: GhRunner): Promise<DecisionsResponse> {
@@ -246,7 +273,7 @@ export function renderAnswerComment(decisions: DecisionRequest[], body: AnswerDe
 export async function answerDecision(gh: GhRunner, number: number, body: AnswerDecisionBody): Promise<AnswerOutcome> {
   let issue: RawIssue;
   try {
-    issue = JSON.parse(await gh(['issue', 'view', String(number), '--json', 'number,state,labels,comments'])) as RawIssue;
+    issue = JSON.parse(await gh(['issue', 'view', String(number), '--json', 'number,title,body,url,state,labels,comments'])) as RawIssue;
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     return /could not resolve|not found|no issue/i.test(message)
@@ -257,7 +284,7 @@ export async function answerDecision(gh: GhRunner, number: number, body: AnswerD
   const parked = (issue.labels ?? []).map((l) => l.name).filter((l) => (DECISION_STATES as readonly string[]).includes(l));
   if (parked.length === 0) return { ok: false, status: 409, message: `Issue #${number} is no longer waiting for a decision` };
 
-  const item = buildDecisionItem({ ...issue, title: '', url: '' }, parked[0] as DecisionItem['state']);
+  const item = buildDecisionItem(issue, parked[0] as DecisionItem['state']);
   for (const answer of body.answers) {
     const decision = item.decisions.find((d) => d.id === answer.decisionId);
     if (!decision) return { ok: false, status: 400, message: `Unknown decision "${answer.decisionId}"` };

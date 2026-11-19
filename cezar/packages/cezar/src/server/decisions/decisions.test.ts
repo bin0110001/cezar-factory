@@ -18,7 +18,7 @@ const ask = {
     recommendedOptionId: 'registry',
     options: [
       { id: 'registry', label: 'Shared registry', summary: 'One owner', tradeoffs: 'Needs a migration' },
-      { id: 'local', label: 'Per-project file' },
+      { id: 'local', label: 'Per-project file', summary: 'Keep state in each project.' },
     ],
   }],
 };
@@ -48,7 +48,7 @@ describe('parseDecisionMarker', () => {
 
 describe('buildDecisionItem', () => {
   it('prefers the newest structured ask and hides the machine marker from details', () => {
-    const older = { createdAt: '2026-10-30T00:00:00Z', body: marker({ version: 1, decisions: [{ id: 'old', question: 'old?', options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }] }) };
+    const older = { createdAt: '2026-10-30T00:00:00Z', body: marker({ version: 1, decisions: [{ id: 'old', question: 'old?', context: 'Context', recommendedOptionId: 'a', options: [{ id: 'a', label: 'A', summary: 'Choose A' }, { id: 'b', label: 'B', summary: 'Choose B' }] }] }) };
     const item = buildDecisionItem(issue({ comments: [older, structuredComment()] }), 'factory:needs-help');
     expect(item.source).toBe('structured');
     expect(item.decisions.map((d) => d.id)).toEqual(['state-owner']);
@@ -57,11 +57,11 @@ describe('buildDecisionItem', () => {
     expect(item.details).not.toContain('factory-decision:v1');
   });
 
-  it('degrades a legacy escalation to one open question with no options', () => {
+  it('turns a legacy escalation into a contextual, recommended choice', () => {
     const item = buildDecisionItem(issue({ comments: [legacyComment] }), 'factory:needs-help');
     expect(item.source).toBe('legacy');
     expect(item.decisions).toHaveLength(1);
-    expect(item.decisions[0]).toMatchObject({ id: 'open-question', question: 'Which data source is authoritative?', options: [] });
+    expect(item.decisions[0]).toMatchObject({ id: 'open-question', question: 'Which data source is authoritative?', recommendedOptionId: 'recommended-next-step', options: [{ id: 'recommended-next-step' }, { id: 'provide-direction' }] });
     expect(item.decisions[0]?.context).toContain('billing');
   });
 
@@ -89,10 +89,10 @@ describe('buildDecisionItem', () => {
     expect(item.background?.find((b) => b.label === 'Investigator’s root cause')?.text).toBe('The fixture is stale.');
   });
 
-  it('offers the investigator’s recommended action as the starting-point path on a legacy ask', () => {
+  it('offers and recommends the escalation action on a legacy ask', () => {
     const item = buildDecisionItem(issue({ comments: [investigation('Regenerate the fixture.'), fullEscalation] }), 'factory:needs-help');
-    expect(item.decisions[0]?.options).toEqual([{ id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' }]);
-    expect(item.decisions[0]?.recommendedOptionId).toBe('investigator-fix');
+    expect(item.decisions[0]?.options[0]?.summary).toBe('Decide one: narrow, split or close.');
+    expect(item.decisions[0]?.recommendedOptionId).toBe('recommended-next-step');
   });
 
   it('leaves a structured ask’s own paths alone and adds only investigation background', () => {
@@ -111,6 +111,21 @@ describe('buildDecisionItem', () => {
     const item = buildDecisionItem(issue(), 'factory:human-review');
     expect(item).toMatchObject({ source: 'legacy', state: 'factory:human-review' });
     expect(item.decisions[0]?.question).toContain('Pick storage');
+    expect(item.decisions[0]?.context).toContain('Review the issue details');
+    expect(item.decisions[0]?.recommendedOptionId).toBe('recommended-next-step');
+  });
+
+  it('uses the issue body as decision context for older issues', () => {
+    const item = buildDecisionItem(issue({ body: 'Blocked because PR #724 has no review record.' }), 'factory:needs-help');
+    expect(item.decisions[0]?.context).toContain('PR #724');
+    expect(item.decisions[0]?.options[0]?.summary).toContain('Keep the issue blocked');
+  });
+
+  it('recommends completing the existing gate for a legacy promotion blocker', () => {
+    const item = buildDecisionItem(issue({ title: '[promotion] candidate blocked before validation', body: 'No merged PR satisfies the self-review gate.' }), 'factory:needs-help');
+    expect(item.decisions[0]?.context).toContain('No merged PR');
+    expect(item.decisions[0]?.options[0]?.summary).toContain('Do not bypass the gate');
+    expect(item.decisions[0]?.options[0]?.summary).toContain('merged PR');
   });
 });
 

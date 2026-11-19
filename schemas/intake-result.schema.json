@@ -7,7 +7,8 @@
     "type": { "type": "string", "enum": ["type:bug", "type:feature", "type:refactor", "type:test", "type:docs", "type:maintenance"] },
     "risk": { "type": "string", "enum": ["risk:low", "risk:medium", "risk:high"] },
     "summary": { "type": "string", "minLength": 1 },
-    "unresolvedQuestions": { "type": "string" }
+    "unresolvedQuestions": { "type": "string" },
+    "decisions": { "type": "array", "description": "Required when unresolvedQuestions is non-empty; each item follows schemas/decision.schema.json.", "items": { "type": "object" } }
   },
   "required": ["issue", "type", "risk", "summary", "unresolvedQuestions"]
 }
