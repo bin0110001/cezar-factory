@@ -1,4 +1,5 @@
 import { projectScenario, type OutcomeKind, type RolePartition, type ScenarioView } from './scenario-operations.ts';
+import { buildCheckpointTimeline, type CheckpointEntry, type CheckpointRecord } from './graphical-session-view.ts';
 import { redactError } from './worker-read-model.ts';
 
 /**
@@ -9,7 +10,7 @@ import { redactError } from './worker-read-model.ts';
  * scheduler, no media bytes.
  */
 
-export const RUN_VIEW_VERSION = 1;
+export const RUN_VIEW_VERSION = 2;
 
 export interface RunHistoryEntry {
   runId: string;
@@ -55,6 +56,8 @@ export interface RunVerificationView {
   artifacts: { visible: ArtifactRef[]; hiddenCount: number; truncated: boolean };
   /** Diagnostic correlation only; never evidence of a result. */
   traces: { authoritative: false; ids: string[] };
+  /** Multi-node checkpoint timeline (v2, additive); empty for single-node runs. */
+  checkpoints: CheckpointEntry[];
   /** Roles with disconnects or missing captures, never shown as healthy. */
   warnings: string[];
 }
@@ -84,6 +87,7 @@ export function buildRunVerificationView(input: {
   artifacts?: ArtifactRef[];
   /** Permissions held by the viewer. */
   permissions?: string[];
+  checkpoints?: CheckpointRecord[];
 }): RunVerificationView {
   const scenario = projectScenario(input.runId, input.scenarioId, input.expectedRoles, input.partitions, input.queueReasons);
   const bad = new Set(input.unhealthyWorkers ?? []);
@@ -133,6 +137,11 @@ export function buildRunVerificationView(input: {
     .filter((h) => h.outcome === 'pass' && h.runId !== input.runId)
     .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0] ?? null;
 
+  const checkpoints = buildCheckpointTimeline(input.checkpoints ?? [], mine.filter((p) => p.workerId && bad.has(p.workerId)).map((p) => p.shard));
+  for (const c of checkpoints) {
+    if (c.status !== 'captured') warnings.push(`${c.node}/${c.name}: checkpoint ${c.status}`);
+  }
+
   const perms = new Set(input.permissions ?? []);
   const all = input.artifacts ?? [];
   const allowed = all.filter((a) => perms.has(a.permission));
@@ -152,6 +161,7 @@ export function buildRunVerificationView(input: {
       authoritative: false,
       ids: [...new Set(scenario.partitions.map((p) => p.traceId).filter((t): t is string => !!t))],
     },
+    checkpoints,
     warnings: warnings.map((w) => redactError(w) ?? w),
   };
 }
