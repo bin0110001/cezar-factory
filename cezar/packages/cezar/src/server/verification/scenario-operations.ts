@@ -155,7 +155,7 @@ export interface OperatorRequest {
 export interface AuditEntry {
   at: string;
   actor: string;
-  action: OperatorActionKind;
+  action: OperatorActionKind | 'unknown';
   target: string;
   result: 'applied' | 'denied' | 'rejected' | 'replayed';
   reason?: string;
@@ -177,7 +177,19 @@ export class OperatorActionGuard {
   constructor(
     private readonly apply: (req: OperatorRequest) => void,
     private readonly clock: () => number = Date.now,
+    private readonly opts: {
+      /** Runs after authorization; a returned reason rejects the request as invalid (not cached). */
+      preflight?: (req: OperatorRequest) => string | undefined;
+      /** Bound on remembered keys and audit entries (oldest evicted). */
+      maxEntries?: number;
+    } = {},
   ) {}
+
+  private trim(): void {
+    const max = this.opts.maxEntries ?? 10_000;
+    while (this.audit.length > max) this.audit.shift();
+    while (this.seen.size > max) this.seen.delete(this.seen.keys().next().value as string);
+  }
 
   private record(req: OperatorRequest, result: AuditEntry['result'], reason?: string): AuditEntry {
     const entry: AuditEntry = {
@@ -190,6 +202,7 @@ export class OperatorActionGuard {
       ...(reason ? { reason } : {}),
     };
     this.audit.push(entry);
+    this.trim();
     return entry;
   }
 
@@ -212,6 +225,10 @@ export class OperatorActionGuard {
       this.seen.set(req.idempotencyKey, { fingerprint, result });
       return result;
     }
+    const stale = this.opts.preflight?.(req);
+    if (stale) {
+      return { ok: false, code: 'invalid', audit: this.record(req, 'rejected', stale) };
+    }
     if (req.action === 'retry' && req.targetOutcome !== 'infra-failure' && req.targetOutcome !== 'canceled') {
       // Assertion failures are real signal; passing/pending partitions need no retry.
       const result: OperatorResult = { ok: false, code: 'ineligible', audit: this.record(req, 'rejected', `not retryable: ${req.targetOutcome ?? 'unknown'}`) };
@@ -221,6 +238,7 @@ export class OperatorActionGuard {
     this.apply(req);
     const result: OperatorResult = { ok: true, replayed: false, audit: this.record(req, 'applied') };
     this.seen.set(req.idempotencyKey, { fingerprint, result });
+    this.trim();
     return result;
   }
 }
