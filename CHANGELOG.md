@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.191] - 2026-11-19
+
 - Subscription profiles and capacity window schema (#89): per-account profiles with their own adapters, allowed models, concurrency and independent rolling/fixed windows; a pure state evaluator (unknown, available, constrained, exhausted, stale, disabled) with clock-drift tolerance, v1 to v2 migration, allow-list redacting serializer and a separate API-billing type (`scripts/capacity/subscription_profiles.py`, `schemas/subscription-profile.schema.json`, `docs/subscription-profiles.md`).
+
 ## [0.3.190] - 2026-11-18
 
 - Repair-latest-failure runs daily (02:15) instead of hourly, and aborts before fetching run history or handoff when the latest failed run was already attempted or classified operational (`run-already-handled`, zero model calls).
