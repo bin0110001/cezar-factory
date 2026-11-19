@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "models": {
+    "luna": {"provider": "openai", "modelId": "gpt-luna", "features": {"tools": true, "contextTokens": 200000, "coding": 8, "reasoning": 7, "multimodal": true, "locality": "remote", "quality": 8}},
+    "haiku": {"provider": "claude", "modelId": "claude-haiku-5-5", "features": {"tools": true, "contextTokens": 200000, "coding": 7, "reasoning": 6, "multimodal": true, "locality": "remote", "quality": 7}},
+    "sonnet": {"provider": "claude", "modelId": "claude-sonnet-5-5", "features": {"tools": true, "contextTokens": 400000, "coding": 9, "reasoning": 9, "multimodal": true, "locality": "remote", "quality": 9}}
+  },
+  "tiers": {
+    "fast": {"require": {"tools": true, "minContextTokens": 100000}, "minQuality": 7, "candidates": ["luna", "haiku"], "providerDeny": [], "accountAffinity": ["claude-work"], "fallback": "allow"},
+    "strong": {"require": {"tools": true, "minCoding": 9, "minReasoning": 9}, "minQuality": 9, "candidates": ["sonnet"], "providerAllow": ["claude"], "fallback": "none"}
+  }
+}

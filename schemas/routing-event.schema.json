@@ -21,12 +21,27 @@
       "properties": {
         "model": { "type": "string", "maxLength": 128 },
         "tier": { "type": "string", "maxLength": 64 },
-        "subscriptionAlias": { "type": "string", "maxLength": 128 }
+        "subscriptionAlias": { "type": "string", "maxLength": 128 },
+        "account": { "type": "string", "maxLength": 128 }
       }
     },
     "decisionReason": { "type": "string", "maxLength": 512 },
     "deferralReason": { "type": "string", "maxLength": 512 },
     "fallback": { "type": "boolean" },
+    "pinned": { "type": "boolean" },
+    "rejections": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model": { "type": ["string", "null"], "maxLength": 128 },
+          "account": { "type": ["string", "null"], "maxLength": 128 },
+          "reasons": { "type": "array", "items": { "type": "string", "maxLength": 128 } }
+        }
+      }
+    },
     "forecastConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "quotaSnapshot": {
       "type": "object",
