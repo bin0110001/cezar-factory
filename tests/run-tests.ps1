@@ -220,6 +220,7 @@ Assert 'no GitHub Actions workflow runs repository scripts' (@(Get-ChildItem (Jo
 Assert 'Cezar owners run changed tests or related tests without package-wide Vitest' ($cezarTestOwners.Count -eq 3 -and @($cezarTestOwners | Where-Object { $_.command -notmatch 'vitest run \$tests' -or $_.command -notmatch 'vitest related --run \$sources' -or $_.command -match 'vitest run;|vitest run\s*;' }).Count -eq 0)
 Assert 'documentation owner quotes the braced validation base passed to git diff' ($documentationOwner.command.Contains('git diff --check "${env:FACTORY_VALIDATION_BASE}...HEAD"'))
 Assert 'Factory validation captures bounded command output on timeout' ($validationLibrary -match 'Preserve the bounded diagnostic output on timeouts' -and $validationLibrary -match 'Configured validation\.\$Stage exceeded')
+Assert 'project verification allows the current version under an Unreleased heading while release validation stays strict by default' ((Get-Content -Raw (Join-Path $factory '.ai/factory/factory.config.yaml')) -match 'verify:.*validate-release\.ps1 -SkipTests -AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match 'AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match '\$AllowUnreleasedVersion -and \$changelog -match')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
@@ -841,6 +842,36 @@ if ($StaticOnly) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "factory-tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory $tmp | Out-Null
 try {
+    # Dev review may see VERSION ahead of the numbered release heading while its entry is under [Unreleased].
+    $releaseFixture = Join-Path $tmp 'release-gate'
+    $releaseScript = Join-Path $releaseFixture 'scripts/release/validate-release.ps1'
+    New-Item -ItemType Directory -Force (Split-Path $releaseScript -Parent) | Out-Null
+    Copy-Item (Join-Path $scripts 'release/validate-release.ps1') $releaseScript
+    foreach ($requiredPath in @('tests/run-tests.ps1', 'scripts/install.ps1', 'scripts/update.ps1', 'scripts/diff.ps1', 'scripts/verify.ps1')) {
+        $fixturePath = Join-Path $releaseFixture $requiredPath
+        New-Item -ItemType Directory -Force (Split-Path $fixturePath -Parent) | Out-Null
+        Set-Content -LiteralPath $fixturePath -Value '# fixture' -Encoding utf8
+    }
+    Set-Content -LiteralPath (Join-Path $releaseFixture 'VERSION') -Value '9.9.9' -NoNewline -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $releaseFixture 'CHANGELOG.md') -Value "# Changelog`n`n## [Unreleased]`n" -Encoding utf8
+    function Invoke-ReleaseFixture([switch]$AllowUnreleased) {
+        $cliArgs = @('-NoProfile', '-File', $releaseScript, '-SkipTests')
+        if ($AllowUnreleased) { $cliArgs += '-AllowUnreleasedVersion' }
+        $savedPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $output = & pwsh @cliArgs 2>&1 | Out-String
+            $code = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $savedPreference }
+        [pscustomobject]@{ Code = $code; Output = $output }
+    }
+    $strictUnreleased = Invoke-ReleaseFixture
+    $devUnreleased = Invoke-ReleaseFixture -AllowUnreleased
+    Assert 'release validation rejects an unnumbered version by default but dev verification accepts it under [Unreleased]' ($strictUnreleased.Code -ne 0 -and $strictUnreleased.Output -match 'no release heading for 9\.9\.9' -and $devUnreleased.Code -eq 0)
+    Set-Content -LiteralPath (Join-Path $releaseFixture 'CHANGELOG.md') -Value "# Changelog`n`n## [Unreleased]`n`n## [9.9.9] - 2026-11-18`n" -Encoding utf8
+    $numberedRelease = Invoke-ReleaseFixture
+    Assert 'release validation still accepts a matching numbered release heading' ($numberedRelease.Code -eq 0)
+
     # factory-startup names a stale shared core.worktree instead of failing with a bare path error.
     $staleRepo = Join-Path $tmp 'stale-core-worktree'
     New-Item -ItemType Directory $staleRepo | Out-Null
