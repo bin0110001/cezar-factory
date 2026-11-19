@@ -122,10 +122,15 @@ describe('buildDecisionItem', () => {
   });
 
   it('recommends completing the existing gate for a legacy promotion blocker', () => {
-    const item = buildDecisionItem(issue({ title: '[promotion] candidate blocked before validation', body: 'No merged PR satisfies the self-review gate.' }), 'factory:needs-help');
-    expect(item.decisions[0]?.context).toContain('No merged PR');
+    const sha = '7c5fe25a6589318402c92419a8ee7fe7143015e7';
+    const body = `\`${sha}\` has been blocked for 60 minutes.\n\n\`\`\`\ndev SHA ${sha} has no merged dev PR satisfying the self-review gate (#724: approved review or recorded self-review missing; #725: not the merged pull request for this commit)\n\`\`\``;
+    const item = buildDecisionItem(issue({ title: '[promotion] candidate blocked before validation', body }), 'factory:needs-help');
+    expect(item.decisions[0]?.question).toContain(sha);
+    expect(item.decisions[0]?.context).toContain('Issue description');
     expect(item.decisions[0]?.options[0]?.summary).toContain('Do not bypass the gate');
-    expect(item.decisions[0]?.options[0]?.summary).toContain('merged PR');
+    expect(item.decisions[0]?.options[0]?.summary).toContain('#724');
+    expect(item.decisions[0]?.recommendedOptionId).toBe('complete-prerequisite');
+    expect(item.decisions[0]?.options[1]?.label).toBe('Review whether the gate policy needs to change');
   });
 });
 
