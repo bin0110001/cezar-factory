@@ -17,7 +17,7 @@ $ownership = '{"schemaVersion":1,"unmapped":"full","checks":[{"id":"a","patterns
 function New-Repo {
     $script:repo = Join-Path ([IO.Path]::GetTempPath()) "gov-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
     New-Item -ItemType Directory -Path $script:repo | Out-Null
-    G init -q -b main; G config user.email t@example.com; G config user.name t
+    G init -q -b main; G config user.email t@example.com; G config user.name t; G config core.autocrlf false
     Write-F 'policies/risk.yaml' 'a: 1'; Write-F 'tests/baselines/x.json' '{}'; Write-F 'src/app.txt' 'one'
     Write-F '.ai/factory/test-ownership.json' $ownership
     Write-F 'ledger/run-1.json' '{"run":1}'

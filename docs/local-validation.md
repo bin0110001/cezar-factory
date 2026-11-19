@@ -10,12 +10,26 @@ depend on a GitHub workflow or status check: all validation runs on our own comp
 release scheduler's detached worktree). Local receipts are the validation evidence;
 do not wait for, poll, or cite GitHub checks.
 
+## Bare worktrees give false full-suite failures
+
+A bare worktree has no `cezar/packages/cezar/node_modules`. A full local run there
+fails the change-impact collector tests (`scripts/collect-impact.ps1` runs
+`node --import tsx`, and `tsx` is not installed) and the model-probe fake server
+("Value cannot be null" on Start). These failures are environmental, not
+regressions. Only the host Validate run for the pushed commit, in the Cezar
+container where the dependencies exist, counts as evidence for a promotion
+failure such as #713.
+
 ## One-time setup
 
-Install PowerShell 7 and Python 3, then install the pinned YAML linter:
+Install PowerShell 7 and Python 3.12, then install the pinned YAML linter and provide IANA timezone data to
+the Python interpreter selected by the suite. Windows builds of Python do not include the database, and a
+project-local target works with managed Python installs:
 
 ```powershell
 py -3 -m pip install --user yamllint==1.37.1
+python3.12 -m pip install --target .factory/local-validation/python-deps tzdata
+$env:PYTHONPATH = (Resolve-Path .factory/local-validation/python-deps).Path
 git config --local core.hooksPath .githooks
 ```
 
