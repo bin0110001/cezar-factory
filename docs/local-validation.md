@@ -22,10 +22,14 @@ failure such as #713.
 
 ## One-time setup
 
-Install PowerShell 7 and Python 3, then install the pinned YAML linter:
+Install PowerShell 7 and Python 3.12, then install the pinned YAML linter and provide IANA timezone data to
+the Python interpreter selected by the suite. Windows builds of Python do not include the database, and a
+project-local target works with managed Python installs:
 
 ```powershell
 py -3 -m pip install --user yamllint==1.37.1
+python3.12 -m pip install --target .factory/local-validation/python-deps tzdata
+$env:PYTHONPATH = (Resolve-Path .factory/local-validation/python-deps).Path
 git config --local core.hooksPath .githooks
 ```
 
