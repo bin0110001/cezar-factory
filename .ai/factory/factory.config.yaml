@@ -17,4 +17,4 @@ project:
 validation:
   changed: "pwsh -NoProfile -File scripts/validate-automation-catalog.ps1"
   full: "pwsh -NoProfile -File tests/run-tests.ps1"
-  verify: "pwsh -NoProfile -File scripts/release/validate-release.ps1 -SkipTests"
+  verify: "pwsh -NoProfile -File scripts/release/validate-release.ps1 -SkipTests -AllowUnreleasedVersion"

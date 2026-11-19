@@ -121,4 +121,49 @@ passing runs only (`regression` stays `unknown` below 3 samples), the last
 successful run, permission-scoped artifact links (max 50 visible, hidden count
 reported, no media bytes) and trace ids marked `authoritative: false`.
 
-Still open: HTTP routes/UI, graphical session preview and takeover grants.
+## Graphical sessions, preview and artifacts (#219, sixth slice)
+
+`server/verification/graphical-session-view.ts` adds pure projections and guards (no
+streaming transport, store or media bytes; live streaming stays with #108/#127/#128/#135):
+
+- **Session rows**: display/renderer/browser fingerprint (host paths and secrets redacted),
+  run/attempt/scenario/role, owner, state, reserved resources, startup duration and last frame.
+  `stream` is `live` only with a fresh frame from a running, connected session; otherwise
+  `stale` or `unknown`, never healthy.
+- **Preview**: opt-in (`preview:view`), authenticated, always `view-only`, FPS and bandwidth
+  clamped to `PREVIEW_LIMITS`; unavailable unless the stream is live.
+- **Takeover**: `TakeoverGuard` requires the distinct `takeover:grant` permission plus an
+  unexpired grant bound to the actor and session. Agent input is suspended while active;
+  request, deny, grant, suspend, release, resume and expire are each audited (#329).
+- **Artifact browsing**: `listArtifacts` is cursor-paginated (max 50), permission-scoped,
+  retention-aware and name-redacted; `authorizeDownload` returns only an id for the canonical
+  artifact layer. Out-of-scope artifacts report `forbidden` or `not-found`.
+- **Checkpoints**: the run view (schema version 2, additive) carries a per-node checkpoint
+  timeline marking `missing` and `disconnected` captures, with warnings. Runs without
+  checkpoints get an empty list; everything else is unchanged.
+
+Still open: HTTP routes/UI.
+
+## Operator controls (#219, slice 5)
+
+`server/verification/operator-controls.ts` binds the `OperatorActionGuard` to the
+controller. Actor and permissions come from the authenticated principal
+(`viewer`, `operator`, `admin` roles mapped to permissions server-side; unknown
+roles grant nothing); permissions in a request body are ignored. Request and
+response payloads carry `schemaVersion: 1`.
+
+- Actions: enroll-link, revoke, drain, undrain, quarantine, cancel,
+  retry (infra-failure/canceled partitions only, outcome read server-side),
+  set-profile and schedule-dry-run (read-only explanation).
+- Idempotency: the same key from the same actor for the same action and target
+  applies once and returns `replayed: true`; reuse for anything else is `invalid`.
+- Denied, rejected and replayed requests are all audited; reasons are redacted
+  (no secrets or host paths).
+- Concurrency: actions on one target are serialised in arrival order, and an
+  optional `expectedVersion` rejects stale targets (`invalid`, audited, not cached).
+- Cancel/revoke mutate the partition state that both the worker read model
+  and the run verification view project, so the two views agree on status and
+  lease release. A newly enrolled worker is `unknown`, never healthy.
+- Limitation: idempotency and audit are bounded in-memory (default 10 000
+  entries) and are lost on restart. HTTP routes and UI controls are not yet
+  mounted; this service is the contract they will call.

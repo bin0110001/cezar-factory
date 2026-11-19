@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
-## [0.3.191] - 2026-11-19
-
 - Subscription profiles and capacity window schema (#89): per-account profiles with their own adapters, allowed models, concurrency and independent rolling/fixed windows; a pure state evaluator (unknown, available, constrained, exhausted, stale, disabled) with clock-drift tolerance, v1 to v2 migration, allow-list redacting serializer and a separate API-billing type (`scripts/capacity/subscription_profiles.py`, `schemas/subscription-profile.schema.json`, `docs/subscription-profiles.md`).
+
+- Graphical session rows, view-only preview and artifact browsing (#719, #219 slice 6): session rows with fail-closed stream freshness, bounded authenticated view-only preview, a separate audited takeover grant that suspends agent input, cursor-paginated permission-scoped artifact listing and download authorization, and a multi-node checkpoint timeline in the run view (schema version 2, additive) (`cezar/packages/cezar/src/server/verification/graphical-session-view.ts`).
+- Operator controls service (#718, #219 slice 5): RBAC from authenticated roles, idempotent audited actions, per-target serialisation with stale-target rejection, and cancel/revoke applied through one state so worker and run views agree (`cezar/packages/cezar/src/server/verification/operator-controls.ts`).
+- Allow project verification to accept the current dev version under `[Unreleased]`, while keeping numbered release-heading validation strict by default.
 
 ## [0.3.190] - 2026-11-18
 
