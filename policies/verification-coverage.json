@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "description": "Verification progression policy (#100): the same baseline-comparison result yields different decisions for agent iteration, merge and release; release is strictest. Kept apart from policies/verification.json because its dispositionRules block is schema-validated by cezar. Evaluated by scripts/release/verification_progression.py.",
+  "stageMap": { "iteration": "pr-dev", "merge": "candidate", "release": "stable" },
+  "stages": {
+    "iteration": { "minCoverage": 50, "blockKnownDebt": false, "blockNonImpactedRegressions": false },
+    "merge": { "minCoverage": 70, "blockKnownDebt": false, "blockNonImpactedRegressions": true },
+    "release": { "minCoverage": 85, "blockKnownDebt": true, "blockNonImpactedRegressions": true }
+  }
+}

@@ -85,3 +85,16 @@ cannot flip a BLOCK to CONTINUE, waive a mandatory check, change policy or appro
 actually has (fingerprint, check id, rule id or stage) and name a known finding, with a known kind; anything else is dropped and
 counted. A disabled, invalid, failing, malformed or over-budget advisor yields no advice and the dispositions are unchanged. The
 advisor sees only identifiers (fingerprint, check id, decision, rule id), never raw evidence.
+
+## Progression, merge and release policy (#100)
+
+`policies/verification-coverage.json` and `scripts/release/verification_progression.py` judge one comparison result per stage:
+`iteration` (existing stage `pr-dev`) answers `continue`, `merge` (`candidate`) answers `merge-ok`, `release` (`stable`) answers
+`release-ok`; any failure answers `blocked` with reasons. It is separate from `dispositionRules` because that block is schema-validated
+by cezar.
+
+- Known debt with zero new regressions does not block iteration or merge, but `release.blockKnownDebt` blocks release.
+- A new/worsened/reopened failure in the impacted area blocks every stage; outside the impacted area it blocks merge and release.
+- `untested`, `unknown`, `infra-failure`, unrecognised dispositions and unknown coverage are never green.
+- Coverage below the stage's `minCoverage` blocks it (equal passes). `validate` rejects thresholds outside 0-100 and any stage looser
+  than the previous one (iteration <= merge <= release).
