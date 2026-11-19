@@ -150,32 +150,45 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
   const fallbackContext = () => {
     const observed = [...comments].reverse().find((c) => c.body.includes('## Factory escalation'));
     const investigation = latestSections(comments, '## Factory investigation');
+    const observedText = observed ? legacyObserved(observed.body) : null;
     const parts = [
-      issue.body?.trim(),
-      observed ? legacyObserved(observed.body) : undefined,
-      investigation?.get('Root cause'),
-      investigation?.get('Recommended action'),
+      issue.body?.trim() ? `### Issue description\n\n${issue.body.trim()}` : undefined,
+      observedText ? `### Reported blocker\n\n${observedText}` : undefined,
+      investigation?.get('Root cause') ? `### Investigation finding\n\n${investigation.get('Root cause')}` : undefined,
+      investigation?.get('Recommended action') ? `### Investigation recommendation\n\n${investigation.get('Recommended action')}` : undefined,
     ].filter((v): v is string => Boolean(v && !isPointer(v)));
     return parts.join('\n\n');
   };
   const completeLegacy = (question: string, context: string, recommendation?: string): DecisionRequest => {
     const title = (issue.title ?? '').toLowerCase();
     const body = issue.body ?? '';
-    const recommended = recommendation?.trim() || (title.includes('[promotion]') && title.includes('blocked')
-      ? `Keep the promotion gate in place. Satisfy the missing prerequisite identified in the issue details (including the required review/self-review evidence and merged PR, when cited), then rerun validation for this exact candidate. Do not bypass the gate.`
+    const promotionBlocker = title.includes('[promotion]') && title.includes('blocked');
+    const citedGate = body.match(/```\s*([\s\S]*?)\s*```/)?.[1]?.replace(/\s+/g, ' ').trim();
+    const candidate = /`([0-9a-f]{40})`/i.exec(body)?.[1];
+    const specificBlocker = citedGate && citedGate.length > 0 ? citedGate.slice(0, 600) : undefined;
+    const promotionQuestion = `How should ${candidate ? `candidate ${candidate}` : 'this candidate'} proceed while its promotion prerequisite is missing?`;
+    const recommended = recommendation?.trim() || (promotionBlocker
+      ? `Keep the promotion gate in place. ${specificBlocker ? `The reported blocker is: ${specificBlocker}. ` : ''}Complete the required review/self-review and merge prerequisites, then rerun validation for this exact candidate. Do not bypass the gate.`
       : title.includes('[promotion]') && title.includes('circuit breaker')
         ? 'Keep automatic promotion paused. Investigate and repair the latest quarantined failure, validate the repaired candidate, and reset the breaker only after the evidence shows it is safe.'
         : body.toLowerCase().includes('self-review') && body.toLowerCase().includes('merged pr')
           ? 'Complete and record the required self-review, merge the PR for this change to dev, then let the normal validation gate retry.'
           : 'Keep the issue blocked until the missing facts are reviewed and the safe next step is clear.');
+    const requestQuestion = promotionBlocker ? promotionQuestion : question;
+    const options = promotionBlocker
+      ? [
+          { id: 'complete-prerequisite', label: 'Complete the prerequisite and retry', summary: recommended },
+          { id: 'review-gate-policy', label: 'Review whether the gate policy needs to change', summary: 'Use this path only if the gate is incorrect. Review the documented policy change process before changing host-side promotion configuration.' },
+        ]
+      : [
+          { id: 'recommended-next-step', label: 'Follow the recommended next step', summary: recommended },
+          { id: 'provide-direction', label: 'Provide a different direction', summary: 'Use the answer field to explain the preferred path and any constraints.' },
+        ];
     return {
-      id: 'open-question', question,
+      id: 'open-question', question: requestQuestion,
       context: context || `The issue “${issue.title}” is waiting for a decision. Review the issue details and linked evidence before choosing a path.`,
-      options: [
-        { id: 'recommended-next-step', label: 'Follow the recommended next step', summary: recommended },
-        { id: 'provide-direction', label: 'Provide a different direction', summary: 'Use the answer field to explain the preferred path and any constraints.' },
-      ],
-      recommendedOptionId: 'recommended-next-step',
+      options,
+      recommendedOptionId: promotionBlocker ? 'complete-prerequisite' : 'recommended-next-step',
     };
   };
   // A legacy ask has no paths of its own, but a completed investigation names a fix: offer it as

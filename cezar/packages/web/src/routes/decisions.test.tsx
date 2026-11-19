@@ -45,7 +45,14 @@ const legacy: DecisionItem = {
   number: 9,
   title: 'Old escalation',
   source: 'legacy',
-  decisions: [{ id: 'open-question', question: 'Which data source is authoritative?', options: [] }],
+  decisions: [{
+    id: 'open-question', question: 'Which data source is authoritative?',
+    context: 'Two sources are mentioned in the issue.', recommendedOptionId: 'recommended-next-step',
+    options: [
+      { id: 'recommended-next-step', label: 'Follow the recommendation', summary: 'Use the source supported by the issue evidence.' },
+      { id: 'provide-direction', label: 'Provide a different direction', summary: 'Explain another preferred path.' },
+    ],
+  }],
 }
 
 function renderRoute(response?: DecisionsResponse) {
@@ -99,8 +106,12 @@ describe('DecisionsRoute', () => {
       decisions: [{
         id: 'open-question',
         question: 'Which data source is authoritative?',
+        context: 'The test fixture is stale and the investigation recommends regenerating it.',
         recommendedOptionId: 'investigator-fix',
-        options: [{ id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' }],
+        options: [
+          { id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' },
+          { id: 'provide-direction', label: 'Provide a different direction', summary: 'Explain another preferred path.' },
+        ],
       }],
     }
     renderRoute({ available: true, items: [withFix] })
@@ -116,6 +127,18 @@ describe('DecisionsRoute', () => {
     renderRoute({ available: true, items: [structured] })
     const card = await screen.findByRole('listitem')
     expect(card.querySelector('[data-slot="decision-background"]')).toBeNull()
+  })
+
+  it('renders decision context as formatted Markdown', async () => {
+    const formatted: DecisionItem = {
+      ...structured,
+      decisions: [{ ...structured.decisions[0]!, context: '## Evidence\n\n- **Blocked:** no merged PR\n- Candidate `7c5fe25`.' }],
+    }
+    renderRoute({ available: true, items: [formatted] })
+    const context = await screen.findByLabelText('Context for: Where should run state live?')
+    expect(within(context).getByRole('heading', { name: 'Evidence' })).toBeTruthy()
+    expect(within(context).getAllByRole('listitem')[0]?.textContent).toContain('Blocked: no merged PR')
+    expect(within(context).getByText('7c5fe25').tagName).toBe('CODE')
   })
 
   it('keeps Send disabled until a path is chosen, then posts the answer and removes the card', async () => {
@@ -139,13 +162,13 @@ describe('DecisionsRoute', () => {
     expect(toast).toHaveBeenCalledWith(expect.stringContaining('#7'))
   })
 
-  it('answers a legacy free-text escalation in the users own words', async () => {
+  it('answers a legacy escalation in the users own words', async () => {
     answerDecision.mockResolvedValue({ number: 9, state: 'factory:needs-plan' })
     renderRoute({ available: true, items: [legacy] })
     const send = await screen.findByRole('button', { name: /send answer/i })
-    expect(document.querySelector('[data-slot="decision-option"]')).toBeNull()
+    expect(document.querySelectorAll('[data-slot="decision-option"]')).toHaveLength(2)
     expect((send as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(/Your answer/), { target: { value: 'Use billing' } })
+    fireEvent.change(screen.getByLabelText(/Your own answer/), { target: { value: 'Use billing' } })
     fireEvent.click(send)
     await waitFor(() => expect(answerDecision).toHaveBeenCalledWith(9, { answers: [{ decisionId: 'open-question', note: 'Use billing' }] }))
   })

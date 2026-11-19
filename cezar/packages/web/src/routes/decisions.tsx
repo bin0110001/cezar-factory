@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toaster'
 import { shortAge } from '@/lib/format'
 import { isHttpUrl } from '@/lib/utils'
+import { Markdown } from './task-thread/markdown'
 
 /**
  * `/decisions` — everything the Factory has parked for a person in this project.
@@ -21,8 +22,8 @@ import { isHttpUrl } from '@/lib/utils'
  * format, see `schemas/decision.schema.json`). Answering comments on the issue and returns it to
  * `factory:needs-plan`, so planning resumes through the normal workflow without a trip to GitHub.
  *
- * Older free-text escalations have no suggested paths; they render as one open question that is
- * answered in the user's own words.
+ * Older free-text escalations are augmented with context and suggested paths from the issue body
+ * and escalation comments.
  */
 
 type Choice = { optionId?: string; note: string }
@@ -163,7 +164,7 @@ function DecisionCard({ item }: { item: DecisionItem }) {
           {item.background.map((block) => (
             <div key={block.label} data-slot="decision-background-block" className="flex flex-col gap-0.5 text-[13px]">
               <span className="text-xs font-medium text-foreground">{block.label}</span>
-              <p className="leading-relaxed whitespace-pre-wrap text-muted-foreground">{block.text}</p>
+              <DecisionMarkdown>{block.text}</DecisionMarkdown>
             </div>
           ))}
         </section>
@@ -185,7 +186,9 @@ function DecisionCard({ item }: { item: DecisionItem }) {
           <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
             {item.source === 'structured' ? 'Full Factory comment' : 'Factory escalation (free text)'}
           </summary>
-          <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 text-xs whitespace-pre-wrap">{item.details}</pre>
+          <div className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 text-xs">
+            <DecisionMarkdown>{item.details}</DecisionMarkdown>
+          </div>
         </details>
       ) : null}
 
@@ -237,9 +240,12 @@ function DecisionQuestion({
     <fieldset data-slot="decision-question" data-decision={decision.id} className="flex flex-col gap-2.5" disabled={disabled}>
       <legend className="text-sm font-medium leading-snug text-foreground">{decision.question}</legend>
       {decision.context ? (
-        <p data-slot="decision-context" className="text-[13px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-          {decision.context}
-        </p>
+        <section data-slot="decision-context" aria-label={`Context for: ${decision.question}`} className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+          <h3 className="text-xs font-medium text-foreground">Why this needs a decision</h3>
+          <div className="max-h-80 overflow-y-auto rounded-md bg-muted/30 p-3">
+            <DecisionMarkdown>{decision.context}</DecisionMarkdown>
+          </div>
+        </section>
       ) : null}
 
       {hasOptions ? (
@@ -292,4 +298,9 @@ function DecisionQuestion({
       />
     </fieldset>
   )
+}
+
+/** Render untrusted GitHub/agent-authored context as Markdown using the thread's safe link rules. */
+function DecisionMarkdown({ children }: { children: string }) {
+  return <Markdown>{children}</Markdown>
 }
