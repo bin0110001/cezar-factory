@@ -262,6 +262,18 @@ class PipelineTests(unittest.TestCase):
         self.gh.pr_body = "## Self-review\nadded after the fact"
         self.assertEqual(scheduler.run_once()["status"], "healthy")  # evidence arrived; same SHA proceeds
 
+    def test_bold_self_review_format_satisfies_the_exact_sha_gate(self):
+        gh = FakeGh(self.sha, pr_body="**Self-review**: scope and risk checked; validation passed; unresolved findings: none.")
+        scheduler = self.build(gh=gh)
+        self.assertEqual(scheduler.run_once()["status"], "healthy")
+        self.assertEqual(len(gh.patched), 1)
+
+    def test_bold_self_review_section_format_satisfies_the_exact_sha_gate(self):
+        gh = FakeGh(self.sha, pr_body="**Self-review**\n- Scope and risk checked.\n- Validation passed.")
+        scheduler = self.build(gh=gh)
+        self.assertEqual(scheduler.run_once()["status"], "healthy")
+        self.assertEqual(len(gh.patched), 1)
+
     # -- stable deploy ------------------------------------------------------------------------------
     def test_deploy_that_does_not_reach_the_stable_pointer_stays_pending_and_escalates_once(self):
         scheduler = self.build(deploy="no-pointer")

@@ -35,6 +35,10 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
 ## Stages
 
 1. **Evidence gate.** The merged PR for the SHA must target `dev` and satisfy the mode's review rule.
+   In autonomous mode, a nonempty `Self-review` section is accepted as either a Markdown heading
+   (`## Self-review` followed by content) or a bold label (`**Self-review**: ...` or a standalone
+   `**Self-review**` followed by content). The check stays
+   bound to the exact merge SHA and does not relax approval mode.
    A SHA without evidence is `blocked`, not `failed`: it is re-checked every tick, recorded once per
    distinct reason, and proceeds the moment evidence appears.
 2. **Validation.** Every required check in `checks` must pass on a detached worktree of the exact SHA.
