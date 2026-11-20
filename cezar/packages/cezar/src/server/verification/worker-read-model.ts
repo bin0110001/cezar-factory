@@ -61,9 +61,11 @@ export interface WorkerPage {
 
 const MAX_ERROR_CHARS = 200;
 export const MAX_PAGE_SIZE = 100;
+export const MAX_FUTURE_SKEW_MS = 60_000;
+const MAX_SUMMARY_CHARS = 400;
 
 /** Strip secrets, URL credentials and filesystem paths; bound the length. */
-export function redactError(raw: string | undefined): string | null {
+export function redactError(raw: string | undefined, maxChars: number = MAX_ERROR_CHARS): string | null {
   if (!raw) return null;
   let s = raw
     .replace(/\b(?:[a-z][a-z0-9+.-]*):\/\/[^\s/@]+@/gi, (m) => m.replace(/\/\/[^@]*@/, '//[redacted]@'))
@@ -72,13 +74,14 @@ export function redactError(raw: string | undefined): string | null {
     .replace(/(?:[A-Za-z]:\\[^\s]*|(?:\/[\w.@-]+){2,})/g, '[path]')
     .replace(/\s+/g, ' ')
     .trim();
-  if (s.length > MAX_ERROR_CHARS) s = `${s.slice(0, MAX_ERROR_CHARS)}…`;
+  if (s.length > maxChars) s = `${s.slice(0, maxChars)}…`;
   return s;
 }
 
 export function deriveWorkerStatus(w: WorkerRecord, now: number, f: WorkerFreshness = DEFAULT_FRESHNESS): { status: WorkerStatus; ageMs: number | null } {
   const beat = w.lastHeartbeatAt ? Date.parse(w.lastHeartbeatAt) : NaN;
-  const ageMs = Number.isFinite(beat) ? Math.max(0, now - beat) : null;
+  // A heartbeat from the future (clock skew beyond tolerance) is untrustworthy: unknown, never healthy.
+  const ageMs = Number.isFinite(beat) && beat - now <= MAX_FUTURE_SKEW_MS ? Math.max(0, now - beat) : null;
   if (w.operatorState === 'revoked') return { status: 'revoked', ageMs };
   if (ageMs === null) return { status: 'unknown', ageMs };
   if (ageMs >= f.offlineAfterMs) return { status: 'offline', ageMs };
@@ -145,5 +148,5 @@ export function explainScheduling(job: JobRequirements, workers: WorkerView[]): 
     : rows.length === 0
       ? 'No workers enrolled'
       : `No eligible worker: ${rows.map((r) => `${r.workerId} (${r.reasons.join(', ')})`).join('; ')}`;
-  return { schedulable, workers: rows, summary };
+  return { schedulable, workers: rows, summary: redactError(summary, MAX_SUMMARY_CHARS) ?? summary };
 }
