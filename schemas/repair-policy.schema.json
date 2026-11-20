@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RepairAuthorizationPolicyV1",
+  "description": "Layered repair budgets (#740). Factory is the base; project, workflow and validator layers may only tighten limits and can never disable governance.",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "policyVersion": {"type": "integer", "minimum": 1},
+    "layer": {"enum": ["factory", "project", "workflow", "validator"]},
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "totalRepairRounds": {"type": "integer", "minimum": 0},
+        "unchangedFindingPersistence": {"type": "integer", "minimum": 1},
+        "consecutiveNoProgress": {"type": "integer", "minimum": 1},
+        "oscillationLimit": {"type": "integer", "minimum": 1},
+        "replanCap": {"type": "integer", "minimum": 0},
+        "infraRetryBudget": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ceilings": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "maxSeconds": {"type": ["number", "null"], "minimum": 0},
+        "maxTokens": {"type": ["number", "null"], "minimum": 0},
+        "maxCostUsd": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "governance": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "stopOnSafetyViolation": {"type": "boolean"},
+        "stopOnSecurityIssue": {"type": "boolean"},
+        "requireRequiredGates": {"type": "boolean"},
+        "allowIncompleteAsSuccess": {"type": "boolean"}
+      }
+    },
+    "independentDiagnosis": {"type": "boolean"}
+  }
+}

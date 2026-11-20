@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": 1,
+  "layer": "factory",
+  "limits": {
+    "totalRepairRounds": 2,
+    "unchangedFindingPersistence": 2,
+    "consecutiveNoProgress": 2,
+    "oscillationLimit": 1,
+    "replanCap": 1,
+    "infraRetryBudget": 2
+  },
+  "ceilings": {
+    "maxSeconds": null,
+    "maxTokens": null,
+    "maxCostUsd": null
+  },
+  "governance": {
+    "stopOnSafetyViolation": true,
+    "stopOnSecurityIssue": true,
+    "requireRequiredGates": true,
+    "allowIncompleteAsSuccess": false
+  },
+  "independentDiagnosis": false
+}

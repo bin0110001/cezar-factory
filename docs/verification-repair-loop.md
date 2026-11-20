@@ -45,3 +45,42 @@ Persistent failures stay visible in the decision and in `.factory/repair-loop-ha
 publication path. The loop creates no issue and no waiver. The concise context comes from the #103 summary.
 
 Tests: `tests/repair-loop.ps1` (fixtures only; deploys nothing).
+
+## Repair authorization policy (#740)
+
+`policies/repair-policy.json` (schema `schemas/repair-policy.schema.json`) is the Factory layer of a versioned
+authorization policy. Project, workflow and validator override files (`-OverridePolicyPath`, same schema, `layer` set)
+are merged Factory → project → workflow → validator and may only **tighten**: limits never exceed the layer below, a
+ceiling can be added or lowered but not removed, governance flags (`stopOnSafetyViolation`, `stopOnSecurityIssue`,
+`requireRequiredGates`) cannot be turned off, `allowIncompleteAsSuccess` stays false, and independent diagnosis cannot be
+enabled below the Factory layer (and is never a retry strategy). Any invalid, unreadable or loosening layer fails the step
+closed. The effective snapshot (with a SHA-256 digest and `policyVersion`) is recorded in every receipt; the stricter of
+`retry.yaml` `max_implementation_retries` and `totalRepairRounds` wins.
+
+Limits: `totalRepairRounds`, `unchangedFindingPersistence`, `consecutiveNoProgress`, `oscillationLimit`, `replanCap`,
+`infraRetryBudget`; optional ceilings `maxSeconds`, `maxTokens`, `maxCostUsd`. Initial validation uses zero repair
+rounds. Repair attempts (reservations) and infrastructure/flaky retries are counted separately in `budget`.
+
+### Strategies and reason codes
+
+Each evaluation yields one action and one receipt: `repair` (in-session focused repair, default), `replan` (in-session,
+same bot, only after a repair left the same finding unchanged and while `replanCap` allows; it spends the same repair
+budget), `retry`/`backoff` (infrastructure, own budget), `stop`, `handoff`, `done`. Terminal reason codes: `passed`,
+`incomplete_reported`, `repeated_finding`, `oscillation`, `no_progress`, `global_budget_exhausted` (attempt cap or a
+time/token/cost ceiling), `validator_error`, `governance_stop`, `session_unavailable`; non-terminal rounds use
+`repair_authorized`, `replan_authorized`, `retry_authorized`, `backoff_authorized`. Precedence when several apply:
+governance, validator error, session unavailable, repeated finding, budget, oscillation, no progress. Checks reporting
+`incomplete: true` or untested always end as `incomplete_reported` (outcome `incomplete`), never a successful handoff.
+
+Progress is derived from the failing-finding sets between rounds (something fixed or fewer findings = progress; a
+`relevantChange: true` check resets persistence). The progress evaluator (#736) may supply `-ProgressPath`
+(`{"state":"progress|none|unknown"}`); missing or unknown counts as no progress.
+
+### Atomic reservation and receipts
+
+The step decides under an exclusive lock on `<ledger>.lock` and writes the ledger atomically, so concurrent evaluations
+cannot overspend the cap. A reservation is idempotent on `-IdempotencyKey` (default `round-N`): replaying a key returns
+the original decision and receipt; a cancelled reservation (`Set-RepairReservationState`) releases the budget and its key
+is not silently re-granted. Session continuation and replans never reset the budget. `receipts` in the ledger are
+append-only, validated by `schemas/repair-receipt.schema.json`, and carry a digest. Ledgers stay `schemaVersion` 1;
+`reservations` and `receipts` are additive and legacy repair entries migrate into reservations on first read.

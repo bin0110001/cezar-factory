@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RepairDecisionReceiptV1",
+  "description": "One immutable receipt per repair evaluation (#740). Appended to the ledger and never rewritten.",
+  "type": "object",
+  "required": ["schemaVersion", "receiptId", "idempotencyKey", "evaluatedAt", "round", "action", "strategy", "reasonCode", "terminal", "outcome", "policy", "counters", "digest"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "receiptId": {"type": "string", "minLength": 1},
+    "idempotencyKey": {"type": "string", "minLength": 1},
+    "evaluatedAt": {"type": "string"},
+    "round": {"type": "integer", "minimum": 1},
+    "action": {"enum": ["repair", "replan", "retry", "backoff", "stop", "handoff", "done"]},
+    "strategy": {"enum": ["focused-repair", "in-session-replan", "infrastructure-retry", "stop-escalate", "none"]},
+    "reasonCode": {"enum": ["passed", "incomplete_reported", "repeated_finding", "oscillation", "no_progress", "global_budget_exhausted", "validator_error", "governance_stop", "session_unavailable", "repair_authorized", "replan_authorized", "retry_authorized", "backoff_authorized"]},
+    "terminal": {"type": "boolean"},
+    "outcome": {"enum": ["success", "continuing", "incomplete", "stopped"]},
+    "detail": {"type": "string"},
+    "policy": {
+      "type": "object", "required": ["policyVersion", "digest", "effective"],
+      "properties": {"policyVersion": {"type": "integer"}, "digest": {"type": "string"}, "effective": {"type": "object"}}
+    },
+    "counters": {"type": "object"},
+    "decision": {"type": "object"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
