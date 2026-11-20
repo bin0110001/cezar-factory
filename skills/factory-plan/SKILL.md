@@ -47,6 +47,12 @@ source: skills/factory-plan/SKILL.md
 - Look at recent changes in the same area to understand conventions.
 - Check for existing tests that cover the relevant code paths.
 - Identify the entry points and architecture that the change would touch.
+- For work that changes Factory issue routing, lifecycle ownership, workflow/job/step
+  responsibilities, PR creation or merge, validation evidence, or release/promotion,
+  read `docs/workflow-map.md` and inspect its linked sources of truth. Include the
+  guide update in the work breakdown and acceptance criteria, and use the
+  `factory-update-workflow-guide` skill during implementation. Do not add a guide
+  update when the Factory process itself is unchanged.
 
 ### 3. Identify Ambiguities
 
