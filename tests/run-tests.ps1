@@ -307,6 +307,8 @@ foreach ($sk in Get-ChildItem (Join-Path $factory 'skills') -Directory | Where-O
 Assert "workflows own scripts: no prompt or skill tells the model to run one ($($scriptOwnershipViolations -join ' | '))" ($scriptOwnershipViolations.Count -eq 0)
 Assert 'release skills leave operational script execution to workflow command steps' ($factoryReleaseSkill -notmatch '(?i)(pwsh|powershell)\s+.*\.ps1|run `[^`]*\.ps1' -and $factoryFinishReleaseSkill -notmatch '(?i)(pwsh|powershell)\s+.*\.ps1|run `[^`]*\.ps1')
 $shipLoop = Join-Path $factory '.claude/ship/ship-loop.ps1'
+$shipLoopSource = Get-Content -Raw -LiteralPath $shipLoop
+Assert 'ship-loop strips Windows transport CRs before running the remote Linux validator' ($shipLoopSource -match "tr -d '\\r' \| env" -and $shipLoopSource -match 'FACTORY_CANDIDATE_SHA=\$sha' -and $shipLoopSource -match 'FACTORY_CANDIDATE_BRANCH=\$Branch' -and $shipLoopSource -match 'FACTORY_GITHUB_REPOSITORY=.* bash -s')
 $iterDry = (& pwsh -NoProfile -File $shipLoop -Action Run -Workflow health -Task 'smoke' -DryRun 2>&1 | Out-String)
 $iterDryCode = $LASTEXITCODE
 # Show the output when it fails: these assertions used to discard it, which hid a Linux-only failure.

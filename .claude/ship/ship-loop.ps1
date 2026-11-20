@@ -208,7 +208,10 @@ switch ($Action) {
         $log = Join-Path $logDir ("validate-$($sha.Substring(0, 9))-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
         Write-Host "VALIDATE_RUN commit=$($sha.Substring(0, 9)) branch=$Branch host=$target log=$log"
         $body = (Get-Content -Raw -LiteralPath $remoteScript) -replace "`r", ''
-        $body | & ssh -o BatchMode=yes -o ConnectTimeout=10 $target "FACTORY_CANDIDATE_SHA=$sha FACTORY_CANDIDATE_BRANCH=$Branch FACTORY_GITHUB_REPOSITORY=$($cfg.repo) bash -s" *>&1 | Set-Content -LiteralPath $log -Encoding utf8
+        # PowerShell may write CRLF while piping text to ssh even though the repository script was
+        # normalized above. Strip transport CRs on the host before bash parses the validator.
+        $remoteCommand = "tr -d '\r' | env FACTORY_CANDIDATE_SHA=$sha FACTORY_CANDIDATE_BRANCH=$Branch FACTORY_GITHUB_REPOSITORY=$($cfg.repo) bash -s"
+        $body | & ssh -o BatchMode=yes -o ConnectTimeout=10 $target $remoteCommand *>&1 | Set-Content -LiteralPath $log -Encoding utf8
         $code = $LASTEXITCODE
         $text = (Get-Content -Raw -LiteralPath $log) -replace "\x1b\[[0-9;]*[A-Za-z]", ''
         $failed = @($text -split "`r?`n" | Where-Object { $_ -match '^\s*(FAIL\b|FAILED\b)' } | Select-Object -Unique -First 15)
