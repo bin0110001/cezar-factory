@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RepairReceiptV1",
+  "description": "One immutable, hash-chained receipt per repair evaluation (#740). Appended to the ledger, never rewritten.",
+  "type": "object",
+  "required": ["schemaVersion", "receiptId", "round", "at", "decision", "reasonCode", "terminal", "strategy", "policy", "budget", "previousHash", "hash"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "receiptId": {"type": "string"},
+    "round": {"type": "integer", "minimum": 1},
+    "at": {"type": "string"},
+    "idempotencyKey": {"type": "string"},
+    "decision": {"enum": ["repair", "replan", "retry", "backoff", "stop", "handoff", "done"]},
+    "reasonCode": {"enum": ["passed", "incomplete_reported", "repeated_finding", "oscillation", "no_progress", "global_budget_exhausted", "validator_error", "governance_stop", "session_unavailable", "repair_authorized", "replan_authorized", "infrastructure_retry", "infrastructure_backoff", "infrastructure_budget_exhausted", "flaky_unresolved"]},
+    "terminal": {"type": "boolean"},
+    "strategy": {"enum": ["focused_repair", "replan", "infrastructure_retry", "stop_escalate", "none"]},
+    "progress": {"type": ["object", "null"]},
+    "policy": {"type": "object", "required": ["policyVersion", "hash", "snapshot"], "properties": {"policyVersion": {"type": "string"}, "hash": {"type": "string"}, "snapshot": {"type": "object"}}},
+    "budget": {"type": "object"},
+    "checks": {"type": "array", "items": {"type": "object"}},
+    "previousHash": {"type": "string"},
+    "hash": {"type": "string"}
+  }
+}

@@ -11,7 +11,14 @@ param(
     [string]$OutputPath = '.factory/repair-decision.json',
     [string]$HandoffPath = '.factory/repair-loop-handoff.json',
     [string]$HindsightPath = '',
-    [double]$AttemptSeconds = 0
+    [string]$RepairPolicyPath = (Join-Path $PSScriptRoot '../policies/repair-policy.json'),
+    [string]$Workflow = '',
+    [string]$Validator = '',
+    [string]$IdempotencyKey = '',
+    [double]$AttemptSeconds = 0,
+    [double]$AttemptTokens = 0,
+    [double]$AttemptCostUsd = 0,
+    [switch]$SessionUnavailable
 )
 $ErrorActionPreference = 'Stop'
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
@@ -20,15 +27,21 @@ $policy = Get-RepairPolicy $PolicyPath
 if (-not (Test-Path -LiteralPath $ChecksPath)) { throw "Check results not found: $ChecksPath" }
 $data = Get-Content -Raw -LiteralPath $ChecksPath | ConvertFrom-Json -Depth 10
 $checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
-$ledger = Read-RepairLedger $LedgerPath $policy
-$decision = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds
+$effective = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath $RepairPolicyPath -Workflow $Workflow -Validator $Validator
+$progress = if ($data.PSObject.Properties['progress']) { $data.progress } else { $null }
+foreach ($p in $LedgerPath, $OutputPath, $HandoffPath) { New-Item -ItemType Directory -Path (Split-Path -Parent ([IO.Path]::GetFullPath($p))) -Force | Out-Null }
+# Read, decide and write under one lock so concurrent evaluations cannot overspend the budget.
+$decision = Use-RepairLock $LedgerPath {
+    $ledger = Read-RepairLedger $LedgerPath $policy
+    $d = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds -Effective $effective -Progress $progress -IdempotencyKey $IdempotencyKey -AttemptTokens $AttemptTokens -AttemptCostUsd $AttemptCostUsd -SessionAvailable (-not $SessionUnavailable)
+    Write-RepairLedger $LedgerPath $ledger
+    $d
+}
 # Hindsight recall (#55) is optional context; absence or damage never fails the loop.
 $decision.hindsight = $null
 if ($HindsightPath -and (Test-Path -LiteralPath $HindsightPath)) {
     try { $decision.hindsight = Get-Content -Raw -LiteralPath $HindsightPath | ConvertFrom-Json -Depth 6 } catch { $decision.hindsight = $null }
 }
-foreach ($p in $LedgerPath, $OutputPath, $HandoffPath) { New-Item -ItemType Directory -Path (Split-Path -Parent ([IO.Path]::GetFullPath($p))) -Force | Out-Null }
-Set-Content -LiteralPath $LedgerPath -Value ($ledger | ConvertTo-Json -Depth 8)
-Set-Content -LiteralPath $OutputPath -Value ($decision | ConvertTo-Json -Depth 8)
+Set-Content -LiteralPath $OutputPath -Value ($decision | ConvertTo-Json -Depth 12)
 if (@($decision.handoff.findings).Count -gt 0) { Set-Content -LiteralPath $HandoffPath -Value ($decision.handoff | ConvertTo-Json -Depth 8) }
-Write-Host "repair-loop: action=$($decision.action) impacted=$(@($decision.impactedChecks) -join ',') stop=$($decision.stopReason)"
+Write-Host "repair-loop: action=$($decision.action) impacted=$(@($decision.impactedChecks) -join ',') stop=$($decision.stopReason) reason=$($decision.reasonCode)"
