@@ -58,6 +58,11 @@
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_model_routing') } else { @('-B', '-m', 'unittest', 'tests.test_factory_model_routing') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Model routing tests failed.' }"
     },
     {
+      "id": "progress-evaluator-tests",
+      "patterns": ["scripts/release/progress_evaluator.py", "tests/test_progress_evaluator.py", "docs/progress-evaluator.md"],
+      "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_progress_evaluator') } else { @('-B', '-m', 'unittest', 'tests.test_progress_evaluator') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Progress evaluator tests failed.' }"
+    },
+    {
       "id": "mcp-profile-tests",
       "patterns": ["scripts/mcp/**", "tests/test_mcp_profile.py", "config/mcp-profiles.json", "docs/mcp-profiles.md"],
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_mcp_profile') } else { @('-B', '-m', 'unittest', 'tests.test_mcp_profile') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'MCP profile tests failed.' }"
