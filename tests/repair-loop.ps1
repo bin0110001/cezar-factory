@@ -77,6 +77,43 @@ $l = NewLedger
 $many = Invoke-RepairDecision @((C 'a' 'failed' 'AssertionError a'), (C 'b' 'failed' 'AssertionError b')) $l $policy
 Check 'several checks in one round charge one attempt' ($many.budget.attemptsUsed -eq 1 -and $many.impactedChecks.Count -eq 2)
 
+# Adaptive repair via standardized check-provider receipts (#744): one coordinator, policy and ledger for every provider.
+function RC($id, $cat, $status, $msg = '', $extra = @{}) { $o = @{ checkId = $id; category = $cat; status = $status; message = $msg; commitSha = 'rev1'; disposition = 'new' }; foreach ($k in $extra.Keys) { $o[$k] = $extra[$k] }; [pscustomobject]$o }
+$l = NewLedger
+$recs = @((RC 'project-tests' 'test' 'fail' 'unit suite: 2 failed'), (RC 'result-contract' 'custom' 'fail' 'implementation-result.json: $.testResult missing'), (RC 'lint' 'lint' 'pass'))
+$d = Invoke-RepairDecision @($recs | ForEach-Object { ConvertFrom-CheckProviderReceipt $_ }) $l $policy 5
+Check 'test provider and result-contract validator share one ledger and policy' ($d.action -eq 'repair' -and $l.entries.Count -eq 2 -and $d.budget.attemptsUsed -eq 1 -and $l.entries[0].source -eq 'receipt' -and ($l.entries.category -join ',') -eq 'test,custom')
+Check 'focused feedback goes to the active session' ($d.feedback.Count -eq 2 -and $d.feedback[0].target -eq 'active-session' -and $d.feedback[1].checkId -eq 'result-contract')
+$env1 = RC 'net' 'test' 'error' 'runner crashed' @{ disposition = 'infra-failure' }
+$gov = RC 'sast' 'sast' 'fail' 'finding' @{ findings = @(@{ class = 'security' }) }
+$wv = RC 'deps' 'lint' 'fail' 'x' @{ waived = $true }
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $env1)) (NewLedger) $policy
+Check 'environment category is backoff only, never repaired' ($d.action -eq 'backoff' -and $d.budget.attemptsUsed -eq 0)
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $gov)) (NewLedger) $policy
+Check 'security finding is a hard stop, never repaired' ($d.action -eq 'stop' -and $d.stopReason -eq 'security_issue' -and $d.impactedChecks.Count -eq 0)
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $wv)) (NewLedger) $policy
+Check 'waiver/governance is handed off, never repaired' ($d.action -eq 'handoff' -and $d.checks[0].class -eq 'governance' -and $d.budget.attemptsUsed -eq 0 -and $d.handoff.waiver -eq $false)
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt (RC 'lint' 'lint' 'warn' 'old warning' @{ disposition = 'known' }))) (NewLedger) $policy
+Check 'accepted baseline finding is not repaired and not a regression' ($d.action -eq 'done' -and $d.checks[0].action -eq 'accepted' -and $d.budget.attemptsUsed -eq 0)
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt (RC 'lint' 'lint' 'warn' 'new warning' @{ disposition = 'worsened' }))) (NewLedger) $policy
+Check 'fresh regression is repairable' ($d.action -eq 'repair')
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt (RC 'x' 'test' 'unknown'))) (NewLedger) $policy
+Check 'unknown result is untested, never a pass' ($d.action -eq 'handoff' -and $d.checks[0].class -eq 'untested')
+
+$m = { param($rev, $status = 'pass') [pscustomobject]@{ revision = 'rev1'; requiredCheckIds = @('project-tests', 'result-contract'); results = @([pscustomobject]@{ checkId = 'project-tests'; status = 'pass'; commitSha = 'rev1' }, [pscustomobject]@{ checkId = 'result-contract'; status = $status; commitSha = $rev }) } }
+$scoped = @((ConvertFrom-CheckProviderReceipt (RC 'project-tests' 'test' 'pass')))
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev1' 'fail')
+Check 'scoped pass with failing matrix stays provisional' ($d.action -eq 'rerun-full-matrix' -and $d.confirmation.state -eq 'provisional')
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev0')
+Check 'matrix evidence for another revision stays provisional' ($d.action -eq 'rerun-full-matrix')
+$inc = & $m 'rev1'; $inc.results = @($inc.results[0])
+Check 'incomplete matrix is provisional' ((Get-RepairConfirmation $inc).state -eq 'provisional')
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev1')
+Check 'full mandatory matrix at the exact revision confirms success' ($d.action -eq 'done' -and $d.confirmation.state -eq 'confirmed')
+Check 'legacy callers (no matrix) behave unchanged' ((Invoke-RepairDecision $scoped (NewLedger) $policy).action -eq 'done')
+Check 'worker may validate but not take over the session' ((Test-RepairSessionAction (NewLedger) 'worker' 'validate').allowed -and -not (Test-RepairSessionAction (NewLedger) 'worker' 'repair').allowed -and -not (Test-RepairSessionAction (NewLedger) 'worker' 'takeover').allowed)
+$libText = Get-Content -Raw (Join-Path $PSScriptRoot '../scripts/repair-loop-lib.ps1')
+Check 'no new finding registry or check runner' ($libText -notmatch '(?i)function\s+(Register-Finding|New-FindingRegistry|Invoke-Check(Provider)?Runner|Start-Check)' -and $libText -notmatch '(?i)Start-Process|Invoke-Expression')
 
 # ---- #740: layered policy, reason codes, strategies, receipts, reservations ----
 $repoPolicy = Join-Path $PSScriptRoot '../policies/repair-policy.json'
@@ -228,6 +265,16 @@ try {
     & pwsh -NoProfile -File $step -ChecksPath checks.json -LedgerPath out/ledger.json -OutputPath out/decision.json -HandoffPath out/handoff.json -PolicyPath $pol -HindsightPath missing.json | Out-Null
     Check 'step exits 0 without Hindsight' ($LASTEXITCODE -eq 0 -and (Test-Path out/decision.json))
     Check 'step persisted the ledger' ((Get-Content -Raw out/ledger.json | ConvertFrom-Json).entries.Count -eq 1)
+    Set-Content 'rec.json' (@{ revision = 'rev1'; requiredCheckIds = @('project-tests'); matrix = @(@{ checkId = 'project-tests'; status = 'pass'; commitSha = 'rev1' }); receipts = @(@{ checkId = 'project-tests'; category = 'test'; status = 'fail'; message = 'AssertionError q'; commitSha = 'rev1'; disposition = 'new' }) } | ConvertTo-Json -Depth 6)
+    & pwsh -NoProfile -File $step -ReceiptsPath rec.json -LedgerPath out/l2.json -OutputPath out/d3.json -PolicyPath $pol | Out-Null
+    $rd = Get-Content -Raw out/d3.json | ConvertFrom-Json
+    Check 'step consumes provider receipts' ($LASTEXITCODE -eq 0 -and $rd.action -eq 'repair' -and $rd.feedback[0].target -eq 'active-session')
+    Set-Content 'rec-missing-matrix.json' (@{ revision = 'rev1'; receipts = @(@{ checkId = 'project-tests'; category = 'test'; status = 'pass'; commitSha = 'rev1'; disposition = 'new' }) } | ConvertTo-Json -Depth 6)
+    & pwsh -NoProfile -File $step -ReceiptsPath rec-missing-matrix.json -LedgerPath out/l3.json -OutputPath out/d4.json -PolicyPath $pol -ActorKind worker -RequestedAction validate | Out-Null
+    $rd = Get-Content -Raw out/d4.json | ConvertFrom-Json
+    Check 'receipt step without requiredCheckIds stays provisional' ($LASTEXITCODE -eq 0 -and $rd.action -eq 'rerun-full-matrix' -and $rd.confirmation.state -eq 'provisional' -and -not $rd.handoff.successful)
+    & pwsh -NoProfile -File $step -ChecksPath checks.json -LedgerPath out/l4.json -OutputPath out/denied.json -PolicyPath $pol -ActorKind worker -RequestedAction repair 2>&1 | Out-Null
+    Check 'step denies a worker repair action before writing a decision' ($LASTEXITCODE -ne 0 -and -not (Test-Path out/denied.json))
     Set-Content out/ledger.json '{not json'
     & pwsh -NoProfile -File $step -ChecksPath checks.json -LedgerPath out/ledger.json -OutputPath out/decision2.json -PolicyPath $pol 2>&1 | Out-Null
     Check 'corrupt ledger fails closed' ($LASTEXITCODE -ne 0 -and -not (Test-Path out/decision2.json))

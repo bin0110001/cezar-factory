@@ -30,7 +30,55 @@ function ConvertTo-RepairCheck([object]$Check) {
         checkId = [string](& $v 'checkId' ''); status = [string](& $v 'status' ''); message = [string](& $v 'message' ''); output = [string](& $v 'output' '')
         commitSha = [string](& $v 'commitSha' ''); history = @(& $v 'history' @()); flaky = ((& $v 'flaky' $false) -eq $true)
         safetyViolation = ((& $v 'safetyViolation' $false) -eq $true); securityIssue = ((& $v 'securityIssue' $false) -eq $true)
+        forceClass = [string](& $v 'forceClass' ''); category = [string](& $v 'category' ''); disposition = [string](& $v 'disposition' ''); source = [string](& $v 'source' 'legacy')
     }
+}
+
+# Adapter for the standardized check-provider receipts (docs/check-provider-contract.md) and their stage dispositions
+# (docs/verification-dispositions.md). It only maps an existing record to a repair check; it is not a finding store or a runner.
+# Receipt: {checkId, category, status pass|fail|warn|unknown|error, disposition, commitSha, message, output, waived, findings[{class}]}.
+$script:SecurityCategories = 'sast', 'sca', 'secrets', 'iac', 'container', 'sbom'
+function ConvertFrom-CheckProviderReceipt([object]$Receipt) {
+    $v = { param($n, $d) $p = $Receipt.PSObject.Properties[$n]; if ($null -ne $p -and $null -ne $p.Value) { $p.Value } else { $d } }
+    $category = ([string](& $v 'category' '')).ToLowerInvariant()
+    $status = ([string](& $v 'status' '')).ToLowerInvariant()
+    $disp = ([string](& $v 'disposition' '')).ToLowerInvariant()
+    $findings = @(& $v 'findings' @())
+    $security = ($category -in $script:SecurityCategories) -or [bool]($findings | Where-Object { "$($_.class)" -eq 'security' })
+    $force = ''; $mapped = 'failed'
+    if ($status -in 'pass', 'passed') { $mapped = 'passed' }
+    elseif ($status -eq 'unknown' -or $disp -in 'untested', 'unknown') { $mapped = 'untested' }
+    elseif ($status -eq 'error' -or $disp -eq 'infra-failure') { $force = 'infrastructure' }
+    elseif ($security -or $category -eq 'license' -or ((& $v 'waived' $false) -eq $true)) { $force = 'governance' }
+    elseif ($disp -eq 'known') { $force = 'accepted-baseline' }
+    elseif ($status -in 'fail', 'warn', 'failed') { $force = 'code-defect' }
+    return [pscustomobject]@{
+        checkId = [string](& $v 'checkId' ''); status = $mapped; message = [string](& $v 'message' ''); output = [string](& $v 'output' '')
+        commitSha = [string](& $v 'commitSha' ''); securityIssue = $security; forceClass = $force
+        category = $category; disposition = $disp; source = 'receipt'
+    }
+}
+
+# Scoped reruns are provisional: success needs every mandatory check of the matrix passing at the exact revision.
+function Get-RepairConfirmation([object]$Matrix) {
+    if ($null -eq $Matrix) { return [ordered]@{ state = 'unverified'; reasons = @('no full-matrix evidence supplied') } }
+    $reasons = @(); $revision = [string]$Matrix.revision
+    if (-not $revision) { $reasons += 'matrix has no revision' }
+    $results = @($Matrix.results)
+    foreach ($id in @($Matrix.requiredCheckIds)) {
+        $r = $results | Where-Object { $_.checkId -eq $id } | Select-Object -First 1
+        if ($null -eq $r) { $reasons += "$id missing from matrix" }
+        elseif (([string]$r.status).ToLowerInvariant() -notin 'pass', 'passed') { $reasons += "$id not passing ($($r.status))" }
+        elseif ([string]$r.commitSha -ne $revision) { $reasons += "$id evidence is for another revision" }
+    }
+    if (@($Matrix.requiredCheckIds).Count -eq 0) { $reasons += 'matrix lists no mandatory checks' }
+    return [ordered]@{ state = $(if ($reasons.Count) { 'provisional' } else { 'confirmed' }); revision = $revision; reasons = $reasons }
+}
+
+# A distributed worker may validate; it can never take over, or write to, the active coding session.
+function Test-RepairSessionAction([object]$Ledger, [string]$ActorKind, [string]$Action) {
+    $allowed = ($ActorKind -eq 'worker' -and $Action -eq 'validate') -or ($ActorKind -eq 'session' -and $Action -in 'validate', 'repair')
+    return [ordered]@{ allowed = $allowed; reason = $(if ($allowed) { '' } else { "$ActorKind may not $Action; the active coding session keeps ownership" }) }
 }
 
 function Get-FailureClass([object]$Check) {
@@ -39,6 +87,7 @@ function Get-FailureClass([object]$Check) {
     if ($status -in 'passed', 'pass', 'ok') { return 'pass' }
     if ($status -in 'error', 'validator_error', 'validator-error') { return 'validator-error' }
     if ($status -in 'untested', 'skipped', 'not-run', 'missing', 'deferred', 'incomplete', '') { return 'untested' }
+    if ($Check.forceClass -in 'infrastructure', 'governance', 'accepted-baseline', 'code-defect') { return $Check.forceClass }
     $text = "$($Check.message) $($Check.output)"
     $sha = [string]$Check.commitSha
     $hist = @($Check.history)
@@ -203,7 +252,7 @@ $script:StopRank = @{ governance_stop = 0; validator_error = 1; global_budget_ex
 # $Progress (#736 contract, optional): {outcome: progress|no_progress|unknown, relevantChange: bool} about the previous
 # attempt; missing means unknown and never grants budget. Mutates $Ledger (resolves pending outcomes, appends this
 # round's entries and exactly one hash-chained receipt). Pure otherwise: no network, no git.
-function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Policy, [double]$AttemptSeconds = 0, [string]$Now = ([DateTime]::UtcNow.ToString('o')), [object]$Effective = $null, [object]$Progress = $null, [string]$IdempotencyKey = '', [double]$AttemptTokens = 0, [double]$AttemptCostUsd = 0, [bool]$SessionAvailable = $true) {
+function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Policy, [double]$AttemptSeconds = 0, [string]$Now = ([DateTime]::UtcNow.ToString('o')), [object]$Effective = $null, [object]$Progress = $null, [string]$IdempotencyKey = '', [double]$AttemptTokens = 0, [double]$AttemptCostUsd = 0, [bool]$SessionAvailable = $true, [object]$Matrix = $null) {
     if ($null -eq $Effective) { $Effective = Get-EffectiveRepairPolicy -Legacy $Policy }
     $lim = $Effective.limits
     if (-not $Ledger.Contains('receipts')) { $Ledger['receipts'] = [System.Collections.ArrayList]::new() }
@@ -219,6 +268,7 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
     }
     $failing = @(); $perCheck = @(); $st = @{ code = $null; legacy = '' }
     $setStop = { param($code, $legacy) if ($null -eq $st.code -or $script:StopRank[$code] -lt $script:StopRank[$st.code]) { $st.code = $code; $st.legacy = $legacy } }
+    $confirmation = $null
     foreach ($c in @($Checks | ForEach-Object { ConvertTo-RepairCheck $_ })) {
         $class = Get-FailureClass $c
         $fp = if ($class -eq 'pass') { '' } else { Get-FailureFingerprint $c }
@@ -251,6 +301,8 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
         if ($osc -ge [int]$lim.oscillationLimit) { & $setStop 'oscillation' 'oscillation' }
         if ($noProgress -ge [int]$lim.consecutiveNoProgress -and $f.class -eq 'code-defect') { & $setStop 'no_progress' 'no_progress' }
         switch ($f.class) {
+            'governance' { $action = 'none'; $reason = 'governance: security finding, waiver or license decision is never auto-repaired; handed off' }
+            'accepted-baseline' { $action = 'accepted'; $reason = 'accepted baseline finding: stays visible, no repair, not a new regression' }
             'validator-error' { & $setStop 'validator_error' 'validator_error'; $action = 'none'; $reason = 'validator error: the check itself could not report a result' }
             'untested' { $action = 'none'; $reason = 'untested: no repair attempted; the gap stays visible' }
             'flaky' {
@@ -270,13 +322,17 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
                 else { $action = 'repair'; $reason = 'code defect: targeted repair attempt' }
             }
         }
-        $perCheck += [pscustomobject]@{ checkId = [string]$c.checkId; class = $f.class; action = $action; reason = $reason; backoffSeconds = $backoff; fingerprint = $f.fingerprint; message = [string]$c.message; output = [string]$c.output }
+        $perCheck += [pscustomobject]@{ checkId = [string]$c.checkId; class = $f.class; action = $action; reason = $reason; backoffSeconds = $backoff; fingerprint = $f.fingerprint; message = [string]$c.message; output = [string]$c.output; category = $c.category; disposition = $c.disposition; source = $c.source }
     }
     $stop = $st.legacy
     if ($st.code) { foreach ($p in $perCheck) { if ($p.action -in 'repair', 'replan', 'retry', 'backoff') { $p.action = 'stopped'; $p.reason = "stopped: $stop" } } }
     $attempts = @($perCheck | Where-Object { $_.action -in 'repair', 'replan' })
     # Only one attempt is charged per round even when several checks need repair.
-    $action = if ($st.code) { 'stop' } elseif (@($perCheck | Where-Object { $_.action -eq 'replan' }).Count) { 'replan' } elseif ($attempts.Count) { 'repair' } elseif (@($perCheck | Where-Object { $_.action -eq 'retry' }).Count) { 'retry' } elseif (@($perCheck | Where-Object { $_.action -eq 'backoff' }).Count) { 'backoff' } elseif ($perCheck.Count) { 'handoff' } else { 'done' }
+    $action = if ($st.code) { 'stop' } elseif (@($perCheck | Where-Object { $_.action -eq 'replan' }).Count) { 'replan' } elseif ($attempts.Count) { 'repair' } elseif (@($perCheck | Where-Object { $_.action -eq 'retry' }).Count) { 'retry' } elseif (@($perCheck | Where-Object { $_.action -eq 'backoff' }).Count) { 'backoff' } elseif (@($perCheck | Where-Object { $_.action -ne 'accepted' }).Count) { 'handoff' } else { 'done' }
+    if ($action -eq 'done' -and $null -ne $Matrix) {
+        $confirmation = Get-RepairConfirmation $Matrix
+        if ($confirmation.state -ne 'confirmed') { $action = 'rerun-full-matrix' }
+    }
     $round = 1; foreach ($e in $Ledger.entries) { if ([int]$e.round -ge $round) { $round = [int]$e.round + 1 } }
     $first = $true
     foreach ($p in $perCheck) {
@@ -287,6 +343,7 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
             outcome = if (@('repair', 'replan', 'retry', 'backoff') -contains $p.action) { 'pending' } else { 'not-attempted' }
             costSeconds = if ($charged) { $AttemptSeconds } else { 0 }; tokens = $(if ($charged) { $AttemptTokens } else { 0 }); costUsd = $(if ($charged) { $AttemptCostUsd } else { 0 })
             stopReason = [string]$stop
+            category = [string]$p.category; disposition = [string]$p.disposition; source = [string]$p.source
         })
         if ($p.action -in 'repair', 'replan' -and -not $charged) { $Ledger.entries[$Ledger.entries.Count - 1].action = 'repair-batched' }
     }
@@ -299,6 +356,7 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
     $reasonCode = if ($st.code) { $st.code } else {
         switch ($action) {
             'done' { 'passed' } 'repair' { 'repair_authorized' } 'replan' { 'replan_authorized' } 'retry' { 'infrastructure_retry' } 'backoff' { 'infrastructure_backoff' }
+            'rerun-full-matrix' { 'full_matrix_required' }
             default { if (@($perCheck | Where-Object { $_.class -eq 'untested' }).Count) { 'incomplete_reported' } elseif (@($perCheck | Where-Object { $_.class -eq 'infrastructure' }).Count) { 'infrastructure_budget_exhausted' } else { 'flaky_unresolved' } }
         }
     }
@@ -307,7 +365,7 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
     $last = if ($Ledger.receipts.Count) { [string]$Ledger.receipts[$Ledger.receipts.Count - 1].hash } else { '' }
     $receipt = [ordered]@{
         schemaVersion = 1; receiptId = ''; round = $round; at = $Now; idempotencyKey = $IdempotencyKey
-        decision = $action; reasonCode = $reasonCode; terminal = ($action -in 'stop', 'handoff', 'done'); strategy = $strategy
+        decision = $action; reasonCode = $reasonCode; terminal = ($action -in 'stop', 'handoff', 'done', 'rerun-full-matrix'); strategy = $strategy
         progress = [ordered]@{ outcome = $progressOutcome; relevantChange = $relevant }
         policy = [ordered]@{ policyVersion = $Effective.policyVersion; hash = $Effective.hash; snapshot = $Effective }
         budget = $budgetNow
@@ -320,13 +378,15 @@ function Invoke-RepairDecision([object[]]$Checks, [object]$Ledger, [object]$Poli
     return [ordered]@{
         schemaVersion = 1; action = $action; round = $round; stopReason = [string]$stop; reasonCode = $reasonCode; strategy = $strategy; receipt = $receipt
         impactedChecks = $impacted
+        confirmation = $confirmation
+        feedback = @($attempts | ForEach-Object { [ordered]@{ checkId = $_.checkId; category = $_.category; disposition = $_.disposition; message = (Protect-FailureText $_.message 400); target = 'active-session' } })
         backoffSeconds = [int]$maxBackoff
         checks = @($perCheck | ForEach-Object { [ordered]@{ checkId = $_.checkId; class = $_.class; action = $_.action; reason = $_.reason } })
         summary = $(if ($records.Count) { New-FailureSummary -Records $records } else { [ordered]@{ schemaVersion = 1; totalFindings = 0; totalOccurrences = 0; truncated = $false; omittedEntries = 0; omittedOccurrences = 0; entries = @() } })
         budget = $budgetNow
         handoff = [ordered]@{
             target = 'failure-audit-publication'; createsIssue = $false; waiver = $false
-            successful = ($action -eq 'done'); incomplete = ($action -in 'stop', 'handoff')
+            successful = ($action -eq 'done'); incomplete = ($action -in 'stop', 'handoff', 'rerun-full-matrix')
             findings = @($handoff | ForEach-Object { [ordered]@{ findingId = $_.fingerprint; identifier = $_.checkId; class = $_.class; reason = $_.reason; message = (Protect-FailureText $_.message 200); occurrence = 1 } })
         }
     }

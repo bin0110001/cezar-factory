@@ -11,10 +11,13 @@ param(
     [string]$OutputPath = '.factory/repair-decision.json',
     [string]$HandoffPath = '.factory/repair-loop-handoff.json',
     [string]$HindsightPath = '',
+    [string]$ReceiptsPath = '',
     [string]$RepairPolicyPath = (Join-Path $PSScriptRoot '../policies/repair-policy.json'),
     [string]$Workflow = '',
     [string]$Validator = '',
     [string]$IdempotencyKey = '',
+    [ValidateSet('session','worker')][string]$ActorKind = 'session',
+    [ValidateSet('validate','repair','takeover')][string]$RequestedAction = 'repair',
     [double]$AttemptSeconds = 0,
     [double]$AttemptTokens = 0,
     [double]$AttemptCostUsd = 0,
@@ -24,16 +27,30 @@ $ErrorActionPreference = 'Stop'
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 . (Join-Path $PSScriptRoot 'repair-loop-lib.ps1')
 $policy = Get-RepairPolicy $PolicyPath
-if (-not (Test-Path -LiteralPath $ChecksPath)) { throw "Check results not found: $ChecksPath" }
-$data = Get-Content -Raw -LiteralPath $ChecksPath | ConvertFrom-Json -Depth 10
-$checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
+$matrix = $null
+$data = $null
+if ($ReceiptsPath) {
+    # Standardized check-provider receipts: {receipts:[...], requiredCheckIds:[...], revision, matrix:[...]}; the legacy input stays supported.
+    if (-not (Test-Path -LiteralPath $ReceiptsPath)) { throw "Check receipts not found: $ReceiptsPath" }
+    $rec = Get-Content -Raw -LiteralPath $ReceiptsPath | ConvertFrom-Json -Depth 10
+    $data = $rec
+    $checks = @(@($rec.receipts) | ForEach-Object { ConvertFrom-CheckProviderReceipt $_ })
+    # Always provide a matrix in receipt mode. Missing mandatory IDs must stay unverified, never be interpreted as a pass.
+    $matrix = [pscustomobject]@{ revision = [string]$rec.revision; requiredCheckIds = @($rec.requiredCheckIds); results = @($rec.matrix) }
+} else {
+    if (-not (Test-Path -LiteralPath $ChecksPath)) { throw "Check results not found: $ChecksPath" }
+    $data = Get-Content -Raw -LiteralPath $ChecksPath | ConvertFrom-Json -Depth 10
+    $checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
+}
 $effective = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath $RepairPolicyPath -Workflow $Workflow -Validator $Validator
 $progress = if ($data.PSObject.Properties['progress']) { $data.progress } else { $null }
+$authorization = Test-RepairSessionAction $null $ActorKind $RequestedAction
+if (-not $authorization.allowed) { throw $authorization.reason }
 foreach ($p in $LedgerPath, $OutputPath, $HandoffPath) { New-Item -ItemType Directory -Path (Split-Path -Parent ([IO.Path]::GetFullPath($p))) -Force | Out-Null }
 # Read, decide and write under one lock so concurrent evaluations cannot overspend the budget.
 $decision = Use-RepairLock $LedgerPath {
     $ledger = Read-RepairLedger $LedgerPath $policy
-    $d = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds -Effective $effective -Progress $progress -IdempotencyKey $IdempotencyKey -AttemptTokens $AttemptTokens -AttemptCostUsd $AttemptCostUsd -SessionAvailable (-not $SessionUnavailable)
+    $d = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds -Effective $effective -Progress $progress -IdempotencyKey $IdempotencyKey -AttemptTokens $AttemptTokens -AttemptCostUsd $AttemptCostUsd -SessionAvailable (-not $SessionUnavailable) -Matrix $matrix
     Write-RepairLedger $LedgerPath $ledger
     $d
 }
