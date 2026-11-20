@@ -67,6 +67,30 @@ class ReviewGateTests(unittest.TestCase):
         ok, why = review_decision(policy, pr(body="## Self-review\nscope ok"), SHA, "dev")
         self.assertTrue(ok, why)
 
+    def test_autonomous_accepts_nonempty_bold_self_review_label(self):
+        policy = normalize_policy({"mode": "autonomous"})
+        body = "Closes #354\n\n**Self-review**: scope, risk and invariants checked; validation passed; unresolved findings: none."
+        ok, why = review_decision(policy, pr(body=body), SHA, "dev")
+        self.assertTrue(ok, why)
+
+    def test_autonomous_accepts_bold_self_review_with_colon_inside_label(self):
+        policy = normalize_policy({"mode": "autonomous"})
+        body = "**Self-review:** scope, risk and validation checked."
+        ok, why = review_decision(policy, pr(body=body), SHA, "dev")
+        self.assertTrue(ok, why)
+
+    def test_autonomous_accepts_bold_self_review_heading_followed_by_content(self):
+        policy = normalize_policy({"mode": "autonomous"})
+        body = "**Self-review**\n- Scope and risk checked.\n- Validation passed."
+        ok, why = review_decision(policy, pr(body=body), SHA, "dev")
+        self.assertTrue(ok, why)
+
+    def test_autonomous_rejects_empty_self_review_sections(self):
+        policy = normalize_policy({"mode": "autonomous"})
+        for body in ("**Self-review**:", "**Self-review:**   ", "## Self-review\n\n"):
+            with self.subTest(body=body):
+                self.assertFalse(review_decision(policy, pr(body=body), SHA, "dev")[0])
+
     def test_autonomous_rejects_a_merge_without_evidence(self):
         policy = normalize_policy({"mode": "autonomous"})
         ok, _ = review_decision(policy, pr(body="just a description"), SHA, "dev")

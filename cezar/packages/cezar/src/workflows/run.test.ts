@@ -2980,6 +2980,81 @@ describe('queued stacking reaches the backend (#472)', () => {
   }, 60_000);
 });
 
+describe('adaptive repair keeps the original agent session (#741)', () => {
+  let repoRoot: string;
+  let store: RunStore;
+  let manager: RunManager;
+  let argsFile: string;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeAll(async () => {
+    repoRoot = mkdtempSync(join(tmpdir(), 'cez-adaptive-run-'));
+    savedEnv.CEZ_DRY_RUN = process.env.CEZ_DRY_RUN;
+    savedEnv.CEZ_MOCK_ARGS_FILE = process.env.CEZ_MOCK_ARGS_FILE;
+    process.env.CEZ_DRY_RUN = '1';
+    argsFile = join(repoRoot, 'mock-args.jsonl');
+    process.env.CEZ_MOCK_ARGS_FILE = argsFile;
+    await run('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
+    writeFileSync(join(repoRoot, 'source.txt'), 'base\n');
+    await run('git', ['add', '-A'], { cwd: repoRoot });
+    await run('git', [...GIT_ID, 'commit', '-q', '-m', 'base'], { cwd: repoRoot });
+    mkdirSync(join(repoRoot, '.ai/cezar'), { recursive: true });
+    mkdirSync(join(repoRoot, '.factory'), { recursive: true });
+    writeFileSync(join(repoRoot, '.factory/check.mjs'), [
+      "import fs from 'node:fs';",
+      "const p='.factory/check-count'; const n=Number(fs.existsSync(p)?fs.readFileSync(p,'utf8'):0)+1; fs.writeFileSync(p,String(n));",
+      "if(n===1) process.exit(1);",
+    ].join('\n'));
+    writeFileSync(join(repoRoot, '.factory/decision.mjs'), [
+      "import fs from 'node:fs';",
+      "if(fs.existsSync('.factory/implement-result.json')) process.exit(9);",
+      "const p='.factory/decision-count'; const n=Number(fs.existsSync(p)?fs.readFileSync(p,'utf8'):0)+1; fs.writeFileSync(p,String(n));",
+      "const d=n===1?{schemaVersion:1,action:'repair',reasonCode:'repair_authorized',feedback:[{checkId:'check',message:'mock:done repair fixture'}]}:{schemaVersion:1,action:'done'};",
+      "fs.writeFileSync('.factory/adaptive-repair-decision.json',JSON.stringify(d));",
+    ].join('\n'));
+    store = RunStore.open(join(repoRoot, '.ai/cezar'));
+    manager = new RunManager(store, repoRoot);
+  });
+
+  afterAll(() => {
+    manager.dispose();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    store.flush();
+    removeRepo(repoRoot);
+  });
+
+  it('runs the full matrix twice and publishes only after a same-session repair', async () => {
+    const workflow: WorkflowDef = {
+      name: 'adaptive-test', source: 'built-in',
+      steps: [
+        {
+          id: 'implement', prompt: 'mock:done adaptive initial',
+          adaptiveRepair: {
+            checkSteps: ['check'], decisionStep: 'decision', checksPath: '.factory/verification-checks.json',
+            decisionPath: '.factory/adaptive-repair-decision.json', completionPrompt: 'mock:done publish after validation',
+          },
+        },
+        { id: 'check', command: 'node .factory/check.mjs', continueOnFailure: true },
+        { id: 'decision', command: 'node .factory/decision.mjs', adaptiveRepairDecision: true },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'issue #741', worktree: false });
+    const deadline = Date.now() + 40_000;
+    while (!['done', 'review', 'failed', 'cancelled'].includes(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('adaptive workflow did not settle');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(store.getRun(record.id)?.status).toBe('done');
+    expect(readFileSync(join(repoRoot, '.factory/check-count'), 'utf8')).toBe('2');
+    expect(readFileSync(join(repoRoot, '.factory/decision-count'), 'utf8')).toBe('2');
+    expect(readFileSync(argsFile, 'utf8').trim().split('\n')).toHaveLength(1);
+    expect(store.getRun(record.id)?.steps.find((step) => step.id === 'implement')?.sessionId).toBeTruthy();
+  }, 50_000);
+});
+
 /**
  * #472 — the restart path. `recover()` rebuilds a queued run's input through the
  * same helper `pump()` uses, so the stack survives a restart; and because

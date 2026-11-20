@@ -45,3 +45,74 @@ Persistent failures stay visible in the decision and in `.factory/repair-loop-ha
 publication path. The loop creates no issue and no waiver. The concise context comes from the #103 summary.
 
 Tests: `tests/repair-loop.ps1` (fixtures only; deploys nothing).
+
+## Provider receipts (#744)
+
+The same coordinator, policy and ledger also consume standardized check-provider receipts
+(`docs/check-provider-contract.md`) with their stage dispositions (`docs/verification-dispositions.md`). Pass
+`-ReceiptsPath` to the step; `-ChecksPath` keeps working unchanged. There is no new finding registry, check
+runner or provider contract: `ConvertFrom-CheckProviderReceipt` only maps an existing record to a repair check.
+
+Example (project-neutral) `.factory/check-receipts.json`:
+
+```json
+{
+  "revision": "<exact commit sha>",
+  "requiredCheckIds": ["project-tests", "result-contract"],
+  "matrix": [ { "checkId": "project-tests", "status": "pass", "commitSha": "<sha>" } ],
+  "receipts": [
+    { "checkId": "project-tests", "category": "test", "status": "fail", "disposition": "new", "commitSha": "<sha>", "message": "..." },
+    { "checkId": "result-contract", "category": "custom", "status": "fail", "disposition": "new", "commitSha": "<sha>", "message": "$.testResult missing" }
+  ]
+}
+```
+
+| Receipt | Repair class / route |
+| --- | --- |
+| `fail`/`warn`, disposition `new`, `worsened`, `reopened` | `code-defect`: focused `feedback` to the active coding session (`target: active-session`) |
+| `error` or `infra-failure` | `infrastructure`: backoff, never repaired |
+| `unknown`, `untested` | `untested`: visible gap, handed off, never a pass |
+| security category/finding, `waived`, license | `governance`: never repaired; security is a hard `security_issue` stop; no waiver is created |
+| disposition `known` (accepted baseline) | `accepted-baseline`: no repair, stays visible, not a regression |
+
+Scoped reruns are provisional. When `requiredCheckIds` is given, a clean round only ends as `done` if every
+mandatory check passes in `matrix` at the exact `revision`; otherwise the action is `rerun-full-matrix` and
+`confirmation.state` is `provisional` (with reasons). A distributed worker may only `validate`
+(`Test-RepairSessionAction`); it can never repair, take over or write to the active coding session. Project and
+release gate policies stay authoritative: the loop never relaxes them.
+
+Rollout: ship with receipts unused (legacy `-ChecksPath` behaviour is byte-compatible), switch one project's
+verification step to `-ReceiptsPath`, then add `requiredCheckIds` to turn on exact-revision confirmation.
+## Repair authorization policy (#740)
+
+`policies/repair-policy.json` (schema `schemas/repair-policy.schema.json`) holds the budgets; `retry.yaml` stays the
+source of the legacy keys and clamps `maxRepairRounds` and `infraRetryBudget` downward. Layers apply in order:
+Factory defaults, `overrides.project`, `overrides.workflows.<name>`, `overrides.validators.<id>` (selected with
+`-Workflow` / `-Validator`). A layer may only **tighten** a limit; it can never loosen one, remove a ceiling, switch off
+`stopOnSafetyViolation`, `stopOnSecurityIssue`, `enforceRequiredGates` or `incompleteNeverSuccess`, or enable independent
+diagnosis. An invalid, unreadable or weakening policy throws, so the step fails closed. The merged result is a versioned
+snapshot with a hash that every receipt records.
+
+Limits: `maxRepairRounds` (initial validation uses zero), `unchangedFindingPersistence`, `consecutiveNoProgress`,
+`oscillationLimit`, `replanAfterUnchanged`, `maxReplans`, `infraRetryBudget` (separate from repair rounds) and optional
+`maxSeconds`, `maxTokens`, `maxCostUsd` ceilings. A replan costs a repair round; neither a replan nor a session
+continuation resets any budget.
+
+Strategies: `focused_repair` (default), `replan` (same session, same bot), `infrastructure_retry`, `stop_escalate`.
+Independent-agent diagnosis is off by default and is never chosen as a retry.
+
+Decision and reason codes (every evaluation emits exactly one of each): `done` / `passed`; `repair` / `repair_authorized`;
+`replan` / `replan_authorized`; `retry`, `backoff` / `infrastructure_*`; `handoff` / `incomplete_reported`,
+`infrastructure_budget_exhausted`, `flaky_unresolved`; `stop` / `governance_stop` (immediate, highest precedence),
+`validator_error`, `global_budget_exhausted`, `repeated_finding`, `oscillation`, `no_progress`, `session_unavailable`.
+A truthfully incomplete outcome is a handoff with `handoff.successful: false`, never a success.
+
+Progress input (contract with the #736 evaluator, optional): the checks file may carry
+`progress: { outcome: progress|no_progress|unknown, relevantChange: bool }` about the previous attempt. A relevant
+change resets the unchanged-finding count; `no_progress` rounds accumulate; missing data is `unknown`, which never
+counts as progress and never grants budget.
+
+Receipts: one append-only, hash-chained receipt per evaluation in the ledger's `receipts` array (ledger stays
+`schemaVersion` 1; the array is additive). `Request-RepairReservation` / `Stop-RepairReservation` reserve and cancel
+attempts under an exclusive `<ledger>.lock` with idempotency keys; the step holds the same lock across read, decide and
+write, and `-IdempotencyKey` makes a retried evaluation return its original receipt.

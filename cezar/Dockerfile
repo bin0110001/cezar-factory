@@ -24,7 +24,7 @@ RUN npm run build:server && npm run build:web \
 FROM node:22-bookworm-slim
 # git: every task runs in a worktree. gh: draft PRs. openssh-client: git remotes over ssh.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl openssh-client gh \
+ && apt-get install -y --no-install-recommends git ca-certificates curl openssh-client gh tini \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
 
@@ -77,7 +77,10 @@ RUN apt-get update \
  && chown -R 1001:1001 "$GODOT_VERSIONS_DIR"
 
 COPY --from=build /out/*.tgz /tmp/cezar.tgz
-RUN npm install -g /tmp/cezar.tgz && rm /tmp/cezar.tgz
+RUN npm install -g /tmp/cezar.tgz && rm /tmp/cezar.tgz \
+ && mv /usr/local/bin/cezar /usr/local/bin/cezar-cli \
+ && printf '%s\n' '#!/bin/sh' 'exec /usr/bin/tini -g -- /usr/local/bin/cezar-cli "$@"' > /usr/local/bin/cezar \
+ && chmod 0755 /usr/local/bin/cezar
 
 # Run unprivileged: agents execute arbitrary shell, so keep them off root.
 RUN useradd --create-home --uid 1001 cezar \
@@ -107,5 +110,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD curl -fsS http://127.0.0.1:4321/api/v1/health || exit 1
 
 # --bind-host 0.0.0.0 is required for the published port to reach the server; the HOST side
-# stays loopback-only (see compose.yaml), because cezar has no auth of its own.
+# stays loopback-only (see compose.yaml), because cezar has no auth of its own. The cezar
+# executable is a Tini wrapper so it reaps orphaned children even when the service unit
+# overrides this image entrypoint with `--entrypoint cezar`.
 ENTRYPOINT ["cezar", "serve", "--no-open", "--port", "4321", "--bind-host", "0.0.0.0"]

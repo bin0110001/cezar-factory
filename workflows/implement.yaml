@@ -1,9 +1,9 @@
 name: factory-implement
-description: Prepare a ready issue, implement and validate it, open a PR, then keep owning it through review and merge to dev
+description: Prepare a ready issue, implement and validate with bounded same-session repair, publish only after checks pass, then own the PR through merge to dev
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1,check-weakening.ps1,collect-godot-dependencies.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-implement -Step prepare -RequireGh -RequiredScripts check-already-resolved.ps1,prepare-implementation.ps1,route-state.ps1,validate-result.ps1,ensure-implementation-result.ps1,ensure-pr-closes-issue.ps1,adaptive-progress-step.ps1,adaptive-repair-decision-step.ps1,repair-loop-step.ps1,lib.ps1,factory/protect-governance.ps1,factory/test-changed.ps1,factory/verify.ps1,probe-model-endpoint.ps1,check-weakening.ps1,collect-godot-dependencies.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -28,6 +28,16 @@ steps:
   - id: implement
     name: Run factory-implement skill
     skill: factory-implement
+    adaptiveRepair:
+      checkSteps: [protect-governance, weakening-guard, targeted-tests, verify-project, workspace-preflight]
+      decisionStep: repair-decision
+      checksPath: .factory/verification-checks.json
+      decisionPath: .factory/adaptive-repair-decision.json
+      completionPrompt: |
+        The required validation matrix passed for the current artifact. Open or update the pull
+        request targeting dev, include Closes #N for every issue fully delivered, and write the
+        structured success result to .factory/implement-result.json. Preserve the same issue,
+        branch, worktree, and session. Do not rerun validation or claim checks that did not pass.
     prompt: |
       Implement this GitHub issue: {{task}}
 
@@ -50,11 +60,53 @@ steps:
       actual error and retry once with corrected syntax. Prefer structured file edits
       over shell heredocs or nested quoting for multiline files. If the corrected
       command also fails, or two consecutive calls are spent recovering the same
-      command failure, stop and write a failure result immediately; do not switch
+      command failure, stop implementation and end with CEZ:DONE so the workflow can
+      record an incomplete handoff; do not switch
       shells, invent paths, recursively list directories, or delete/recreate files.
-      When done, open or update the PR, then write the structured
-      result as JSON to .factory/implement-result.json (create the directory) with the
-      issue number in "issue" and the PR URL in "pr".
+      When the code change is ready, end the turn with CEZ:DONE. Do not open or update a PR and
+      do not write .factory/implement-result.json; the workflow runs the required checks first
+      and will call this same session again to publish only after they pass.
+  - id: protect-governance
+    name: Guard verification governance from agent changes
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/protect-governance.ps1 -Task "{{task}}"
+    timeoutSeconds: 300
+    continueOnFailure: true
+  - id: weakening-guard
+    name: Fail when the change weakens mandatory checks, thresholds or protected paths
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-weakening.ps1 -BaseRef origin/dev
+    timeoutSeconds: 120
+    continueOnFailure: true
+  - id: targeted-tests
+    name: Run targeted tests
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
+    timeoutSeconds: 1800
+    continueOnFailure: true
+  - id: verify-project
+    name: Verify project integration
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
+    timeoutSeconds: 1800
+    continueOnFailure: true
+  - id: workspace-preflight
+    name: Preflight the issue branch against the integration target
+    command: 'if [ -n "$FACTORY_FENCING_TOKEN" ]; then cez workspace preflight --issue "$FACTORY_ISSUE" --json; fi'
+    timeoutSeconds: 300
+    continueOnFailure: true
+  - id: repair-progress
+    name: Evaluate verified progress for this validation round
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/adaptive-progress-step.ps1 -InputPath .factory/verification-checks.json -OutputPath .factory/progress-evaluation.json
+    timeoutSeconds: 60
+    continueOnFailure: true
+  - id: repair-policy
+    name: Apply the bounded repair policy
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/repair-loop-step.ps1 -ReceiptsPath .factory/verification-checks.json -ProgressPath .factory/progress-evaluation.json -OutputPath .factory/repair-policy-decision.json -LedgerPath .factory/adaptive-repair-ledger.json -Workflow factory-implement -Validator adaptive-matrix
+    timeoutSeconds: 300
+    continueOnFailure: true
+  - id: repair-decision
+    name: Apply bounded repair policy and decide whether to continue
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/adaptive-repair-decision-step.ps1 -ChecksPath .factory/verification-checks.json -ProgressPath .factory/progress-evaluation.json -PolicyDecisionPath .factory/repair-policy-decision.json -OutputPath .factory/adaptive-repair-decision.json
+    timeoutSeconds: 60
+    adaptiveRepairDecision: true
+    continueOnFailure: true
   - id: ensure-result
     name: Preserve implementation handoff
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-implementation-result.ps1 -Path .factory/implement-result.json -ContextPath .factory/implementation-context.json
@@ -63,51 +115,16 @@ steps:
     name: Ensure successful PR closes the issue on merge
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/ensure-pr-closes-issue.ps1 -Path .factory/implement-result.json
     timeoutSeconds: 300
-  - id: protect-governance
-    name: Guard verification governance from agent changes
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/protect-governance.ps1 -Task "{{task}}"
-    timeoutSeconds: 300
-  - id: weakening-guard
-    name: Fail when the change weakens mandatory checks, thresholds or protected paths
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/check-weakening.ps1 -BaseRef origin/dev
-    timeoutSeconds: 120
-    onFail:
-      retry: implement
-      max: 1
-  - id: targeted-tests
-    name: Run targeted tests
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/test-changed.ps1 -Task "{{task}}"
-    timeoutSeconds: 1800
-    onFail:
-      retry: implement
-      max: 2
-  - id: verify-project
-    name: Verify project integration
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
-    timeoutSeconds: 1800
-    onFail:
-      retry: implement
-      max: 1
   - id: validate
     name: Validate implementation result
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/validate-result.ps1 -Kind implementation -Path .factory/implement-result.json
     timeoutSeconds: 60
-    onFail:
-      retry: implement
-      max: 1
   - id: route
     name: Set factory:review
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/route-state.ps1 -Event implement-result -Path .factory/implement-result.json
     timeoutSeconds: 300
     onFail:
       retry: validate
-      max: 1
-  - id: workspace-preflight
-    name: Preflight the issue branch against the integration target
-    command: 'if [ -n "$FACTORY_FENCING_TOKEN" ]; then cez workspace preflight --issue "$FACTORY_ISSUE" --json; fi'
-    timeoutSeconds: 300
-    onFail:
-      retry: implement
       max: 1
   - id: lifecycle-ready
     name: Mark the completed coding phase ready for review and integration

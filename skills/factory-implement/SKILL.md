@@ -14,11 +14,12 @@ source: skills/factory-implement/SKILL.md
 - Make the smallest appropriate change.
 - Add/update tests.
 - Run targeted validation where appropriate.
-- Report structured completion information.
+- Report structured completion information when the workflow requests it.
 - Explicitly verify substantive acceptance criteria and report whether required
   documentation was updated. Set `documentationUpdated` to `false` when the
   documentation review finds that no update is needed.
-- Prepare/update PR.
+- Prepare the change for workflow validation; publish only when the workflow resumes
+  this same session after the required checks pass.
 
 ## Detailed Guidance
 
@@ -91,6 +92,19 @@ source: skills/factory-implement/SKILL.md
 - Update existing tests if behavior changes.
 - Ensure tests are meaningful: they should catch regressions, not just exercise code.
 
+### 5a. Keep the default workflow guide current
+
+- When the change alters Factory routing, ownership, job/step responsibilities,
+  PR lifecycle, validation evidence, or release/promotion, reconcile
+  `docs/workflow-map.md` with the authoritative sources using the
+  `factory-update-workflow-guide` skill. Update the guide in the same PR as the
+  process change.
+- If implementation reveals a mismatch between documented policy and actual
+  behavior, record the concrete gap in the guide rather than presenting the
+  intended behavior as already enforced. Do not change unrelated process behavior
+  as part of the documentation update.
+- Set `documentationUpdated` accurately in the implementation result.
+
 ### 6. Run Targeted Validation
 
 - Run the project's own test commands while developing. The workflow runs `test-changed.ps1` and the full verification itself after you finish; do not run those Factory scripts.
@@ -108,13 +122,17 @@ source: skills/factory-implement/SKILL.md
 
 ### 8. Prepare/Update PR
 
-- Create a new branch if not already on one.
-- Commit changes with a clear, concise message.
-- Create or update a pull request targeting the configured `dev` base branch.
+- The workflow owns branch/workspace preparation and deterministic validation.
+- Commit changes with a clear, concise message when the workflow's publication prompt
+  confirms that the required checks passed.
+- Create or update a pull request targeting the configured `dev` base branch only
+  when the workflow resumes this same session after those checks passed.
   The review workflow may perform independent review and request the configured
   merge path, but that does not transfer ownership: this job remains responsible
   for the PR until GitHub confirms it merged into `dev`.
-- Link the PR to the issue.
+- Link the PR to the issue and write the requested structured result only in that
+  publication turn. Never publish on a failed, inconclusive, stale-artifact, or
+  incomplete validation matrix.
 
 ### 8a. Own the merge: leave the PR mergeable
 
@@ -186,8 +204,8 @@ change.
 ## Workflow Contract
 
 - The workflow has already prepared `.factory/implementation-context.json` and moved the issue to `factory:working`. Do **not** run Factory scripts (`route-state.ps1`, `prepare-implementation.ps1`, `validate-result.ps1`, ...); the workflow owns every script step.
-- Do **not** edit `factory:*` labels. Write the structured result to `.factory/implement-result.json` (create the directory), including the issue number in `issue` and the PR URL in `pr`. The workflow validates it and routes the issue state.
-- Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Use `status: failure` if you cannot finish; the issue is then routed to `factory:investigate`.
+- Do **not** edit `factory:*` labels. The adaptive implementation workflow owns validation and requests `.factory/implement-result.json` only after the full matrix passes; include the issue number and PR URL in that publication result. Other workflows may request their own result at a different stage.
+- Required for `status: success`: non-empty `filesChanged`, `testResult`, and `pr`. Never report success before the workflow's validation gate passes. Use `status: failure` if the requested work cannot finish; the issue is then routed to `factory:investigate`.
 - Result files live under `.factory/`, which projects gitignore; never commit them.
 
 ## Already-resolved issues
