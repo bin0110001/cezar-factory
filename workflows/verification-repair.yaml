@@ -13,7 +13,7 @@ steps:
     name: Targeted repair when the decision says repair
     skill: factory-implement
     prompt: |
-      Read `.factory/repair-decision.json`. Only when its `action` is `repair`, make the smallest targeted
+      Read `.factory/repair-decision.json`. Only when its `action` is `repair` or `replan` (a replan means rethink the approach in this same session), make the smallest targeted
       change that fixes the `impactedChecks`, using the concise `summary` as your failure context (and the
       `hindsight` recall only if it is present). For any other action make no edits. Do not change policy,
       evidence or ledger files, do not publish issues, and do not create waivers.

@@ -62,7 +62,12 @@ Check 'persistent failure handed off, no issue, no waiver' ($d.handoff.findings.
 $wide = [pscustomobject]@{ schemaVersion = 1; maxAttempts = 5; environmentHandling = 'retry_with_backoff'; flakyHandling = 'retry_once_then_investigate'; stopOn = @('repeated_failures') }
 $l = NewLedger
 $a = C 'unit' 'failed' 'AssertionError same 1'
-1..3 | ForEach-Object { $d = Invoke-RepairDecision @($a) $l $wide }
+$wideFile = Join-Path $tmp 'wide.json'
+$wideDoc = Get-Content -Raw (Join-Path $PSScriptRoot '../policies/repair-policy.json') | ConvertFrom-Json -AsHashtable
+$wideDoc.limits.maxRepairRounds = 5; $wideDoc.limits.maxReplans = 0
+$wideDoc | ConvertTo-Json -Depth 8 | Set-Content $wideFile
+$wideEff = Get-EffectiveRepairPolicy -Legacy $wide -PolicyPath $wideFile
+1..3 | ForEach-Object { $d = Invoke-RepairDecision @($a) $l $wide -Effective $wideEff }
 Check 'identical failure after two repairs stops as repeated_failures' ($d.action -eq 'stop' -and $d.stopReason -eq 'repeated_failures')
 foreach ($flag in 'safetyViolation', 'securityIssue') {
     $d = Invoke-RepairDecision @((C 'unit' 'failed' 'AssertionError x' @{ $flag = $true })) (NewLedger) $policy
@@ -97,18 +102,158 @@ Check 'unknown result is untested, never a pass' ($d.action -eq 'handoff' -and $
 
 $m = { param($rev, $status = 'pass') [pscustomobject]@{ revision = 'rev1'; requiredCheckIds = @('project-tests', 'result-contract'); results = @([pscustomobject]@{ checkId = 'project-tests'; status = 'pass'; commitSha = 'rev1' }, [pscustomobject]@{ checkId = 'result-contract'; status = $status; commitSha = $rev }) } }
 $scoped = @((ConvertFrom-CheckProviderReceipt (RC 'project-tests' 'test' 'pass')))
-$d = Invoke-RepairDecision $scoped (NewLedger) $policy 0 ([DateTime]::UtcNow.ToString('o')) (& $m 'rev1' 'fail')
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev1' 'fail')
 Check 'scoped pass with failing matrix stays provisional' ($d.action -eq 'rerun-full-matrix' -and $d.confirmation.state -eq 'provisional')
-$d = Invoke-RepairDecision $scoped (NewLedger) $policy 0 ([DateTime]::UtcNow.ToString('o')) (& $m 'rev0')
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev0')
 Check 'matrix evidence for another revision stays provisional' ($d.action -eq 'rerun-full-matrix')
 $inc = & $m 'rev1'; $inc.results = @($inc.results[0])
 Check 'incomplete matrix is provisional' ((Get-RepairConfirmation $inc).state -eq 'provisional')
-$d = Invoke-RepairDecision $scoped (NewLedger) $policy 0 ([DateTime]::UtcNow.ToString('o')) (& $m 'rev1')
+$d = Invoke-RepairDecision $scoped (NewLedger) $policy -Matrix (& $m 'rev1')
 Check 'full mandatory matrix at the exact revision confirms success' ($d.action -eq 'done' -and $d.confirmation.state -eq 'confirmed')
 Check 'legacy callers (no matrix) behave unchanged' ((Invoke-RepairDecision $scoped (NewLedger) $policy).action -eq 'done')
 Check 'worker may validate but not take over the session' ((Test-RepairSessionAction (NewLedger) 'worker' 'validate').allowed -and -not (Test-RepairSessionAction (NewLedger) 'worker' 'repair').allowed -and -not (Test-RepairSessionAction (NewLedger) 'worker' 'takeover').allowed)
 $libText = Get-Content -Raw (Join-Path $PSScriptRoot '../scripts/repair-loop-lib.ps1')
 Check 'no new finding registry or check runner' ($libText -notmatch '(?i)function\s+(Register-Finding|New-FindingRegistry|Invoke-Check(Provider)?Runner|Start-Check)' -and $libText -notmatch '(?i)Start-Process|Invoke-Expression')
+
+# ---- #740: layered policy, reason codes, strategies, receipts, reservations ----
+$repoPolicy = Join-Path $PSScriptRoot '../policies/repair-policy.json'
+$eff = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath $repoPolicy
+Check 'effective policy is versioned, hashed and clamped by retry.yaml' ($eff.policyVersion -eq '1' -and $eff.hash.Length -eq 64 -and $eff.limits.maxRepairRounds -eq 2 -and $eff.governance.stopOnSafetyViolation)
+function WithLayer([hashtable]$layer, [string]$name = 'project') {
+    $doc = Get-Content -Raw $repoPolicy | ConvertFrom-Json -AsHashtable
+    $doc.overrides.$name = $layer
+    $f = Join-Path $tmp "layer-$([guid]::NewGuid().ToString('N')).json"; $doc | ConvertTo-Json -Depth 8 | Set-Content $f; $f
+}
+$tight = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ limits = @{ maxRepairRounds = 1; maxSeconds = 30 } })
+Check 'override may tighten, recorded in layers' ($tight.limits.maxRepairRounds -eq 1 -and $tight.limits.maxSeconds -eq 30 -and $tight.layers -contains 'project' -and $tight.hash -ne $eff.hash)
+Check 'override loosening a limit is rejected' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ limits = @{ maxRepairRounds = 9 } }) })
+Check 'override disabling governance is rejected' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ governance = @{ stopOnSecurityIssue = $false } }) })
+Check 'override disabling required gates is rejected' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ governance = @{ enforceRequiredGates = $false } } 'project') })
+Check 'override enabling independent diagnosis is rejected' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ governance = @{ allowIndependentDiagnosis = $true } }) })
+Check 'unknown override key fails schema (closed)' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ limits = @{ bogus = 1 } }) })
+$badJson = Join-Path $tmp 'bad.json'; Set-Content $badJson '{not json'
+Check 'unreadable policy fails closed' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath $badJson })
+Check 'missing repair policy fails closed' (Throws { Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (Join-Path $tmp 'nope.json') })
+$wfEff = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath (WithLayer @{ wf = @{ limits = @{ maxReplans = 0 } } } 'workflows') -Workflow wf
+Check 'workflow layer selected by name' ($wfEff.limits.maxReplans -eq 0 -and $wfEff.layers -contains 'workflow:wf')
+
+$l = NewLedger
+$d = Invoke-RepairDecision @((C 'unit' 'passed')) $l $policy
+Check 'initial all-pass validation: done/passed, zero repair rounds' ($d.action -eq 'done' -and $d.reasonCode -eq 'passed' -and $d.budget.attemptsUsed -eq 0 -and $d.handoff.successful)
+$d = Invoke-RepairDecision @((C 'unit' 'failed' 'AssertionError a')) (NewLedger) $policy
+Check 'receipt: one per evaluation with policy snapshot and hash chain' ($d.receipt.decision -eq 'repair' -and $d.receipt.reasonCode -eq 'repair_authorized' -and $d.receipt.policy.hash -eq $eff.hash -and $d.receipt.hash.Length -eq 64 -and $d.strategy -eq 'focused_repair')
+$l = NewLedger
+$u = C 'ui' 'untested'
+$d = Invoke-RepairDecision @($u) $l $policy
+Check 'incomplete_reported is a handoff, never a successful one' ($d.action -eq 'handoff' -and $d.reasonCode -eq 'incomplete_reported' -and -not $d.handoff.successful -and $d.handoff.incomplete)
+$d2 = Invoke-RepairDecision @($u) $l $policy
+Check 'ledger carries one receipt per evaluation, chained' ($l.receipts.Count -eq 2 -and $l.receipts[1].previousHash -eq $l.receipts[0].hash)
+Check 'validator error stops with validator_error' ((Invoke-RepairDecision @((C 'v' 'error' 'validator crashed')) (NewLedger) $policy).reasonCode -eq 'validator_error')
+$d = Invoke-RepairDecision @((C 'unit' 'failed' 'AssertionError x' @{ securityIssue = $true })) (NewLedger) $policy
+Check 'security signal is governance_stop' ($d.action -eq 'stop' -and $d.reasonCode -eq 'governance_stop' -and $d.strategy -eq 'stop_escalate')
+$d = Invoke-RepairDecision @((C 'unit' 'failed' 'AssertionError x')) (NewLedger) $policy -SessionAvailable $false
+Check 'unavailable session stops with session_unavailable and spends nothing' ($d.reasonCode -eq 'session_unavailable' -and $d.budget.attemptsUsed -eq 0)
+
+# exhausted cap
+$l = NewLedger
+$a = C 'unit' 'failed' 'AssertionError one'; $b = C 'unit' 'failed' 'AssertionError other'
+Invoke-RepairDecision @($a) $l $policy | Out-Null; Invoke-RepairDecision @($b) $l $policy | Out-Null
+Check 'exhausted cap -> global_budget_exhausted' ((Invoke-RepairDecision @($a) $l $policy).reasonCode -eq 'global_budget_exhausted')
+
+# unchanged same finding: focused repair, then replan, then repeated_finding stop
+$bigFile = Join-Path $tmp 'big.json'
+$bd = Get-Content -Raw $repoPolicy | ConvertFrom-Json -AsHashtable; $bd.limits.maxRepairRounds = 9; $bd.limits.maxReplans = 1; $bd.limits.unchangedFindingPersistence = 3; $bd.limits.consecutiveNoProgress = 3; $bd | ConvertTo-Json -Depth 8 | Set-Content $bigFile
+$wide9 = [pscustomobject]@{ schemaVersion = 1; maxAttempts = 9; environmentHandling = 'retry_with_backoff'; flakyHandling = 'retry_once_then_investigate'; stopOn = @('repeated_failures') }
+$big = Get-EffectiveRepairPolicy -Legacy $wide9 -PolicyPath $bigFile
+$same = C 'unit' 'failed' 'AssertionError same'
+$l = NewLedger
+$r1 = Invoke-RepairDecision @($same) $l $wide9 -Effective $big
+$r2 = Invoke-RepairDecision @($same) $l $wide9 -Effective $big
+Check 'unchanged finding -> in-session replan once, not new session' ($r1.action -eq 'repair' -and $r2.action -eq 'replan' -and $r2.strategy -eq 'replan' -and $r2.budget.attemptsUsed -eq 2 -and $r2.budget.replansUsed -eq 1)
+$r3 = Invoke-RepairDecision @($same) $l $wide9 -Effective $big
+Check 'replan cap respected: next unchanged round repairs again' ($r3.action -eq 'repair' -and $r3.budget.replansUsed -eq 1)
+$r4 = Invoke-RepairDecision @($same) $l $wide9 -Effective $big
+Check 'unchanged same finding -> repeated_finding, replan did not reset budget' ($r4.action -eq 'stop' -and $r4.reasonCode -eq 'repeated_finding' -and $r4.budget.attemptsUsed -eq 3)
+
+# relevant change resets persistence
+$l = NewLedger
+Invoke-RepairDecision @($same) $l $wide9 -Effective $big | Out-Null
+Invoke-RepairDecision @($same) $l $wide9 -Effective $big -Progress @{ outcome = 'progress'; relevantChange = $true } | Out-Null
+Invoke-RepairDecision @($same) $l $wide9 -Effective $big -Progress @{ outcome = 'progress'; relevantChange = $true } | Out-Null
+$rr = Invoke-RepairDecision @($same) $l $wide9 -Effective $big -Progress @{ outcome = 'progress'; relevantChange = $true }
+Check 'relevant change resets unchanged-finding persistence' ($rr.action -ne 'stop' -and $rr.reasonCode -in 'repair_authorized', 'replan_authorized')
+
+# consecutive no-progress and mixed progress
+$words = "alpha", "bravo", "charlie", "delta", "echo", "foxtrot"; $mk = { param($n) C "unit" "failed" "AssertionError distinct $($words[$n])" }
+$l = NewLedger
+$np = @{ outcome = 'no_progress'; relevantChange = $false }
+Invoke-RepairDecision @((& $mk 1)) $l $wide9 -Effective $big | Out-Null
+foreach ($n in 2..3) { Invoke-RepairDecision @((& $mk $n)) $l $wide9 -Effective $big -Progress $np | Out-Null }
+$z = Invoke-RepairDecision @((& $mk 4)) $l $wide9 -Effective $big -Progress $np
+Check 'three consecutive no-progress rounds -> no_progress' ($z.action -eq 'stop' -and $z.reasonCode -eq 'no_progress')
+$l = NewLedger
+Invoke-RepairDecision @((& $mk 1)) $l $wide9 -Effective $big | Out-Null
+Invoke-RepairDecision @((& $mk 2)) $l $wide9 -Effective $big -Progress $np | Out-Null
+Invoke-RepairDecision @((& $mk 3)) $l $wide9 -Effective $big -Progress @{ outcome = 'progress'; relevantChange = $false } | Out-Null
+Invoke-RepairDecision @((& $mk 4)) $l $wide9 -Effective $big -Progress $np | Out-Null
+$z = Invoke-RepairDecision @((& $mk 5)) $l $wide9 -Effective $big -Progress $np
+Check 'mixed progress breaks the no-progress streak' ($z.action -eq 'repair')
+$l = NewLedger
+1..5 | ForEach-Object { $z = Invoke-RepairDecision @((& $mk $_)) $l $wide9 -Effective $big }
+Check 'missing progress data is unknown and never extra budget or a stop' ($z.action -eq 'repair' -and $z.receipt.progress.outcome -eq 'unknown' -and $z.budget.attemptsUsed -eq 5)
+
+# oscillation A,B,A,B
+$l = NewLedger
+$A = C 'unit' 'failed' 'AssertionError alpha'; $B = C 'unit' 'failed' 'AssertionError beta'
+foreach ($x in $A, $B, $A) { $z = Invoke-RepairDecision @($x) $l $wide9 -Effective $big }
+Check 'one return to an earlier failure is tolerated' ($z.action -ne 'stop')
+$z = Invoke-RepairDecision @($B) $l $wide9 -Effective $big
+Check 'A,B,A,B -> oscillation' ($z.action -eq 'stop' -and $z.reasonCode -eq 'oscillation')
+
+# time / token / cost ceilings
+foreach ($case in @(@('maxSeconds', 10, @{ AttemptSeconds = 12 }), @('maxTokens', 100, @{ AttemptTokens = 150 }), @('maxCostUsd', 1, @{ AttemptCostUsd = 1.5 }))) {
+    $cd = Get-Content -Raw $bigFile | ConvertFrom-Json -AsHashtable; $cd.limits[$case[0]] = $case[1]
+    $cf = Join-Path $tmp "ceil-$($case[0]).json"; $cd | ConvertTo-Json -Depth 8 | Set-Content $cf
+    $ce = Get-EffectiveRepairPolicy -Legacy $wide9 -PolicyPath $cf
+    $l = NewLedger; $extra = $case[2]
+    Invoke-RepairDecision @((& $mk 1)) $l $wide9 -Effective $ce @extra | Out-Null
+    $z = Invoke-RepairDecision @((& $mk 2)) $l $wide9 -Effective $ce
+    Check "$($case[0]) ceiling -> global_budget_exhausted" ($z.action -eq 'stop' -and $z.reasonCode -eq 'global_budget_exhausted' -and $z.stopReason -eq 'budget_ceiling')
+}
+
+# infra retry budget is separate from the repair budget
+$l = NewLedger
+$net = C 'net' 'failed' 'connection refused'
+1..2 | ForEach-Object { $z = Invoke-RepairDecision @($net) $l $policy }
+Check 'infrastructure retries use their own budget and never repair rounds' ($z.budget.backoffs -eq 2 -and $z.budget.attemptsUsed -eq 0 -and $z.strategy -eq 'infrastructure_retry')
+$z = Invoke-RepairDecision @($net) $l $policy
+Check 'infrastructure budget exhausted is a truthful handoff' ($z.action -eq 'handoff' -and $z.reasonCode -eq 'infrastructure_budget_exhausted' -and -not $z.handoff.successful)
+
+# idempotent replay
+$l = NewLedger
+$first = Invoke-RepairDecision @($same) $l $policy -IdempotencyKey 'k1'
+$again = Invoke-RepairDecision @($same) $l $policy -IdempotencyKey 'k1'
+Check 'idempotency key replay returns the original decision and charges nothing' ($again.replayed -and $again.round -eq $first.round -and $l.receipts.Count -eq 1 -and $l.entries.Count -eq 1)
+
+# atomic reservation: cancellation, idempotency, concurrency
+$ledgerFile = Join-Path $tmp 'res/ledger.json'
+$r = Request-RepairReservation $ledgerFile 'a' $eff
+$rr = Request-RepairReservation $ledgerFile 'a' $eff
+Check 'reservation is granted once and replays by key' ($r.granted -and -not $r.replayed -and $rr.granted -and $rr.replayed -and $rr.round -eq $r.round)
+Request-RepairReservation $ledgerFile 'b' $eff | Out-Null
+Check 'reservation over the cap is refused' (-not (Request-RepairReservation $ledgerFile 'c' $eff).granted)
+Stop-RepairReservation $ledgerFile 'b' | Out-Null
+Check 'cancellation releases the attempt and is recorded' ((Request-RepairReservation $ledgerFile 'c' $eff).granted -and (Read-RepairLedger $ledgerFile $null).entries.Where({ $_.reservationKey -eq 'b' })[0].outcome -eq 'cancelled')
+$conc = Join-Path $tmp 'conc/ledger.json'
+$lib = (Resolve-Path (Join-Path $PSScriptRoot '../scripts/repair-loop-lib.ps1')).Path
+$polPath = (Resolve-Path $repoPolicy).Path
+$legacyYaml = (Resolve-Path (Join-Path $PSScriptRoot '../policies/retry.yaml')).Path
+$jobs = 1..8 | ForEach-Object {
+    Start-Process pwsh -ArgumentList '-NoProfile', '-Command', ". '$lib'; `$p = Get-RepairPolicy '$legacyYaml'; `$e = Get-EffectiveRepairPolicy -Legacy `$p -PolicyPath '$polPath'; (Request-RepairReservation '$conc' 'job$_' `$e).granted | Out-File '$tmp/granted$_.txt'" -PassThru
+}
+$jobs | Wait-Process -Timeout 120
+$granted = @(1..8 | Where-Object { (Get-Content "$tmp/granted$_.txt" -ErrorAction SilentlyContinue) -eq 'True' }).Count
+Check 'concurrent reservations never exceed the cap' ($granted -eq 2 -and (Read-RepairLedger $conc $null).entries.Count -eq 2)
 
 # CLI step: ledger persisted, fail closed on a corrupt ledger, optional Hindsight absence is fine, nothing outside .factory.
 $work = Join-Path $tmp 'w'; New-Item -ItemType Directory $work | Out-Null
@@ -124,6 +269,12 @@ try {
     & pwsh -NoProfile -File $step -ReceiptsPath rec.json -LedgerPath out/l2.json -OutputPath out/d3.json -PolicyPath $pol | Out-Null
     $rd = Get-Content -Raw out/d3.json | ConvertFrom-Json
     Check 'step consumes provider receipts' ($LASTEXITCODE -eq 0 -and $rd.action -eq 'repair' -and $rd.feedback[0].target -eq 'active-session')
+    Set-Content 'rec-missing-matrix.json' (@{ revision = 'rev1'; receipts = @(@{ checkId = 'project-tests'; category = 'test'; status = 'pass'; commitSha = 'rev1'; disposition = 'new' }) } | ConvertTo-Json -Depth 6)
+    & pwsh -NoProfile -File $step -ReceiptsPath rec-missing-matrix.json -LedgerPath out/l3.json -OutputPath out/d4.json -PolicyPath $pol -ActorKind worker -RequestedAction validate | Out-Null
+    $rd = Get-Content -Raw out/d4.json | ConvertFrom-Json
+    Check 'receipt step without requiredCheckIds stays provisional' ($LASTEXITCODE -eq 0 -and $rd.action -eq 'rerun-full-matrix' -and $rd.confirmation.state -eq 'provisional' -and -not $rd.handoff.successful)
+    & pwsh -NoProfile -File $step -ChecksPath checks.json -LedgerPath out/l4.json -OutputPath out/denied.json -PolicyPath $pol -ActorKind worker -RequestedAction repair 2>&1 | Out-Null
+    Check 'step denies a worker repair action before writing a decision' ($LASTEXITCODE -ne 0 -and -not (Test-Path out/denied.json))
     Set-Content out/ledger.json '{not json'
     & pwsh -NoProfile -File $step -ChecksPath checks.json -LedgerPath out/ledger.json -OutputPath out/decision2.json -PolicyPath $pol 2>&1 | Out-Null
     Check 'corrupt ledger fails closed' ($LASTEXITCODE -ne 0 -and -not (Test-Path out/decision2.json))

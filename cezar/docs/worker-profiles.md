@@ -167,3 +167,38 @@ response payloads carry `schemaVersion: 1`.
 - Limitation: idempotency and audit are bounded in-memory (default 10 000
   entries) and are lost on restart. HTTP routes and UI controls are not yet
   mounted; this service is the contract they will call.
+
+## Trace and ledger correlation (#219, slice 4)
+
+`server/verification/trace-correlation.ts` adds a diagnostic `correlation` block to the run
+view (`RUN_VIEW_VERSION` 3) and a per-worker `correlation` (attempt ids, run ids, trace ids)
+to the worker read model (`WORKER_READ_MODEL_VERSION` 2). Both are additive.
+
+- Ledger event refs (`id`, `kind`, `timestamp`) are joined by runId/attemptId/scenarioId/
+  workerId; events with other or mismatched ids are never attached. Payloads are not accepted.
+- Trace links use `createLangfuseTraceUrl` only when a `traceBackend` (`baseUrl`, `projectId`)
+  is supplied; otherwise ids only.
+- A missing, unreachable or misconfigured backend, or a malformed trace id, yields
+  `status: 'unavailable'` with links omitted. It never throws and never changes outcome,
+  failure class or warnings.
+- Always `authoritative: false` with a diagnostic label; trace presence never makes a
+  stale/unknown worker healthy. No media, prompts, commands, host paths or secrets.
+
+## Hardening, limits and schema versions (#219, slice 7)
+
+Operator workflow: to explain why a test is queued, read `explainScheduling` (per-worker `status:`, `missing:` and `capacity:` reasons); to see where partitions run, read the scenario partitions' `workerId` and the run view timeline; to see what evidence is missing, read each partition's `missingEvidence` and the run view `warnings`. The existing project, run and release pages remain the canonical entries; there is still no dedicated dashboard, route or UI for these views.
+
+Limits (additive, defaults unchanged for single-node runs):
+
+| List | Cap | Indicator |
+| --- | --- | --- |
+| Workers page | `limit` ≤ 100 | `nextCursor`; an unknown or past-the-end cursor returns an empty page, never page one |
+| Scenario partitions | 200 | `partitionsTruncated`, `hiddenPartitions` (counts still cover all rows) |
+| Run timeline / checkpoints / warnings | 200 / 100 / 50 | `truncated.{timeline,checkpoints,warnings}` |
+| Artifacts | 50 | `artifacts.truncated` |
+
+Safety: error, warning and scheduling-summary text is redacted (secrets, URL credentials, host paths) and length-bounded. A heartbeat that is missing, unparseable, stale, offline or more than 60 s in the future is never `healthy`.
+
+Schema versions: worker read model `2`, scenario operations `1`, run verification view `3`. Changes are additive; tests pin the current values.
+
+Accessibility contract for any surface rendering these payloads: rows are stably ordered with stable ids, status is always a plain-text label (never colour-only), row counts are bounded, and truncation is stated in text so keyboard and small-viewport layouts can page or expand without losing information.

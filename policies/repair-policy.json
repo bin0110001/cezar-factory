@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "version": "1",
+  "limits": {
+    "maxRepairRounds": 2,
+    "unchangedFindingPersistence": 2,
+    "consecutiveNoProgress": 2,
+    "oscillationLimit": 2,
+    "replanAfterUnchanged": 1,
+    "maxReplans": 1,
+    "infraRetryBudget": 2,
+    "maxSeconds": null,
+    "maxTokens": null,
+    "maxCostUsd": null
+  },
+  "governance": {
+    "stopOnSafetyViolation": true,
+    "stopOnSecurityIssue": true,
+    "enforceRequiredGates": true,
+    "incompleteNeverSuccess": true,
+    "allowIndependentDiagnosis": false
+  },
+  "overrides": {
+    "project": {},
+    "workflows": {},
+    "validators": {}
+  }
+}
