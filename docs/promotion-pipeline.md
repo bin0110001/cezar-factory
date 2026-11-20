@@ -27,7 +27,7 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
 | Step | Runs | How |
 |---|---|---|
 | Review evidence, issues, stable ref | host promoter | `gh` through `ghCommand` (`podman exec cezar gh`) |
-| Full suite | Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA) |
+| Full suite | fresh, init-enabled Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA; reuses the Cezar image, mounts and named network, without sharing the server's PID or network namespace) |
 | Pointer moves, rollback, quarantine | host promoter | release store is host-owned; the container cannot write it |
 | Canaries | host promoter → Cezar API | schedule automations, polled to a verdict |
 | Stable deploy | host | `factory-autodeploy.sh` (image build and restart are host-only) |
@@ -38,7 +38,9 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
    A SHA without evidence is `blocked`, not `failed`: it is re-checked every tick, recorded once per
    distinct reason, and proceeds the moment evidence appears.
 2. **Validation.** Every required check in `checks` must pass on a detached worktree of the exact SHA.
-   A failure is cached for that SHA; a fix is a new SHA.
+   The suite runs in a disposable container with its own init process and PID namespace, reusing the
+   Cezar image and worktree volumes. This keeps orphaned test subprocesses from exhausting the long-lived
+   server container's task limit. A failure is cached for that SHA; a fix is a new SHA.
 3. **Activate dev.** The exact artifact is staged and the coordinator moves the `dev` pointer,
    reconciles automations, and verifies each registered project. Reads wait up to 90 seconds for a
    restarting Cezar instead of failing at a fixed timeout.
@@ -206,8 +208,10 @@ pointer lags until the next candidate passes. Use it to get a fix to the deliver
   workflow canary when a sandbox project exists; the policy accepts it as one more `canaries.items` entry.
 - The deploy shell tests (`tests/test-*.sh`) run inside `tests/run-tests.ps1` whenever a POSIX `bash` is on the
   path, which includes the Cezar container that validates each candidate.
-- Validation runs inside the live Cezar container, so a heavy suite competes with running jobs. The
-  container worktree lives under `/projects/.promotion` and is removed after each run.
+- Validation runs in a disposable container using the Cezar image and shared project volumes. It has its
+  own init process and network attachment, so a heavy suite does not compete with server jobs and can
+  complete even if the Cezar server process stops. Its worktree lives under `/projects/.promotion` and
+  is removed after each run; worktrees left by an interrupted run are reaped after one day.
 - A commit made on the root `stable` checkout inside the Cezar container (a run that committed in the root worktree) does not
   block the stable deploy: `reconcile-container-git-metadata.sh` keeps it under `refs/factory/displaced/<sha>`, warns, and moves
   the ref to the promoted commit. Look there if work seems to have vanished from the root checkout.
