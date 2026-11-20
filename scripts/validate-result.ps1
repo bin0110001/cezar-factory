@@ -14,22 +14,160 @@ param(
 )
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
-# Already-resolved issue (see check-already-resolved.ps1): nothing to do.
-if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
-
 $schemaFile = @{ intake = 'intake-result.schema.json'; plan = 'plan.schema.json'; implementation = 'implementation-result.schema.json'; review = 'review-result.schema.json'; investigation = 'investigation-result.schema.json' }[$Kind]
 $errors = [System.Collections.Generic.List[string]]::new()
+$findings = [System.Collections.Generic.List[object]]::new()
+$schema = $null
+$result = $null
+$script:ValidationOutcome = $null
 
-function Done {
-    $status = if ($errors.Count) { 'invalid' } else { 'valid' }
-    ([ordered]@{ status = $status; kind = $Kind; errors = @($errors) } | ConvertTo-Json -Compress -Depth 4) | Write-Output
-    exit $(if ($errors.Count) { 1 } else { 0 })
+function Add-Finding {
+    param(
+        [Parameter(Mandatory)][string]$RuleId,
+        [Parameter(Mandatory)][string]$FieldPath,
+        [Parameter(Mandatory)][string]$Scope,
+        [Parameter(Mandatory)][ValidateSet('structural', 'semantic', 'unsupported_claim', 'validator')][string]$Category,
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('repairable', 'not-repairable', 'unknown')][string]$Repairability = 'repairable'
+    )
+    # Fingerprints use stable contract coordinates only. Human text, timestamps,
+    # line numbers and current artifact hashes are deliberately excluded.
+    $canonical = @($Kind, $RuleId, $FieldPath, $Scope, $Category) -join "`n"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
+    $fingerprint = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    $findings.Add([ordered]@{
+        code = 'result-contract'
+        ruleId = $RuleId
+        fieldPath = $FieldPath
+        occurrenceScope = $Scope
+        category = $Category
+        severity = 'error'
+        repairability = $Repairability
+        artifactRevision = ''
+        evidenceRef = ''
+        fingerprint = $fingerprint
+        findingFingerprint = $fingerprint
+        findingStrategyId = 'implementation-result-v1'
+        findingStrategyVersion = 1
+        message = $Message
+    })
+    $errors.Add($Message)
 }
 
-if (-not (Test-Path $Path)) { $errors.Add("result file not found: $Path"); Done }
-try { $result = Get-Content -Raw $Path | ConvertFrom-Json -AsHashtable } catch { $errors.Add("not valid JSON: $($_.Exception.Message)"); Done }
-if ($result -isnot [hashtable]) { $errors.Add('result must be a JSON object'); Done }
-$schema = Get-Content -Raw (Join-Path $SchemaDir $schemaFile) | ConvertFrom-Json -AsHashtable
+function Done {
+    # Legacy validators still accumulate human-readable errors. Project each one
+    # into the versioned diagnostic contract before serializing the receipt.
+    foreach ($message in @($errors)) {
+        if (@($findings | Where-Object { $_.message -eq $message }).Count) { continue }
+        $fieldPath = '$'
+        if ($message -match "'([A-Za-z][A-Za-z0-9]*(?:\[[0-9]+\])?(?:\.[A-Za-z][A-Za-z0-9]*)*)'") { $fieldPath = '$.' + $Matches[1] }
+        elseif ($message -match '(decisions|subIssues)\[([0-9]+)\](?:\.([A-Za-z]+))?') {
+            $fieldPath = '$.' + $Matches[1] + '[' + $Matches[2] + ']' + $(if ($Matches[3]) { '.' + $Matches[3] } else { '' })
+        }
+        if ($fieldPath -eq '$' -and $message -match '(?:but|for|field)\s+([A-Za-z][A-Za-z0-9]+)') { $fieldPath = '$.' + $Matches[1] }
+        if ($fieldPath -eq '$' -and $schema -and $schema.properties) {
+            foreach ($propertyName in $schema.properties.Keys) {
+                if ($message -match [regex]::Escape([string]$propertyName)) { $fieldPath = '$.' + $propertyName; break }
+            }
+        }
+        $scope = 'result'
+        if ($fieldPath -match '\[([0-9]+)\]') { $scope = 'result:' + $Matches[1] }
+        $category = if ($message -match '(?i)status is success|must be passed|acceptanceCriteriaStatus') { 'unsupported_claim' }
+            elseif ($message -match '(?i)missing required field|must be a |must be one of|must not be empty|items must be|is not valid JSON|must be an object') { 'structural' }
+            else { 'semantic' }
+        $ruleSlug = ($fieldPath -replace '[^A-Za-z0-9]+', '.').Trim('.').ToLowerInvariant()
+        $canonical = @($Kind, 'result.' + $ruleSlug, $fieldPath, $scope, $category) -join "`n"
+        $fingerprint = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($canonical))).ToLowerInvariant()
+        $findings.Add([ordered]@{ code='result-contract'; ruleId=('result.' + $ruleSlug); fieldPath=$fieldPath; occurrenceScope=$scope; category=$category; severity='error'; repairability='repairable'; artifactRevision=''; evidenceRef=''; fingerprint=$fingerprint; findingFingerprint=$fingerprint; findingStrategyId='implementation-result-v1'; findingStrategyVersion=1; message=$message })
+    }
+    $status = if ($errors.Count) { 'invalid' } else { 'valid' }
+    $outcome = $script:ValidationOutcome
+    if (-not $outcome) {
+        if ($errors.Count) { $outcome = 'failed' }
+        elseif ($Kind -eq 'implementation' -and $result.status -eq 'incomplete') { $outcome = 'inconclusive' }
+        elseif ($Kind -eq 'implementation' -and $result.status -eq 'failure') { $outcome = 'failed' }
+        else { $outcome = 'passed' }
+    }
+    $artifactRevision = ''
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        try { $artifactRevision = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+        catch { $artifactRevision = '' }
+    }
+    $evidenceRef = if ($artifactRevision) { "result:${Kind}:sha256:${artifactRevision}" } else { "result:${Kind}:unavailable" }
+    foreach ($finding in $findings) {
+        $finding.artifactRevision = $artifactRevision
+        $finding.evidenceRef = $evidenceRef
+    }
+
+    $required = if ($schema -and $schema.required) { @($schema.required) } else { @() }
+    if ($Kind -eq 'implementation' -and $result -is [hashtable] -and $result.status -eq 'incomplete') { $required += 'incompleteReason' }
+    $actual = if ($result -is [hashtable]) { @($required | Where-Object { $result.ContainsKey($_) }) } else { @() }
+    $missing = @($required | Where-Object { $actual -notcontains $_ })
+    $successFields = if ($Kind -eq 'implementation' -and $result.status -eq 'success') {
+        @('testResult', 'testsRun', 'filesChanged', 'acceptanceCriteriaStatus', 'pr')
+    } else { @() }
+    $successFieldsPresent = if ($result -is [hashtable]) { @($successFields | Where-Object { $result.ContainsKey($_) }) } else { @() }
+    $successFieldsMissing = @($successFields | Where-Object { $successFieldsPresent -notcontains $_ })
+    $coverage = [ordered]@{
+        requiredFields = [ordered]@{
+            expected = $required
+            actual = $actual
+            missing = $missing
+            complete = ($missing.Count -eq 0)
+        }
+        successGates = [ordered]@{
+            expected = $successFields
+            actual = $successFieldsPresent
+            missing = $successFieldsMissing
+            complete = ($successFieldsMissing.Count -eq 0)
+        }
+    }
+    ([ordered]@{
+        diagnosticVersion = 1
+        status = $status
+        outcome = $outcome
+        kind = $Kind
+        resultStatus = if ($result -is [hashtable] -and $result.ContainsKey('status')) { $result.status } else { '' }
+        artifactRevision = $artifactRevision
+        evidenceRef = $evidenceRef
+        coverage = $coverage
+        findings = @($findings)
+        errors = @($errors)
+    } | ConvertTo-Json -Compress -Depth 8) | Write-Output
+    exit $(if ($errors.Count -or $outcome -eq 'validator_error') { 1 } else { 0 })
+}
+
+trap {
+    $script:ValidationOutcome = 'validator_error'
+    $errors.Clear()
+    $findings.Clear()
+    Add-Finding -RuleId 'validator.internal-error' -FieldPath '$' -Scope 'validator' -Category 'validator' -Message 'The result validator could not complete.' -Repairability 'not-repairable'
+    Done
+}
+
+try { $schema = Get-Content -Raw (Join-Path $SchemaDir $schemaFile) | ConvertFrom-Json -AsHashtable }
+catch {
+    $script:ValidationOutcome = 'validator_error'
+    Add-Finding -RuleId 'validator.schema-unavailable' -FieldPath '$schema' -Scope 'validator' -Category 'validator' -Message 'The result schema could not be loaded.' -Repairability 'not-repairable'
+    Done
+}
+
+# Already-resolved issue (see check-already-resolved.ps1): the result check was not run.
+if (Test-Path '.factory/already-resolved.json') {
+    $script:ValidationOutcome = 'not_run'
+    Done
+}
+
+if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    Add-Finding -RuleId 'schema.result-file-required' -FieldPath '$' -Scope 'result' -Category 'structural' -Message 'The result file is missing.'
+    Done
+}
+try { $result = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -AsHashtable }
+catch { Add-Finding -RuleId 'schema.json-invalid' -FieldPath '$' -Scope 'result' -Category 'structural' -Message 'The result file is not valid JSON.'; Done }
+if ($result -isnot [hashtable]) {
+    Add-Finding -RuleId 'schema.object-required' -FieldPath '$' -Scope 'result' -Category 'structural' -Message 'The result must be a JSON object.'
+    Done
+}
 
 # Minimal draft-07 subset: required, type, enum, minimum, minLength, array item type.
 foreach ($req in $schema.required) { if (-not $result.ContainsKey($req)) { $errors.Add("missing required field '$req'") } }
@@ -112,6 +250,10 @@ function Test-Decisions($decisions) {
 }
 if (-not $errors.Count -and $result.ContainsKey('decisions') -and $Kind -in 'intake', 'plan', 'investigation') { Test-Decisions $result.decisions }
 
+if ($Kind -eq 'implementation' -and $result.status -eq 'incomplete' -and (Blank $result.incompleteReason)) {
+    $errors.Add('incomplete result requires incompleteReason')
+}
+
 if (-not $errors.Count) {
     switch ($Kind) {
         'intake' {
@@ -135,9 +277,9 @@ if (-not $errors.Count) {
                         $sub = $subs[$i]
                         if ($sub -isnot [hashtable]) { $errors.Add("subIssues[$i] must be an object"); continue }
                         foreach ($k in 'title', 'body', 'type', 'risk', 'complexity') { if (-not $sub.ContainsKey($k) -or (Blank $sub[$k])) { $errors.Add("subIssues[$i].$k is required") } }
-                        if ($sub.type -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.type))\s*$") { $errors.Add("subIssues[$i].type '$($sub.type)' is not a known label (e.g. type:feature)") }
-                        if ($sub.risk -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.risk))\s*$") { $errors.Add("subIssues[$i].risk '$($sub.risk)' is not a known label (e.g. risk:medium)") }
-                        if ($sub.complexity -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.complexity))\s*$") { $errors.Add("subIssues[$i].complexity '$($sub.complexity)' is not a known label (e.g. complexity:medium)") }
+                        if ($sub.type -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.type))\s*$") { $errors.Add("subIssues[$i].type is not a known type label") }
+                        if ($sub.risk -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.risk))\s*$") { $errors.Add("subIssues[$i].risk is not a known risk label") }
+                        if ($sub.complexity -and $labelText -notmatch "(?m)^\s+-\s+$([regex]::Escape([string]$sub.complexity))\s*$") { $errors.Add("subIssues[$i].complexity is not a known complexity label") }
                         if ($sub.title) { if ($titles -contains $sub.title) { $errors.Add("subIssues[$i].title duplicates an earlier title") }; $titles += $sub.title }
                         if ($sub.ContainsKey('dependsOn')) { foreach ($d in @($sub.dependsOn)) { if ($d -isnot [int] -and $d -isnot [long] -or $d -lt 0 -or $d -ge $subs.Count -or $d -eq $i) { $errors.Add("subIssues[$i].dependsOn has invalid index '$d'") } } }
                     }

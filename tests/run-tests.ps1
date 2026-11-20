@@ -1415,6 +1415,15 @@ try {
     Assert 'validate: decision with bad id fails' ((Test-Validate 'plan' (With $decisionPlan @{ decisions = @(@{ id = 'Bad Id'; question = 'q'; options = @(@{ id = 'a'; label = 'A' }, @{ id = 'b'; label = 'B' }) }) })) -ne 0)
     $validationGhState = Get-Content -Raw $env:FAKE_GH_STATE
     $impl = @{ issue = 7; status = 'success'; summary = 's'; filesChanged = @('a.gd'); testsRun = @('unit suite'); testResult = 'pass'; acceptanceCriteriaStatus = 'met'; documentationUpdated = $true; knownConcerns = ''; followUpSuggestions = ''; durableKnowledgeCandidates = ''; pr = 'https://github.com/example/project/pull/1' }
+    $diagFile = Join-Path $tmp 'diagnostic-result.json'
+    (With $impl @{ testResult = 'not run' } | ConvertTo-Json -Depth 5) | Set-Content $diagFile
+    $diagOutput = & pwsh -NoProfile -File $val -Kind implementation -Path $diagFile 2>$null | ConvertFrom-Json
+    $diagFingerprint = @($diagOutput.findings | Where-Object { $_.fieldPath -eq '$.testResult' })[0].findingFingerprint
+    (With $impl @{ testResult = 'unknown' } | ConvertTo-Json -Depth 5) | Set-Content $diagFile
+    $diagOutputChanged = & pwsh -NoProfile -File $val -Kind implementation -Path $diagFile 2>$null | ConvertFrom-Json
+    Assert 'validate: structured diagnostics retain legacy errors and stable field fingerprints' ($diagOutput.diagnosticVersion -eq 1 -and $diagOutput.errors.Count -gt 0 -and $diagFingerprint -match '^[0-9a-f]{64}$' -and @($diagOutputChanged.findings | Where-Object { $_.fieldPath -eq '$.testResult' })[0].findingFingerprint -eq $diagFingerprint -and @($diagOutput.findings | Where-Object { $_.fieldPath -eq '$.testResult' })[0].findingStrategyId -eq 'implementation-result-v1' -and $diagOutput.coverage.requiredFields.complete)
+    $incomplete = With $impl @{ status = 'incomplete'; incompleteReason = 'A dependency is unavailable.' }
+    Assert 'validate: incomplete implementation is inconclusive and never a pass' ((Test-Validate 'implementation' $incomplete) -eq 0)
     Assert 'validate: good implementation passes' ((Test-Validate 'implementation' $impl) -eq 0)
     Assert 'validate: implementation with no documentation change and nonblocking concern passes' ((Test-Validate 'implementation' (With $impl @{ documentationUpdated = $false; knownConcerns = 'Minor follow-up suggested.' })) -eq 0)
     $noPr = $impl.Clone(); $noPr.Remove('pr')
@@ -1610,7 +1619,8 @@ try {
     try {
         Set-Gh @('factory:done'); Set-IssueState 'CLOSED'
         $v = & pwsh -NoProfile -File (Join-Path $rp '.ai/factory/scripts/validate-result.ps1') -Kind implementation -Path (Join-Path $tmp 'missing.json') *>&1 | Out-String
-        Assert 'resolved: validate-result skips when marker present' ($LASTEXITCODE -eq 0 -and $v -match 'already-resolved')
+        $validationReceipt = $v | ConvertFrom-Json
+        Assert 'resolved: validate-result reports not_run when marker present' ($LASTEXITCODE -eq 0 -and $validationReceipt.outcome -eq 'not_run' -and $validationReceipt.status -eq 'valid')
         $r = & pwsh -NoProfile -File $route -Event implement-result -Path (Join-Path $tmp 'missing.json') -GhCommand $gh -ProjectPath $tmp *>&1 | Out-String
         Assert 'resolved: route-state skips when marker present' ($LASTEXITCODE -eq 0 -and $r -match 'already-resolved')
     } finally { Pop-Location }
@@ -1622,6 +1632,9 @@ try {
     Assert 'route: execution completion recorded' ($execution.execution.status -eq 'complete' -and $execution.execution.result -eq 'success' -and $execution.execution.pr -eq $impl.pr)
     Set-Gh @('factory:working')
     Assert 'route: implement failure -> investigate' ((Invoke-Route 'implement-result' (With $impl @{ status = 'failure' })) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate')
+    Set-Gh @('factory:working')
+    $incompleteResult = With $impl @{ status = 'incomplete'; incompleteReason = 'dependency unavailable' }
+    Assert 'route: incomplete implementation is labeled inconclusive and sent for investigation' ((Invoke-Route 'implement-result' $incompleteResult) -eq 0 -and (Get-Gh).labels -contains 'factory:investigate' -and @((Get-Gh).comments | Where-Object { $_ -match 'Factory implementation inconclusive' -and $_ -match 'dependency unavailable' }).Count -eq 1 -and @((Get-Gh).comments | Where-Object { $_ -match 'Factory implementation failed' }).Count -eq 0)
     Set-Gh @('factory:review')
     $commentsBefore = @((Get-Gh).comments).Count
     Assert 'route: a repeated implement success while already in review is a no-op' ((Invoke-Route 'implement-result' $impl) -eq 0 -and (Get-Gh).labels -contains 'factory:review' -and @((Get-Gh).comments).Count -eq $commentsBefore)
