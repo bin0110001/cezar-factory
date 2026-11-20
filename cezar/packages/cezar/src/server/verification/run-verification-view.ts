@@ -63,9 +63,15 @@ export interface RunVerificationView {
   checkpoints: CheckpointEntry[];
   /** Roles with disconnects or missing captures, never shown as healthy. */
   warnings: string[];
+  /** Additive: true when a list above was capped (timeline, checkpoints or warnings). */
+  truncated: { timeline: boolean; checkpoints: boolean; warnings: boolean };
 }
 
 const MAX_ARTIFACTS = 50;
+export const MAX_TIMELINE_ROWS = 200;
+export const MAX_WARNINGS = 50;
+export const MAX_CHECKPOINT_ROWS = 100;
+const MAX_WARNING_CHARS = 200;
 const REGRESSION_FACTOR = 1.25;
 const MIN_BASELINE_SAMPLES = 3;
 
@@ -156,7 +162,7 @@ export function buildRunVerificationView(input: {
     schemaVersion: RUN_VIEW_VERSION,
     runId: input.runId,
     scenario,
-    timeline,
+    timeline: timeline.slice(0, MAX_TIMELINE_ROWS),
     topology: { requirements, hostsUsed, satisfied },
     failureClass,
     baseline: { medianMs: base, samples: passing.length, currentMs, regression },
@@ -167,7 +173,12 @@ export function buildRunVerificationView(input: {
       ids: [...new Set(scenario.partitions.map((p) => p.traceId).filter((t): t is string => !!t))],
     },
     correlation: buildCorrelation({ runId: input.runId, scenarioId: input.scenarioId, partitions: input.partitions, ledgerEvents: input.ledgerEvents, traceBackend: input.traceBackend }),
-    checkpoints,
-    warnings: warnings.map((w) => redactError(w) ?? w),
+    checkpoints: checkpoints.slice(0, MAX_CHECKPOINT_ROWS),
+    warnings: warnings.slice(0, MAX_WARNINGS).map((w) => redactError(w, MAX_WARNING_CHARS) ?? w),
+    truncated: {
+      timeline: timeline.length > MAX_TIMELINE_ROWS || scenario.partitionsTruncated,
+      checkpoints: checkpoints.length > MAX_CHECKPOINT_ROWS,
+      warnings: warnings.length > MAX_WARNINGS,
+    },
   };
 }
