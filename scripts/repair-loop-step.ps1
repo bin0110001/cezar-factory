@@ -11,17 +11,27 @@ param(
     [string]$OutputPath = '.factory/repair-decision.json',
     [string]$HandoffPath = '.factory/repair-loop-handoff.json',
     [string]$HindsightPath = '',
+    [string]$ReceiptsPath = '',
     [double]$AttemptSeconds = 0
 )
 $ErrorActionPreference = 'Stop'
 if (Test-Path '.factory/already-resolved.json') { '{"status":"skipped","reason":"already-resolved"}'; exit 0 }
 . (Join-Path $PSScriptRoot 'repair-loop-lib.ps1')
 $policy = Get-RepairPolicy $PolicyPath
-if (-not (Test-Path -LiteralPath $ChecksPath)) { throw "Check results not found: $ChecksPath" }
-$data = Get-Content -Raw -LiteralPath $ChecksPath | ConvertFrom-Json -Depth 10
-$checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
+$matrix = $null
+if ($ReceiptsPath) {
+    # Standardized check-provider receipts: {receipts:[...], requiredCheckIds:[...], revision, matrix:[...]}; the legacy input stays supported.
+    if (-not (Test-Path -LiteralPath $ReceiptsPath)) { throw "Check receipts not found: $ReceiptsPath" }
+    $rec = Get-Content -Raw -LiteralPath $ReceiptsPath | ConvertFrom-Json -Depth 10
+    $checks = @(@($rec.receipts) | ForEach-Object { ConvertFrom-CheckProviderReceipt $_ })
+    if ($null -ne $rec.requiredCheckIds) { $matrix = [pscustomobject]@{ revision = [string]$rec.revision; requiredCheckIds = @($rec.requiredCheckIds); results = @($rec.matrix) } }
+} else {
+    if (-not (Test-Path -LiteralPath $ChecksPath)) { throw "Check results not found: $ChecksPath" }
+    $data = Get-Content -Raw -LiteralPath $ChecksPath | ConvertFrom-Json -Depth 10
+    $checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
+}
 $ledger = Read-RepairLedger $LedgerPath $policy
-$decision = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds
+$decision = Invoke-RepairDecision -Checks $checks -Ledger $ledger -Policy $policy -AttemptSeconds $AttemptSeconds -Matrix $matrix
 # Hindsight recall (#55) is optional context; absence or damage never fails the loop.
 $decision.hindsight = $null
 if ($HindsightPath -and (Test-Path -LiteralPath $HindsightPath)) {

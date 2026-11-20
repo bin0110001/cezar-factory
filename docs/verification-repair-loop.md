@@ -45,3 +45,41 @@ Persistent failures stay visible in the decision and in `.factory/repair-loop-ha
 publication path. The loop creates no issue and no waiver. The concise context comes from the #103 summary.
 
 Tests: `tests/repair-loop.ps1` (fixtures only; deploys nothing).
+
+## Provider receipts (#744)
+
+The same coordinator, policy and ledger also consume standardized check-provider receipts
+(`docs/check-provider-contract.md`) with their stage dispositions (`docs/verification-dispositions.md`). Pass
+`-ReceiptsPath` to the step; `-ChecksPath` keeps working unchanged. There is no new finding registry, check
+runner or provider contract: `ConvertFrom-CheckProviderReceipt` only maps an existing record to a repair check.
+
+Example (project-neutral) `.factory/check-receipts.json`:
+
+```json
+{
+  "revision": "<exact commit sha>",
+  "requiredCheckIds": ["project-tests", "result-contract"],
+  "matrix": [ { "checkId": "project-tests", "status": "pass", "commitSha": "<sha>" } ],
+  "receipts": [
+    { "checkId": "project-tests", "category": "test", "status": "fail", "disposition": "new", "commitSha": "<sha>", "message": "..." },
+    { "checkId": "result-contract", "category": "custom", "status": "fail", "disposition": "new", "commitSha": "<sha>", "message": "$.testResult missing" }
+  ]
+}
+```
+
+| Receipt | Repair class / route |
+| --- | --- |
+| `fail`/`warn`, disposition `new`, `worsened`, `reopened` | `code-defect`: focused `feedback` to the active coding session (`target: active-session`) |
+| `error` or `infra-failure` | `infrastructure`: backoff, never repaired |
+| `unknown`, `untested` | `untested`: visible gap, handed off, never a pass |
+| security category/finding, `waived`, license | `governance`: never repaired; security is a hard `security_issue` stop; no waiver is created |
+| disposition `known` (accepted baseline) | `accepted-baseline`: no repair, stays visible, not a regression |
+
+Scoped reruns are provisional. When `requiredCheckIds` is given, a clean round only ends as `done` if every
+mandatory check passes in `matrix` at the exact `revision`; otherwise the action is `rerun-full-matrix` and
+`confirmation.state` is `provisional` (with reasons). A distributed worker may only `validate`
+(`Test-RepairSessionAction`); it can never repair, take over or write to the active coding session. Project and
+release gate policies stay authoritative: the loop never relaxes them.
+
+Rollout: ship with receipts unused (legacy `-ChecksPath` behaviour is byte-compatible), switch one project's
+verification step to `-ReceiptsPath`, then add `requiredCheckIds` to turn on exact-revision confirmation.
