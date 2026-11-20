@@ -37,6 +37,11 @@ if ! git -C "$root" cat-file -e "$sha^{commit}" 2>/dev/null; then
 fi
 git -C "$root" worktree add -q --detach "$work" "$sha"
 cd "$work"
+# Isolate git from the container's inherited environment and record what git sees, so a git-dependent failure is diagnosable.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
+echo "validate-in-container: git $(git --version) toplevel=$(git rev-parse --show-toplevel 2>&1) uid=$(id -u) home=${HOME:-}"
+git check-ignore -q integrations/mcp-gateway/.env && echo 'validate-in-container: .env ignored' || echo "validate-in-container: check-ignore exit $?"
 # A fresh detached worktree has no node_modules, but the suite runs TypeScript helpers through tsx (for example the
 # verification-manifest adapter behind scripts/collect-impact.ps1). Install only the cezar package's dependencies.
 echo "validate-in-container: installing cezar dependencies at ${sha:0:9}"
