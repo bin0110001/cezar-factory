@@ -91,6 +91,19 @@ source: skills/factory-implement/SKILL.md
 - Update existing tests if behavior changes.
 - Ensure tests are meaningful: they should catch regressions, not just exercise code.
 
+### 5a. Keep the default workflow guide current
+
+- When the change alters Factory routing, ownership, job/step responsibilities,
+  PR lifecycle, validation evidence, or release/promotion, reconcile
+  `docs/workflow-map.md` with the authoritative sources using the
+  `factory-update-workflow-guide` skill. Update the guide in the same PR as the
+  process change.
+- If implementation reveals a mismatch between documented policy and actual
+  behavior, record the concrete gap in the guide rather than presenting the
+  intended behavior as already enforced. Do not change unrelated process behavior
+  as part of the documentation update.
+- Set `documentationUpdated` accurately in the implementation result.
+
 ### 6. Run Targeted Validation
 
 - Run the project's own test commands while developing. The workflow runs `test-changed.ps1` and the full verification itself after you finish; do not run those Factory scripts.
