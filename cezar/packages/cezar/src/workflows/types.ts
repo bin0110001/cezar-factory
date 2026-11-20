@@ -42,8 +42,21 @@ export const workflowStepSchema = z
     runner: z.enum(RUNNER_IDS).optional(),
     allowedTools: z.array(z.string()).optional(),
     bashAllowlist: z.array(z.string()).optional(),
+    /** Opt-in: keep this agent session available while required checks run, then route
+     * bounded repair feedback back through the existing session-continuation adapter. */
+    adaptiveRepair: z.object({
+      checkSteps: z.array(z.string().min(1)).min(1),
+      decisionStep: z.string().min(1),
+      checksPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      decisionPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      completionPrompt: z.string().min(1).max(4_000),
+    }).optional(),
     // check step
     command: z.string().optional(),
+    /** Continue through validation failures only when a later adaptive decision step owns them. */
+    continueOnFailure: z.boolean().optional(),
+    /** This command writes an AdaptiveRepairDecision to the agent step's configured path. */
+    adaptiveRepairDecision: z.boolean().optional(),
     /** Ingest command produced verification artifacts into Cezar's canonical stores. */
     verificationIngest: z.object({
       selectionPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
@@ -71,6 +84,9 @@ export const workflowStepSchema = z
   .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
     message: 'a step is either an agent step, a command check, or a verification suite',
   })
+  .refine((s) => !s.adaptiveRepair || Boolean(s.prompt ?? s.skill), { message: 'adaptiveRepair is only valid on agent steps' })
+  .refine((s) => !s.continueOnFailure || Boolean(s.command || s.verificationSuite), { message: 'continueOnFailure is only valid on check steps' })
+  .refine((s) => !s.adaptiveRepairDecision || Boolean(s.command), { message: 'adaptiveRepairDecision is only valid on command steps' })
   .refine((s) => !s.verificationIngest || Boolean(s.command), { message: 'verificationIngest is only valid on command steps' });
 
 /**
@@ -231,6 +247,22 @@ export function stepsIssue(steps: WorkflowStepDef[]): string | null {
       return `step "${s.id}": onFail.retry must reference an earlier step (got "${s.onFail.retry}")`;
     }
   }
+  for (const [i, s] of steps.entries()) {
+    if (!s.adaptiveRepair) continue;
+    const config = s.adaptiveRepair;
+    if (config.checkSteps.some((id) => {
+      const index = ids.indexOf(id);
+      return index <= i || !steps[index]?.continueOnFailure;
+    })) return `step "${s.id}": adaptiveRepair.checkSteps must reference later check steps with continueOnFailure`;
+    const decisionIndex = ids.indexOf(config.decisionStep);
+    if (decisionIndex <= i || !steps[decisionIndex]?.adaptiveRepairDecision) {
+      return `step "${s.id}": adaptiveRepair.decisionStep must reference a later adaptiveRepairDecision command`;
+    }
+    if (config.checkSteps.some((id) => ids.indexOf(id) >= decisionIndex)) {
+      return `step "${s.id}": adaptiveRepair.decisionStep must follow every configured check step`;
+    }
+  }
+  if (steps.filter((s) => s.adaptiveRepairDecision).length > 1) return 'a workflow may have only one adaptiveRepairDecision step';
   return null;
 }
 

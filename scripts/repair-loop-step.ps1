@@ -12,6 +12,7 @@ param(
     [string]$HandoffPath = '.factory/repair-loop-handoff.json',
     [string]$HindsightPath = '',
     [string]$ReceiptsPath = '',
+    [string]$ProgressPath = '',
     [string]$RepairPolicyPath = (Join-Path $PSScriptRoot '../policies/repair-policy.json'),
     [string]$Workflow = '',
     [string]$Validator = '',
@@ -43,7 +44,18 @@ if ($ReceiptsPath) {
     $checks = if ($null -ne $data.checks) { @($data.checks) } else { @($data) }
 }
 $effective = Get-EffectiveRepairPolicy -Legacy $policy -PolicyPath $RepairPolicyPath -Workflow $Workflow -Validator $Validator
-$progress = if ($data.PSObject.Properties['progress']) { $data.progress } else { $null }
+$progress = if ($ProgressPath) {
+    if (-not (Test-Path -LiteralPath $ProgressPath)) { throw "Progress evaluation not found: $ProgressPath" }
+    Get-Content -Raw -LiteralPath $ProgressPath | ConvertFrom-Json -Depth 10
+} elseif ($data.PSObject.Properties['progress']) { $data.progress } else { $null }
+if ($null -ne $progress -and $progress.PSObject.Properties['classification']) {
+    $outcome = switch ([string]$progress.classification) {
+        { $_ -in 'resolved','net_progress','mixed_progress','partial_progress' } { 'progress'; break }
+        { $_ -in 'stagnation','regression','oscillation' } { 'no_progress'; break }
+        default { 'unknown' }
+    }
+    $progress = [pscustomobject]@{ outcome = $outcome; relevantChange = [bool]$progress.artifactChanged }
+}
 $authorization = Test-RepairSessionAction $null $ActorKind $RequestedAction
 if (-not $authorization.allowed) { throw $authorization.reason }
 foreach ($p in $LedgerPath, $OutputPath, $HandoffPath) { New-Item -ItemType Directory -Path (Split-Path -Parent ([IO.Path]::GetFullPath($p))) -Force | Out-Null }

@@ -32,8 +32,17 @@ export const workflowStepDefSchema = z
     runner: runnerSchema.optional(),
     allowedTools: z.array(z.string()).optional(),
     bashAllowlist: z.array(z.string()).optional(),
+    adaptiveRepair: z.object({
+      checkSteps: z.array(z.string().min(1)).min(1),
+      decisionStep: z.string().min(1),
+      checksPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      decisionPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
+      completionPrompt: z.string().min(1).max(4_000),
+    }).optional(),
     // check step
     command: z.string().optional(),
+    continueOnFailure: z.boolean().optional(),
+    adaptiveRepairDecision: z.boolean().optional(),
     /** Command artifacts Cezar ingests after the step completes. */
     verificationIngest: z.object({
       selectionPath: z.string().min(1).max(1024).refine((p) => !p.includes(String.fromCharCode(92)) && !p.startsWith('/') && !/^[A-Za-z]:/.test(p) && p.split('/').every((part) => part && part !== '.' && part !== '..')),
@@ -57,6 +66,9 @@ export const workflowStepDefSchema = z
   .refine((s) => Number(Boolean(s.command)) + Number(Boolean(s.verificationSuite)) + Number(Boolean(s.prompt ?? s.skill)) === 1, {
     message: 'a step is either an agent step, a command check, or a verification suite',
   })
+  .refine((s) => !s.adaptiveRepair || Boolean(s.prompt ?? s.skill), { message: 'adaptiveRepair is only valid on agent steps' })
+  .refine((s) => !s.continueOnFailure || Boolean(s.command || s.verificationSuite), { message: 'continueOnFailure is only valid on check steps' })
+  .refine((s) => !s.adaptiveRepairDecision || Boolean(s.command), { message: 'adaptiveRepairDecision is only valid on command steps' })
   .refine((s) => !s.verificationIngest || Boolean(s.command), { message: 'verificationIngest is only valid on command steps' });
 export type WorkflowStepDef = z.infer<typeof workflowStepDefSchema>;
 

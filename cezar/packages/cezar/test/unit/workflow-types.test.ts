@@ -172,3 +172,29 @@ test('a retryOn of 0 is a load-time error, not a silent no-op', () => {
   assert.equal(ok.success, true);
   assert.deepEqual(ok.success && ok.data.steps?.[1]?.onFail, { retry: 'implement', max: 2, retryOn: [1] });
 });
+
+test('adaptive repair is opt-in and requires a checked validation-to-decision path', () => {
+  const adaptive = {
+    id: 'implement',
+    prompt: '{{task}}',
+    adaptiveRepair: {
+      checkSteps: ['unit', 'verify'],
+      decisionStep: 'repair-decision',
+      checksPath: '.factory/repair-checks.json',
+      decisionPath: '.factory/repair-decision.json',
+      completionPrompt: 'Validation passed. Prepare and report the PR.',
+    },
+  };
+  const steps: WorkflowStepDef[] = [
+    adaptive,
+    { id: 'unit', command: 'npm test', continueOnFailure: true },
+    { id: 'verify', command: 'npm run verify', continueOnFailure: true },
+    { id: 'repair-decision', command: 'pwsh decision.ps1', adaptiveRepairDecision: true },
+  ];
+  assert.equal(stepsIssue(steps), null);
+  assert.equal(workflowFileSchema.safeParse({ name: 'adaptive', steps }).success, true);
+  assert.equal(workflowFileSchema.safeParse({ name: 'legacy', steps: [{ id: 'work', prompt: '{{task}}' }] }).success, true);
+  assert.notEqual(stepsIssue([...steps.slice(0, 1), { ...steps[1]!, continueOnFailure: false }, ...steps.slice(2)]), null);
+  assert.notEqual(stepsIssue([...steps.slice(0, 3), { ...steps[3]!, adaptiveRepairDecision: false }]), null);
+  assert.equal(workflowFileSchema.safeParse({ name: 'path-traversal', steps: [{ ...adaptive, adaptiveRepair: { ...adaptive.adaptiveRepair, checksPath: '../outside.json' } }] }).success, false);
+});
