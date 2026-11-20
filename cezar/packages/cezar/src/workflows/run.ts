@@ -16,6 +16,7 @@ import { onUsage, registerRunProcess, unregisterRunProcess, type ProcessUsage } 
 import { parseUsageLimit } from '../core/usage-limit.ts';
 import { createRunner } from '../core/runner-factory.ts';
 import type { RunnerId } from '../core/agent-runner.ts';
+import { createSessionContinuation, type AgentSessionContinuation } from '../core/session-continuation.ts';
 import { modelConflictsWithRunner } from '../core/model-presets.ts';
 import { AGENT_MODELS_LOCKED_ERROR, agentModelsLocked } from '../core/agent-model-policy.ts';
 import {
@@ -122,6 +123,7 @@ import { executeVerification } from '../verification/executor.ts';
 import { ingestWorkflowVerification } from '../verification/workflow-ingest.ts';
 import { listProjects } from '../workspace/projects.ts';
 import { createChildTraceContext, createTraceContext, stableSpanId } from '../observability/trace-context.ts';
+import { adaptiveRepairFeedback, parseAdaptiveRepairDecision, worktreeArtifactRevision, type AdaptiveCheckResult } from './adaptive-repair.ts';
 
 const CHECK_OUTPUT_CAP = 20_000;
 /** Backstop for a command step with no explicit `timeoutSeconds`: long enough for a real test suite,
@@ -395,6 +397,8 @@ interface ActiveRun {
   cwd: string;
   /** Live claude session of the currently running agent step, if any. */
   session?: AgentSession;
+  /** Present only for a workflow step that explicitly opts into adaptive repair. */
+  adaptiveRepair?: AdaptiveRepairRuntime;
   currentStepId?: string;
   idleTimer?: NodeJS.Timeout;
   /** The inactivity watchdog closed this session; a plain final wait is not success evidence. */
@@ -489,6 +493,27 @@ interface ActiveRun {
     startedTurns: Set<string>;
     recordedTurns: Set<string>;
   };
+}
+
+interface AdaptiveRepairRuntime {
+  stepId: string;
+  config: NonNullable<WorkflowStepDef['adaptiveRepair']>;
+  checks: AdaptiveCheckResult[];
+  observations: Array<{
+    id: string;
+    verified: boolean;
+    coverage: { expected: string[]; executed: string[] };
+    artifact: { hash: string };
+    findings: Array<{ fingerprint: string; severity: string; checkId: string }>;
+  }>;
+  artifactRevision?: string;
+  artifactChangedDuringValidation: boolean;
+  matrixReruns: number;
+  continuation?: AgentSessionContinuation;
+  initialTurnComplete: boolean;
+  resolveInitialTurn: () => void;
+  initialTurn: Promise<void>;
+  pendingTurn?: { key: string; resolve: (done: boolean) => void };
 }
 
 /** Safety cap on autonomous auto-continues per run — stops a stuck agent from nudging forever.
@@ -4554,6 +4579,12 @@ export class RunManager {
         // a run slot forever.
         const interactive =
           input.autonomous !== true && i === lastAgentIdx && i === workflow.steps.length - 1;
+        if (step.adaptiveRepair) {
+          state.adaptiveRepair = this.newAdaptiveRepairRuntime(step.id, step.adaptiveRepair);
+          rmSync(resolve(state.cwd, step.adaptiveRepair.decisionPath), { force: true });
+          rmSync(resolve(state.cwd, step.adaptiveRepair.checksPath), { force: true });
+          rmSync(resolve(state.cwd, '.factory/implement-result.json'), { force: true });
+        }
         const failure = await this.runAgentStep(
           runId,
           state,
@@ -4605,12 +4636,117 @@ export class RunManager {
         continue;
       }
 
+      const adaptive = state.adaptiveRepair;
+      if (adaptive && adaptive.config.checkSteps.includes(step.id)) {
+        try {
+          const revision = worktreeArtifactRevision(state.cwd);
+          if (adaptive.artifactRevision === undefined) adaptive.artifactRevision = revision;
+          else if (adaptive.artifactRevision !== revision) adaptive.artifactChangedDuringValidation = true;
+        } catch {
+          adaptive.artifactChangedDuringValidation = true;
+        }
+      }
+      if (adaptive && step.adaptiveRepairDecision) this.writeAdaptiveRepairInputs(state.cwd, adaptive);
       const { ok, output, exitCode } = await this.runCheckStep(runId, state, step, input.task, emit);
+      if (adaptive && adaptive.config.checkSteps.includes(step.id)) {
+        let revision = adaptive.artifactRevision ?? '';
+        try {
+          const after = worktreeArtifactRevision(state.cwd);
+          if (revision && revision !== after) adaptive.artifactChangedDuringValidation = true;
+          revision = after;
+        } catch { adaptive.artifactChangedDuringValidation = true; }
+        adaptive.checks.push({
+          checkId: step.id,
+          status: ok ? 'passed' : exitCode === 3 || exitCode === -1 ? 'inconclusive' : 'failed',
+          message: ok ? '' : ((this.store.redactRunText(runId, output) ?? output).split(/\r?\n/, 1)[0] ?? '').slice(0, 400),
+          output: ok ? '' : (this.store.redactRunText(runId, output) ?? output).slice(0, 4_000),
+          commitSha: revision,
+        });
+      }
       if (state.cancelled) { this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'cancelled'); break; }
       const checkLabel = step.command ?? `verification suite "${step.verificationSuite}"`;
       if (ok) {
         this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'completed');
         this.finishStep(runId, step.id, 'done', undefined, emit);
+        if (step.adaptiveRepairDecision && adaptive) {
+          let decision: ReturnType<typeof parseAdaptiveRepairDecision>;
+          try {
+            const path = resolve(state.cwd, adaptive.config.decisionPath);
+            decision = parseAdaptiveRepairDecision(JSON.parse(readFileSync(path, 'utf8')));
+          } catch (error) {
+            this.writeAdaptiveIncompleteResult(runId, state, adaptive, `decision_invalid: ${error instanceof Error ? error.message : String(error)}`);
+            this.closeAdaptiveRepairSession(runId, state);
+            i++;
+            continue;
+          }
+          adaptive.observations.push(this.adaptiveObservation(adaptive));
+          if (adaptive.artifactChangedDuringValidation && decision.action === 'done') {
+            this.writeAdaptiveIncompleteResult(runId, state, adaptive, 'artifact_changed_during_validation');
+            this.closeAdaptiveRepairSession(runId, state);
+            i++;
+            continue;
+          }
+          if (decision.action === 'rerun-full-matrix' && adaptive.matrixReruns < 2) {
+            adaptive.matrixReruns++;
+            adaptive.checks = [];
+            adaptive.artifactRevision = undefined;
+            adaptive.artifactChangedDuringValidation = false;
+            for (const id of adaptive.config.checkSteps) this.store.updateStep(runId, id, { status: 'pending', error: undefined, finishedAt: undefined });
+            i = workflow.steps.findIndex((candidate) => adaptive.config.checkSteps.includes(candidate.id));
+            continue;
+          }
+          if (decision.action === 'repair' || decision.action === 'replan') {
+            const feedback = adaptiveRepairFeedback(decision);
+            const outcome = await this.continueAdaptiveRepairSession(
+              runId, state, feedback, `repair-${decision.reasonCode ?? 'authorized'}-${adaptive.observations.length}`,
+            );
+            if (!outcome.done) {
+              this.writeAdaptiveIncompleteResult(runId, state, adaptive, outcome.reason ?? 'repair_session_unavailable');
+              this.closeAdaptiveRepairSession(runId, state);
+              i++;
+              continue;
+            }
+            adaptive.checks = [];
+            adaptive.artifactRevision = undefined;
+            adaptive.artifactChangedDuringValidation = false;
+            const firstCheck = workflow.steps.findIndex((candidate) => adaptive.config.checkSteps.includes(candidate.id));
+            for (const id of adaptive.config.checkSteps) {
+              this.store.updateStep(runId, id, { status: 'pending', error: undefined, finishedAt: undefined });
+            }
+            i = firstCheck;
+            continue;
+          }
+          if (decision.action === 'done') {
+            const outcome = await this.continueAdaptiveRepairSession(
+              runId, state, adaptive.config.completionPrompt, `publish-${adaptive.observations.length}`,
+            );
+            if (!outcome.done) {
+              this.writeAdaptiveIncompleteResult(runId, state, adaptive, outcome.reason ?? 'publication_session_unavailable');
+              this.closeAdaptiveRepairSession(runId, state);
+              i++;
+              continue;
+            }
+          } else {
+            // The existing ensure-result/validate/route steps turn this truthful
+            // incomplete outcome into investigation; no PR is created on this path.
+            this.writeAdaptiveIncompleteResult(runId, state, adaptive, decision.stopReason ?? decision.reasonCode ?? decision.action);
+          }
+          this.closeAdaptiveRepairSession(runId, state);
+        }
+        i++;
+        continue;
+      }
+
+      if (step.continueOnFailure && adaptive) {
+        this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
+        this.finishStep(runId, step.id, 'failed', `\`${checkLabel}\` failed; awaiting the adaptive repair decision`, emit);
+        if (!adaptive.config.checkSteps.includes(step.id)) {
+          this.writeAdaptiveIncompleteResult(runId, state, adaptive, `adaptive_decision_step_failed:${step.id}`);
+          this.closeAdaptiveRepairSession(runId, state);
+          i = workflow.steps.findIndex((candidate) => candidate.id === 'ensure-result');
+          if (i < 0) i = workflow.steps.length;
+          continue;
+        }
         i++;
         continue;
       }
@@ -4657,6 +4793,9 @@ export class RunManager {
       runError = `check "${step.id}" failed${step.onFail ? ` after ${used + 1} attempts` : ''}`;
       break;
     }
+
+    // A terminal failure/cancellation must not leak the held adaptive session.
+    if (state.adaptiveRepair) this.closeAdaptiveRepairSession(runId, state);
 
     // How a mid-workflow ask park (#917) ended, read once before the settlement
     // below clears it. A LIVE park never reaches this line: the parked session
@@ -4746,6 +4885,118 @@ export class RunManager {
     }
     this.clearIdleTimer(state);
     this.dropActive(runId, state);
+  }
+
+  /** Returns an error message, or null on success. */
+  private newAdaptiveRepairRuntime(
+    stepId: string,
+    config: NonNullable<WorkflowStepDef['adaptiveRepair']>,
+  ): AdaptiveRepairRuntime {
+    let resolveInitialTurn!: () => void;
+    const initialTurn = new Promise<void>((resolve) => { resolveInitialTurn = resolve; });
+    return {
+      stepId, config, checks: [], observations: [], artifactChangedDuringValidation: false,
+      initialTurnComplete: false, initialTurn, resolveInitialTurn, matrixReruns: 0,
+    };
+  }
+
+  private adaptiveObservation(adaptive: AdaptiveRepairRuntime): AdaptiveRepairRuntime['observations'][number] {
+    const expected = [...adaptive.config.checkSteps];
+    const executed = adaptive.checks.map((check) => check.checkId);
+    const findings = adaptive.checks.filter((check) => check.status !== 'passed').map((check) => {
+      const normalized = `${check.checkId}|${check.message}`.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().toLowerCase();
+      return { fingerprint: createHash('sha256').update(normalized).digest('hex').slice(0, 16), severity: 'medium', checkId: check.checkId };
+    });
+    const revision = adaptive.artifactRevision ?? '';
+    const verified = !adaptive.artifactChangedDuringValidation
+      && expected.every((id) => adaptive.checks.some((check) => check.checkId === id && check.status === 'passed' && check.commitSha === revision));
+    return {
+      id: `repair-${adaptive.observations.length + 1}`,
+      verified,
+      coverage: { expected, executed },
+      artifact: { hash: revision },
+      findings,
+    };
+  }
+
+  private writeAdaptiveRepairInputs(cwd: string, adaptive: AdaptiveRepairRuntime): void {
+    const path = resolve(cwd, adaptive.config.checksPath);
+    mkdirSync(dirname(path), { recursive: true });
+    const current = this.adaptiveObservation(adaptive);
+    const receipts = adaptive.checks.map((check) => ({
+      checkId: check.checkId,
+      status: check.status === 'passed' ? 'pass' : check.status === 'inconclusive' ? 'error' : 'fail',
+      message: check.message,
+      output: check.output,
+      commitSha: check.commitSha,
+      category: 'test',
+      safetyViolation: ['protect-governance', 'weakening-guard'].includes(check.checkId),
+      source: 'workflow-check',
+    }));
+    writeFileSync(path, JSON.stringify({
+      schemaVersion: 1,
+      revision: adaptive.artifactRevision ?? '',
+      requiredCheckIds: adaptive.config.checkSteps,
+      matrix: receipts,
+      receipts,
+      history: [...adaptive.observations, current],
+      artifactChangedDuringValidation: adaptive.artifactChangedDuringValidation,
+    }, null, 2));
+  }
+
+  private async continueAdaptiveRepairSession(
+    runId: string,
+    state: ActiveRun,
+    feedback: string,
+    key: string,
+  ): Promise<{ done: boolean; reason?: string }> {
+    const adaptive = state.adaptiveRepair;
+    const continuation = adaptive?.continuation;
+    if (!adaptive || !continuation || !state.session?.open) {
+      return { done: false, reason: 'existing agent session is unavailable; replacement sessions are disabled' };
+    }
+    const idempotencyKey = `${runId}:${adaptive.stepId}:${key}`;
+    let resolveTurn!: (done: boolean) => void;
+    const turn = new Promise<boolean>((resolve) => { resolveTurn = resolve; });
+    adaptive.pendingTurn = { key: idempotencyKey, resolve: resolveTurn };
+    const result = continuation.continueSession(feedback, idempotencyKey);
+    if (result.status !== 'sent' && result.status !== 'duplicate') {
+      adaptive.pendingTurn = undefined;
+      return { done: false, reason: result.status === 'busy' ? 'an adaptive continuation is already in progress' : result.reason };
+    }
+    const timeout = setTimeout(() => resolveTurn(false), 30 * 60_000);
+    timeout.unref?.();
+    const done = await turn;
+    clearTimeout(timeout);
+    adaptive.pendingTurn = undefined;
+    return done ? { done: true } : { done: false, reason: 'continuation session ended, timed out, or omitted CEZ:DONE' };
+  }
+
+  private closeAdaptiveRepairSession(runId: string, state: ActiveRun): void {
+    const session = state.session;
+    if (session?.open) session.end();
+    if (session) this.recordUsagePeaks(runId, state);
+    state.session = undefined;
+    state.adaptiveRepair = undefined;
+    state.currentStepId = undefined;
+    state.interrupt = () => undefined;
+  }
+
+  private writeAdaptiveIncompleteResult(runId: string, state: ActiveRun, adaptive: AdaptiveRepairRuntime, reason: string): void {
+    const resultPath = resolve(state.cwd, '.factory/implement-result.json');
+    if (existsSync(resultPath)) return;
+    mkdirSync(dirname(resultPath), { recursive: true });
+    const issue = Number((this.store.getRun(runId)?.task ?? '').match(/(?:issue\s*#|#)(\d+)/i)?.[1] ?? 0);
+    writeFileSync(resultPath, JSON.stringify({
+      issue,
+      status: 'incomplete',
+      summary: `Adaptive repair stopped: ${reason}.`,
+      filesChanged: [], testsRun: adaptive.config.checkSteps,
+      testResult: 'incomplete', acceptanceCriteriaStatus: 'incomplete', documentationUpdated: false,
+      knownConcerns: reason,
+      followUpSuggestions: 'Continue from the recorded adaptive repair evidence.', durableKnowledgeCandidates: '',
+      incompleteReason: reason,
+    }, null, 2));
   }
 
   /** Returns an error message, or null on success. */
@@ -4896,6 +5147,30 @@ export class RunManager {
         const markerless = compacted && markerlessTurn(turnText);
         if (!compacted) state.compactionContinues = 0;
         const done = Boolean(sessionOpen) && DONE_MARKER_RE.test(turnText.trimEnd());
+        const adaptive = state.adaptiveRepair?.stepId === step.id ? state.adaptiveRepair : undefined;
+        if (done && adaptive) {
+          if (adaptive.pendingTurn) {
+            adaptive.continuation?.completeTurn(adaptive.pendingTurn.key);
+            adaptive.pendingTurn.resolve(true);
+          } else if (!adaptive.initialTurnComplete) {
+            adaptive.initialTurnComplete = true;
+            adaptive.continuation = createSessionContinuation(
+              runner,
+              {
+                runId, stepId: step.id, sessionId: this.store.getRun(runId)?.steps.find((s) => s.id === step.id)?.sessionId ?? sessionId,
+                origin: 'started', worktree: state.cwd,
+                profileId: stepProfile.profileId,
+                issueNumber: Number((this.store.getRun(runId)?.task ?? '').match(/(?:issue\\s*#|#)(\\d+)/i)?.[1] ?? 0) || undefined,
+              },
+              state.session!,
+            );
+            adaptive.resolveInitialTurn();
+          }
+          sink.flushAll();
+          turnText = '';
+          emit({ type: 'lifecycle', message: 'adaptive repair turn complete — keeping the same session open' });
+          return;
+        }
         // The dispatch facts, through the same ONE helper `runContinuation` calls (spec
         // 2026-09-10-dispatch A5). Not gated on `interactive`: a report and a dispatch
         // are the agent telling cezar what it did, and a chained workflow's non-final step that
@@ -5200,7 +5475,30 @@ export class RunManager {
     state.interrupt = () => session.interrupt();
     if (session.pid !== undefined) registerRunProcess(runId, session.pid);
 
+    let preserveAdaptiveSession = false;
     try {
+      if (state.adaptiveRepair?.stepId === step.id) {
+        const resultPromise = session.result;
+        // Attach a close handler before racing so an unexpectedly closed provider cannot
+        // leave execute waiting forever for its first CEZ:DONE turn.
+        void resultPromise.then(() => {
+          const adaptive = state.adaptiveRepair;
+          if (adaptive?.stepId === step.id && !adaptive.initialTurnComplete) adaptive.resolveInitialTurn();
+          if (adaptive?.pendingTurn) adaptive.pendingTurn.resolve(false);
+        }, () => {
+          const adaptive = state.adaptiveRepair;
+          if (adaptive?.stepId === step.id && !adaptive.initialTurnComplete) adaptive.resolveInitialTurn();
+          if (adaptive?.pendingTurn) adaptive.pendingTurn.resolve(false);
+        });
+        await state.adaptiveRepair.initialTurn;
+        if (!state.adaptiveRepair.initialTurnComplete) {
+          await resultPromise;
+          return 'adaptive repair agent session closed before CEZ:DONE';
+        }
+        preserveAdaptiveSession = true;
+        sink.sessionEnded('end_turn');
+        return null;
+      }
       const result = await session.result;
       if (sessionError) {
         sink.sessionEnded('error', sessionError);
@@ -5218,16 +5516,18 @@ export class RunManager {
       sink.sessionEnded('error', message); // alongside v1's fatal `error`
       return message;
     } finally {
-      this.recordUsagePeaks(runId, state);
+      if (!preserveAdaptiveSession) this.recordUsagePeaks(runId, state);
       this.clearIdleTimer(state);
       if (this.active.get(runId) === state) {
         this.leaveMonitoring(runId);
         this.waiting.delete(runId);
       }
       this.clearMonitoringWakeTimer(state, runId);
-      state.session = undefined;
-      state.currentStepId = undefined;
-      state.interrupt = () => undefined;
+      if (!preserveAdaptiveSession) {
+        state.session = undefined;
+        state.currentStepId = undefined;
+        state.interrupt = () => undefined;
+      }
     }
   }
 
@@ -6021,6 +6321,7 @@ export class RunManager {
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     const workflowVerificationId = step.verificationIngest ? randomUUID() : undefined;
     const workflowVerificationStartedAt = new Date().toISOString();
+    const previousInterrupt = state.interrupt;
     if (step.verificationIngest) {
       // Never accept a verdict left by an earlier attempt as this invocation's policy result.
       rmSync(resolve(state.cwd, step.verificationIngest.verdictPath), { force: true });
@@ -6055,7 +6356,7 @@ export class RunManager {
         settled = true;
         clearTimeout(deadline);
         if (killTimer) clearTimeout(killTimer);
-        state.interrupt = () => undefined;
+        state.interrupt = state.adaptiveRepair ? previousInterrupt : () => undefined;
         const body = output.trim() || '(no output)';
         const trimmed = timedOut
           ? `${body}

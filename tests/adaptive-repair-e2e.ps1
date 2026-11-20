@@ -1,14 +1,11 @@
 #!/usr/bin/env pwsh
 # End-to-end fixtures and failure injection for adaptive in-session repair (issue #742, parent #736).
 # Runs locally with fake provider/session adapters; no provider calls, no GitHub Actions.
-# Scenarios needing the coordinator/evaluator/policy modules (#739-#741) are gated on module presence and
-# reported as SKIP, never silently passed.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'fixtures/adaptive-repair/fake-session.ps1')
 . (Join-Path $PSScriptRoot '../scripts/repair-loop-lib.ps1')
 $failures = 0
 function Check([string]$name, [bool]$c) { if ($c) { Write-Host "  ok   $name" } else { Write-Host "  FAIL $name"; $script:failures++ } }
-function Skip([string]$name, [string]$why) { Write-Host "  SKIP $name ($why)" }
 function F([string]$id, [string]$sev = 'medium') { [pscustomobject]@{ id = $id; severity = $sev } }
 $cleanTests = @{ discoveredBefore = 10; discoveredAfter = 10; skippedBefore = 0; skippedAfter = 0; deleted = 0 }
 function NewRound([int]$rev, [object[]]$f, [hashtable]$t = $cleanTests, [string]$o = '') { [pscustomobject]@{ revision = $rev; findings = $f; tests = $t; outcome = $o } }
@@ -122,9 +119,10 @@ $cs = NewSession; [void]$cs.Continue("token $($canary[0])", 'x')
 $withSecret = Run @((NewRound 1 @((F "leak-$($canary[1])"))), (NewRound 2 @())) (NewSession)
 Check 'scan detects a canary when one is present (scanner is live)' ((($withSecret | ConvertTo-Json -Depth 8).Contains($canary[1])) -eq $true)
 
-Write-Host '-- gated on dependent modules'
-foreach ($m in @(@('coordinator', 'scripts/repair-coordinator.ps1'), @('evaluator', 'scripts/repair-evaluator.ps1'), @('policy', 'scripts/repair-policy.ps1'))) {
-    if (Test-Path (Join-Path $PSScriptRoot "../$($m[1])")) { Skip "$($m[0]) module present: wire its scenarios into this table" 'module landed; scenarios must be bound' ; $script:failures++ }
-    else { Skip "$($m[0]) contract scenarios" "$($m[1]) not landed; harness model used" }
-}
+Write-Host '-- Cezar implementation wiring'
+$runner = Get-Content -Raw (Join-Path $PSScriptRoot '../cezar/packages/cezar/src/workflows/run.ts')
+$workflow = Get-Content -Raw (Join-Path $PSScriptRoot '../workflows/implement.yaml')
+Check 'Cezar continues the existing session through the continuation adapter' ($runner.Contains('continueAdaptiveRepairSession') -and $runner.Contains('createSessionContinuation'))
+Check 'Cezar binds each full-matrix check to a worktree artifact revision' ($runner.Contains('worktreeArtifactRevision') -and $runner.Contains('artifactChangedDuringValidation'))
+Check 'implement workflow opts into bounded same-session repair before PR publication' ($workflow.Contains('adaptiveRepair:') -and $workflow.Contains('adaptive-repair-decision-step.ps1') -and $workflow.Contains('Do not open or update a PR'))
 if ($failures) { Write-Host "$failures failed"; exit 1 }

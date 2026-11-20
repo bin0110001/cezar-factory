@@ -44,17 +44,18 @@ function ConvertFrom-CheckProviderReceipt([object]$Receipt) {
     $status = ([string](& $v 'status' '')).ToLowerInvariant()
     $disp = ([string](& $v 'disposition' '')).ToLowerInvariant()
     $findings = @(& $v 'findings' @())
+    $safety = ((& $v 'safetyViolation' $false) -eq $true)
     $security = ($category -in $script:SecurityCategories) -or [bool]($findings | Where-Object { "$($_.class)" -eq 'security' })
     $force = ''; $mapped = 'failed'
     if ($status -in 'pass', 'passed') { $mapped = 'passed' }
     elseif ($status -eq 'unknown' -or $disp -in 'untested', 'unknown') { $mapped = 'untested' }
     elseif ($status -eq 'error' -or $disp -eq 'infra-failure') { $force = 'infrastructure' }
-    elseif ($security -or $category -eq 'license' -or ((& $v 'waived' $false) -eq $true)) { $force = 'governance' }
+    elseif ($safety -or $security -or $category -eq 'license' -or ((& $v 'waived' $false) -eq $true)) { $force = 'governance' }
     elseif ($disp -eq 'known') { $force = 'accepted-baseline' }
     elseif ($status -in 'fail', 'warn', 'failed') { $force = 'code-defect' }
     return [pscustomobject]@{
         checkId = [string](& $v 'checkId' ''); status = $mapped; message = [string](& $v 'message' ''); output = [string](& $v 'output' '')
-        commitSha = [string](& $v 'commitSha' ''); securityIssue = $security; forceClass = $force
+        commitSha = [string](& $v 'commitSha' ''); securityIssue = $security; safetyViolation = $safety; forceClass = $force
         category = $category; disposition = $disp; source = 'receipt'
     }
 }

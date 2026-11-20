@@ -87,12 +87,15 @@ Check 'focused feedback goes to the active session' ($d.feedback.Count -eq 2 -an
 $env1 = RC 'net' 'test' 'error' 'runner crashed' @{ disposition = 'infra-failure' }
 $gov = RC 'sast' 'sast' 'fail' 'finding' @{ findings = @(@{ class = 'security' }) }
 $wv = RC 'deps' 'lint' 'fail' 'x' @{ waived = $true }
+$guard = RC 'protect-governance' 'test' 'fail' 'protected governance file changed' @{ safetyViolation = $true }
 $d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $env1)) (NewLedger) $policy
 Check 'environment category is backoff only, never repaired' ($d.action -eq 'backoff' -and $d.budget.attemptsUsed -eq 0)
 $d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $gov)) (NewLedger) $policy
 Check 'security finding is a hard stop, never repaired' ($d.action -eq 'stop' -and $d.stopReason -eq 'security_issue' -and $d.impactedChecks.Count -eq 0)
 $d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $wv)) (NewLedger) $policy
 Check 'waiver/governance is handed off, never repaired' ($d.action -eq 'handoff' -and $d.checks[0].class -eq 'governance' -and $d.budget.attemptsUsed -eq 0 -and $d.handoff.waiver -eq $false)
+$d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt $guard)) (NewLedger) $policy
+Check 'safety violations in workflow check receipts are never repaired' ($d.action -eq 'stop' -and $d.reasonCode -eq 'governance_stop' -and $d.impactedChecks.Count -eq 0)
 $d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt (RC 'lint' 'lint' 'warn' 'old warning' @{ disposition = 'known' }))) (NewLedger) $policy
 Check 'accepted baseline finding is not repaired and not a regression' ($d.action -eq 'done' -and $d.checks[0].action -eq 'accepted' -and $d.budget.attemptsUsed -eq 0)
 $d = Invoke-RepairDecision @((ConvertFrom-CheckProviderReceipt (RC 'lint' 'lint' 'warn' 'new warning' @{ disposition = 'worsened' }))) (NewLedger) $policy
