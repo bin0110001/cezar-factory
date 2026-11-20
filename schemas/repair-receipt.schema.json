@@ -1,25 +1,54 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "RepairReceiptV1",
-  "description": "One immutable, hash-chained receipt per repair evaluation (#740). Appended to the ledger, never rewritten.",
-  "type": "object",
-  "required": ["schemaVersion", "receiptId", "round", "at", "decision", "reasonCode", "terminal", "strategy", "policy", "budget", "previousHash", "hash"],
-  "additionalProperties": false,
-  "properties": {
-    "schemaVersion": {"const": 1},
-    "receiptId": {"type": "string"},
-    "round": {"type": "integer", "minimum": 1},
-    "at": {"type": "string"},
-    "idempotencyKey": {"type": "string"},
-    "decision": {"enum": ["repair", "replan", "retry", "backoff", "stop", "handoff", "done"]},
-    "reasonCode": {"enum": ["passed", "incomplete_reported", "repeated_finding", "oscillation", "no_progress", "global_budget_exhausted", "validator_error", "governance_stop", "session_unavailable", "repair_authorized", "replan_authorized", "infrastructure_retry", "infrastructure_backoff", "infrastructure_budget_exhausted", "flaky_unresolved"]},
-    "terminal": {"type": "boolean"},
-    "strategy": {"enum": ["focused_repair", "replan", "infrastructure_retry", "stop_escalate", "none"]},
-    "progress": {"type": ["object", "null"]},
-    "policy": {"type": "object", "required": ["policyVersion", "hash", "snapshot"], "properties": {"policyVersion": {"type": "string"}, "hash": {"type": "string"}, "snapshot": {"type": "object"}}},
-    "budget": {"type": "object"},
-    "checks": {"type": "array", "items": {"type": "object"}},
-    "previousHash": {"type": "string"},
-    "hash": {"type": "string"}
-  }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Factory repair receipts (v1)",
+  "description": "The shared receipt contract accepts both immutable repair-decision receipts (#740) and adaptive repair-attempt receipts (#743).",
+  "oneOf": [
+    {
+      "title": "Repair decision receipt (#740)",
+      "description": "One immutable, hash-chained receipt per repair evaluation. Appended to the decision ledger, never rewritten.",
+      "type": "object",
+      "required": ["schemaVersion", "receiptId", "round", "at", "decision", "reasonCode", "terminal", "strategy", "policy", "budget", "previousHash", "hash"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "receiptId": {"type": "string"},
+        "round": {"type": "integer", "minimum": 1},
+        "at": {"type": "string"},
+        "idempotencyKey": {"type": "string"},
+        "decision": {"enum": ["repair", "replan", "retry", "backoff", "stop", "handoff", "done"]},
+        "reasonCode": {"enum": ["passed", "incomplete_reported", "repeated_finding", "oscillation", "no_progress", "global_budget_exhausted", "validator_error", "governance_stop", "session_unavailable", "repair_authorized", "replan_authorized", "infrastructure_retry", "infrastructure_backoff", "infrastructure_budget_exhausted", "flaky_unresolved"]},
+        "terminal": {"type": "boolean"},
+        "strategy": {"enum": ["focused_repair", "replan", "infrastructure_retry", "stop_escalate", "none"]},
+        "progress": {"type": ["object", "null"]},
+        "policy": {"type": "object", "required": ["policyVersion", "hash", "snapshot"], "properties": {"policyVersion": {"type": "string"}, "hash": {"type": "string"}, "snapshot": {"type": "object"}}},
+        "budget": {"type": "object"},
+        "checks": {"type": "array", "items": {"type": "object"}},
+        "previousHash": {"type": "string"},
+        "hash": {"type": "string"}
+      }
+    },
+    {
+      "title": "Adaptive repair attempt receipt (#743)",
+      "type": "object",
+      "required": ["schemaVersion", "runId", "recordedAt", "sessionRef", "attempt", "inputRevision", "outputRevision", "findings", "strategy", "actor", "policy", "evidenceRefs", "outcome", "stopReason"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "runId": {"type": "string"},
+        "recordedAt": {"type": "number"},
+        "sessionRef": {"type": "string", "description": "Opaque reference; never the raw provider session id."},
+        "attempt": {"type": "integer", "minimum": 1},
+        "inputRevision": {"type": "string"},
+        "outputRevision": {"type": "string"},
+        "findings": {"type": "object", "required": ["fixed", "new", "persistent"], "properties": {"fixed": {"type": "array"}, "new": {"type": "array"}, "persistent": {"type": "array"}}},
+        "strategy": {"type": "string"},
+        "actor": {"type": "string"},
+        "policy": {"type": "object"},
+        "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+        "outcome": {"enum": ["fixed", "no-progress", "oscillation", "validator-error", "implementation-failed", "governance-stop", "stale-timeout", "blocked", "running", "exhausted"]},
+        "stopReason": {"type": ["string", "null"]},
+        "metrics": {"type": "object", "properties": {"durationSeconds": {"type": "number"}, "tokens": {"type": "integer"}, "cacheReadTokens": {"type": "integer"}}}
+      },
+      "additionalProperties": true
+    }
+  ]
 }

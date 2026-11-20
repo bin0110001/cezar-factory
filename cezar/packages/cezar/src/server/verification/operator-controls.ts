@@ -114,6 +114,7 @@ export class OperatorControls {
         runId: p.runId,
         scenarioId: p.scenarioId,
         workerId: p.workerId!,
+        traceId: p.traceId,
         state: p.state === 'finished' ? ('released' as const) : p.state,
       }));
   }

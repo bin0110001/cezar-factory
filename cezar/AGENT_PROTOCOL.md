@@ -124,7 +124,38 @@ Notable fields (full doc-comments in the source):
   OpenCode auto-approves every permission. Configurable restrictive modes are
   specified by `2026-07-17-permission-modes` (#475).
 - `sessionId?` / `resume?` — stable session id for interactive takeover and for
-  `--resume` ("Continue" after a run ends).
+  provider-native process resume ("Continue" after a run ends). Adaptive
+  validation repair uses the already-open `AgentSession` and sends only its
+  finding delta; a closed process is never silently replaced by a new agent.
+
+### Continuation contract by provider
+
+`AgentSessionContinuation` owns one immutable reference to a run, workflow step,
+provider session, worktree, profile and model identity. A repair message carries
+only concise feedback plus an idempotency key; the controller deduplicates keys
+and rejects a second distinct message until the active turn completes. It never
+stores prompt text, creates a runner, or changes worktrees. The owner supplies
+`origin` from the observed provider start/resume event; counters report those
+session starts/resumptions, accepted continuation turns and duplicate requests.
+Durable replay of these keys across a process crash belongs to the existing run
+lifecycle and repair receipts, not this in-memory seam.
+
+| Provider | Live continuation in the same process | Resume after process exit |
+| --- | --- | --- |
+| Claude | Yes — another stdin message on the existing session | Native `--resume` |
+| Codex | Yes — another turn on the existing app-server thread | Native `thread/resume` |
+| OpenCode | Yes — another prompt on the existing server session | Unsupported by this runner; it creates a new server-side session |
+| Cursor | Unsupported — print mode exits after its first result | Unsupported by this runner |
+| Pi | Yes — another RPC prompt on the existing process | Native `--session` |
+| Junie | Yes — another ACP prompt on the existing session | Native `session/load`; failure is explicit |
+| Copilot | Yes — another ACP prompt on the existing session | Runtime-detected; only resume when ACP advertises `session/load` |
+
+Cursor and a closed/unavailable live session return an explicit unsupported or
+`session_unavailable` outcome. No adapter may turn that outcome into a fresh
+session during a routine repair. Provider usage is already normalized through
+`usage.updated`: input/output deltas and provider-supplied cache-read/write
+counts are retained where available; no prompt or token values are logged as
+session diagnostics.
 
 **System prompt channel** — a backend without a dedicated system-prompt input
 must deliver `spec.systemPrompt` as a leading block of the opening user message.

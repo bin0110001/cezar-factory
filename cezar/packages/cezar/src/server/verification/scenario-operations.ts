@@ -8,6 +8,8 @@ import { redactError } from './worker-read-model.ts';
  */
 
 export const SCENARIO_OPS_VERSION = 1;
+/** Max partition rows returned per scenario view; counts still cover all partitions. */
+export const MAX_PARTITION_ROWS = 200;
 
 export type OutcomeKind = 'pass' | 'assertion-failure' | 'infra-failure' | 'canceled' | 'pending';
 
@@ -52,6 +54,9 @@ export interface ScenarioView {
   runId: string;
   scenarioId: string;
   partitions: PartitionView[];
+  /** Additive: rows beyond MAX_PARTITION_ROWS are omitted from `partitions` (counts still include them). */
+  partitionsTruncated: boolean;
+  hiddenPartitions: number;
   /** complete only when every declared role has finished with all required evidence. */
   coverage: { expectedRoles: string[]; missingRoles: string[]; complete: boolean };
   outcome: OutcomeKind;
@@ -113,7 +118,9 @@ export function projectScenario(
     schemaVersion: SCENARIO_OPS_VERSION,
     runId,
     scenarioId,
-    partitions: views,
+    partitions: views.slice(0, MAX_PARTITION_ROWS),
+    partitionsTruncated: views.length > MAX_PARTITION_ROWS,
+    hiddenPartitions: Math.max(0, views.length - MAX_PARTITION_ROWS),
     coverage: { expectedRoles: [...expectedRoles], missingRoles, complete },
     outcome,
     infraFailures: infra,

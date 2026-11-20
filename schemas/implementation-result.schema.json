@@ -11,7 +11,8 @@
       "type": "string",
       "enum": [
         "success",
-        "failure"
+        "failure",
+        "incomplete"
       ]
     },
     "summary": {
@@ -49,6 +50,10 @@
     },
     "pr": {
       "type": "string"
+    },
+    "incompleteReason": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "required": [

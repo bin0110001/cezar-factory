@@ -131,7 +131,7 @@ describe('checkpoint timeline', () => {
   it('run view carries checkpoints additively with warnings; single-node empty', () => {
     const base = { runId: 'r1', scenarioId: 's1', expectedRoles: ['host'], partitions: [{ runId: 'r1', scenarioId: 's1', shard: '0', role: 'host', state: 'finished' as const, outcome: 'pass' as const, workerId: 'w1' }] };
     const v1 = buildRunVerificationView(base);
-    expect(v1.schemaVersion).toBe(2);
+    expect(v1.schemaVersion).toBe(3);
     expect(v1.checkpoints).toEqual([]);
     const v2 = buildRunVerificationView({ ...base, checkpoints: [{ node: 'n2', name: 'boot', captured: false }] });
     expect(v2.warnings.join('|')).toContain('checkpoint missing');

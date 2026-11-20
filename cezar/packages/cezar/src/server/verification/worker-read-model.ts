@@ -7,7 +7,7 @@ import { matchRequirements, type JobRequirements, type WorkerCapabilities } from
  * operator hold applies. Unknown, stale and offline never render as healthy.
  */
 
-export const WORKER_READ_MODEL_VERSION = 1;
+export const WORKER_READ_MODEL_VERSION = 2;
 
 export type WorkerOperatorState = 'active' | 'draining' | 'quarantined' | 'revoked';
 export type WorkerStatus = 'healthy' | 'stale' | 'offline' | 'unknown' | 'draining' | 'quarantined' | 'revoked';
@@ -32,6 +32,8 @@ export interface WorkerAttempt {
   scenarioId?: string;
   workerId: string;
   state: 'queued' | 'running' | 'canceled' | 'released';
+  /** Stable trace correlation id; diagnostic only. */
+  traceId?: string;
 }
 
 export interface WorkerFreshness {
@@ -51,6 +53,8 @@ export interface WorkerView {
   queuedAttempts: string[];
   assetLocality: string[];
   lastError: string | null;
+  /** Attempt/run/trace correlation (v2, additive); diagnostic only, never affects status. */
+  correlation: { authoritative: false; label: string; attemptIds: string[]; runIds: string[]; traceIds: string[] };
 }
 
 export interface WorkerPage {
@@ -61,9 +65,11 @@ export interface WorkerPage {
 
 const MAX_ERROR_CHARS = 200;
 export const MAX_PAGE_SIZE = 100;
+export const MAX_FUTURE_SKEW_MS = 60_000;
+const MAX_SUMMARY_CHARS = 400;
 
 /** Strip secrets, URL credentials and filesystem paths; bound the length. */
-export function redactError(raw: string | undefined): string | null {
+export function redactError(raw: string | undefined, maxChars: number = MAX_ERROR_CHARS): string | null {
   if (!raw) return null;
   let s = raw
     .replace(/\b(?:[a-z][a-z0-9+.-]*):\/\/[^\s/@]+@/gi, (m) => m.replace(/\/\/[^@]*@/, '//[redacted]@'))
@@ -72,13 +78,14 @@ export function redactError(raw: string | undefined): string | null {
     .replace(/(?:[A-Za-z]:\\[^\s]*|(?:\/[\w.@-]+){2,})/g, '[path]')
     .replace(/\s+/g, ' ')
     .trim();
-  if (s.length > MAX_ERROR_CHARS) s = `${s.slice(0, MAX_ERROR_CHARS)}…`;
+  if (s.length > maxChars) s = `${s.slice(0, maxChars)}…`;
   return s;
 }
 
 export function deriveWorkerStatus(w: WorkerRecord, now: number, f: WorkerFreshness = DEFAULT_FRESHNESS): { status: WorkerStatus; ageMs: number | null } {
   const beat = w.lastHeartbeatAt ? Date.parse(w.lastHeartbeatAt) : NaN;
-  const ageMs = Number.isFinite(beat) ? Math.max(0, now - beat) : null;
+  // A heartbeat from the future (clock skew beyond tolerance) is untrustworthy: unknown, never healthy.
+  const ageMs = Number.isFinite(beat) && beat - now <= MAX_FUTURE_SKEW_MS ? Math.max(0, now - beat) : null;
   if (w.operatorState === 'revoked') return { status: 'revoked', ageMs };
   if (ageMs === null) return { status: 'unknown', ageMs };
   if (ageMs >= f.offlineAfterMs) return { status: 'offline', ageMs };
@@ -115,6 +122,13 @@ export function projectWorkers(
       queuedAttempts: queued,
       assetLocality: [...(w.assetLocality ?? [])],
       lastError: redactError(w.lastError),
+      correlation: {
+        authoritative: false,
+        label: 'diagnostic: not evidence of a result',
+        attemptIds: mine.map((a) => a.attemptId),
+        runIds: [...new Set(mine.map((a) => a.runId))],
+        traceIds: [...new Set(mine.map((a) => a.traceId).filter((t): t is string => !!t && /^[0-9a-f]{32}$/i.test(t)))],
+      },
     };
   });
   const last = slice[slice.length - 1];
@@ -145,5 +159,5 @@ export function explainScheduling(job: JobRequirements, workers: WorkerView[]): 
     : rows.length === 0
       ? 'No workers enrolled'
       : `No eligible worker: ${rows.map((r) => `${r.workerId} (${r.reasons.join(', ')})`).join('; ')}`;
-  return { schedulable, workers: rows, summary };
+  return { schedulable, workers: rows, summary: redactError(summary, MAX_SUMMARY_CHARS) ?? summary };
 }
