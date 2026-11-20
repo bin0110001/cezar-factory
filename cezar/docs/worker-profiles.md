@@ -167,3 +167,19 @@ response payloads carry `schemaVersion: 1`.
 - Limitation: idempotency and audit are bounded in-memory (default 10 000
   entries) and are lost on restart. HTTP routes and UI controls are not yet
   mounted; this service is the contract they will call.
+
+## Trace and ledger correlation (#219, slice 4)
+
+`server/verification/trace-correlation.ts` adds a diagnostic `correlation` block to the run
+view (`RUN_VIEW_VERSION` 3) and a per-worker `correlation` (attempt ids, run ids, trace ids)
+to the worker read model (`WORKER_READ_MODEL_VERSION` 2). Both are additive.
+
+- Ledger event refs (`id`, `kind`, `timestamp`) are joined by runId/attemptId/scenarioId/
+  workerId; events with other or mismatched ids are never attached. Payloads are not accepted.
+- Trace links use `createLangfuseTraceUrl` only when a `traceBackend` (`baseUrl`, `projectId`)
+  is supplied; otherwise ids only.
+- A missing, unreachable or misconfigured backend, or a malformed trace id, yields
+  `status: 'unavailable'` with links omitted. It never throws and never changes outcome,
+  failure class or warnings.
+- Always `authoritative: false` with a diagnostic label; trace presence never makes a
+  stale/unknown worker healthy. No media, prompts, commands, host paths or secrets.

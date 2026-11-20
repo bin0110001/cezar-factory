@@ -1,6 +1,7 @@
 import { projectScenario, type OutcomeKind, type RolePartition, type ScenarioView } from './scenario-operations.ts';
 import { buildCheckpointTimeline, type CheckpointEntry, type CheckpointRecord } from './graphical-session-view.ts';
 import { redactError } from './worker-read-model.ts';
+import { buildCorrelation, type CorrelationBlock, type LedgerEventRef, type TraceBackendConfig } from './trace-correlation.ts';
 
 /**
  * Run/verification view composition (#219, slice 3). Pure: composes scenario
@@ -10,7 +11,7 @@ import { redactError } from './worker-read-model.ts';
  * scheduler, no media bytes.
  */
 
-export const RUN_VIEW_VERSION = 2;
+export const RUN_VIEW_VERSION = 3;
 
 export interface RunHistoryEntry {
   runId: string;
@@ -56,6 +57,8 @@ export interface RunVerificationView {
   artifacts: { visible: ArtifactRef[]; hiddenCount: number; truncated: boolean };
   /** Diagnostic correlation only; never evidence of a result. */
   traces: { authoritative: false; ids: string[] };
+  /** Ledger/trace correlation by stable ids (v3, additive); diagnostic only. */
+  correlation: CorrelationBlock;
   /** Multi-node checkpoint timeline (v2, additive); empty for single-node runs. */
   checkpoints: CheckpointEntry[];
   /** Roles with disconnects or missing captures, never shown as healthy. */
@@ -88,6 +91,8 @@ export function buildRunVerificationView(input: {
   /** Permissions held by the viewer. */
   permissions?: string[];
   checkpoints?: CheckpointRecord[];
+  ledgerEvents?: LedgerEventRef[];
+  traceBackend?: TraceBackendConfig;
 }): RunVerificationView {
   const scenario = projectScenario(input.runId, input.scenarioId, input.expectedRoles, input.partitions, input.queueReasons);
   const bad = new Set(input.unhealthyWorkers ?? []);
@@ -161,6 +166,7 @@ export function buildRunVerificationView(input: {
       authoritative: false,
       ids: [...new Set(scenario.partitions.map((p) => p.traceId).filter((t): t is string => !!t))],
     },
+    correlation: buildCorrelation({ runId: input.runId, scenarioId: input.scenarioId, partitions: input.partitions, ledgerEvents: input.ledgerEvents, traceBackend: input.traceBackend }),
     checkpoints,
     warnings: warnings.map((w) => redactError(w) ?? w),
   };
