@@ -22,6 +22,19 @@ Do not use it for ordinary product/code changes that leave Factory process behav
 5. If authoritative sources disagree, do not silently choose one. Describe the observable behavior accurately and record a concise **Known process gaps** entry in the guide naming the conflicting sources and the behavior that needs a decision or implementation. Ask the user only if resolving it requires a major architectural choice; routine documentation can preserve the uncertainty.
 6. Check each statement against its source, ensure links point to existing files, and make the guide clear about policy versus implemented behavior. Remove stale claims when the underlying behavior changes.
 
+### Full baseline reconciliation
+
+For an initial or requested whole-process write-up, audit the complete path rather than only the changed component:
+
+1. Trace issue arrival and selection, including event filters, scheduled catch-up, stale refresh, and the explicit backlog-selection policy. Keep automated bounded intake distinct from a user-directed backlog run.
+2. Trace each default issue state through the automation definition, workflow steps, result schema, router, and next state. Note the division between command steps and agent skill steps, what each owns, and which artifact carries the handoff.
+3. Trace workspace ownership and recovery, including local interactive work, fenced Cezar runs, run cancellation, investigation, and PR persistence across handoffs.
+4. Trace the implementation/fix branch through validation, PR creation, conflict repair, technical review or structured self-review, merge eligibility, actual merge confirmation, issue closure, and post-merge promotion.
+5. Check exceptions (blocked work, decomposition, user decisions, no eligible work, validation failure, and release failure) and record any policy/implementation gap under **Known process gaps**.
+6. Maintain a source index grouped by concern. Link to detailed procedures rather than copying state tables, eligibility logic, or release gates into the overview.
+
+The result should let a reader answer, for every handoff: who owns the next action, what evidence/artifact is passed, what event or state triggers it, and what proves the job is complete.
+
 ## Boundaries
 
 - Do not change workflow, scripts, automations, policies, lifecycle state, validation, release settings, or GitHub state as part of a documentation-only update.
@@ -31,4 +44,4 @@ Do not use it for ordinary product/code changes that leave Factory process behav
 
 ## Integration with planning and implementation
 
-When planning a process change, read `docs/workflow-map.md`, identify the affected source-of-truth files, and include updating the guide and this maintenance skill's trigger/reference list where needed in the work breakdown and acceptance criteria. During implementation, invoke this skill after changing a process source. Set the implementation result's `documentationUpdated` field truthfully.
+`factory-plan` already requires the guide and this skill in the work breakdown and acceptance criteria for process changes; `factory-implement` requires reconciliation in the same PR after changing a process source. Keep those hooks current. When adding a new authoritative source or process-change category, add it to this skill's audit steps and to the guide's source index. Set the implementation result's `documentationUpdated` field truthfully.
