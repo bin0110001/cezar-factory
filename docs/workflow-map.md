@@ -25,6 +25,20 @@ flowchart LR
 
 An ordinary issue edit is not a workflow trigger. A lifecycle label is the trigger; type, risk, complexity, and other routing labels are the filter envelope. State transitions and timeouts are configured in `policies/lifecycle.json` and summarized in [lifecycle.md](lifecycle.md).
 
+### Who owns each layer?
+
+| Layer | Owner | Responsibility |
+|---|---|---|
+| Queue selection | The event automation or the bounded maintenance workflow | An event automation receives the issue selected by its trigger. Hourly maintenance catches up one oldest eligible intake issue and refreshes one stale workable issue per run; it does not choose an entire implementation backlog. For an explicit request to work the backlog, the active job selects the next eligible issue using readiness, dependencies, priority, and age. |
+| Automation | Cezar | Filters a lifecycle event or schedule, applies its runner/model/worktree settings, and starts the configured workflow for the issue it selected. It is a dispatcher, not the owner of the work product. |
+| Workflow | The named Factory workflow | Defines ordered skill and command steps, artifacts, timeouts, retries, validation, and legal state routing. A command step runs scripts; a skill step performs bounded agent work. |
+| Issue job | The plan, implementation, review, fix, or investigation run | Owns its issue outcome and evidence. Implementation and fix jobs additionally own the PR through confirmed merge, including work that must continue after a workflow handoff. A reviewer evaluates a head but does not take PR ownership. |
+| Lifecycle router | Deterministic workflow command steps and `policies/lifecycle.json` | Validates structured results, enforces legal transitions and a single state label, and records evidence. An agent writes its result artifact; it does not set lifecycle labels. |
+| Delivery tracker | Hourly `factory-maintenance` workflow | Mirrors PR progress to linked issues and closes an issue only after its non-draft PR into `dev` is merged. It is bookkeeping, not a substitute PR owner. |
+| Development promotion | Bazzite `factory-local-promotion` timer | Validates a merged `dev` SHA, activates the development channel, runs canaries, then promotes and deploys according to release policy. The implementation job ends at merge to `dev`; it does not operate this timer. |
+
+The maintenance queue and a user-directed backlog session are different selectors. Maintenance is deliberately bounded and oldest-first for intake; stale retries prioritize lower `priority:N` values, then least recently updated. The explicit backlog instruction in `AGENTS.md` selects by readiness, dependencies, priority, and age and continues on independent work while one issue waits. See [backlog-priority.md](backlog-priority.md) and [backlog-scheduling.md](backlog-scheduling.md) for the scheduler model; do not infer that the hourly maintenance workflow implements that whole ranking model.
+
 ### Which job owns which work?
 
 - **The automation run owns its selected issue.** It consumes the prepared issue context and does not repeat broad issue discovery or create replacement tasks.
@@ -49,7 +63,11 @@ The exact states, legal exits, owners, and deadlines are data in `policies/lifec
 | Investigation | `factory-investigate` | Classifies repeated failures from evidence and determines a bounded retry, re-plan, or genuine blocker. Investigation must preserve any existing open PR and its owner; it must not turn a failed run into duplicate implementation work. | `factory:ready`, `factory:needs-plan`, a verified `factory:blocked`, or a specific major decision at `factory:needs-help` |
 | Delivery | `factory-maintenance` and the PR owner | Tracks a pushed branch without a PR, tracks an open PR, and closes the referenced issue after the PR merges. | `factory:implemented` → `factory:pr-open` → `factory:done` |
 
-The usual entry points are event-triggered intake for a specific issue and the scheduled maintenance catch-up path for eligible backlog work. The lifecycle sweep retriggers stale automated states, routes conflicts for repair, and reports what it cannot safely infer. `factory:interactive` marks a local person-owned issue so stale sweeps leave it alone. See [lifecycle.md](lifecycle.md) for the generated state table and guard rules.
+The usual entry points are event-triggered intake for a specific issue and the hourly maintenance catch-up path for eligible backlog work. Intake classifies new issues; maintenance also refreshes one stale workable state so missed label events can be recovered. The lifecycle sweep repairs mechanical state errors, routes a conflicting PR to the configured conflict exit when the issue is in a state with one, and reports what it cannot safely infer. `factory:interactive` marks a local person-owned issue so stale sweeps leave it alone. See [lifecycle.md](lifecycle.md) for the generated state table and guard rules.
+
+### What a workflow step does
+
+Command steps own deterministic preparation, validation, persistence, and routing. They consume the raw `{{task}}` when a task identifier is needed, create bounded artifacts under `.factory/`, and enforce schemas or policy before a state changes. Skill steps receive the already-selected issue and its prepared context, perform the focused reasoning or code work, and write the result artifact requested by the workflow. They must not rediscover or replace selected work, run Factory scripts, or manually change `factory:*` state labels. A workflow can retry a named step within its configured budget; a retry does not create a new issue owner or release an open PR.
 
 ## How implementation reaches `dev`
 
@@ -111,9 +129,10 @@ When this guide is updated, check the sources below rather than inferring behavi
 | Topic | Primary sources |
 |---|---|
 | Issue stages, owners, deadlines | `policies/lifecycle.json`, `scripts/lifecycle-lib.ps1`, `scripts/sweep-lifecycle.ps1`, [lifecycle.md](lifecycle.md) |
-| Automation-to-workflow routing | `automations/*.json`, `routing/automation-catalog.json`, `workflows/intake.yaml`, `workflows/plan.yaml`, `workflows/implement.yaml`, `workflows/review.yaml`, `workflows/fix-review.yaml`, `workflows/investigate.yaml` |
+| Queue selection and automation-to-workflow routing | `automations/intake.json`, `automations/maintenance.json`, `automations/needs-plan-*.json`, `automations/ready-to-implement-*.json`, `automations/ready-to-review.json`, `automations/changes-requested.json`, `routing/automation-catalog.json`, `scripts/select-intake-issue.ps1`, `scripts/refresh-stale-workable.ps1`, [backlog-priority.md](backlog-priority.md), [backlog-scheduling.md](backlog-scheduling.md) |
+| Workflow steps and artifacts | `workflows/intake.yaml`, `workflows/plan.yaml`, `workflows/implement.yaml`, `workflows/review.yaml`, `workflows/fix-review.yaml`, `workflows/investigate.yaml`, `workflows/maintenance.yaml`, `scripts/route-state.ps1` |
 | Agent and PR ownership rules | `AGENTS.md`, `skills/factory-plan/SKILL.md`, `skills/factory-implement/SKILL.md`, `skills/factory-review/SKILL.md`, `skills/factory-fix/SKILL.md`, `skills/factory-workspace/SKILL.md` |
-| Validation and merge receipts | [local-validation.md](local-validation.md), [validation-receipts.md](validation-receipts.md), `scripts/verify-merge-eligibility.ps1` |
+| Validation and merge receipts | [local-validation.md](local-validation.md), [validation-receipts.md](validation-receipts.md), `scripts/factory/test-changed.ps1`, `scripts/verify-merge-eligibility.ps1`, `scripts/route-state.ps1` |
 | Release and promotion | `config/promotion-policy.json`, [promotion-pipeline.md](promotion-pipeline.md), [factory-release-controller.md](factory-release-controller.md), `skills/factory-finish-release/SKILL.md` |
 | Verification-only job | `workflows/verify.yaml`, [verification-workflow.md](verification-workflow.md) |
 | Workflow-guide upkeep | `skills/factory-update-workflow-guide/SKILL.md`, `skills/factory-plan/SKILL.md`, `skills/factory-implement/SKILL.md` |

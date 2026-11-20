@@ -20,7 +20,7 @@ ROOT=/projects/cezar-factory
 BASE=/projects/.promotion
 WORK="$BASE/${SHA:0:12}-$$"
 IMAGE="$(podman inspect "$CONTAINER" --format '{{.Image}}')"
-[[ "$IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "validate-in-container: could not resolve image for '$CONTAINER'" >&2; exit 2; }
+[[ "$IMAGE" =~ ^[0-9a-f]{64}$ ]] || { echo "validate-in-container: could not resolve image for '$CONTAINER'" >&2; exit 2; }
 
 podman exec "$CONTAINER" mkdir -p "$BASE"
 podman exec "$CONTAINER" git -C "$ROOT" worktree prune
