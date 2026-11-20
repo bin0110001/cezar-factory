@@ -27,7 +27,7 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
 | Step | Runs | How |
 |---|---|---|
 | Review evidence, issues, stable ref | host promoter | `gh` through `ghCommand` (`podman exec cezar gh`) |
-| Full suite | Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA) |
+| Full suite | fresh, init-enabled Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA; suite children cannot accumulate in the long-lived server) |
 | Pointer moves, rollback, quarantine | host promoter | release store is host-owned; the container cannot write it |
 | Canaries | host promoter → Cezar API | schedule automations, polled to a verdict |
 | Stable deploy | host | `factory-autodeploy.sh` (image build and restart are host-only) |
@@ -38,7 +38,9 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
    A SHA without evidence is `blocked`, not `failed`: it is re-checked every tick, recorded once per
    distinct reason, and proceeds the moment evidence appears.
 2. **Validation.** Every required check in `checks` must pass on a detached worktree of the exact SHA.
-   A failure is cached for that SHA; a fix is a new SHA.
+   The suite runs in a disposable container with its own init process and PID namespace, reusing the
+   Cezar image and worktree volumes. This keeps orphaned test subprocesses from exhausting the long-lived
+   server container's task limit. A failure is cached for that SHA; a fix is a new SHA.
 3. **Activate dev.** The exact artifact is staged and the coordinator moves the `dev` pointer,
    reconciles automations, and verifies each registered project. Reads wait up to 90 seconds for a
    restarting Cezar instead of failing at a fixed timeout.

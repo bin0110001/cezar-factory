@@ -1975,6 +1975,7 @@ Assert 'promotion service passes the scheduler state root, not the release store
 Assert 'promotion service reads the committed policy and the promoter may use podman exec' ($promotionUnit -match 'promotion-policy\.json' -and $promotionUnit -notmatch '(?m)^NoNewPrivileges=true')
 $validateInContainer = Get-Content -Raw (Join-Path $factory 'scripts/release/validate-in-container.sh')
 Assert 'container validation runs the suite in a throwaway worktree of the exact SHA and cleans it up' ($validateInContainer -match 'worktree add' -and $validateInContainer -match 'tests/run-tests\.ps1' -and $validateInContainer -match 'worktree remove' -and $validateInContainer -match 'FACTORY_CANDIDATE_SHA')
+Assert 'promotion validation uses an init-enabled disposable container instead of leaking suite children into the Cezar server' ($validateInContainer -match 'podman run --rm --init' -and $validateInContainer -match '--volumes-from "\$CONTAINER"' -and $validateInContainer -match '--network "container:\$CONTAINER"' -and $validateInContainer -notmatch 'podman exec -i "\$CONTAINER" bash -s')
 Assert 'runtime restarts wait for an idle Cezar, defer with exit 25, and cannot starve' ($cezarDeploy -match 'wait_for_idle' -and $cezarDeploy -match 'exit 25' -and $cezarDeploy -match 'MAX_DEFER' -and $autodeploy -match 'runtime_rc.*25|== 25')
 $activationSource = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_activation.py')
 Assert 'activation retries reads while a restarting Cezar becomes ready instead of failing at a fixed timeout' ($activationSource -match 'ready_seconds' -and $activationSource -match '_transient')
@@ -2206,6 +2207,7 @@ Assert 'migration workflow owns the audit and migration script command steps' ($
 Write-Host '== godot upgrade =='
 $godotDockerfile = Get-Content -Raw (Join-Path $factory 'cezar/Dockerfile')
 Assert 'Cezar image maps GODOT_BIN to the version selector' ($godotDockerfile -match 'GODOT_BIN=/usr/local/bin/godot' -and $godotDockerfile -match 'godot-select\.sh' -and $godotDockerfile -match 'GODOT_VERSIONS_DIR')
+Assert 'Cezar CLI runs under Tini and reaps orphaned child processes' ($godotDockerfile -match 'openssh-client gh tini' -and $godotDockerfile -match 'mv /usr/local/bin/cezar /usr/local/bin/cezar-cli' -and $godotDockerfile -match '/usr/bin/tini -g -- /usr/local/bin/cezar-cli')
 Assert 'Godot versions live on a persistent volume in both compose files' ((Get-Content -Raw (Join-Path $factory 'cezar/compose.yaml')) -match 'godot-versions:/opt/godot-versions' -and (Get-Content -Raw (Join-Path $factory 'integrations/bazzite/compose.yaml')) -match 'godot-versions:/opt/godot-versions')
 Assert 'godot-upgrade automation is gated to Godot projects' ((Get-Content -Raw (Join-Path $factory 'automations/godot-upgrade.json')) -match '"projectType":\s*"godot"')
 
