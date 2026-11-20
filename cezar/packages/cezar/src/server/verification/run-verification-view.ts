@@ -1,6 +1,7 @@
 import { projectScenario, type OutcomeKind, type RolePartition, type ScenarioView } from './scenario-operations.ts';
 import { buildCheckpointTimeline, type CheckpointEntry, type CheckpointRecord } from './graphical-session-view.ts';
 import { redactError } from './worker-read-model.ts';
+import { buildCorrelation, type CorrelationBlock, type LedgerEventRef, type TraceBackendConfig } from './trace-correlation.ts';
 
 /**
  * Run/verification view composition (#219, slice 3). Pure: composes scenario
@@ -10,7 +11,7 @@ import { redactError } from './worker-read-model.ts';
  * scheduler, no media bytes.
  */
 
-export const RUN_VIEW_VERSION = 2;
+export const RUN_VIEW_VERSION = 3;
 
 export interface RunHistoryEntry {
   runId: string;
@@ -56,13 +57,21 @@ export interface RunVerificationView {
   artifacts: { visible: ArtifactRef[]; hiddenCount: number; truncated: boolean };
   /** Diagnostic correlation only; never evidence of a result. */
   traces: { authoritative: false; ids: string[] };
+  /** Ledger/trace correlation by stable ids (v3, additive); diagnostic only. */
+  correlation: CorrelationBlock;
   /** Multi-node checkpoint timeline (v2, additive); empty for single-node runs. */
   checkpoints: CheckpointEntry[];
   /** Roles with disconnects or missing captures, never shown as healthy. */
   warnings: string[];
+  /** Additive: true when a list above was capped (timeline, checkpoints or warnings). */
+  truncated: { timeline: boolean; checkpoints: boolean; warnings: boolean };
 }
 
 const MAX_ARTIFACTS = 50;
+export const MAX_TIMELINE_ROWS = 200;
+export const MAX_WARNINGS = 50;
+export const MAX_CHECKPOINT_ROWS = 100;
+const MAX_WARNING_CHARS = 200;
 const REGRESSION_FACTOR = 1.25;
 const MIN_BASELINE_SAMPLES = 3;
 
@@ -88,6 +97,8 @@ export function buildRunVerificationView(input: {
   /** Permissions held by the viewer. */
   permissions?: string[];
   checkpoints?: CheckpointRecord[];
+  ledgerEvents?: LedgerEventRef[];
+  traceBackend?: TraceBackendConfig;
 }): RunVerificationView {
   const scenario = projectScenario(input.runId, input.scenarioId, input.expectedRoles, input.partitions, input.queueReasons);
   const bad = new Set(input.unhealthyWorkers ?? []);
@@ -151,7 +162,7 @@ export function buildRunVerificationView(input: {
     schemaVersion: RUN_VIEW_VERSION,
     runId: input.runId,
     scenario,
-    timeline,
+    timeline: timeline.slice(0, MAX_TIMELINE_ROWS),
     topology: { requirements, hostsUsed, satisfied },
     failureClass,
     baseline: { medianMs: base, samples: passing.length, currentMs, regression },
@@ -161,7 +172,13 @@ export function buildRunVerificationView(input: {
       authoritative: false,
       ids: [...new Set(scenario.partitions.map((p) => p.traceId).filter((t): t is string => !!t))],
     },
-    checkpoints,
-    warnings: warnings.map((w) => redactError(w) ?? w),
+    correlation: buildCorrelation({ runId: input.runId, scenarioId: input.scenarioId, partitions: input.partitions, ledgerEvents: input.ledgerEvents, traceBackend: input.traceBackend }),
+    checkpoints: checkpoints.slice(0, MAX_CHECKPOINT_ROWS),
+    warnings: warnings.slice(0, MAX_WARNINGS).map((w) => redactError(w, MAX_WARNING_CHARS) ?? w),
+    truncated: {
+      timeline: timeline.length > MAX_TIMELINE_ROWS || scenario.partitionsTruncated,
+      checkpoints: checkpoints.length > MAX_CHECKPOINT_ROWS,
+      warnings: warnings.length > MAX_WARNINGS,
+    },
   };
 }

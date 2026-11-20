@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Adaptive repair receipt (v1)",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "recordedAt", "sessionRef", "attempt", "inputRevision", "outputRevision", "findings", "strategy", "actor", "policy", "evidenceRefs", "outcome", "stopReason"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "runId": {"type": "string"},
+    "recordedAt": {"type": "number"},
+    "sessionRef": {"type": "string", "description": "Opaque reference; never the raw provider session id."},
+    "attempt": {"type": "integer", "minimum": 1},
+    "inputRevision": {"type": "string"},
+    "outputRevision": {"type": "string"},
+    "findings": {"type": "object", "required": ["fixed", "new", "persistent"], "properties": {"fixed": {"type": "array"}, "new": {"type": "array"}, "persistent": {"type": "array"}}},
+    "strategy": {"type": "string"},
+    "actor": {"type": "string"},
+    "policy": {"type": "object"},
+    "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+    "outcome": {"enum": ["fixed", "no-progress", "oscillation", "validator-error", "implementation-failed", "governance-stop", "stale-timeout", "blocked", "running", "exhausted"]},
+    "stopReason": {"type": ["string", "null"]},
+    "metrics": {"type": "object", "properties": {"durationSeconds": {"type": "number"}, "tokens": {"type": "integer"}, "cacheReadTokens": {"type": "integer"}}}
+  },
+  "additionalProperties": true
+}

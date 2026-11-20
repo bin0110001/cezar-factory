@@ -313,6 +313,10 @@ switch ($Event) {
         Assert-Source (Get-EventSources 'implement-result')
         if ($result.status -ne 'success') {
             Write-ExecutionRecord 'failed' $result
+            if ($result.status -eq 'incomplete') {
+                Add-Comment "## Factory implementation inconclusive`n`n$(Text $result.summary)`n`nReason: $(Text $result.incompleteReason)`n`nTests: $(Text $result.testResult)`nConcerns: $(Text $result.knownConcerns)"
+                $to = Get-Outcome 'implement-result' 'failed'; Set-State $to; Done $to 'implementation inconclusive'
+            }
             Add-Comment "## Factory implementation failed`n`n$(Text $result.summary)`n`nTests: $(Text $result.testResult)`nConcerns: $(Text $result.knownConcerns)"
             $to = Get-Outcome 'implement-result' 'failed'; Set-State $to; Done $to 'implementation failed'
         }
