@@ -7,7 +7,7 @@ import { matchRequirements, type JobRequirements, type WorkerCapabilities } from
  * operator hold applies. Unknown, stale and offline never render as healthy.
  */
 
-export const WORKER_READ_MODEL_VERSION = 1;
+export const WORKER_READ_MODEL_VERSION = 2;
 
 export type WorkerOperatorState = 'active' | 'draining' | 'quarantined' | 'revoked';
 export type WorkerStatus = 'healthy' | 'stale' | 'offline' | 'unknown' | 'draining' | 'quarantined' | 'revoked';
@@ -32,6 +32,8 @@ export interface WorkerAttempt {
   scenarioId?: string;
   workerId: string;
   state: 'queued' | 'running' | 'canceled' | 'released';
+  /** Stable trace correlation id; diagnostic only. */
+  traceId?: string;
 }
 
 export interface WorkerFreshness {
@@ -51,6 +53,8 @@ export interface WorkerView {
   queuedAttempts: string[];
   assetLocality: string[];
   lastError: string | null;
+  /** Attempt/run/trace correlation (v2, additive); diagnostic only, never affects status. */
+  correlation: { authoritative: false; label: string; attemptIds: string[]; runIds: string[]; traceIds: string[] };
 }
 
 export interface WorkerPage {
@@ -118,6 +122,13 @@ export function projectWorkers(
       queuedAttempts: queued,
       assetLocality: [...(w.assetLocality ?? [])],
       lastError: redactError(w.lastError),
+      correlation: {
+        authoritative: false,
+        label: 'diagnostic: not evidence of a result',
+        attemptIds: mine.map((a) => a.attemptId),
+        runIds: [...new Set(mine.map((a) => a.runId))],
+        traceIds: [...new Set(mine.map((a) => a.traceId).filter((t): t is string => !!t && /^[0-9a-f]{32}$/i.test(t)))],
+      },
     };
   });
   const last = slice[slice.length - 1];
