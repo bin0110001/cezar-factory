@@ -24,7 +24,12 @@ from typing import Any, Callable
 MODES = ("autonomous", "controlled")
 REVIEW_KINDS = ("self-review", "approval")
 STABLE_KINDS = ("auto", "approval")
-DEFAULT_SELF_REVIEW = r"(?im)^\s{0,3}#{1,6}\s*self[- ]review\b"
+DEFAULT_SELF_REVIEW = (
+    r"(?im)^\s{0,3}(?:"
+    r"#{1,6}\s*self[- ]review\b[^\r\n]*(?:\r?\n\s*\S)"
+    r"|\*\*\s*self[- ]review\s*\*\*\s*:?(?!:)\s*\S"
+    r"|\*\*\s*self[- ]review\s*:\s*\*\*\s*\S)"
+)
 DEFAULT_CANARY_TRANSIENT = r"rate limit|HTTP 50[234]|\b50[234] (?:Bad Gateway|Service Unavailable|Gateway Time-?out)|unexpected end of JSON|connection reset|ECONNRESET|temporarily unavailable|Cezar API unavailable|Cezar API [A-Z]+ \S+ failed: timed out|Command failed: gh\b"
 TERMINAL_RUN = {"done": "passed", "failed": "failed", "cancelled": "failed"}
 WAITING_RUN = {"queued", "pending", "waiting"}
