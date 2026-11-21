@@ -8,6 +8,7 @@ $scripts = Join-Path $factory 'scripts'
 # lifecycle identity. route-state then defers factory:done until workspace integration, which is correct in a managed run but
 # fails the unmanaged-route assertions. The managed behaviour is tested explicitly by setting the token itself.
 foreach ($identity in 'FACTORY_FENCING_TOKEN', 'FACTORY_MANAGED', 'FACTORY_OWNER_ID', 'FACTORY_RUN_ID', 'FACTORY_ISSUE', 'FACTORY_WORKSPACE') { Remove-Item "Env:$identity" -ErrorAction SilentlyContinue }
+. (Join-Path $PSScriptRoot 'git-env.ps1')
 . (Join-Path $scripts 'lib.ps1')
 # Hermetic: scripts cache read-only gh listings for a couple of minutes; scenarios that reuse one fake gh with changing
 # state must see every change. The cache itself is exercised explicitly below by setting the TTL.
@@ -897,6 +898,14 @@ try {
         Push-Location $taskWorktree
         try { $staleStartup = Run 'factory-startup.ps1' @{ Workflow = 'factory-test'; Step = 'check'; OutputPath = (Join-Path $tmp 'stale-startup.json') } } finally { Pop-Location }
     } finally { Pop-Location }
+    # Regression for #758: a polluted inherited git environment must not leak into fixtures or checks.
+    $savedGitDir = $env:GIT_DIR; $savedGitWt = $env:GIT_WORK_TREE
+    try {
+        $env:GIT_DIR = Join-Path $tmp 'nonexistent-git-dir'; $env:GIT_WORK_TREE = Join-Path $tmp 'nonexistent-wt'
+        . (Join-Path $PSScriptRoot 'git-env.ps1')
+        & git -C $factory check-ignore -q 'integrations/mcp-gateway/.env'
+        Assert 'git-env.ps1 clears inherited GIT_DIR/GIT_WORK_TREE so the gateway .env stays gitignored' ($LASTEXITCODE -eq 0 -and -not $env:GIT_DIR -and -not $env:GIT_WORK_TREE -and $env:GIT_CONFIG_KEY_0 -eq 'safe.directory')
+    } finally { $env:GIT_DIR = $savedGitDir; $env:GIT_WORK_TREE = $savedGitWt; if (-not $savedGitDir) { Remove-Item Env:GIT_DIR -ErrorAction SilentlyContinue }; if (-not $savedGitWt) { Remove-Item Env:GIT_WORK_TREE -ErrorAction SilentlyContinue } }
     Assert 'startup reports a stale core.worktree with an actionable code and message' ($staleStartup.Code -eq 1 -and $staleStartup.Out -match 'GIT_WORKTREE_CONFIG_INVALID' -and $staleStartup.Out -match 'git config --local --unset core.worktree')
     # watchdog-automations cancels only stale runs of the named workflows and never the calling run.
     $wdPort = Get-Random -Minimum 20000 -Maximum 40000

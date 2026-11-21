@@ -5,6 +5,7 @@
 # Reproduce with: pwsh -NoProfile -File tests/obot-e2e.ps1   (docs/obot-mcp-e2e.md maps each case to G0-G4).
 $ErrorActionPreference = 'Stop'
 $factory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'git-env.ps1')
 $script:fail = 0
 function Assert([string]$Name, [bool]$Cond) {
     if ($Cond) { Write-Host "  ok   $Name" } else { Write-Host "  FAIL $Name" -ForegroundColor Red; $script:fail++ }
