@@ -62,7 +62,7 @@ export async function loadWorkflows(
         }
         // `skills:` shorthand files become plain agent steps here (spec 012).
         const normalized = normalizeWorkflowDoc(parsed.data);
-        // Steps referenced by onFail.retry must exist and come earlier; ids unique.
+        // Check-step retries go backwards; failed agent steps may route forward to bounded recovery checks.
         const issue = stepsIssue(normalized.steps);
         if (issue) {
           issues.push({ path, message: issue });

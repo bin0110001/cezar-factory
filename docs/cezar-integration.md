@@ -124,12 +124,13 @@ From the workflow types definition (`packages/cezar/src/workflows/types.ts`):
 Individual steps can have retry behavior defined through the `onFail` field:
 ```yaml
 onFail:
-  retry: "<step-id>"  # must reference an earlier step
+  retry: "<step-id>"  # check failures go earlier; agent failures may route to a recovery check
   max: 2              # default, positive integer
 ```
 
 Constraints:
-- `onFail.retry` may only reference an **earlier** step (loops only go backwards)
+- `onFail.retry` on a command/check may only reference an **earlier** step (loops only go backwards)
+- `onFail.retry` on an agent may reference any existing step; use a bounded recovery check for failures that need a handoff
 - Step IDs must be unique within a workflow
 - The `stepsIssue` validation function ensures these constraints
 
@@ -188,7 +189,7 @@ Based on my analysis of the Cezar codebase and documentation, here are key limit
    - A scheduled backlog audit must stay capped and opt-in because it can spend model budget and alter labels.
 
 9. **Deterministic workflow IDs required**: 
-   - Workflow step IDs must be unique and `onFail.retry` must reference earlier steps
+   - Workflow step IDs must be unique; check retries reference earlier steps and agent failure recovery targets must exist
    - Factory-generated workflows must comply with these constraints
 
 10. **Skill prompt constraints**: 
@@ -203,7 +204,7 @@ gateway route directly; OpenHands is not an execution dependency. The
 OpenHands provider files and evidence retained in this repository describe a
 legacy integration and must not be used to diagnose current automation runs.
 
-- **Workflow schema.** A step is either an agent step (`skill`/`prompt`) or a check step (`command`), never neither; `onFail.retry` may only point to an earlier step. Factory workflows follow this, and the factory tests enforce it. A check step failing past `onFail.max` fails the whole run.
+- **Workflow schema.** A step is either an agent step (`skill`/`prompt`) or a check step (`command`), never neither. Check retries point backward; failed agents may route to a bounded recovery step. A check step failing past `onFail.max` fails the whole run.
 - **No templating in check commands.** `{{task}}` is substituted only in agent prompts, so check steps cannot know the issue number. The agent writes a result file containing `issue`; `validate-result.ps1` and `route-state.ps1` read it from there. Agents never set `factory:*` labels themselves, except the first action of implement/fix, which calls `route-state.ps1 -Event start`.
 - **Install locations.** Workflows go to `.ai/cezar/workflows/factory-*.yaml` and skills to `.ai/skills/factory-*/`. Both are committable (Cezar's own `.ai/cezar/.gitignore` only ignores runtime state). Check-step scripts are not assumed to be present in an isolated worktree: they run from the version-pinned `FACTORY_RUNTIME_ROOT` registered in the Cezar service.
 - **Never bypass isolation for Factory assets.** `worktree: false` is an emergency/manual mode, not a Factory deployment mechanism. If a workflow cannot find a script, schema, or policy in a worktree, register or mount the Factory runtime and repair the workflow command; do not disable the worktree.

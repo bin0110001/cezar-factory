@@ -232,7 +232,8 @@ export function chainStepNote(steps: WorkflowStepDef[], index: number): string |
 
 /**
  * Structural checks beyond the per-step schema: ids must be unique and every
- * `onFail.retry` must reference an *earlier* step (loops only go backwards).
+ * Check-step retries must reference an earlier step (loops only go backwards).
+ * A failed agent step may route forward to a bounded recovery check.
  * Returns a human-readable problem, or null when the list is sound. Shared by
  * the file loader and the inline-steps / save-workflow API routes (spec 008).
  */
@@ -243,8 +244,11 @@ export function stepsIssue(steps: WorkflowStepDef[]): string | null {
   for (const [i, s] of steps.entries()) {
     if (!s.onFail) continue;
     const target = ids.indexOf(s.onFail.retry);
-    if (target < 0 || target >= i) {
-      return `step "${s.id}": onFail.retry must reference an earlier step (got "${s.onFail.retry}")`;
+    const agentStep = Boolean(s.prompt ?? s.skill);
+    if (target < 0 || (!agentStep && target >= i) || (agentStep && target > i && !steps[target]?.command)) {
+      const requirement = agentStep ? 'an existing step' : 'an earlier step';
+      const detail = agentStep && target > i ? ' and a forward recovery target must be a check step' : '';
+      return `step "${s.id}": onFail.retry must reference ${requirement}${detail} (got "${s.onFail.retry}")`;
     }
   }
   for (const [i, s] of steps.entries()) {

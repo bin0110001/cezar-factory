@@ -945,6 +945,34 @@ describe('a single agent step plus a check step gets NO chain note (#410)', () =
     expect(notes[0]).not.toContain('earlier step');
     expect(notes[0]).not.toContain('project-conventions');
   }, 30_000);
+
+  it('routes a failed agent step through its bounded onFail recovery step', async () => {
+    const workflow: WorkflowDef = {
+      name: 'investigate-with-recovery',
+      source: 'file',
+      steps: [
+        { id: 'investigate', prompt: 'mock:auth-error', onFail: { retry: 'recover', max: 1 } },
+        { id: 'recover', command: 'true' },
+        { id: 'finish', prompt: 'mock:done finish the investigation' },
+      ],
+    };
+    const record = manager.startRun(workflow, { task: 'investigate with a bounded fallback', worktree: false });
+    const terminal = new Set(['done', 'review', 'failed', 'cancelled']);
+    const deadline = Date.now() + 20_000;
+    while (!terminal.has(store.getRun(record.id)?.status ?? '')) {
+      if (Date.now() > deadline) throw new Error('run did not finish in time');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const settled = store.getRun(record.id)!;
+    expect(settled.status).toBe('done');
+    expect(settled.steps.map((step) => ({ id: step.id, status: step.status }))).toEqual([
+      { id: 'investigate', status: 'failed' },
+      { id: 'recover', status: 'done' },
+      { id: 'finish', status: 'done' },
+    ]);
+    expect(store.readEvents(record.id).some((event) => event.message?.includes('retrying from "recover"'))).toBe(true);
+  }, 30_000);
 });
 
 /**
