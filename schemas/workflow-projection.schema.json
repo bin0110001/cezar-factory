@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow-projection.schema.json",
+  "title": "Factory GitHub workflow projection records",
+  "description": "Typed workflow signal, projection action, drift/unknown evidence record and migration receipt. Records are redacted: they hold ids, labels and reason codes, never tokens or bodies.",
+  "type": "object",
+  "required": ["schemaVersion", "kind"],
+  "properties": {
+    "schemaVersion": { "const": "factory-workflow-projection/v1" },
+    "kind": { "enum": ["signal", "projection", "drift", "migration-receipt"] },
+    "issue": { "type": "integer", "minimum": 1 },
+    "signalType": { "enum": ["label-added", "label-removed", "review-submitted", "pr-merged", "issue-opened", "issue-closed"] },
+    "eventId": { "type": "string" },
+    "idempotencyKey": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "state": { "type": "string" },
+    "status": { "enum": ["published", "queued", "unknown", "waiting", "noop"] },
+    "reason": { "enum": ["api_outage", "restricted_write", "webhook_loss", "approval_unverified", "manual_label_edit", "label_missing", "duplicate_label", "accepted_human_edit"] },
+    "evidence": { "type": "string" },
+    "resolution": { "enum": ["reprojected", "accepted", "waiting", "none"] },
+    "mappingVersion": { "type": "integer" },
+    "watermark": { "type": "string" },
+    "admission": { "enum": ["none", "baseline"] }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "c",
+      "outcome": "success",
+      "to": "done"
+    }
+  ],
+  "entry": "c",
+  "name": "invalid-missing-child",
+  "nodes": [
+    {
+      "id": "c",
+      "inherit": true,
+      "kind": "child",
+      "ref": "nope"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    }
+  ],
+  "schemaVersion": 1
+}

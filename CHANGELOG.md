@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+- Added a deterministic workflow liveness library (#766) classifying stalls, cycles, wait-for deadlocks, starvation and UNKNOWN states with stable reason codes and graph witnesses, reusing the progress evaluator; versioned schema, tests and docs.
+
+- Deterministic static workflow graph and policy validator (#764): `scripts/release/workflow_graph_validator.py` builds a graph from resolved workflow definitions (child outcomes, effective guards) and diagnoses unreachable nodes/terminals, missing outcomes, unsafe implicit success, unbounded cycles and self loops (bounded review/repair loops pass), traps, unsatisfiable branches, UNKNOWN (never proven) guards, fork/join deadlocks, event consumers, human gates, privilege escalation/gate bypass and budget inheritance, with byte-identical machine diagnostics (`schemas/workflow-diagnostics.schema.json`) and a dry-run text report. Native `*.workflow.json` definitions block candidate activation; legacy `workflows/*.yaml` are validated report-only (`docs/workflow-graph-validator.md`).
+
+- GitHub workflow projection (#767, parent #761): a versioned typed-signal and label/status projection layer (`scripts/workflow-projection-lib.ps1`, `policies/workflow-projection.json`, `schemas/workflow-projection.schema.json`, `docs/workflow-projection.md`) with idempotent publish, Factory-authored-event loop guard, no-replay baseline watermark, bidirectional drift detection, queued/UNKNOWN handling for API outage, restricted writes and webhook loss, migration receipts for the existing `factory:*` labels, and approval that only real GitHub review state can satisfy (never a label or OCR clean review).
 - Fix promotion activation failure (#779): `factory-investigate` no longer uses a forward `onFail.retry` on its agent step, which the deployed Cezar loader rejects; the local suite now rejects forward retry targets for every workflow step.
 
 - Investigation retries now have a fixed evidence scope and route failed agent steps through a bounded validation handoff; missing or invalid results become an explicit low-confidence outcome after one retry. The adaptive progress evaluator now normalizes duplicate finding metadata independent of row order and keeps the earliest observation on score ties.

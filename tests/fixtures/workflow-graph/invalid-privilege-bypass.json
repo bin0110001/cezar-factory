@@ -1,0 +1,83 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "a",
+      "outcome": "success",
+      "to": "merge"
+    },
+    {
+      "from": "a",
+      "outcome": "failure",
+      "to": "ask"
+    },
+    {
+      "from": "ask",
+      "outcome": "approved",
+      "to": "merge"
+    },
+    {
+      "from": "ask",
+      "outcome": "rejected",
+      "to": "failed"
+    },
+    {
+      "from": "merge",
+      "outcome": "success",
+      "to": "done"
+    },
+    {
+      "from": "merge",
+      "outcome": "failure",
+      "to": "failed"
+    }
+  ],
+  "entry": "a",
+  "name": "invalid-privilege-bypass",
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task"
+    },
+    {
+      "id": "merge",
+      "kind": "task",
+      "permissions": [
+        "merge",
+        "admin"
+      ]
+    },
+    {
+      "humanGate": {
+        "authorizedRoles": [
+          "maintainer"
+        ]
+      },
+      "id": "ask",
+      "kind": "wait"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    },
+    {
+      "id": "failed",
+      "kind": "terminal",
+      "result": "failure"
+    }
+  ],
+  "permissions": {
+    "ceiling": [
+      "read",
+      "merge"
+    ],
+    "privileged": [
+      "merge"
+    ]
+  },
+  "schemaVersion": 1
+}

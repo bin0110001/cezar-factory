@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow-diagnostics.schema.json",
+  "title": "Workflow graph validation report (#764)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workflow", "mode", "valid", "blocking", "counts", "diagnostics"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "workflow": {"type": "string"},
+    "mode": {"enum": ["enforce", "report-only"]},
+    "valid": {"type": "boolean"},
+    "blocking": {"type": "boolean"},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "warning", "info", "unknown"],
+      "properties": {
+        "error": {"type": "integer", "minimum": 0}, "warning": {"type": "integer", "minimum": 0},
+        "info": {"type": "integer", "minimum": 0}, "unknown": {"type": "integer", "minimum": 0}
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "certainty", "title", "nodes", "witness", "message", "suggestion"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^WG[0-9]{3}$"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "certainty": {"enum": ["proven", "unknown"]},
+          "title": {"type": "string"},
+          "nodes": {"type": "array", "items": {"type": "string"}},
+          "witness": {"type": "array", "items": {"type": "string"}, "description": "Edge witness as from->to:outcome, or a node path."},
+          "message": {"type": "string"},
+          "suggestion": {"type": "string"}
+        }
+      }
+    }
+  }
+}
