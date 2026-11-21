@@ -56,7 +56,7 @@ describe('cez task', () => {
   it('report posts the report with array defaults filled and the verdict', async () => {
     const h = harness({ status: 200, body: { ok: true } });
     const code = await runTaskCommand(
-      ['report', '--status', 'done', '--result', 'all green', '--evidence', 'npm test → 3 passed', '--evidence', 'src/a.ts:1', '--verdict', 'approve', '--suggestions', 'split billing'],
+      ['report', '--status', 'done', '--outcome', 'passed', '--result', 'all green', '--outputs', '{"ticket":"ABC-123"}', '--evidence', 'npm test → 3 passed', '--evidence', 'src/a.ts:1', '--verdict', 'approve', '--suggestions', 'split billing'],
       env,
       h.io,
     );
@@ -64,7 +64,9 @@ describe('cez task', () => {
     expect(h.calls[0]?.url).toBe('http://127.0.0.1:4321/api/v1/p/proj/runs/run-1/report');
     expect(JSON.parse(String(h.calls[0]?.init?.body))).toEqual({
       status: 'done',
+      outcome: 'passed',
       result: 'all green',
+      outputs: { ticket: 'ABC-123' },
       evidence: ['npm test → 3 passed', 'src/a.ts:1'],
       side_effects: [],
       errors: [],

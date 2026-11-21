@@ -12,6 +12,7 @@ import {
   type DispatchInput,
   type DispatchPendingReport,
   type DispatchReport,
+  type DispatchJoin,
   type RunDispatch,
 } from '@open-mercato/cezar-contract';
 import type { RunRecord } from '../runs/store.ts';
@@ -48,6 +49,52 @@ export function childrenOf(runs: readonly RunRecord[], parentId: string): RunRec
 /** The subset still working — what the fan-out cap counts. */
 export function inFlightChildren(runs: readonly RunRecord[], parentId: string): RunRecord[] {
   return childrenOf(runs, parentId).filter((run) => IN_FLIGHT_STATUSES.includes(run.status));
+}
+
+/** Deterministic join decision over persisted child records. `done` alone is success; `review`,
+ *  partial reports, failures, unknowns and cancellations never satisfy a successful branch. */
+export function evaluateDispatchJoin(join: DispatchJoin, runs: readonly RunRecord[]): {
+  outcome: DispatchJoin['outcome'];
+  cancelRunIds: string[];
+} {
+  const children = join.childRunIds.map((id) => runs.find((run) => run.id === id)).filter((run): run is RunRecord => Boolean(run));
+  const unknownChild = children.length !== join.childRunIds.length
+    || (join.sealed && join.childRunIds.length !== join.expectedChildren);
+  const inconsistentChild = children.some((child) => child.dispatch !== undefined && (
+    child.dispatch.joinId !== join.id
+    || child.dispatch.joinMode !== join.mode
+    || child.dispatch.joinSize !== join.expectedChildren
+    || child.dispatch.joinQuorum !== join.quorum
+  ));
+  // A clean run record is necessary but a structured report can still say the work is
+  // partial/blocked or a reviewer rejected it. Never let that weaker evidence satisfy a fork.
+  const successes = children.filter((child) => child.status === 'done'
+    && (!child.dispatch?.report || (
+      child.dispatch.report.status === 'done'
+      && (child.dispatch.report.outcome === undefined || child.dispatch.report.outcome === 'passed')
+      && child.dispatch.report.verdict !== 'changes'
+      && child.dispatch.report.verdict !== 'reject'
+    )));
+  const running = children.filter((child) => IN_FLIGHT_STATUSES.includes(child.status));
+  const allRegistered = children.length === join.expectedChildren;
+  const allSettled = allRegistered && children.every((child) => isTerminalStatus(child.status));
+  let outcome: DispatchJoin['outcome'] = 'waiting';
+  if (unknownChild || inconsistentChild) {
+    outcome = 'failed';
+  } else if (join.mode === 'all') {
+    if (join.sealed && allSettled) outcome = successes.length === join.expectedChildren ? 'passed' : 'failed';
+  } else if (join.mode === 'any') {
+    if (join.sealed && successes.length > 0) outcome = 'passed';
+    else if (join.sealed && allSettled) outcome = 'failed';
+  } else {
+    const required = join.quorum ?? Number.POSITIVE_INFINITY;
+    if (join.sealed && successes.length >= required) outcome = 'passed';
+    else if (join.sealed && successes.length + running.length < required) outcome = 'failed';
+  }
+  return {
+    outcome,
+    cancelRunIds: outcome === 'waiting' ? [] : running.map((child) => child.id),
+  };
 }
 
 /**

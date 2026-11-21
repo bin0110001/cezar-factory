@@ -96,6 +96,7 @@ import {
   updateProjectInputSchema,
 } from '@open-mercato/cezar-contract';
 import { dispatchInputSchema, dispatchIntentSchema, dispatchReportSchema } from '@open-mercato/cezar-contract';
+import { canonicalJson, initializeWorkflowExecution, versionedWorkflowEventInputSchema } from '@open-mercato/cezar-contract';
 import { detectEnvironment } from '../core/backend-detect.ts';
 import { hostUsageSampler, type HostSampler } from '../core/host-usage.ts';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
@@ -119,7 +120,7 @@ import { currentUsage, currentTimedUsage, onUsage } from '../core/process-usage.
 import { DashboardReader } from '../workspace/dashboard.ts';
 import { buildWorkspaceManifest } from '../workspace/workspace-manifest.ts';
 import { dashboardRoutes } from './dashboard.ts';
-import { WORKFLOWS_DIR, loadWorkflows } from '../workflows/load.ts';
+import { WORKFLOWS_DIR, loadVersionedWorkflows, loadWorkflows } from '../workflows/load.ts';
 import {
   QUICK_TASK_WORKFLOW,
   normalizeWorkflowDoc,
@@ -722,6 +723,8 @@ const startRunSchema = z
   .object({
     workflow: z.string().min(1).optional(),
     steps: z.array(workflowStepSchema).min(1).max(8).optional(),
+    /** Values for typed ports on a versioned `id@version` workflow. */
+    inputs: z.record(z.string(), z.unknown()).optional(),
     // The primary agent prompt handed to the spawned runner. Bounded like the
     // other prompt fields (`systemPrompt` 20k, message `text` 100k) so an
     // unbounded body can't be piped into a spawned process (#429). 100k chars
@@ -4507,6 +4510,7 @@ export function createApp(deps: ServerDeps) {
       try { factoryRelease = await resolveConfiguredFactoryRelease(project.id); }
       catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       let workflow: WorkflowDef | undefined;
+      let versionedWorkflow: Awaited<ReturnType<typeof loadVersionedWorkflows>>['workflows'][number] | undefined;
       if (parsed.data.steps) {
         // Inline chain (spec 008): an approved plan runs as an ad-hoc workflow.
         const issue = stepsIssue(parsed.data.steps);
@@ -4518,9 +4522,40 @@ export function createApp(deps: ServerDeps) {
           ...(factoryRelease ? { factoryRelease: factoryReleaseProvenance(factoryRelease) } : {}),
         };
       } else {
-        const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
-        workflow = workflows.find((w) => w.name === parsed.data.workflow);
+        const { workflows: versioned } = await loadVersionedWorkflows(repoRoot, { factoryRelease });
+        const at = parsed.data.workflow!.lastIndexOf('@');
+        if (at > 0) {
+          const id = parsed.data.workflow!.slice(0, at);
+          const version = parsed.data.workflow!.slice(at + 1);
+          versionedWorkflow = versioned.find((candidate) => candidate.id === id && candidate.version === version);
+          if (versionedWorkflow) {
+            workflow = {
+              name: parsed.data.workflow!,
+              source: 'file',
+              steps: versionedWorkflow.nodes.filter((node) => node.kind === 'agent').map((node) => ({ id: node.id, prompt: node.prompt })),
+            };
+          }
+        }
+        if (!workflow) {
+          const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
+          workflow = workflows.find((w) => w.name === parsed.data.workflow);
+        }
         if (!workflow) return c.json({ error: `unknown workflow: ${parsed.data.workflow}` }, 404);
+      }
+      if (versionedWorkflow) {
+        if (parsed.data.variants && parsed.data.variants > 1) return c.json({ error: 'versioned workflows do not support parallel task variants' }, 400);
+        if (parsed.data.images?.length) return c.json({ error: 'versioned workflows do not accept pasted attachments' }, 400);
+        try {
+          const digest = createHash('sha256').update(canonicalJson(versionedWorkflow)).digest('hex');
+          initializeWorkflowExecution(versionedWorkflow, digest, versionedWorkflow.policyRefs, parsed.data.inputs ?? {});
+        } catch (error) {
+          return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+        }
+        if (versionedWorkflow.nodes.some((node) => node.kind === 'agent' || node.kind === 'fork') && !capabilities().dispatch) {
+          return c.json({ error: 'versioned agent and fork nodes require the dispatch capability' }, 409);
+        }
+      } else if (parsed.data.inputs && Object.keys(parsed.data.inputs).length > 0) {
+        return c.json({ error: 'workflow inputs are only valid for an exact versioned id@version workflow' }, 400);
       }
       const fallback = parsed.data.runner ?? (await loadConfig(repoRoot)).defaultRunner;
       const blocked = await providerActionError(providersRequiredByWorkflow(workflow, fallback));
@@ -4551,7 +4586,7 @@ export function createApp(deps: ServerDeps) {
       const input = {
         task: parsed.data.task,
         model: parsed.data.model,
-        runner: parsed.data.runner,
+        runner: versionedWorkflow ? fallback : parsed.data.runner,
         agentProfile: parsed.data.agentProfile,
         images,
         systemPrompt: parsed.data.systemPrompt,
@@ -4572,7 +4607,9 @@ export function createApp(deps: ServerDeps) {
         if (parsed.data.todoId && first) await noteTodoStarted(dataDir, parsed.data.todoId, first.id);
         return c.json({ runs }, 201);
       }
-      const run = manager.startRun(workflow, input);
+      const run = versionedWorkflow
+        ? manager.startVersionedRun(versionedWorkflow, input, parsed.data.inputs ?? {})
+        : manager.startRun(workflow, input);
       if (parsed.data.todoId) await noteTodoStarted(dataDir, parsed.data.todoId, run.id);
       return c.json(run, 201);
     })
@@ -4794,6 +4831,11 @@ export function createApp(deps: ServerDeps) {
       const id = c.req.param('id');
       const run = store.getRun(id);
       if (!run) return c.json({ error: 'not found' }, 404);
+      if (run.workflowExecution) {
+        const resumed = manager.resumeVersionedRun(id, { kind: 'human' });
+        if (!resumed.ok) return c.json({ error: resumed.error }, 409);
+        return c.json({ continued: true });
+      }
       // Bounded resume text (#429); an empty/absent body still just re-runs on the
       // run's current backend, and a runner/model override reopens on that engine (#401).
       const parsed = { data: c.req.valid('json') };
@@ -4820,6 +4862,20 @@ export function createApp(deps: ServerDeps) {
       });
       if (!result.ok) return c.json({ error: result.error }, 409);
       return c.json({ continued: true });
+    })
+
+    // Durable event-wait adapter. The caller's stable event ID is recorded with the resumed node,
+    // so a delivery replay cannot consume a later wait a second time.
+    .post('/runs/:id/events', jsonZodValidator(versionedWorkflowEventInputSchema), (c) => {
+      const { store, manager } = c.get('project');
+      const id = c.req.param('id');
+      const run = store.getRun(id);
+      if (!run) return c.json({ error: 'not found' }, 404);
+      if (!run.workflowExecution) return c.json({ error: 'run has no versioned workflow execution' }, 409);
+      const { event, eventId } = c.req.valid('json');
+      const resumed = manager.resumeVersionedRun(id, { kind: 'event', event, eventId });
+      if (!resumed.ok) return c.json({ error: resumed.error }, 409);
+      return c.json({ resumed: true });
     })
 
     // "Open in terminal" (spec 003): hand the session off to a real terminal —

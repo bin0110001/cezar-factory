@@ -72,8 +72,25 @@ describe('the dispatch routes', () => {
     expect(calls).toEqual([]);
   });
 
+  it('requires complete, bounded fork metadata before creating a child', async () => {
+    const incomplete = await apiRequest(app, '/api/v1/runs/parent-1/dispatch', json({ objective: 'x', join_id: 'fork-1' }));
+    expect(incomplete.status).toBe(400);
+    expect(calls).toEqual([]);
+    const complete = await apiRequest(app, '/api/v1/runs/parent-1/dispatch', json({
+      objective: 'x', transition_id: 'flow/node/1', join_id: 'fork-1', join_mode: 'quorum', join_size: 3, join_quorum: 2,
+    }));
+    expect(complete.status).toBe(201);
+    expect(calls[0]?.body).toMatchObject({ transition_id: 'flow/node/1', join_id: 'fork-1', join_quorum: 2 });
+  });
+
+  it('rejects a passing workflow outcome on a non-done child report', async () => {
+    const res = await apiRequest(app, '/api/v1/runs/child-1/report', json({ status: 'blocked', outcome: 'passed', result: 'contradictory' }));
+    expect(res.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
   it('records a report and answers ok; 404 for a run outside any tree', async () => {
-    const report = { status: 'done', result: 'all green', evidence: ['npm test → 3 passed'], verdict: 'approve' };
+    const report = { status: 'done', outcome: 'passed', result: 'all green', evidence: ['npm test → 3 passed'], verdict: 'approve' };
     const res = await apiRequest(app, '/api/v1/runs/child-1/report', json(report));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });

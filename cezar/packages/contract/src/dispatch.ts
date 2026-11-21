@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { runnerSchema } from './health.ts';
+import { workflowOutcomeSchema } from './versioned-workflows.ts';
 
 /**
  * The DISPATCH family of `/api/v1`: a task may dispatch other tasks (spec
@@ -29,7 +30,11 @@ export type DispatchKind = z.infer<typeof dispatchKindSchema>;
 /** `POST /runs/:id/report` — how a dispatched task reports upward (the `cez task report` CLI). */
 export const dispatchReportSchema = z.object({
   status: z.enum(['done', 'partial', 'failed', 'blocked']),
+  /** Typed return for a versioned workflow caller; omitted by legacy dispatch clients. */
+  outcome: workflowOutcomeSchema.optional(),
   result: z.string().max(4000),
+  /** Typed output values returned to a versioned workflow parent. Port validation happens there. */
+  outputs: z.record(z.string(), z.any()).optional(),
   evidence: z.array(z.string().max(400)).max(12).default([]),
   confidence: z.number().min(0).max(1).optional(),
   side_effects: z.array(z.string().max(400)).max(12).default([]),
@@ -40,6 +45,8 @@ export const dispatchReportSchema = z.object({
   /** What the ROOT task should know that lies outside this task's order. Forwarded to the root's
    *  inbox at settle. Suggest, never redefine: the objective stays the user's. */
   suggestions: z.array(z.string().max(400)).max(8).default([]),
+}).superRefine((report, ctx) => {
+  if (report.outcome === 'passed' && report.status !== 'done') ctx.addIssue({ code: 'custom', path: ['outcome'], message: 'a passing workflow outcome requires done run status' });
 });
 export type DispatchReport = z.infer<typeof dispatchReportSchema>;
 
@@ -79,11 +86,28 @@ export const dispatchIntentSchema = z.strictObject({
 });
 export type DispatchIntent = z.infer<typeof dispatchIntentSchema>;
 
+/** Durable state of one bounded fork in a parent's existing dispatch tree. */
+export const dispatchJoinSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/),
+  mode: z.enum(['all', 'any', 'quorum']),
+  expectedChildren: z.number().int().positive().max(32),
+  quorum: z.number().int().positive().max(32).optional(),
+  childRunIds: z.array(z.string().min(1)).max(32),
+  sealed: z.boolean().default(false),
+  outcome: z.enum(['waiting', 'passed', 'failed']).default('waiting'),
+  completedAt: z.string().optional(),
+}).superRefine((join, ctx) => {
+  if (join.mode === 'quorum' && (join.quorum === undefined || join.quorum > join.expectedChildren)) ctx.addIssue({ code: 'custom', path: ['quorum'], message: 'quorum must be within the expected child count' });
+  if (join.mode !== 'quorum' && join.quorum !== undefined) ctx.addIssue({ code: 'custom', path: ['quorum'], message: 'quorum is only valid for quorum joins' });
+  if (new Set(join.childRunIds).size !== join.childRunIds.length) ctx.addIssue({ code: 'custom', path: ['childRunIds'], message: 'child run ids must be unique' });
+});
+export type DispatchJoin = z.infer<typeof dispatchJoinSchema>;
+
 /**
  * The `dispatch` object on a run record. Present on every run that dispatched or was dispatched;
  * absent on a plain task, which then behaves exactly as it always has.
  */
-export const dispatchSchema = z.object({
+const dispatchRecordSchema = z.object({
   /** The tree's root run id (the root names itself). */
   rootRunId: z.string(),
   /** On a ROOT started with the composer's Dispatch toggle: what the user asked for. */
@@ -92,6 +116,16 @@ export const dispatchSchema = z.object({
   parentRunId: z.string().optional(),
   /** What this task is for. Absent = `implement`. */
   kind: dispatchKindSchema.optional(),
+  /** Stable graph transition that created this child; replay returns the same child run. */
+  transitionId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/).optional(),
+  /** Canonical request digest paired with transitionId to reject key reuse with different work. */
+  transitionFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** Fork membership and policy are copied to each child so the join can be rebuilt after restart. */
+  joinId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/).optional(),
+  joinMode: z.enum(['all', 'any', 'quorum']).optional(),
+  joinSize: z.number().int().positive().max(32).optional(),
+  joinQuorum: z.number().int().positive().max(32).optional(),
+  joinSealed: z.boolean().optional(),
   /** For a `review` task: the run ids or branches it reviews. */
   reviewOf: z.array(z.string().max(120)).max(8).optional(),
   /** This task's spend ceiling in USD, carved out of its parent's. Absent = none of its own. */
@@ -129,6 +163,16 @@ export const dispatchSchema = z.object({
     .optional(),
   /** Set at turn end once `costUsd ≥ budgetUsd`: the run parks and stops auto-continuing. */
   overBudget: z.boolean().optional(),
+  /** Durable call/return fan-out records; derived and reconciled against child records on restart. */
+  joins: z.array(dispatchJoinSchema).max(32).optional(),
+});
+export const dispatchSummarySchema = dispatchRecordSchema.pick({ rootRunId: true, parentRunId: true, kind: true });
+export const dispatchSchema = dispatchRecordSchema.superRefine((dispatch, ctx) => {
+  if (Boolean(dispatch.transitionId) !== Boolean(dispatch.transitionFingerprint)) ctx.addIssue({ code: 'custom', path: ['transitionFingerprint'], message: 'transition id and fingerprint must be stored together' });
+  const hasJoin = Boolean(dispatch.joinId || dispatch.joinMode || dispatch.joinSize !== undefined || dispatch.joinQuorum !== undefined || dispatch.joinSealed);
+  if (hasJoin && (!dispatch.joinId || !dispatch.joinMode || dispatch.joinSize === undefined)) ctx.addIssue({ code: 'custom', path: ['joinId'], message: 'fork membership requires join id, mode, and size' });
+  if (dispatch.joinMode === 'quorum' && (dispatch.joinQuorum === undefined || dispatch.joinQuorum > (dispatch.joinSize ?? 0))) ctx.addIssue({ code: 'custom', path: ['joinQuorum'], message: 'quorum must be within join size' });
+  if (dispatch.joinMode && dispatch.joinMode !== 'quorum' && dispatch.joinQuorum !== undefined) ctx.addIssue({ code: 'custom', path: ['joinQuorum'], message: 'join quorum is only valid for quorum mode' });
 });
 export type RunDispatch = z.infer<typeof dispatchSchema>;
 export type DispatchPendingAsk = NonNullable<RunDispatch['pendingAsk']>;
@@ -141,6 +185,15 @@ export const dispatchInputSchema = z
   .object({
     title: z.string().min(1).max(120).optional(),
     objective: z.string().min(1).max(4000),
+    /** Stable workflow transition key; optional for existing interactive dispatch callers. */
+    transition_id: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/).optional(),
+    /** Optional fork/join identity supplied by the graph runtime. */
+    join_id: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/).optional(),
+    join_mode: z.enum(['all', 'any', 'quorum']).optional(),
+    join_size: z.number().int().positive().max(32).optional(),
+    join_quorum: z.number().int().positive().max(32).optional(),
+    /** True only on the final child creation for this fork. */
+    join_sealed: z.boolean().optional(),
     kind: dispatchKindSchema.optional(),
     review_of: z.array(z.string().max(120)).max(8).optional(),
     scope: z.string().max(1000).optional(),
@@ -153,7 +206,13 @@ export const dispatchInputSchema = z
     runner: runnerSchema.optional(),
     model: z.string().max(200).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const hasJoin = Boolean(input.join_id || input.join_mode || input.join_size !== undefined || input.join_quorum !== undefined || input.join_sealed !== undefined);
+    if (hasJoin && (!input.join_id || !input.join_mode || input.join_size === undefined)) ctx.addIssue({ code: 'custom', path: ['join_id'], message: 'fork membership requires join_id, join_mode, and join_size' });
+    if (input.join_mode === 'quorum' && (input.join_quorum === undefined || input.join_quorum > (input.join_size ?? 0))) ctx.addIssue({ code: 'custom', path: ['join_quorum'], message: 'quorum must be within join_size' });
+    if (input.join_mode && input.join_mode !== 'quorum' && input.join_quorum !== undefined) ctx.addIssue({ code: 'custom', path: ['join_quorum'], message: 'join_quorum is only valid for quorum joins' });
+  });
 export type DispatchInput = z.infer<typeof dispatchInputSchema>;
 
 /** `POST /runs/:id/dispatch` → the child's id and branch (the branch is what the parent merges). */

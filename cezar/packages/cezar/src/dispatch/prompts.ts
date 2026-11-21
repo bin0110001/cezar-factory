@@ -31,7 +31,7 @@ Reports. When a child settles, its report is delivered into this session: status
 
 Reporting. When YOUR assignment is settled and you were dispatched by another task, report before finishing:
 
-  cez task report --status done|partial|failed|blocked --result "<what you did and the state now>" [--evidence "…" …] [--verdict approve|changes|reject] [--suggestions "…" …] [--confidence 0.8]
+  cez task report --status done|partial|failed|blocked --result "<what you did and the state now>" [--outcome passed|changes_required|needs_input|investigate|blocked|skipped|unknown|interrupted|exhausted] [--outputs '<JSON object>'] [--evidence "…" …] [--verdict approve|changes|reject] [--suggestions "…" …] [--confidence 0.8]
 
 Be honest: a done that is not done costs your parent a whole extra round trip to discover. Evidence is commands you ran and what they printed, files you changed, tests that passed. Suggestions are what the ROOT of the tree should know that lies outside your order — cezar forwards them there; suggest, never redefine the objective.
 

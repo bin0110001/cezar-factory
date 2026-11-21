@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PENDING_ASK_MAX_QUESTIONS, type DispatchInput, type RunDispatch } from '@open-mercato/cezar-contract';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PENDING_ASK_MAX_QUESTIONS, versionedWorkflowSchema, type DispatchInput, type DispatchJoin, type RunDispatch } from '@open-mercato/cezar-contract';
 import { runRecordSchema, RunStore, type RunRecord } from '../runs/store.ts';
 import { WorkspaceSemaphore, type WorkspaceResourceLimits } from '../workspace/semaphore.ts';
 import { RunManager } from './run.ts';
 import type { WorkflowDef } from './types.ts';
+import { evaluateDispatchJoin } from '../dispatch/engine.ts';
 
 const run = promisify(execFile);
 const GIT_ID = ['-c', 'user.name=test', '-c', 'user.email=test@local'];
@@ -51,6 +52,55 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
     store = RunStore.open(join(repoRoot, '.ai/cezar'));
     manager = boot();
     started.length = 0;
+  });
+
+  it('persists the workflow definition pin with the initial run and rejects later changes', () => {
+    const workflow: WorkflowDef = { name: 'pinned', source: 'built-in', steps: [{ id: 'task', prompt: 'do it' }] };
+    const record = manager.startRun(workflow, { task: 'pinned run', worktree: false });
+    const persisted = store.getRun(record.id);
+    expect(persisted?.workflowDefinitionPin).toMatchObject({ format: 'legacy', id: 'pinned' });
+    expect(persisted?.workflowDef).toEqual(workflow);
+    expect(() => store.updateRun(record.id, { workflowDefinitionPin: { ...persisted!.workflowDefinitionPin!, digest: '0'.repeat(64) } })).toThrow(/immutable/);
+    expect(() => store.updateRun(record.id, { workflowDef: { ...workflow, description: 'changed after acceptance' } })).toThrow(/immutable/);
+    manager.cancel(record.id);
+  });
+
+  it('fails closed when recovery finds a stale pinned workflow definition', async () => {
+    reboot({ maxParallel: 0 });
+    const workflow: WorkflowDef = { name: 'pinned-recovery', source: 'built-in', steps: [{ id: 'task', prompt: 'do it' }] };
+    const record = manager.startRun(workflow, { task: 'recover pinned run', worktree: false });
+    store.flush();
+    manager.dispose();
+    const runsPath = join(repoRoot, '.ai/cezar', 'runs.json');
+    const records = JSON.parse(readFileSync(runsPath, 'utf8')) as Array<RunRecord & { workflowDef?: WorkflowDef }>;
+    const persisted = records.find((candidate) => candidate.id === record.id)!;
+    persisted.workflowDef = { ...workflow, description: 'stale replacement' };
+    persisted.status = 'queued';
+    persisted.steps = persisted.steps.map((step) => ({ ...step, status: 'pending', sessionId: undefined }));
+    writeFileSync(runsPath, JSON.stringify(records, null, 2));
+    store = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
+    manager = boot({ maxParallel: 0 });
+    await manager.recover();
+    expect(store.getRun(record.id)).toMatchObject({ status: 'failed', error: expect.stringContaining('pin') });
+  });
+
+  it('fails closed when recovery finds a policy pin that no longer matches the run', async () => {
+    reboot({ maxParallel: 0 });
+    const workflow: WorkflowDef = { name: 'policy-pinned', source: 'built-in', steps: [{ id: 'task', prompt: 'do it' }] };
+    const record = manager.startRun(workflow, { task: 'recover policy-pinned run', worktree: false });
+    store.flush();
+    manager.dispose();
+    const runsPath = join(repoRoot, '.ai/cezar', 'runs.json');
+    const records = JSON.parse(readFileSync(runsPath, 'utf8')) as Array<RunRecord & { workflowDefinitionPin?: NonNullable<RunRecord['workflowDefinitionPin']> }>;
+    const persisted = records.find((candidate) => candidate.id === record.id)!;
+    persisted.status = 'queued';
+    persisted.steps = persisted.steps.map((step) => ({ ...step, status: 'pending', sessionId: undefined }));
+    persisted.workflowDefinitionPin!.policyPins = [{ id: 'factory-release-manifest', version: '0'.repeat(40), digest: '0'.repeat(64) }];
+    writeFileSync(runsPath, JSON.stringify(records, null, 2));
+    store = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
+    manager = boot({ maxParallel: 0 });
+    await manager.recover();
+    expect(store.getRun(record.id)).toMatchObject({ status: 'failed', error: expect.stringContaining('policy pin') });
   });
 
   afterEach(async () => {
@@ -166,6 +216,421 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
   // ---- dispatch ------------------------------------------------------------------------------
 
   describe('dispatch()', () => {
+    it('runs a versioned agent graph through the existing run and dispatch records', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-smoke', version: '1.0.0',
+        entry: 'implement', terminals: ['implement'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'implement', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done {{task}}', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'finish the versioned graph', dispatchIntent: { budgetUsd: 2 } }, {});
+      expect(store.getRun(root.id)?.workflowDefinitionPin).toMatchObject({ format: 'versioned', id: 'runtime-smoke', version: '1.0.0' });
+      expect(store.getRun(root.id)?.dispatch?.intent).toEqual({ budgetUsd: 2 });
+      await waitFor(root.id, (record) => childrenOf(root.id).length === 1);
+      const child = childrenOf(root.id)[0]!;
+      started.push(child.id);
+      await waitFor(child.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      expect(manager.recordReport(child.id, {
+        status: 'done', outcome: 'passed', result: 'Graph node completed.', evidence: [], side_effects: [], errors: [], suggestions: [],
+      })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { implement: 'passed' } });
+      expect(store.readEvents(root.id).some((event) => String(event.message).includes('node "implement" returned passed'))).toBe(true);
+    }, 60_000);
+
+    it('charges durable child token usage once and prevents an over-budget PASS', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-token-budget', version: '1.0.0',
+        entry: 'work', terminals: ['work'], inputs: [], policyRefs: [], budget: { maxTokens: 5 }, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'work', kind: 'agent', prompt: 'mock:pause mock:done count tokens', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'enforce token usage', runner: 'claude' }, {});
+      await waitFor(root.id, () => childrenOf(root.id).length === 1);
+      const child = childrenOf(root.id)[0]!;
+      started.push(child.id);
+      await waitFor(child.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      store.updateRun(child.id, { inputTokens: 4, outputTokens: 3 });
+      expect(manager.recordReport(child.id, { status: 'done', outcome: 'passed', result: 'Finished.', evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'failed', 40_000);
+      expect(store.getRun(root.id)?.error).toMatch(/exceeded its 5-token budget/);
+    }, 60_000);
+
+    it('reconciles a persisted external action receipt after a crash without repeating the action', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-action-recovery', version: '1.0.0',
+        entry: 'label', terminals: ['label'], inputs: [], policyRefs: [], budget: {}, capabilities: ['github.issue.write'],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'label', kind: 'action', action: 'github.issue.label', capabilities: ['github.issue.write'], outcomes: ['passed'] }],
+        transitions: [],
+      });
+      let externalEffectApplied = false;
+      let executeCount = 0;
+      const actionKeys: string[] = [];
+      const result = {
+        outcome: 'passed' as const, outputs: { label: 'factory:working' },
+        receipt: { system: 'github', resource: 'issue:765', operation: 'add-label', receiptId: 'delivery:765:working' },
+      };
+      const actionAdapter = {
+        execute: async (request: { idempotencyKey: string }) => {
+          actionKeys.push(request.idempotencyKey);
+          executeCount += 1;
+          externalEffectApplied = true;
+          return new Promise<typeof result>(() => {}); // simulate process loss after the remote effect but before local receipt persistence
+        },
+        reconcile: async (request: { idempotencyKey: string }) => {
+          actionKeys.push(request.idempotencyKey);
+          return externalEffectApplied ? { status: 'applied' as const, result } : { status: 'not_applied' as const };
+        },
+      };
+      manager.registerVersionedWorkflowAction('github.issue.label', actionAdapter);
+      const root = manager.startVersionedRun(workflow, { task: 'label issue 765', runner: 'claude' }, {});
+      started.push(root.id);
+      await waitFor(root.id, () => externalEffectApplied);
+      expect(store.getRun(root.id)?.workflowExecution?.attempts[0]?.effectReceipt).toMatchObject({ status: 'pending', action: 'github.issue.label' });
+      manager.dispose();
+      await manager.recover();
+      await waitFor(root.id, (record) => record?.status === 'done', 5_000);
+      expect(executeCount).toBe(1);
+      expect(new Set(actionKeys).size).toBe(1);
+      expect(store.getRun(root.id)?.workflowExecution?.attempts[0]?.effectReceipt).toMatchObject({
+        status: 'confirmed', action: 'github.issue.label', outcome: 'passed', receipt: { receiptId: 'delivery:765:working' },
+      });
+    }, 30_000);
+
+    it('keeps an external action non-passing when reconciliation is unknown', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-action-unknown', version: '1.0.0',
+        entry: 'label', terminals: ['label'], inputs: [], policyRefs: [], budget: {}, capabilities: ['github.issue.write'],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'label', kind: 'action', action: 'github.issue.label', capabilities: ['github.issue.write'], outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const execute = vi.fn(async () => ({ outcome: 'passed' as const, receipt: { system: 'github', resource: 'issue:765', operation: 'add-label', receiptId: 'unexpected' } }));
+      manager.registerVersionedWorkflowAction('github.issue.label', { execute, reconcile: async () => ({ status: 'unknown' as const, reason: 'remote unavailable' }) });
+      const root = manager.startVersionedRun(workflow, { task: 'require action reconciliation', runner: 'claude' }, {});
+      started.push(root.id);
+      await waitFor(root.id, (record) => record?.status === 'failed', 5_000);
+      expect(execute).not.toHaveBeenCalled();
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'failed', attempts: [{ effectReceipt: { status: 'unknown' } }] });
+    }, 30_000);
+
+    it('recovers a queued versioned child by replaying its stable transition instead of duplicating it', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-recovery', version: '1.0.0',
+        entry: 'work', terminals: ['work'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'work', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done recover this graph', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      reboot({ maxParallel: 0 });
+      const root = manager.startVersionedRun(workflow, { task: 'recover the same logical run' }, {});
+      await waitFor(root.id, (record) => childrenOf(root.id).length === 1 && childrenOf(root.id)[0]?.status === 'queued');
+      const childId = childrenOf(root.id)[0]!.id;
+      manager.dispose();
+      manager = boot();
+      await manager.recover();
+      await waitFor(childId, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)), 40_000);
+      expect(childrenOf(root.id).map((child) => child.id)).toEqual([childId]);
+      expect(manager.recordReport(childId, { status: 'done', outcome: 'passed', result: 'Recovered child passed.', evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+      expect(childrenOf(root.id)).toHaveLength(1);
+    }, 90_000);
+
+    it('marks the durable graph failed when recovery detects a stale exact version pin', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-stale-pin', version: '1.0.0',
+        entry: 'work', terminals: ['work'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'work', kind: 'agent', prompt: 'mock:pause mock:done stale pin', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      reboot({ maxParallel: 0 });
+      const root = manager.startVersionedRun(workflow, { task: 'reject stale workflow content', runner: 'claude' }, {});
+      store.flush();
+      manager.dispose();
+      const records = JSON.parse(readFileSync(join(repoRoot, '.ai/cezar', 'runs.json'), 'utf8')) as Array<RunRecord>;
+      const persisted = records.find((candidate) => candidate.id === root.id)!;
+      persisted.workflowDefinitionPin!.digest = '0'.repeat(64);
+      writeFileSync(join(repoRoot, '.ai/cezar', 'runs.json'), JSON.stringify(records, null, 2));
+      store = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
+      manager = boot({ maxParallel: 0 });
+      await manager.recover();
+      started.push(root.id, ...childrenOf(root.id).map((child) => child.id));
+      expect(store.getRun(root.id)).toMatchObject({ status: 'failed', workflowExecution: { status: 'failed' }, error: expect.stringContaining('pin') });
+    }, 30_000);
+
+    it('does not report a terminal PASS when an agent omits or returns an unknown outcome', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-unknown', version: '1.0.0',
+        entry: 'work', terminals: ['work'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'work', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done return unknown', outcomes: ['passed', 'unknown'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'unknown must not pass' }, {});
+      await waitFor(root.id, () => childrenOf(root.id).length === 1);
+      const child = childrenOf(root.id)[0]!;
+      started.push(child.id);
+      await waitFor(child.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      expect(manager.recordReport(child.id, { status: 'done', result: 'No trustworthy result.', evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'failed', 40_000);
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'failed', outcomes: { work: 'unknown' } });
+    }, 60_000);
+
+    it('times out a persisted human wait and rejects a late resume', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-wait-timeout', version: '1.0.0',
+        entry: 'approval', terminals: ['approval'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'approval', kind: 'wait', reason: 'approval required', waitFor: 'human', timeoutSeconds: 1, outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'wait for approval' }, {});
+      expect(store.getRun(root.id)).toMatchObject({ status: 'waiting', workflowExecution: { status: 'waiting', wait: { reason: 'human' } } });
+      await waitFor(root.id, (record) => record?.status === 'failed', 5_000);
+      expect(store.getRun(root.id)?.workflowExecution?.status).toBe('failed');
+      expect(manager.resumeVersionedRun(root.id, { kind: 'human' }).ok).toBe(false);
+    }, 10_000);
+
+    it('enforces the persisted workflow-wide duration budget across a human wait', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-duration-budget', version: '1.0.0',
+        entry: 'approval', terminals: ['approval'], inputs: [], policyRefs: [], budget: { maxDurationSeconds: 1 }, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'approval', kind: 'wait', reason: 'approval required', waitFor: 'human', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'respect the graph deadline' }, {});
+      expect(store.getRun(root.id)?.status).toBe('waiting');
+      manager.dispose();
+      manager = boot({ maxParallel: 0 });
+      await manager.recover();
+      await waitFor(root.id, (record) => record?.status === 'failed', 5_000);
+      expect(store.getRun(root.id)?.error).toMatch(/duration budget/);
+      expect(manager.resumeVersionedRun(root.id, { kind: 'human' }).ok).toBe(false);
+    }, 10_000);
+
+    it('recovers an event wait durably and resumes it only when the named event arrives', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-event-wait', version: '1.0.0',
+        entry: 'event-gate', terminals: ['event-gate'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'event-gate', kind: 'wait', reason: 'GitHub event', waitFor: 'event', event: 'issue.approved', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'wait for the issue event' }, {});
+      expect(store.getRun(root.id)?.status).toBe('waiting');
+      manager.dispose();
+      manager = boot();
+      await manager.recover();
+      expect(store.getRun(root.id)?.workflowExecution?.wait).toMatchObject({ reason: 'event', event: 'issue.approved' });
+      expect(manager.resumeVersionedRun(root.id, { kind: 'event', event: 'issue.closed' }).ok).toBe(false);
+      const eventTrigger = { kind: 'event' as const, event: 'issue.approved', eventId: 'hook-delivery-1' };
+      expect(manager.resumeVersionedRun(root.id, eventTrigger).ok).toBe(true);
+      const afterFirstDelivery = store.getRun(root.id);
+      expect(manager.resumeVersionedRun(root.id, eventTrigger)).toEqual({ ok: true });
+      expect(store.getRun(root.id)).toEqual(afterFirstDelivery);
+      expect(store.getRun(root.id)).toMatchObject({ status: 'done', workflowExecution: { status: 'done', outcomes: { 'event-gate': 'passed' } } });
+      expect(store.getRun(root.id)?.workflowExecution?.eventReceipts).toMatchObject([{ eventId: 'hook-delivery-1', event: 'issue.approved', node: 'event-gate' }]);
+    }, 30_000);
+
+    it('persists graph cancellation before cancelling its forked child runs', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-cancel', version: '1.0.0',
+        entry: 'parallel', terminals: ['parallel', 'alpha', 'beta'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [
+          { id: 'parallel', kind: 'fork', children: ['alpha', 'beta'], join: { mode: 'all' }, outcomes: ['passed', 'unknown'] },
+          { id: 'alpha', kind: 'agent', dispatchKind: 'implement', session: 'new', prompt: 'mock:pause mock:done cancel branch one', outcomes: ['passed'] },
+          { id: 'beta', kind: 'agent', dispatchKind: 'implement', session: 'new', prompt: 'mock:pause mock:done cancel branch two', outcomes: ['passed'] },
+        ],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'cancel the graph' }, {});
+      await waitFor(root.id, () => childrenOf(root.id).length === 2);
+      started.push(...childrenOf(root.id).map((child) => child.id));
+      expect(manager.cancel(root.id)).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'cancelled');
+      await waitFor(root.id, () => childrenOf(root.id).every((child) => child.status === 'cancelled'), 30_000);
+      expect(store.getRun(root.id)?.workflowExecution?.status).toBe('cancelled');
+    }, 60_000);
+
+    it('runs a sealed versioned all-join and requires typed passing reports from every branch', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'runtime-fork', version: '1.0.0',
+        entry: 'parallel', terminals: ['parallel', 'alpha', 'beta'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [
+          { id: 'parallel', kind: 'fork', children: ['alpha', 'beta'], join: { mode: 'all' }, outcomes: ['passed', 'unknown'] },
+          { id: 'alpha', kind: 'agent', dispatchKind: 'implement', session: 'new', prompt: 'mock:pause mock:done first branch', outcomes: ['passed'] },
+          { id: 'beta', kind: 'agent', dispatchKind: 'implement', session: 'new', prompt: 'mock:pause mock:done second branch', outcomes: ['passed'] },
+        ],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'run the fork' }, {});
+      await waitFor(root.id, (record) => childrenOf(root.id).length === 2);
+      const children = childrenOf(root.id);
+      started.push(...children.map((child) => child.id));
+      for (const child of children) await waitFor(child.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      for (const child of children) {
+        expect(manager.recordReport(child.id, {
+          status: 'done', outcome: 'passed', result: 'Branch completed.', evidence: [], side_effects: [], errors: [], suggestions: [],
+        })).toBe(true);
+      }
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+      expect(store.getRun(root.id)?.dispatch?.joins).toMatchObject([{ mode: 'all', outcome: 'passed', sealed: true, expectedChildren: 2 }]);
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { alpha: 'passed', beta: 'passed', parallel: 'passed' } });
+    }, 60_000);
+
+    it('calls and returns from a nested versioned workflow through child-run linkage', async () => {
+      const leaf = {
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'nested-leaf', version: '1.0.0',
+        entry: 'leaf-work', terminals: ['leaf-work'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'leaf-work', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done leaf work', outcomes: ['passed'] }],
+        transitions: [],
+      };
+      const workflowDir = join(repoRoot, '.ai/cezar/workflows');
+      mkdirSync(workflowDir, { recursive: true });
+      writeFileSync(join(workflowDir, 'nested-leaf.workflow.json'), JSON.stringify(leaf));
+      const parentWorkflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'nested-parent', version: '1.0.0',
+        entry: 'call-leaf', terminals: ['call-leaf'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'call-leaf', kind: 'child_workflow', workflow: 'nested-leaf', version: '1.0.0', outcomes: ['passed', 'unknown'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(parentWorkflow, { task: 'call the child graph' }, {});
+      await waitFor(root.id, (record) => childrenOf(root.id).length === 1);
+      const nested = childrenOf(root.id)[0]!;
+      await waitFor(nested.id, (record) => childrenOf(nested.id).length === 1);
+      const leafWorker = childrenOf(nested.id)[0]!;
+      started.push(nested.id, leafWorker.id);
+      await waitFor(leafWorker.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      expect(manager.recordReport(leafWorker.id, {
+        status: 'done', outcome: 'passed', result: 'Nested leaf passed.', evidence: [], side_effects: [], errors: [], suggestions: [],
+      })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+      expect(store.getRun(nested.id)?.workflowExecution?.status).toBe('done');
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { 'call-leaf': 'passed' } });
+    }, 60_000);
+
+    it('keeps one implementation session through repair and gives both reviews distinct sessions', async () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'implement-review-repair', version: '1.0.0',
+        entry: 'implement', terminals: ['review-again'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [
+          { id: 'implement', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done implement {{task}}', outcomes: ['passed', 'changes_required'] },
+          { id: 'review', kind: 'agent', dispatchKind: 'review', session: 'new', prompt: 'mock:pause mock:done review implementation', outcomes: ['passed', 'changes_required'] },
+          { id: 'repair', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done repair the finding', outcomes: ['passed'] },
+          { id: 'review-again', kind: 'agent', dispatchKind: 'review', session: 'new', prompt: 'mock:pause mock:done review the repair', outcomes: ['passed'] },
+        ],
+        transitions: [
+          { from: 'implement', outcome: 'passed', to: 'review', order: 0 },
+          { from: 'implement', outcome: 'changes_required', to: 'review', order: 1 },
+          { from: 'review', outcome: 'passed', to: 'review-again', order: 0 },
+          { from: 'review', outcome: 'changes_required', to: 'repair', order: 1 },
+          { from: 'repair', outcome: 'passed', to: 'review-again', order: 0 },
+        ],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'implement with review gates', runner: 'claude' }, {});
+      const findChild = async (count: number): Promise<RunRecord[]> => {
+        await waitFor(root.id, () => childrenOf(root.id).length === count, 40_000);
+        return childrenOf(root.id);
+      };
+      const settleNode = async (child: RunRecord, outcome: 'passed' | 'changes_required', result: string) => {
+        await waitFor(child.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)), 40_000);
+        expect(manager.recordReport(child.id, { status: 'done', outcome, result, evidence: [], side_effects: [], errors: [], suggestions: [], verdict: outcome === 'passed' ? 'approve' : 'changes' })).toBe(true);
+      };
+      const firstSet = await findChild(1);
+      const implementation = firstSet[0]!;
+      started.push(implementation.id);
+      await settleNode(implementation, 'changes_required', 'Implementation ready for review.');
+      const implementationSession = store.getRun(implementation.id)?.steps.find((step) => step.sessionId)?.sessionId;
+
+      const secondSet = await findChild(2);
+      const firstReview = secondSet.find((child) => child.id !== implementation.id)!;
+      started.push(firstReview.id);
+      expect(store.getRun(firstReview.id)?.workflowDef?.steps[0]?.allowedTools).toEqual(['Read', 'Grep', 'Glob']);
+      await settleNode(firstReview, 'changes_required', 'One repair is needed.');
+
+      await waitFor(implementation.id, (record) => record?.status === 'running' && record.steps.some((step) => step.id.startsWith('continue-') && step.sessionId), 40_000);
+      const repairSession = store.getRun(implementation.id)?.steps.find((step) => step.id.startsWith('continue-') && step.sessionId)?.sessionId;
+      expect(repairSession).toBe(implementationSession);
+      expect(manager.recordReport(implementation.id, { status: 'done', outcome: 'passed', result: 'Repair complete.', evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+
+      const thirdSet = await findChild(3);
+      const secondReview = thirdSet.find((child) => child.id !== implementation.id && child.id !== firstReview.id)!;
+      started.push(secondReview.id);
+      expect(store.getRun(secondReview.id)?.workflowDef?.steps[0]?.allowedTools).toEqual(['Read', 'Grep', 'Glob']);
+      await settleNode(secondReview, 'passed', 'Repair verified.');
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+
+      const firstReviewSession = store.getRun(firstReview.id)?.steps.find((step) => step.sessionId)?.sessionId;
+      const secondReviewSession = store.getRun(secondReview.id)?.steps.find((step) => step.sessionId)?.sessionId;
+      expect(firstReviewSession).toBeTruthy();
+      expect(secondReviewSession).toBeTruthy();
+      expect(new Set([implementationSession, firstReviewSession, secondReviewSession]).size).toBe(3);
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { implement: 'changes_required', review: 'changes_required', repair: 'passed', 'review-again': 'passed' } });
+    }, 120_000);
+
+    it('replays one stable transition to the same child and rejects key reuse with different work', async () => {
+      reboot({ maxParallel: 1, maxMonitoringSessions: 0 });
+      const parent = await parkedRoot(20);
+      const transition = order('mock:done deterministic child', { transition_id: 'workflow/repair/attempt-1', max_cost: 2.5 });
+      const created = dispatchOk(parent.id, transition);
+      const replay = dispatchOk(parent.id, { ...transition, objective: 'mock:done deterministic child' });
+      expect(replay.id).toBe(created.id);
+      expect(childrenOf(parent.id)).toHaveLength(1);
+      expect(store.getRun(created.id)?.dispatch).toMatchObject({
+        parentRunId: parent.id,
+        transitionId: 'workflow/repair/attempt-1',
+        transitionFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      expect(refusal(parent.id, order('different child', { transition_id: 'workflow/repair/attempt-1', max_cost: 2.5 }))).toContain('different work');
+      expect(childrenOf(parent.id)).toHaveLength(1);
+      store.flush();
+      const persisted = (JSON.parse(readFileSync(join(repoRoot, '.ai/cezar', 'runs.json'), 'utf8')) as RunRecord[])
+        .find((run) => run.id === created.id);
+      expect(runRecordSchema.parse(persisted)?.dispatch).toMatchObject({
+        transitionId: 'workflow/repair/attempt-1',
+        transitionFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+    }, 40_000);
+
+    it('replays the same child after RunStore restart without reserving budget twice', () => {
+      reboot({ maxParallel: 0 });
+      const parent = store.createRun({ title: 'root', workflow: 'fixture', task: 'task', steps: [], dispatch: { rootRunId: 'pending' } });
+      store.updateRun(parent.id, { status: 'waiting', dispatch: rootOf(parent.id, 10) });
+      const input = order('durable child', { transition_id: 'workflow/child/1', max_cost: 4 });
+      const first = dispatchOk(parent.id, input);
+      store.flush();
+      manager.dispose();
+      store = RunStore.open(join(repoRoot, '.ai/cezar'), { keepLive: true });
+      manager = boot({ maxParallel: 0 });
+      const replay = dispatchOk(parent.id, input);
+      expect(replay.id).toBe(first.id);
+      expect(childrenOf(parent.id)).toHaveLength(1);
+      expect(store.getRun(first.id)?.dispatch?.budgetUsd).toBe(4);
+    });
+
+    it('gives a review child its own run and review-only context', () => {
+      reboot({ maxParallel: 0 });
+      const parent = store.createRun({ title: 'implementer', workflow: 'fixture', task: 'implement', steps: [] });
+      store.updateRun(parent.id, { status: 'waiting', dispatch: rootOf(parent.id) });
+      const child = dispatchOk(parent.id, order('review the candidate', { kind: 'review', review_of: ['candidate-branch'] }));
+      started.push(child.id);
+      const queued = (manager as unknown as { pendingJobs: Map<string, { input: { systemPrompt?: string } }> }).pendingJobs.get(child.id);
+      expect(store.getRun(child.id)?.dispatch).toMatchObject({ parentRunId: parent.id, kind: 'review' });
+      expect(child.id).not.toBe(parent.id);
+      expect(queued?.input.systemPrompt).toContain('Your KIND is review');
+      expect(queued?.input.systemPrompt).toContain('You edit nothing on the reviewed branch');
+    });
+
     it('creates a child forked off the parent branch, with its order, budget and tree files', async () => {
       reboot({ maxParallel: 1, maxMonitoringSessions: 0 });
       const parent = await parkedRoot(20);
@@ -312,9 +777,162 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
     });
   });
 
+  describe('join decisions', () => {
+    const child = (id: string, status: RunRecord['status']): RunRecord => ({
+      id, title: id, workflow: 'fixture', task: 'fixture', status, createdAt: new Date(0).toISOString(),
+      tokensUsed: 0, archived: false, steps: [],
+    });
+
+    it('passes all only when every expected child is done', () => {
+      const runs = [child('a', 'done'), child('b', 'done')];
+      const join: DispatchJoin = { id: 'all', mode: 'all', expectedChildren: 2, childRunIds: ['a', 'b'], sealed: true, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(join, runs).outcome).toBe('passed');
+      expect(evaluateDispatchJoin(join, [runs[0]!, child('b', 'failed')]).outcome).toBe('failed');
+    });
+
+    it('does not decide any/quorum before the declared fanout is sealed', () => {
+      const any: DispatchJoin = { id: 'any', mode: 'any', expectedChildren: 2, childRunIds: ['a'], sealed: false, outcome: 'waiting' };
+      const quorum: DispatchJoin = { id: 'q', mode: 'quorum', expectedChildren: 2, quorum: 1, childRunIds: ['a'], sealed: false, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(any, [child('a', 'done')]).outcome).toBe('waiting');
+      expect(evaluateDispatchJoin(quorum, [child('a', 'done')]).outcome).toBe('waiting');
+    });
+
+    it('fails a sealed fanout whose durable membership is shorter than its declared size', () => {
+      const join: DispatchJoin = { id: 'lost-member', mode: 'any', expectedChildren: 2, childRunIds: ['a'], sealed: true, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(join, [child('a', 'done')]).outcome).toBe('failed');
+    });
+
+    it('fails a sealed quorum once the required successes are impossible', () => {
+      const runs = [child('a', 'done'), child('b', 'failed'), child('c', 'cancelled')];
+      const join: DispatchJoin = { id: 'q', mode: 'quorum', expectedChildren: 3, quorum: 2, childRunIds: ['a', 'b', 'c'], sealed: true, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(join, runs)).toMatchObject({ outcome: 'failed', cancelRunIds: [] });
+    });
+
+    it('does not treat a blocked or rejected report as a successful child', () => {
+      const report = (status: 'blocked' | 'done', result: string, verdict?: 'reject', outcome?: 'unknown') => ({
+        status, result, evidence: [], side_effects: [], errors: [], suggestions: [], ...(verdict ? { verdict } : {}), ...(outcome ? { outcome } : {}),
+      });
+      const blocked = { ...child('blocked', 'done'), dispatch: { rootRunId: 'root', report: report('blocked', 'unknown evidence') } };
+      const rejected = { ...child('rejected', 'done'), dispatch: { rootRunId: 'root', report: report('done', 'reviewed', 'reject') } };
+      const unknown = { ...child('unknown', 'done'), dispatch: { rootRunId: 'root', report: report('done', 'uncertain', undefined, 'unknown') } };
+      const join: DispatchJoin = { id: 'any', mode: 'any', expectedChildren: 3, childRunIds: ['blocked', 'rejected', 'unknown'], sealed: true, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(join, [blocked, rejected, unknown]).outcome).toBe('failed');
+    });
+
+    it('fails closed for a missing child record or conflicting persisted fork policy', () => {
+      const join: DispatchJoin = { id: 'any', mode: 'any', expectedChildren: 2, childRunIds: ['a', 'missing'], sealed: true, outcome: 'waiting' };
+      expect(evaluateDispatchJoin(join, [child('a', 'done')]).outcome).toBe('failed');
+      const mismatch = { ...child('a', 'done'), dispatch: { rootRunId: 'root', joinId: 'any', joinMode: 'all' as const, joinSize: 2 } };
+      expect(evaluateDispatchJoin({ ...join, childRunIds: ['a', 'b'] }, [mismatch, child('b', 'failed')]).outcome).toBe('failed');
+    });
+
+    it('persists a successful any-join before cancelling the remaining child', () => {
+      const parent = store.createRun({ title: 'parent', workflow: 'fixture', task: 't', steps: [] });
+      const first = store.createRun({ title: 'first', workflow: 'fixture', task: 't', steps: [] });
+      const second = store.createRun({ title: 'second', workflow: 'fixture', task: 't', steps: [] });
+      const join: DispatchJoin = {
+        id: 'review', mode: 'any', expectedChildren: 2, childRunIds: [first.id, second.id], sealed: true, outcome: 'waiting',
+      };
+      store.updateRun(parent.id, { status: 'running', dispatch: { ...rootOf(parent.id), joins: [join] } });
+      store.updateRun(first.id, { status: 'done', dispatch: { rootRunId: parent.id, parentRunId: parent.id, joinId: join.id, joinMode: 'any', joinSize: 2 } });
+      store.updateRun(second.id, { status: 'queued', dispatch: { rootRunId: parent.id, parentRunId: parent.id, joinId: join.id, joinMode: 'any', joinSize: 2 } });
+      const resolve = (manager as unknown as { resolveDispatchJoin: (parentId: string, joinId: string) => DispatchJoin | undefined }).resolveDispatchJoin.bind(manager);
+      expect(resolve(parent.id, join.id)?.outcome).toBe('passed');
+      expect(store.getRun(second.id)?.status).toBe('cancelled');
+      expect(store.getRun(parent.id)?.dispatch?.joins?.[0]?.outcome).toBe('passed');
+    });
+
+    it('replays sibling cancellation after a crash following the persisted join decision', () => {
+      const parent = store.createRun({ title: 'parent', workflow: 'fixture', task: 't', steps: [] });
+      const first = store.createRun({ title: 'winner', workflow: 'fixture', task: 't', steps: [] });
+      const second = store.createRun({ title: 'queued loser', workflow: 'fixture', task: 't', steps: [] });
+      const join: DispatchJoin = { id: 'crash-window', mode: 'any', expectedChildren: 2, childRunIds: [first.id, second.id], sealed: true, outcome: 'passed' };
+      store.updateRun(parent.id, { status: 'cancelled', dispatch: { ...rootOf(parent.id), joins: [join] } });
+      store.updateRun(first.id, { status: 'done', dispatch: { rootRunId: parent.id, parentRunId: parent.id, joinId: join.id, joinMode: 'any', joinSize: 2 } });
+      store.updateRun(second.id, { status: 'queued', dispatch: { rootRunId: parent.id, parentRunId: parent.id, joinId: join.id, joinMode: 'any', joinSize: 2 } });
+      const reconcile = (manager as unknown as { reconcileDispatchJoins: () => void }).reconcileDispatchJoins.bind(manager);
+      reconcile();
+      expect(store.getRun(parent.id)?.dispatch?.joins?.[0]?.outcome).toBe('passed');
+      expect(store.getRun(second.id)?.status).toBe('cancelled');
+    });
+
+    it('rebuilds a lost parent join record from durable child links after restart', () => {
+      const parent = store.createRun({ title: 'root', workflow: 'w', task: 't', steps: [] });
+      store.updateRun(parent.id, { status: 'cancelled', dispatch: rootOf(parent.id) });
+      const child = store.createRun({
+        title: 'branch', workflow: 'w', task: 't', steps: [],
+        dispatch: { rootRunId: parent.id, parentRunId: parent.id, joinId: 'fork-1', joinMode: 'all', joinSize: 1, joinSealed: true },
+      });
+      store.updateRun(child.id, { status: 'done' });
+      const reconcile = (manager as unknown as { reconcileDispatchJoins: () => void }).reconcileDispatchJoins.bind(manager);
+      reconcile();
+      expect(store.getRun(parent.id)?.dispatch?.joins).toMatchObject([{ id: 'fork-1', outcome: 'passed', childRunIds: [child.id], sealed: true }]);
+      const missingParent = store.createRun({ title: 'missing-root', workflow: 'w', task: 't', steps: [] });
+      const missingJoin: DispatchJoin = { id: 'lost-fork', mode: 'any', expectedChildren: 1, childRunIds: ['lost-child'], sealed: true, outcome: 'passed' };
+      store.updateRun(missingParent.id, { status: 'cancelled', dispatch: { ...rootOf(missingParent.id), joins: [missingJoin] } });
+      reconcile();
+      expect(store.getRun(missingParent.id)?.dispatch?.joins?.[0]?.outcome).toBe('failed');
+    });
+  });
+
   // ---- reports and the settle→parent wake ----------------------------------------------------
 
   describe('reports', () => {
+    it('keeps one implementation session through review, repair, and a second isolated review', async () => {
+      const parent = await parkedRoot();
+      const implementationSessionId = store.getRun(parent.id)?.steps.find((step) => step.sessionId)?.sessionId;
+      expect(implementationSessionId).toBeTruthy();
+
+      const firstReview = dispatchOk(parent.id, order('mock:pause mock:done inspect the implementation', { kind: 'review', review_of: [parent.branch ?? parent.id] }));
+      started.push(firstReview.id);
+      await waitFor(firstReview.id, (run) => run?.status === 'running');
+      await waitFor(firstReview.id, (run) => Boolean(run?.steps.some((step) => Boolean(step.sessionId))));
+      const firstReviewSessionId = store.getRun(firstReview.id)?.steps.find((step) => step.sessionId)?.sessionId;
+      expect(manager.recordReport(firstReview.id, {
+        status: 'done', outcome: 'changes_required', result: 'Found one repairable issue.', evidence: [],
+        side_effects: [], errors: [], suggestions: [], verdict: 'changes',
+      })).toBe(true);
+      await waitFor(firstReview.id, (run) => run?.status === 'done', 40_000);
+      await waitFor(parent.id, (run) => (run?.dispatch?.pendingReports?.length ?? 0) === 0, 40_000);
+      expect(manager.sendMessage(parent.id, [{ type: 'text', text: 'mock:monitoring repair the review finding in this implementation session' }])).toBe(true);
+
+      const secondReview = dispatchOk(parent.id, order('mock:pause mock:done verify the repair', { kind: 'review', review_of: [parent.branch ?? parent.id] }));
+      started.push(secondReview.id);
+      await waitFor(secondReview.id, (run) => run?.status === 'running');
+      await waitFor(secondReview.id, (run) => Boolean(run?.steps.some((step) => Boolean(step.sessionId))));
+      const secondReviewSessionId = store.getRun(secondReview.id)?.steps.find((step) => step.sessionId)?.sessionId;
+      expect(manager.recordReport(secondReview.id, {
+        status: 'done', outcome: 'passed', result: 'Repair verified.', evidence: ['mock review passed'],
+        side_effects: [], errors: [], suggestions: [], verdict: 'approve',
+      })).toBe(true);
+      await waitFor(secondReview.id, (run) => run?.status === 'done', 40_000);
+      await waitFor(parent.id, (run) => (run?.dispatch?.pendingReports?.length ?? 0) === 0, 40_000);
+      expect(manager.sendMessage(parent.id, [{ type: 'text', text: 'mock:done finish after the approved re-review' }])).toBe(true);
+      await waitFor(parent.id, (run) => run?.status === 'done', 40_000);
+
+      const implementationSessions = store.getRun(parent.id)?.steps.flatMap((step) => step.sessionId ? [step.sessionId] : []) ?? [];
+      expect(implementationSessions.length).toBeGreaterThan(1);
+      expect(new Set(implementationSessions)).toEqual(new Set([implementationSessionId]));
+      expect(firstReviewSessionId).toBeTruthy();
+      expect(secondReviewSessionId).toBeTruthy();
+      expect(firstReviewSessionId).not.toBe(implementationSessionId);
+      expect(secondReviewSessionId).not.toBe(implementationSessionId);
+      expect(secondReviewSessionId).not.toBe(firstReviewSessionId);
+    }, 90_000);
+
+    it('fails closed when a review node selects a runner without enforceable read-only tools', () => {
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'review-read-only-runner', version: '1.0.0',
+        entry: 'review', terminals: ['review'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+        nodes: [{ id: 'review', kind: 'agent', dispatchKind: 'review', session: 'new', prompt: 'Review read only.', outcomes: ['passed'] }],
+        transitions: [],
+      });
+      const root = manager.startVersionedRun(workflow, { task: 'keep reviewer read only', runner: 'codex' }, {});
+      expect(store.getRun(root.id)).toMatchObject({ status: 'failed', error: expect.stringContaining('read-only tool permissions') });
+      expect(childrenOf(root.id)).toHaveLength(0);
+    });
+
     it('records a child’s own report and delivers it into the parent’s open session at settle', async () => {
       const stdinFile = join(repoRoot, 'mock-stdin.ndjson');
       savedEnv.CEZ_MOCK_STDIN_FILE = process.env.CEZ_MOCK_STDIN_FILE;

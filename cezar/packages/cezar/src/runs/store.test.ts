@@ -84,6 +84,31 @@ describe('RunStore — directional usage persistence', () => {
     });
   });
 
+  it('persists graph coordinator state alongside the existing run record', () => {
+    const store = RunStore.open(dataDir);
+    const workflow = {
+      contract: 'cezar.workflow' as const, schemaVersion: 1 as const, id: 'test.graph', version: '1.0.0',
+      entry: 'work', terminals: ['work'], inputs: [], capabilities: [], policyRefs: [],
+      compatibility: { mode: 'versioned-only' as const, minConsumer: '1.0.0', maxConsumer: '1.0.0' },
+      nodes: [{ id: 'work', kind: 'agent' as const, prompt: 'work', outcomes: ['passed' as const], dispatchKind: 'implement' as const, inputs: [], outputs: [], resources: [], session: 'continue' as const }],
+      transitions: [], budget: {},
+    };
+    const run = store.createRun({
+      title: 'graph task', workflow: 'test.graph@1.0.0', task: 'graph task', steps: [],
+      workflowExecution: {
+        workflow, definitionDigest: 'a'.repeat(64), policyPins: [], inputs: {}, outcomes: {}, outputs: {},
+        attempts: [{ node: 'work', attempt: 1, transitionId: 'root:work:1', status: 'pending', startedAt: '2026-11-21T00:00:00.000Z' }],
+        ready: ['work'], eventReceipts: [], status: 'running',
+      },
+    });
+    store.flush();
+    expect(RunStore.open(dataDir).getRun(run.id)?.workflowExecution).toMatchObject({
+      workflow: { id: 'test.graph', version: '1.0.0' },
+      attempts: [{ node: 'work', transitionId: 'root:work:1', status: 'pending' }],
+      ready: ['work'], status: 'running',
+    });
+  });
+
   it('keeps aggregates absent for old records and incomplete invocation or turn checkpoints', () => {
     writeFileSync(join(dataDir, 'runs.json'), JSON.stringify([LEGACY_RUN]), 'utf8');
     expect(RunStore.open(dataDir).getRun(LEGACY_RUN.id)?.inputTokens).toBeUndefined();
