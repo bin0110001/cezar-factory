@@ -118,6 +118,54 @@ def adapt_definition(raw: Any) -> dict[str, Any]:
     """Single seam for the #763 schema: normalise a resolved definition into the internal graph model."""
     if not isinstance(raw, dict):
         raise ValueError("workflow definition must be an object")
+    if raw.get("contract") == "cezar.workflow":
+        source_nodes = raw.get("nodes")
+        transitions = raw.get("transitions")
+        terminals = raw.get("terminals")
+        if not isinstance(source_nodes, list) or not isinstance(transitions, list) or not isinstance(terminals, list):
+            raise ValueError("versioned workflow definition requires nodes, transitions and terminals arrays")
+        terminal_ids = set(terminals)
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        retry_bounds: dict[str, dict[str, Any]] = {}
+        for node in source_nodes:
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str):
+                raise ValueError("versioned workflow node requires a string id")
+            node_id = node["id"]
+            outcomes = node.get("outcomes") or (["passed"] if node.get("kind") == "wait" else [])
+            if node_id in terminal_ids:
+                # The Cezar contract declares terminal-capable nodes; each declared result becomes
+                # an explicit graph terminal so static reachability proves every typed exit.
+                nodes.append({"id": node_id, "kind": "task", "outcomes": outcomes})
+                for outcome in outcomes:
+                    suffix = re.sub(r"[^A-Za-z0-9_.-]", "_", str(outcome))
+                    result = ("success" if outcome in {"passed", "ready", "split", "not_reproducible"}
+                              else "needs-human-input" if outcome in {"needs_input", "needs_research", "investigate"}
+                              else "failure" if outcome in {"changes_required", "blocked", "skipped", "unknown", "interrupted", "exhausted"}
+                              else "cancelled")
+                    terminal_id = f"__terminal__{node_id}__{suffix}"
+                    nodes.append({"id": terminal_id, "kind": "terminal", "result": result})
+                    edges.append({"from": node_id, "outcome": outcome, "to": terminal_id})
+            else:
+                kind = "child" if node.get("kind") == "child_workflow" else "wait" if node.get("kind") == "wait" else "task"
+                normalized = {"id": node_id, "kind": kind, "outcomes": outcomes}
+                if kind == "child":
+                    normalized["ref"] = f"{node.get('workflow')}@{node.get('version')}"
+                if node.get("retry"):
+                    retry_bounds[node_id] = {"max": node["retry"].get("maxAttempts", 1)}
+                nodes.append(normalized)
+        for transition in transitions:
+            if not isinstance(transition, dict):
+                raise ValueError("versioned workflow transition must be an object")
+            edge = {"from": transition.get("from"), "outcome": transition.get("outcome"), "to": transition.get("to")}
+            if transition.get("when") is not None:
+                edge["guard"] = {"expr": "versioned-guard"}
+            if transition.get("from") in retry_bounds and transition.get("outcome") in next(
+                    (node.get("retry", {}).get("on", []) for node in source_nodes if isinstance(node, dict) and node.get("id") == transition.get("from")), []):
+                edge["bound"] = retry_bounds[transition["from"]]
+            edges.append(edge)
+        return {"name": f"{raw.get('id', '')}@{raw.get('version', '')}", "entry": raw.get("entry"),
+                "nodes": nodes, "edges": edges, "permissions": {}, "budget": raw.get("budget") or {}, "legacy": False}
     nodes = raw.get("nodes")
     edges = raw.get("edges")
     if not isinstance(nodes, list) or not isinstance(edges, list):
@@ -277,7 +325,8 @@ def validate_definition(raw: Any, children: dict[str, Any] | None = None, _stack
                 node_outcomes[nid] = list(outs or [])
                 continue
             child_defs[nid] = cdef
-            results = sorted({x.get("result") for x in cdef.get("nodes", []) if isinstance(x, dict) and x.get("kind") == "terminal" and x.get("result")})
+            child_graph = adapt_definition(cdef)
+            results = sorted({x.get("result") for x in child_graph["nodes"] if isinstance(x, dict) and x.get("kind") == "terminal" and x.get("result")})
             node_outcomes[nid] = sorted(set(results) | set(outs or []))
             for cd in validate_definition(cdef, children, _stack + (wf["name"],)):
                 if cd["severity"] == "error":
@@ -527,7 +576,14 @@ def validate_tree(root: pathlib.Path, mode_for_native: str = "enforce") -> list[
             native[p.name.removesuffix(".workflow.json")] = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             reports.append(build_report(p.name, [_diag("WG022", "error", [], f"unreadable definition: {exc}", "Fix the JSON.")], mode_for_native))
-    by_name = {v.get("name", k): v for k, v in native.items() if isinstance(v, dict)}
+    by_name: dict[str, Any] = {}
+    for k, value in native.items():
+        if not isinstance(value, dict):
+            continue
+        by_name[str(value.get("name") or k)] = value
+        if value.get("contract") == "cezar.workflow" and isinstance(value.get("id"), str) and isinstance(value.get("version"), str):
+            by_name[value["id"]] = value
+            by_name[f"{value['id']}@{value['version']}"] = value
     for k, v in sorted(native.items()):
         reports.append(validate(v, by_name, mode_for_native, name=v.get("name", k) if isinstance(v, dict) else k))
     for p in sorted(list(wdir.glob("*.yaml")) + list(wdir.glob("*.yml"))):

@@ -485,12 +485,12 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
       expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { alpha: 'passed', beta: 'passed', parallel: 'passed' } });
     }, 60_000);
 
-    it('calls and returns from a nested versioned workflow through child-run linkage', async () => {
+    it('returns a typed terminal outcome from a nested versioned workflow through child-run linkage', async () => {
       const leaf = {
         contract: 'cezar.workflow', schemaVersion: 1, id: 'nested-leaf', version: '1.0.0',
         entry: 'leaf-work', terminals: ['leaf-work'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
         compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
-        nodes: [{ id: 'leaf-work', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done leaf work', outcomes: ['passed'] }],
+        nodes: [{ id: 'leaf-work', kind: 'agent', dispatchKind: 'implement', session: 'continue', prompt: 'mock:pause mock:done leaf work', outcomes: ['ready'] }],
         transitions: [],
       };
       const workflowDir = join(repoRoot, '.ai/cezar/workflows');
@@ -500,7 +500,7 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
         contract: 'cezar.workflow', schemaVersion: 1, id: 'nested-parent', version: '1.0.0',
         entry: 'call-leaf', terminals: ['call-leaf'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
         compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
-        nodes: [{ id: 'call-leaf', kind: 'child_workflow', workflow: 'nested-leaf', version: '1.0.0', outcomes: ['passed', 'unknown'] }],
+        nodes: [{ id: 'call-leaf', kind: 'child_workflow', workflow: 'nested-leaf', version: '1.0.0', outcomes: ['passed', 'ready', 'unknown'] }],
         transitions: [],
       });
       const root = manager.startVersionedRun(parentWorkflow, { task: 'call the child graph' }, {});
@@ -511,11 +511,12 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
       started.push(nested.id, leafWorker.id);
       await waitFor(leafWorker.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
       expect(manager.recordReport(leafWorker.id, {
-        status: 'done', outcome: 'passed', result: 'Nested leaf passed.', evidence: [], side_effects: [], errors: [], suggestions: [],
+        status: 'done', outcome: 'ready', result: 'Nested leaf returned ready.', evidence: [], side_effects: [], errors: [], suggestions: [],
       })).toBe(true);
       await waitFor(root.id, (record) => record?.status === 'done', 40_000);
       expect(store.getRun(nested.id)?.workflowExecution?.status).toBe('done');
-      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { 'call-leaf': 'passed' } });
+      expect(store.getRun(nested.id)?.dispatch?.report).toMatchObject({ status: 'done', outcome: 'ready' });
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { 'call-leaf': 'ready' } });
     }, 60_000);
 
     it('keeps one implementation session through repair and gives both reviews distinct sessions', async () => {

@@ -1,6 +1,7 @@
 import copy
 import json
 import pathlib
+import re
 import tempfile
 import unittest
 
@@ -210,6 +211,48 @@ class Legacy(unittest.TestCase):
             (w / "bad.workflow.json").write_text((FX / "invalid-self-loop.json").read_text())
             reports = wg.validate_tree(pathlib.Path(t))
             self.assertIn("invalid-self-loop", wg.blocking_message(reports))
+
+
+class VersionedLifecycle(unittest.TestCase):
+    ROOT = pathlib.Path(__file__).parents[1]
+
+    def test_shared_lifecycle_definitions_pass_the_static_graph_validator(self):
+        workflow_dir = self.ROOT / "workflows"
+        files = sorted(workflow_dir.glob("lifecycle-*.workflow.json"))
+        self.assertGreaterEqual(len(files), 8)
+        for path in files:
+            report = wg.validate(json.loads(path.read_text(encoding="utf-8")))
+            self.assertTrue(report["valid"], f"{path.name}: {report}")
+
+    def test_each_legacy_workflow_exit_maps_to_one_declared_typed_outcome(self):
+        lifecycle = json.loads((self.ROOT / "policies" / "lifecycle.json").read_text(encoding="utf-8"))
+        mappings = lifecycle["workflowOutcomeMappings"]
+        source = (self.ROOT / "cezar" / "packages" / "contract" / "src" / "versioned-workflows.ts").read_text(encoding="utf-8")
+        enum = re.search(r"workflowOutcomeSchema = z\.enum\(\[(.*?)\]\)", source, re.S)
+        self.assertIsNotNone(enum)
+        typed_outcomes = set(re.findall(r"'([a-z_]+)'", enum.group(1)))
+        expected: dict[str, set[str]] = {}
+        workflow_events = {"intake-result", "plan-result", "implement-result", "review-result", "investigate-result"}
+        for profile in lifecycle["profiles"].values():
+            for state in profile["states"].values():
+                for exit_rule in state.get("exits", []):
+                    if exit_rule.get("outcome") and exit_rule.get("on") in workflow_events:
+                        expected.setdefault(exit_rule["on"], set()).add(exit_rule["outcome"])
+        self.assertEqual(set(mappings), set(expected))
+        self.assertEqual({event: set(mapping) for event, mapping in mappings.items()}, expected)
+        for event, mapping in mappings.items():
+            self.assertTrue(set(mapping.values()) <= typed_outcomes, event)
+        stage_files = {
+            "intake-result": "lifecycle-intake.workflow.json",
+            "plan-result": "lifecycle-planning.workflow.json",
+            "implement-result": "lifecycle-implementation.workflow.json",
+            "review-result": "lifecycle-review.workflow.json",
+            "investigate-result": "lifecycle-investigation.workflow.json",
+        }
+        for event, file_name in stage_files.items():
+            workflow = json.loads((self.ROOT / "workflows" / file_name).read_text(encoding="utf-8"))
+            declared = {outcome for node in workflow["nodes"] for outcome in node.get("outcomes", [])}
+            self.assertTrue(set(mappings[event].values()) <= declared, f"{event}: {mappings[event]} not declared by {file_name}")
 
 
 if __name__ == "__main__":

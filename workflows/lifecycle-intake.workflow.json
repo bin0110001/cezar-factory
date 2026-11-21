@@ -1,0 +1,47 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.intake",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.intake.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "passed",
+        "needs_input",
+        "split",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Classify the already selected issue from its prepared context. Return one declared typed outcome. Use passed for a valid classification, needs_input for a genuine missing decision, split when decomposition is required, and unknown when evidence is insufficient. Do not edit lifecycle labels or invoke Factory scripts.",
+      "skill": "factory-intake",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

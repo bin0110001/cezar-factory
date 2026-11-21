@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Added the versioned lifecycle child workflow catalog (#773): typed stage outcomes for intake, investigation, planning, implementation, verification, repair, review and escalation; deterministic mappings from existing lifecycle result outcomes; contract-aware static graph validation; legacy YAML remains unchanged.
 - Added a deterministic workflow liveness library (#766) classifying stalls, cycles, wait-for deadlocks, starvation and UNKNOWN states with stable reason codes and graph witnesses, reusing the progress evaluator; versioned schema, tests and docs.
 
 - Deterministic static workflow graph and policy validator (#764): `scripts/release/workflow_graph_validator.py` builds a graph from resolved workflow definitions (child outcomes, effective guards) and diagnoses unreachable nodes/terminals, missing outcomes, unsafe implicit success, unbounded cycles and self loops (bounded review/repair loops pass), traps, unsatisfiable branches, UNKNOWN (never proven) guards, fork/join deadlocks, event consumers, human gates, privilege escalation/gate bypass and budget inheritance, with byte-identical machine diagnostics (`schemas/workflow-diagnostics.schema.json`) and a dry-run text report. Native `*.workflow.json` definitions block candidate activation; legacy `workflows/*.yaml` are validated report-only (`docs/workflow-graph-validator.md`).

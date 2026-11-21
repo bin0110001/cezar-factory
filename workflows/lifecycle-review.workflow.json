@@ -1,0 +1,47 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.review",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.review.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "new",
+      "outcomes": [
+        "passed",
+        "changes_required",
+        "needs_input",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Review the supplied implementation in a distinct read-only session. Return one declared typed outcome: passed, changes_required, needs_input, unknown, interrupted, or exhausted. Do not modify files, set lifecycle labels, or invoke Factory scripts.",
+      "skill": "factory-review",
+      "dispatchKind": "review"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

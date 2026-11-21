@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 /** Declarative graph contract v1. This is additive; workflowDefSchema remains the legacy adapter. */
 export const workflowOutcomeSchema = z.enum([
-  'passed', 'changes_required', 'needs_input', 'investigate', 'blocked', 'skipped',
+  'passed', 'ready', 'needs_input', 'split', 'not_reproducible', 'needs_research',
+  'changes_required', 'investigate', 'blocked', 'skipped',
   'unknown', 'interrupted', 'exhausted',
 ]);
 export type WorkflowOutcome = z.infer<typeof workflowOutcomeSchema>;
@@ -280,7 +281,9 @@ export function completeWorkflowNode(
       attempts: [...attempts, ...nextAttempt],
       ready: nextReady,
       wait: nextWait,
-      status: execution.workflow.terminals.includes(nodeId) ? routedOutcome === 'passed' ? 'done' : 'failed' : nextWait ? 'waiting' : 'running',
+      status: execution.workflow.terminals.includes(nodeId)
+        ? ['unknown', 'blocked', 'interrupted', 'exhausted'].includes(routedOutcome) ? 'failed' : 'done'
+        : nextWait ? 'waiting' : 'running',
     }),
     ...(nextReady[0] ? { routedTo: nextReady[0] } : {}),
   };
