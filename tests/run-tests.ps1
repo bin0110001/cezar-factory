@@ -1965,7 +1965,7 @@ if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
 # Skipping these silently is how they drifted into failure before, so a missing bash is a failure.
 Assert 'a POSIX bash is available for the deploy shell tests' ([bool]$shellTestBash)
 if ($shellTestBash) {
-    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh', 'test-install-boot-order.sh') {
+    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh', 'test-install-boot-order.sh', 'test-validate-in-container.sh') {
         $shellOutput = & $shellTestBash.Source (Join-Path $factory "tests/$shellTest") 2>&1
         Assert "deploy shell test passes: $shellTest" ($LASTEXITCODE -eq 0)
         if ($LASTEXITCODE -ne 0) { $shellOutput | Select-Object -Last 8 | ForEach-Object { Write-Host "    $_" } }
@@ -1986,7 +1986,7 @@ Assert 'promotion service passes the scheduler state root, not the release store
 Assert 'promotion service reads the committed policy and the promoter may use podman exec' ($promotionUnit -match 'promotion-policy\.json' -and $promotionUnit -notmatch '(?m)^NoNewPrivileges=true')
 $validateInContainer = Get-Content -Raw (Join-Path $factory 'scripts/release/validate-in-container.sh')
 Assert 'container validation runs the suite in a throwaway worktree of the exact SHA and cleans it up' ($validateInContainer -match 'worktree add' -and $validateInContainer -match 'tests/run-tests\.ps1' -and $validateInContainer -match 'worktree remove' -and $validateInContainer -match 'FACTORY_CANDIDATE_SHA')
-Assert 'promotion validation is isolated from the Cezar server process and PID/network namespaces' ($validateInContainer -match 'podman run --rm --init' -and $validateInContainer -match '--volumes-from "\$CONTAINER"' -and $validateInContainer -match '--network "\$NETWORK"' -and $validateInContainer -match '\.NetworkSettings\.Networks' -and $validateInContainer -match '\[\[ "\$IMAGE" =~ \^\[0-9a-f\]\{64\}\$' -and $validateInContainer -notmatch 'podman exec' -and $validateInContainer -notmatch 'container:\$CONTAINER')
+Assert 'promotion validation mounts only Factory data and does not relabel Cezar volumes' ($validateInContainer -match 'podman run --rm --init' -and $validateInContainer -match '--security-opt label=disable' -and $validateInContainer -match '\$PROJECTS_VOLUME:/projects' -and $validateInContainer -match '\$PROJECT_SOURCE:\$ROOT' -and $validateInContainer -match '\$GIT_META_VOLUME:\$ROOT/\.git' -and $validateInContainer -match '--network "\$NETWORK"' -and $validateInContainer -match '\.NetworkSettings\.Networks' -and $validateInContainer -notmatch '--volumes-from "\$CONTAINER"|podman exec|container:\$CONTAINER')
 Assert 'runtime restarts wait for an idle Cezar, defer with exit 25, and cannot starve' ($cezarDeploy -match 'wait_for_idle' -and $cezarDeploy -match 'exit 25' -and $cezarDeploy -match 'MAX_DEFER' -and $autodeploy -match 'runtime_rc.*25|== 25')
 $activationSource = Get-Content -Raw (Join-Path $factory 'scripts/release/factory_activation.py')
 Assert 'activation retries reads while a restarting Cezar becomes ready instead of failing at a fixed timeout' ($activationSource -match 'ready_seconds' -and $activationSource -match '_transient')

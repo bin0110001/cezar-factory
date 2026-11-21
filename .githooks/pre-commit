@@ -16,6 +16,7 @@ if ! command -v yamllint >/dev/null 2>&1; then
   exit 1
 fi
 
-# Static checks only: the full suite runs on the Linux host (docs/local-validation.md, ship-loop -Action Validate).
+# Fast local checks; the full suite runs on the Linux host (docs/local-validation.md, ship-loop -Action Validate).
 pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly
+bash tests/test-validate-in-container.sh
 yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies templates
