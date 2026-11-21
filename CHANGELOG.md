@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- GitHub workflow projection (#767, parent #761): a versioned typed-signal and label/status projection layer (`scripts/workflow-projection-lib.ps1`, `policies/workflow-projection.json`, `schemas/workflow-projection.schema.json`, `docs/workflow-projection.md`) with idempotent publish, Factory-authored-event loop guard, no-replay baseline watermark, bidirectional drift detection, queued/UNKNOWN handling for API outage, restricted writes and webhook loss, migration receipts for the existing `factory:*` labels, and approval that only real GitHub review state can satisfy (never a label or OCR clean review).
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.

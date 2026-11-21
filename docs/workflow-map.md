@@ -141,3 +141,7 @@ When this guide is updated, check the sources below rather than inferring behavi
 ## Keeping this guide current
 
 Use the `factory-update-workflow-guide` skill whenever a change alters issue routing, workflow ownership, job/step responsibilities, PR creation or merge, validation evidence, or release/promotion behavior. The skill reconciles this guide against the sources of truth above and records a known gap when those sources disagree; it does not silently resolve policy or change workflow behavior. Planning and implementation guidance route process changes through this documentation check.
+
+## GitHub workflow projection
+
+Factory run state is authoritative for workflow state and labels are projected from it; GitHub PR review, merge and protection state is authoritative for approval and is never inferred from a label or OCR clean review. See [workflow-projection.md](workflow-projection.md). Gap: the projection library is not yet wired into the reconciler's GitHub writes.

@@ -67,7 +67,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/workflow-projection-lib.ps1', 'policies/workflow-projection.json', 'schemas/workflow-projection.schema.json', 'docs/workflow-projection.md', 'tests/workflow-projection.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -2328,6 +2328,11 @@ Write-Host '== adaptive repair end-to-end fixtures =='
 $adaptiveRepairOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'adaptive-repair-e2e.ps1') 2>&1 | Out-String
 Write-Host $adaptiveRepairOutput
 Assert 'adaptive repair reuses one session, stops deterministically, recovers from injected failures and leaks no secrets' ($LASTEXITCODE -eq 0)
+
+Write-Host '== GitHub workflow projection =='
+$projectionOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'workflow-projection.ps1') 2>&1 | Out-String
+Write-Host $projectionOutput
+Assert 'workflow projection converges on duplicate/reordered events, survives API outage and never treats labels or OCR as approval' ($LASTEXITCODE -eq 0)
 
 Write-Host '== failure audit publication =='
 $publisherOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-publisher.ps1') 2>&1 | Out-String
