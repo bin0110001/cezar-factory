@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Deterministic static workflow graph and policy validator (#764): `scripts/release/workflow_graph_validator.py` builds a graph from resolved workflow definitions (child outcomes, effective guards) and diagnoses unreachable nodes/terminals, missing outcomes, unsafe implicit success, unbounded cycles and self loops (bounded review/repair loops pass), traps, unsatisfiable branches, UNKNOWN (never proven) guards, fork/join deadlocks, event consumers, human gates, privilege escalation/gate bypass and budget inheritance, with byte-identical machine diagnostics (`schemas/workflow-diagnostics.schema.json`) and a dry-run text report. Native `*.workflow.json` definitions block candidate activation; legacy `workflows/*.yaml` are validated report-only (`docs/workflow-graph-validator.md`).
+
 - GitHub workflow projection (#767, parent #761): a versioned typed-signal and label/status projection layer (`scripts/workflow-projection-lib.ps1`, `policies/workflow-projection.json`, `schemas/workflow-projection.schema.json`, `docs/workflow-projection.md`) with idempotent publish, Factory-authored-event loop guard, no-replay baseline watermark, bidirectional drift detection, queued/UNKNOWN handling for API outage, restricted writes and webhook loss, migration receipts for the existing `factory:*` labels, and approval that only real GitHub review state can satisfy (never a label or OCR clean review).
 - Fix promotion activation failure (#779): `factory-investigate` no longer uses a forward `onFail.retry` on its agent step, which the deployed Cezar loader rejects; the local suite now rejects forward retry targets for every workflow step.
 
