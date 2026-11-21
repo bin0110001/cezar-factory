@@ -1,0 +1,37 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "a",
+      "outcome": "failure",
+      "to": "a"
+    },
+    {
+      "from": "a",
+      "outcome": "success",
+      "to": "done"
+    }
+  ],
+  "entry": "a",
+  "name": "invalid-self-loop",
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    },
+    {
+      "id": "failed",
+      "kind": "terminal",
+      "result": "failure"
+    }
+  ],
+  "schemaVersion": 1
+}

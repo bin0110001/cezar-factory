@@ -1,0 +1,83 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "implement",
+      "outcome": "success",
+      "to": "review"
+    },
+    {
+      "from": "implement",
+      "outcome": "failure",
+      "to": "failed"
+    },
+    {
+      "from": "review",
+      "outcome": "approved",
+      "to": "done"
+    },
+    {
+      "from": "review",
+      "outcome": "changes",
+      "to": "repair"
+    },
+    {
+      "from": "review",
+      "outcome": "failure",
+      "to": "failed"
+    },
+    {
+      "bound": {
+        "max": 2
+      },
+      "from": "repair",
+      "outcome": "success",
+      "to": "review"
+    },
+    {
+      "from": "repair",
+      "outcome": "failure",
+      "to": "escalate"
+    }
+  ],
+  "entry": "implement",
+  "name": "valid-bounded-loop",
+  "nodes": [
+    {
+      "id": "implement",
+      "kind": "task"
+    },
+    {
+      "id": "review",
+      "kind": "task",
+      "outcomes": [
+        "approved",
+        "changes",
+        "failure"
+      ]
+    },
+    {
+      "id": "repair",
+      "kind": "task"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    },
+    {
+      "id": "failed",
+      "kind": "terminal",
+      "result": "failure"
+    },
+    {
+      "id": "escalate",
+      "kind": "terminal",
+      "result": "needs-human-input"
+    }
+  ],
+  "schemaVersion": 1
+}

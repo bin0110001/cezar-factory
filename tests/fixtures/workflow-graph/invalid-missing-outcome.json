@@ -1,0 +1,27 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "a",
+      "outcome": "success",
+      "to": "done"
+    }
+  ],
+  "entry": "a",
+  "name": "invalid-missing-outcome",
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    }
+  ],
+  "schemaVersion": 1
+}

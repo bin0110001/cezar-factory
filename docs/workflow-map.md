@@ -142,3 +142,7 @@ When this guide is updated, check the sources below rather than inferring behavi
 ## Keeping this guide current
 
 Use the `factory-update-workflow-guide` skill whenever a change alters issue routing, workflow ownership, job/step responsibilities, PR creation or merge, validation evidence, or release/promotion behavior. The skill reconciles this guide against the sources of truth above and records a known gap when those sources disagree; it does not silently resolve policy or change workflow behavior. Planning and implementation guidance route process changes through this documentation check.
+
+## Workflow graph validation (#764)
+
+Before a candidate release is activated, `factory_activation.py` runs the static workflow graph validator (`docs/workflow-graph-validator.md`). Native `workflows/*.workflow.json` definitions with error diagnostics block activation; legacy `workflows/*.yaml` are validated report-only and never block. Known gap: the #763 schema is not final, so the validator consumes a v1 draft through one adapter, and create/edit enforcement beyond activation arrives with the hierarchical runtime (#765).
