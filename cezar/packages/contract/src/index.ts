@@ -11,6 +11,7 @@ export * from './github.ts';
 export * from './projects.ts';
 export * from './workspace.ts';
 export * from './workflows.ts';
+export * from './versioned-workflows.ts';
 export * from './releases.ts';
 export * from './factory-control-center.ts';
 export * from './release-candidates.ts';

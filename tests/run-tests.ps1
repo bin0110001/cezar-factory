@@ -67,7 +67,7 @@ function Copy-Factory([string]$From, [string]$To) {
 # ---- Static checks -------------------------------------------------------
 Write-Host '== static =='
 $curVer = Get-FactoryVersion $factory
-$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
+$required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml', '.githooks/pre-commit', 'docs/local-validation.md', 'scripts/deploy/install-boot-order.sh', 'tests/test-install-boot-order.sh', 'policies/labels.yaml', 'policies/lifecycle.json', 'scripts/lifecycle-lib.ps1', 'scripts/workflow-projection-lib.ps1', 'policies/workflow-projection.json', 'schemas/workflow-projection.schema.json', 'docs/workflow-projection.md', 'tests/workflow-projection.ps1', 'policies/change-contract.json', 'scripts/change-contract-lib.ps1', 'scripts/sweep-lifecycle.ps1', 'scripts/assert-no-run-commits.ps1', 'policies/retry.yaml', 'policies/risk.yaml',
 'policies/retention.yaml', 'scripts/prune-events.ps1', 'policies/definition-of-ready.md', 'policies/definition-of-done.md', 'policies/escalation.md',
 'policies/performance.yaml', 'schemas/performance-policy.schema.json', 'docs/performance-regression.md',
 'templates/factory.config.yaml', 'templates/gitignore.fragment', 'docs/lifecycle.md', 'docs/synchronization.md', 'docs/project-integration.md',
@@ -231,6 +231,7 @@ Assert 'Factory validation captures bounded command output on timeout' ($validat
 Assert 'project verification allows the current version under an Unreleased heading while release validation stays strict by default' ((Get-Content -Raw (Join-Path $factory '.ai/factory/factory.config.yaml')) -match 'verify:.*validate-release\.ps1 -SkipTests -AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match 'AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match '\$AllowUnreleasedVersion -and \$changelog -match')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
+Assert 'investigation evidence scope is bounded and the validated fallback needs no forward agent onFail' ($investigateWorkflow -match 'no more\s+than two earlier attempts' -and $investigateWorkflow -match 'at most three relevant small artifacts, 100 lines each' -and $investigateWorkflow -match '(?s)id: investigate.*?id: validate' -and $investigateSkill.Contains('After this bounded pass, stop'))
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
@@ -617,7 +618,7 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'automations') -Filter *.json) 
         Assert "automation $($f.Name) never replays history on creation if it starts or fixes work" (($d.task.workflow -notin 'factory-implement', 'factory-fix-review') -or $initialSync -ne 'eligible')
     }
 }
-# Workflows must satisfy Cezar's schema: unique ids, agent XOR check steps, onFail.retry -> earlier step.
+# Workflows must satisfy Cezar's schema: unique ids, agent XOR check steps, check retries -> earlier step, agent recovery -> existing step.
 foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     $ids = @(); $cur = $null; $steps = @()
     foreach ($l in Get-Content $f.FullName) {
@@ -632,8 +633,13 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     Assert "workflow $($f.Name) steps agent XOR check" (-not ($steps | Where-Object { $_.agent -eq $_.check }))
     Assert "workflow $($f.Name) unique ids" (@($steps.id | Sort-Object -Unique).Count -eq $steps.Count)
     $okRetry = $true
-    for ($i = 0; $i -lt $steps.Count; $i++) { if ($steps[$i].retry) { $earlier = @(); if ($i -gt 0) { $earlier = @($steps[0..($i - 1)] | ForEach-Object { $_.id }) }; if ($earlier -notcontains $steps[$i].retry) { $okRetry = $false } } }
-    Assert "workflow $($f.Name) retry targets earlier step" $okRetry
+    for ($i = 0; $i -lt $steps.Count; $i++) {
+        if (-not $steps[$i].retry) { continue }
+        $targetIndex = [array]::IndexOf([string[]]$steps.id, [string]$steps[$i].retry)
+        $earlier = @(); if ($i -gt 0) { $earlier = @($steps[0..($i - 1)] | ForEach-Object { $_.id }) }
+        if ($targetIndex -lt 0 -or $earlier -notcontains $steps[$i].retry) { $okRetry = $false }
+    }
+    Assert "workflow $($f.Name) retry targets an earlier step (the deployed Cezar loader rejects forward agent onFail; see #779)" $okRetry
 }
 
 # No script may define a function named like the external command it shells out to (`gh`): PowerShell
@@ -1089,11 +1095,13 @@ try {
             '10' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); title = 'healthy'; updatedAt = $fresh }
             '11' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:large'); comments = @(); title = 'never consumed'; updatedAt = $longAgo }
             '12' = @{ state = 'OPEN'; labels = @('factory:blocked', 'factory:interactive'); comments = @(); title = 'a person owns it'; body = 'Blocked by #90'; updatedAt = $fresh }
+            '13' = @{ state = 'OPEN'; labels = @('factory:investigate'); comments = @(); title = 'investigation has an open conflicting PR'; updatedAt = $fresh }
         }
         openPrs = @(
             @{ number = 50; title = 'Fix'; body = 'Closes #8'; url = 'https://example/pull/50'; isDraft = $false; mergeable = 'CONFLICTING' },
             @{ number = 51; title = 'Draft work'; body = 'Closes #10'; url = 'https://example/pull/51'; isDraft = $true; mergeable = 'MERGEABLE' },
-            @{ number = 52; title = 'No issue named'; body = 'tidy up'; url = 'https://example/pull/52'; isDraft = $false; mergeable = 'MERGEABLE' }
+            @{ number = 52; title = 'No issue named'; body = 'tidy up'; url = 'https://example/pull/52'; isDraft = $false; mergeable = 'MERGEABLE' },
+            @{ number = 53; title = 'Existing implementation'; body = 'Closes #13'; url = 'https://example/pull/53'; isDraft = $false; mergeable = 'CONFLICTING' }
         ) } | ConvertTo-Json -Depth 8 | Set-Content $closeState
     $sweepOut = Join-Path $tmp 'lifecycle-sweep.json'
     $sweepRun = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut }
@@ -1107,6 +1115,7 @@ try {
     Assert 'lifecycle sweep unblocks an issue whose named blockers are all closed, with evidence, into a state it can stay in' ($repairKinds['3'] -eq 'unblocked>factory:needs-plan' -and $sweepState.issues['3'].labels -notcontains 'factory:blocked' -and @($sweepState.issues['3'].comments | Where-Object { $_ -match '#90, #91' }).Count -eq 1)
     Assert 'lifecycle sweep leaves an issue blocked while a named blocker is open' (-not $repairKinds.ContainsKey('4') -and -not $violationKinds.ContainsKey('4') -and $sweepState.issues['4'].labels -contains 'factory:blocked')
     Assert 'lifecycle sweep routes an issue in review whose pull request conflicts to the fix automation' ($repairKinds['8'] -eq 'pr-conflict>factory:changes-requested' -and $sweepState.issues['8'].labels -contains 'factory:changes-requested')
+    Assert 'baseline reproduces the open-PR dead end: an investigated issue is not returned to its PR owner when the PR conflicts' (-not $repairKinds.ContainsKey('13') -and $sweepState.issues['13'].labels -contains 'factory:investigate' -and @($sweepState.issues['13'].labels | Where-Object { $_ -eq 'factory:changes-requested' }).Count -eq 0 -and @($sweepState.openPrs | Where-Object { $_.number -eq 53 -and $_.mergeable -eq 'CONFLICTING' }).Count -eq 1)
     Assert 'lifecycle sweep reports what it must not guess: two states, no stated blocker, overdue human and automated work, draft and unlinked pull requests' ($violationKinds['6'] -eq 'multiple-states' -and $violationKinds['5'] -eq 'blocked-without-blocker' -and $violationKinds['7'] -eq 'overdue' -and $violationKinds['11'] -eq 'overdue' -and $violationKinds['51'] -eq 'draft-pr' -and $violationKinds['52'] -eq 'pr-without-issue')
     Assert 'lifecycle sweep reports, and does not change, an issue a person owns in a dev window' (-not $repairKinds.ContainsKey('12') -and $violationKinds['12'] -eq 'unblocked' -and $sweepState.issues['12'].labels -contains 'factory:blocked')
     Assert 'lifecycle sweep leaves healthy work and tracking epics alone' (-not $repairKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('9') -and $sweepState.issues['10'].labels.Count -eq 2)
@@ -1578,6 +1587,12 @@ try {
         $preserved = Get-Content -Raw '.factory/investigate-result.json' | ConvertFrom-Json
         Assert 'investigation handoff: repeated absence creates a valid conservative result' ($handoff.Code -eq 0 -and $preserved.issue -eq 7 -and $preserved.failureClassification -eq 'unknown' -and $preserved.confidence -eq 'low' -and -not $preserved.automaticRetryAppropriate)
         Assert 'investigation handoff: retry marker is removed after fallback creation' (-not (Test-Path '.factory/investigate-result.json.validation-attempt.json'))
+        Set-Content '.factory/investigate-result.json' '{"issue":"bad"}'
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        Assert 'investigation handoff: first invalid result requests the configured retry' ($handoff.Code -eq 1 -and (Test-Path '.factory/investigate-result.json.validation-attempt.json'))
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        $preserved = Get-Content -Raw '.factory/investigate-result.json' | ConvertFrom-Json
+        Assert 'investigation handoff: repeated invalid result becomes a valid conservative result' ($handoff.Code -eq 0 -and $preserved.issue -eq 7 -and $preserved.failureClassification -eq 'unknown' -and $preserved.evidence -match 'invalid')
     } finally { Pop-Location }
 
     Set-Gh @('factory:needs-plan', 'type:bug')
@@ -2328,6 +2343,11 @@ Write-Host '== adaptive repair end-to-end fixtures =='
 $adaptiveRepairOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'adaptive-repair-e2e.ps1') 2>&1 | Out-String
 Write-Host $adaptiveRepairOutput
 Assert 'adaptive repair reuses one session, stops deterministically, recovers from injected failures and leaks no secrets' ($LASTEXITCODE -eq 0)
+
+Write-Host '== GitHub workflow projection =='
+$projectionOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'workflow-projection.ps1') 2>&1 | Out-String
+Write-Host $projectionOutput
+Assert 'workflow projection converges on duplicate/reordered events, survives API outage and never treats labels or OCR as approval' ($LASTEXITCODE -eq 0)
 
 Write-Host '== failure audit publication =='
 $publisherOutput = & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'failure-audit-publisher.ps1') 2>&1 | Out-String

@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-Preserves a missing investigation handoff as a conservative, valid result after its retry.
+Preserves a missing or invalid investigation handoff as a conservative result after its retry.
 .DESCRIPTION
-The first missing result fails validation so the workflow can retry the investigator. If the
-artifact is still absent when validation runs again, this writes an explicit unknown/low-confidence
-result that routes the issue back to planning without inventing an investigation conclusion.
+The first missing or invalid result fails validation so the workflow can retry the investigator.
+If the result is still missing or invalid when validation runs again, this writes an explicit
+unknown/low-confidence result that routes the issue back to planning without inventing a conclusion.
 #>
 [CmdletBinding()]
 param(
@@ -22,52 +22,57 @@ if (Test-Path -LiteralPath '.factory/already-resolved.json' -PathType Leaf) {
 }
 
 $retryStatePath = "$Path.validation-attempt.json"
+
+function Read-MissingAttempts {
+    if (-not (Test-Path -LiteralPath $retryStatePath -PathType Leaf)) { return 0 }
+    try { return [int](Get-Content -Raw -LiteralPath $retryStatePath | ConvertFrom-Json).missingAttempts }
+    catch { return 0 }
+}
+
+function Write-ConservativeFallback([string]$Reason) {
+    $issueMatch = [regex]::Match($Task, '(?:GitHub\s+issue\s*#|/issues/|#)([1-9][0-9]*)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $issueMatch.Success) {
+        throw 'The investigation task does not contain a positive GitHub issue number; cannot preserve the handoff.'
+    }
+    $directory = Split-Path -Parent $Path
+    if ($directory) { New-Item -ItemType Directory -Force $directory | Out-Null }
+    $result = [ordered]@{
+        issue = [int]$issueMatch.Groups[1].Value
+        failureClassification = 'unknown'
+        evidence = "The investigation worker did not produce a valid structured result after its bounded retry: $Reason"
+        attemptsReviewed = 'The investigator was retried once after its result was missing or invalid; no validated investigation evidence was available.'
+        rootCauseHypothesis = 'Unknown: the investigation worker did not persist a valid result artifact.'
+        confidence = 'low'
+        recommendedAction = 'Return the issue to planning automatically. Inspect this run if a missing or invalid handoff recurs.'
+        automaticRetryAppropriate = $false
+    }
+    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8
+    Remove-Item -LiteralPath $retryStatePath -Force -ErrorAction SilentlyContinue
+    & "$PSScriptRoot/validate-result.ps1" -Kind investigation -Path $Path
+    exit $LASTEXITCODE
+}
+
 if (Test-Path -LiteralPath $Path -PathType Leaf) {
     & "$PSScriptRoot/validate-result.ps1" -Kind investigation -Path $Path
     $validationExit = $LASTEXITCODE
     if ($validationExit -eq 0) {
         Remove-Item -LiteralPath $retryStatePath -Force -ErrorAction SilentlyContinue
-    } elseif (-not (Test-Path -LiteralPath $retryStatePath -PathType Leaf)) {
+        exit 0
+    }
+    if ((Read-MissingAttempts) -lt 1) {
         @{ missingAttempts = 1 } | ConvertTo-Json -Compress | Set-Content -LiteralPath $retryStatePath -Encoding utf8
+        '{"status":"invalid","kind":"investigation","errors":["investigation result is invalid; retrying the investigator once"]}'
+        exit 1
     }
-    exit $validationExit
+    Write-ConservativeFallback 'the result artifact remained invalid after retry'
 }
 
-$missingAttempts = 0
-if (Test-Path -LiteralPath $retryStatePath -PathType Leaf) {
-    try {
-        $retryState = Get-Content -Raw -LiteralPath $retryStatePath | ConvertFrom-Json
-        $missingAttempts = [int]$retryState.missingAttempts
-    } catch {
-        $missingAttempts = 0
-    }
-}
-
-$directory = Split-Path -Parent $Path
-if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
-
-if ($missingAttempts -lt 1) {
+if ((Read-MissingAttempts) -lt 1) {
+    $directory = Split-Path -Parent $Path
+    if ($directory) { New-Item -ItemType Directory -Force $directory | Out-Null }
     @{ missingAttempts = 1 } | ConvertTo-Json -Compress | Set-Content -LiteralPath $retryStatePath -Encoding utf8
     '{"status":"invalid","kind":"investigation","errors":["investigation result file is missing; retrying the investigator once"]}'
     exit 1
 }
 
-$issueMatch = [regex]::Match($Task, '(?:GitHub\s+issue\s*#|/issues/|#)([1-9][0-9]*)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-if (-not $issueMatch.Success) {
-    throw 'The investigation task does not contain a positive GitHub issue number; cannot preserve the missing handoff.'
-}
-$issue = [int]$issueMatch.Groups[1].Value
-$result = [ordered]@{
-    issue = $issue
-    failureClassification = 'unknown'
-    evidence = 'The investigation step completed, but its required result artifact was still missing after the workflow retry.'
-    attemptsReviewed = 'The investigator was retried once after the missing artifact was detected; no structured investigation evidence was available to review.'
-    rootCauseHypothesis = 'Unknown: the investigation worker did not persist the required result artifact.'
-    confidence = 'low'
-    recommendedAction = 'Return the issue to planning automatically and require a validated handoff from the next worker. Inspect this run if the missing artifact recurs.'
-    automaticRetryAppropriate = $false
-}
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8
-Remove-Item -LiteralPath $retryStatePath -Force -ErrorAction SilentlyContinue
-& "$PSScriptRoot/validate-result.ps1" -Kind investigation -Path $Path
-exit $LASTEXITCODE
+Write-ConservativeFallback 'the result artifact was still missing after retry'

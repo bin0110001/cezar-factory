@@ -61,6 +61,28 @@ class Table(unittest.TestCase):
         self.assertEqual(r["bestObservation"], "o1")
         self.assertEqual(r["bestComparison"], "equal")
 
+    def test_best_score_tie_keeps_earliest_observation(self):
+        hist = [
+            ob(1, [f("a", "low"), f("b", "low", "ac2")]),
+            ob(2, [f("c", "medium", "ac3")]),
+            ob(3, [f("c", "medium", "ac3")]),
+        ]
+        r = self.cls(hist)
+        self.assertEqual(r["bestObservation"], "o1")
+        self.assertEqual(r["bestComparison"], "equal")
+
+    def test_duplicate_fingerprint_metadata_is_order_independent_and_conservative(self):
+        duplicate_rows = [f("shared", "high", "ac1", "c1"), f("shared", "high", "ac2", "c2")]
+        history = [ob(1, duplicate_rows), ob(2, []), ob(3, [f("replacement", "high", "ac2", "c2")])]
+        reversed_history = copy.deepcopy(history)
+        for observation in reversed_history:
+            observation["findings"].reverse()
+
+        result = self.cls(history)
+        self.assertEqual(result, self.cls(reversed_history))
+        self.assertEqual(result["classification"], "regression")
+        self.assertIn("acceptance_criterion_regressed", result["reasonCodes"])
+
     def test_worse_than_best_reported(self):
         r = self.cls([ob(1, [f("a", "low")]), ob(2, [f("a"), f("b", crit="ac2")]), ob(3, [f("z", crit="ac9")])])
         self.assertEqual(r["bestComparison"], "worse")

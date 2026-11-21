@@ -136,6 +136,7 @@ When this guide is updated, check the sources below rather than inferring behavi
 | Validation and merge receipts | [local-validation.md](local-validation.md), [validation-receipts.md](validation-receipts.md), `scripts/factory/test-changed.ps1`, `scripts/verify-merge-eligibility.ps1`, `scripts/route-state.ps1` |
 | Release and promotion | `config/promotion-policy.json`, [promotion-pipeline.md](promotion-pipeline.md), [factory-release-controller.md](factory-release-controller.md), `skills/factory-finish-release/SKILL.md` |
 | Verification-only job | `workflows/verify.yaml`, [verification-workflow.md](verification-workflow.md) |
+| Source-grounded path, execution-store, and baseline-gap inventory | [workflow-inventory.md](workflow-inventory.md), Cezar's `packages/cezar/src/automations/`, `packages/cezar/src/workflows/`, and `packages/cezar/src/runs/` |
 | Workflow-guide upkeep | `skills/factory-update-workflow-guide/SKILL.md`, `skills/factory-plan/SKILL.md`, `skills/factory-implement/SKILL.md` |
 
 ## Keeping this guide current
