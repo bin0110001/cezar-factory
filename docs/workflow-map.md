@@ -136,7 +136,7 @@ When this guide is updated, check the sources below rather than inferring behavi
 | Validation and merge receipts | [local-validation.md](local-validation.md), [validation-receipts.md](validation-receipts.md), `scripts/factory/test-changed.ps1`, `scripts/verify-merge-eligibility.ps1`, `scripts/route-state.ps1` |
 | Release and promotion | `config/promotion-policy.json`, [promotion-pipeline.md](promotion-pipeline.md), [factory-release-controller.md](factory-release-controller.md), `skills/factory-finish-release/SKILL.md` |
 | Verification-only job | `workflows/verify.yaml`, [verification-workflow.md](verification-workflow.md) |
-| Source-grounded path, execution-store, and baseline-gap inventory | [workflow-inventory.md](workflow-inventory.md), Cezar's `packages/cezar/src/automations/`, `packages/cezar/src/workflows/`, and `packages/cezar/src/runs/` |
+| Source-grounded path, execution-store, and baseline-gap inventory | [workflow-inventory.md](workflow-inventory.md), Cezar's `packages/cezar/src/automations/`, `packages/cezar/src/workflows/`, `packages/cezar/src/runs/`, and `packages/contract/src/versioned-workflows.ts` |
 | Workflow-guide upkeep | `skills/factory-update-workflow-guide/SKILL.md`, `skills/factory-plan/SKILL.md`, `skills/factory-implement/SKILL.md` |
 
 ## Keeping this guide current
@@ -149,7 +149,7 @@ Workflow definition create/edit changes run the static graph validator through `
 
 ## Versioned lifecycle child workflows (#773)
 
-The shared `workflows/lifecycle-*.workflow.json` catalog defines exact `id@1.0.0` child contracts for intake, investigation, planning, implementation, verification, repair, review, and escalation. These definitions use the Cezar versioned workflow schema and load beside the legacy YAML catalog. Existing `workflows/*.yaml` remain unchanged and keep owning current routing until a caller is migrated.
+The shared `workflows/lifecycle-*.workflow.json` catalog defines exact `id@1.0.0` child contracts for intake, investigation, planning, implementation, verification, repair, review, and escalation. These definitions use the Cezar versioned workflow schema and load beside the legacy YAML catalog. Existing `workflows/*.yaml` remain unchanged and continue to own the current default routing; the native versioned graph path is opt-in.
 
 Each child returns a declared typed outcome. The child does not choose a lifecycle label: `policies/lifecycle.json` remains the sole routing authority. Its `workflowOutcomeMappings` translates each existing result event/outcome into exactly one typed result, then that profile's existing exits choose the next state.
 
@@ -170,5 +170,9 @@ Each child returns a declared typed outcome. The child does not choose a lifecyc
 | `investigate-result` | `escalate` | `needs_input` |
 
 `interrupted`, `exhausted`, and `unknown` are explicit outcomes on each applicable child contract. A known typed terminal result is preserved through a nested return; `unknown`, `blocked`, `interrupted`, and `exhausted` still leave the Cezar execution failed and cannot become a passing result. Review uses a distinct read-only session; repair and implementation use the continuing session.
+
+The versioned intake, review, and repair graphs route only an `unknown` stage result into `factory.investigation@1.0.0`. They pass the original task plus available issue and evidence references, and the runtime supplies the trusted caller identity from the parent graph. Every declared investigation outcome returns through a terminal typed `return` node, preserving its result and evidence references on the parent. Ordinary stage outcomes also pass through typed return nodes, so adding the uncertainty branch does not lose the original outcome or result object. The return node is defined by `cezar/packages/contract/src/versioned-workflows.ts` and executed by `cezar/packages/cezar/src/workflows/run.ts`.
+
+This child-workflow integration is available to callers using the native versioned graph runtime. It does not activate or rewrite the legacy YAML automations; those remain the current default until a separately owned rollout changes their callers.
 
 The versioned verification definition names the validator adapter contract but is not activated by the legacy workflow. Deployments must register that adapter before starting it; missing adapters continue to fail closed. The static graph validator adapts versioned definitions through one seam and enforces their declared outcomes, reachability, and bounded retries. Current workflow activation remains opt-in.

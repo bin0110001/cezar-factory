@@ -1769,7 +1769,7 @@ export class RunManager {
     const tokenBudgetError = this.versionedTokenBudgetError(runId);
     if (tokenBudgetError) return this.failVersionedRun(runId, tokenBudgetError);
     const nodeId = execution.ready[0] ?? [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
-      && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && ['action', 'agent', 'child_workflow', 'fork'].includes(candidate.kind)))?.node;
+      && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && ['action', 'agent', 'child_workflow', 'fork', 'return'].includes(candidate.kind)))?.node;
     if (!nodeId) {
       const activeFork = [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
         && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && candidate.kind === 'fork'));
@@ -1777,6 +1777,10 @@ export class RunManager {
       return this.failVersionedRun(runId, 'versioned workflow has no ready node or persisted wait');
     }
     const node = execution.workflow.nodes.find((candidate) => candidate.id === nodeId);
+    if (node?.kind === 'return') {
+      this.finishVersionedReturn(runId, nodeId);
+      return;
+    }
     if (node?.kind === 'action') {
       const claimedAction = beginWorkflowNode(execution, nodeId);
       if (claimedAction.error || !claimedAction.transitionId) return this.failVersionedRun(runId, claimedAction.error ?? `action node "${nodeId}" could not start`);
@@ -1977,6 +1981,10 @@ export class RunManager {
         const matches = Object.values(execution.outputs).filter((outputs) => Object.hasOwn(outputs, port.name)).map((outputs) => outputs[port.name]);
         if (matches.length === 1) values[port.name] = matches[0];
         else if (matches.length > 1) return this.failVersionedRun(runId, `child workflow input "${port.name}" has ambiguous parent outputs`);
+        else if (childWorkflow.id === 'factory.investigation' && port.name === 'caller') {
+          const caller = ({ 'factory.intake': 'intake', 'factory.review': 'review', 'factory.repair': 'repair' } as const)[execution.workflow.id as 'factory.intake' | 'factory.review' | 'factory.repair'];
+          if (caller) values[port.name] = caller;
+        }
       }
       const rootRunId = parent.dispatch?.rootRunId ?? parent.id;
       const child = this.startVersionedRun(childWorkflow, { task: parent.task, runner: parent.runner, model: parent.model, agentProfile: parent.agentProfile, autonomous: true }, values, {
@@ -2065,6 +2073,36 @@ export class RunManager {
       attempts: current.attempts.map((candidate) => candidate.transitionId === transitionId ? { ...candidate, childRunId } : candidate),
     };
     this.store.updateRun(runId, { workflowExecution });
+  }
+
+  /** Complete a terminal return node using a previously completed node's typed result. */
+  private finishVersionedReturn(runId: string, nodeId: string): void {
+    const execution = this.store.getRun(runId)?.workflowExecution;
+    const node = execution?.workflow.nodes.find((candidate) => candidate.id === nodeId);
+    if (!execution || !node || node.kind !== 'return') return;
+    const outcome = execution.outcomes[node.source];
+    if (!outcome || !node.outcomes.includes(outcome)) {
+      return this.failVersionedRun(runId, `return node "${nodeId}" has no declared outcome from source "${node.source}"`);
+    }
+    const sourceOutputs = execution.outputs[node.source] ?? {};
+    const outputs = Object.fromEntries(node.outputs
+      .filter((port) => sourceOutputs[port.name] !== undefined)
+      .map((port) => [port.name, sourceOutputs[port.name]]));
+    const claimed = beginWorkflowNode(execution, nodeId);
+    if (claimed.error || !claimed.transitionId) return this.failVersionedRun(runId, claimed.error ?? `return node "${nodeId}" could not start`);
+    const completed = completeWorkflowNode(claimed.execution, nodeId, outcome, outputs, claimed.transitionId);
+    if (completed.error) return this.failVersionedRun(runId, completed.error);
+    this.store.updateRun(runId, {
+      workflowExecution: completed.execution,
+      status: completed.execution.status === 'done' ? 'done' : completed.execution.status === 'failed' ? 'failed' : 'running',
+      ...(['done', 'failed'].includes(completed.execution.status) ? { finishedAt: new Date().toISOString() } : {}),
+    });
+    this.store.appendEvent(runId, { type: 'lifecycle', message: `return node "${nodeId}" preserved ${outcome} from "${node.source}"` });
+    if (['done', 'failed'].includes(completed.execution.status)) {
+      this.clearVersionedBudget(runId);
+      this.reportSettledChildToParent(runId);
+    } else if (completed.execution.status === 'waiting') this.armVersionedWait(runId);
+    else this.driveVersionedWorkflow(runId);
   }
 
   private advanceVersionedFork(runId: string, joinId: string, joinOutcome: 'passed' | 'failed'): void {

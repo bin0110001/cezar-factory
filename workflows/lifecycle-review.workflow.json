@@ -5,15 +5,15 @@
   "version": "1.0.0",
   "description": "Reusable typed lifecycle stage: factory.review.",
   "entry": "stage",
-  "terminals": [
-    "stage"
-  ],
+  "terminals": ["return-stage", "return-investigation"],
   "inputs": [
     {
       "type": "string",
       "required": true,
       "name": "task"
-    }
+    },
+    { "type": "number", "name": "issue" },
+    { "type": "array", "name": "evidenceRefs" }
   ],
   "nodes": [
     {
@@ -30,10 +30,48 @@
       ],
       "prompt": "Review the supplied implementation in a distinct read-only session. Return one declared typed outcome: passed, changes_required, needs_input, unknown, interrupted, or exhausted. Do not modify files, set lifecycle labels, or invoke Factory scripts.",
       "skill": "factory-review",
-      "dispatchKind": "review"
+      "dispatchKind": "review",
+      "outputs": [{ "name": "result", "type": "object" }]
+    },
+    {
+      "id": "investigate",
+      "kind": "child_workflow",
+      "workflow": "factory.investigation",
+      "version": "1.0.0",
+      "outcomes": ["ready", "needs_input", "split", "not_reproducible", "needs_research", "unknown", "interrupted", "exhausted"],
+      "outputs": [{ "name": "result", "type": "object" }, { "name": "evidenceRefs", "type": "array" }]
+    },
+    {
+      "id": "return-stage",
+      "kind": "return",
+      "source": "stage",
+      "outcomes": ["passed", "changes_required", "needs_input", "interrupted", "exhausted"],
+      "outputs": [{ "name": "result", "type": "object" }]
+    },
+    {
+      "id": "return-investigation",
+      "kind": "return",
+      "source": "investigate",
+      "outcomes": ["ready", "needs_input", "split", "not_reproducible", "needs_research", "unknown", "interrupted", "exhausted"],
+      "outputs": [{ "name": "result", "type": "object" }, { "name": "evidenceRefs", "type": "array" }]
     }
   ],
-  "transitions": [],
+  "transitions": [
+    { "from": "stage", "outcome": "passed", "to": "return-stage", "order": 0 },
+    { "from": "stage", "outcome": "changes_required", "to": "return-stage", "order": 1 },
+    { "from": "stage", "outcome": "needs_input", "to": "return-stage", "order": 2 },
+    { "from": "stage", "outcome": "unknown", "to": "investigate", "order": 3 },
+    { "from": "stage", "outcome": "interrupted", "to": "return-stage", "order": 4 },
+    { "from": "stage", "outcome": "exhausted", "to": "return-stage", "order": 5 },
+    { "from": "investigate", "outcome": "ready", "to": "return-investigation", "order": 0 },
+    { "from": "investigate", "outcome": "needs_input", "to": "return-investigation", "order": 1 },
+    { "from": "investigate", "outcome": "split", "to": "return-investigation", "order": 2 },
+    { "from": "investigate", "outcome": "not_reproducible", "to": "return-investigation", "order": 3 },
+    { "from": "investigate", "outcome": "needs_research", "to": "return-investigation", "order": 4 },
+    { "from": "investigate", "outcome": "unknown", "to": "return-investigation", "order": 5 },
+    { "from": "investigate", "outcome": "interrupted", "to": "return-investigation", "order": 6 },
+    { "from": "investigate", "outcome": "exhausted", "to": "return-investigation", "order": 7 }
+  ],
   "budget": {
     "maxAttempts": 2
   },

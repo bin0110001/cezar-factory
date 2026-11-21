@@ -3,9 +3,21 @@
   "title": "InvestigationResult",
   "type": "object",
   "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
     "issue": {
       "type": "integer",
       "minimum": 1
+    },
+    "caller": {
+      "type": "string",
+      "enum": ["intake", "review", "repair"]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["ready", "needs_input", "split", "not_reproducible", "needs_research", "unknown", "interrupted", "exhausted"]
     },
     "failureClassification": {
       "type": "string"
@@ -32,6 +44,20 @@
       "type": "array",
       "description": "Optional structured decision requests (schemas/decision.schema.json). Provide them whenever the result asks the user to decide something; keep unresolvedQuestions as the readable summary.",
       "items": { "type": "object" }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "description": "Stable references to the bounded evidence used for this investigation; do not copy log contents or secrets here.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["issue", "run", "attempt", "artifact", "commit", "pull_request"] },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": ["kind", "ref"],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

@@ -108,6 +108,12 @@ Produce an investigation result conforming to `investigation-result.schema.json`
 
 Select one documented classification and confidence value. Set
 `automaticRetryAppropriate` from the evidence, not from this example.
+When investigation is invoked by intake, review, or repair, also include
+`schemaVersion: 1`, the matching `caller`, and the declared typed `outcome`.
+Link bounded source material with `evidenceRefs` (`kind` and stable `ref`, plus
+an optional SHA-256 `digest` for content-addressed artifacts). Keep the readable
+`evidence` summary concise; never copy log contents, credentials, or secrets into
+the references.
 
 ## Already-resolved issues
 

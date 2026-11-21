@@ -50,6 +50,9 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
     if (node.waitFor !== 'time' && node.resumeAt) ctx.addIssue({ code: 'custom', path: ['resumeAt'], message: 'resumeAt is only valid for time waits' });
   }),
   nodeBase.extend({ kind: z.literal('child_workflow'), workflow: z.string().min(1), version: z.string().regex(/^\d+\.\d+\.\d+$/), outcomes: z.array(workflowOutcomeSchema).min(1) }),
+  // Return a typed outcome (and selected outputs) from an earlier node without dispatching work.
+  // This lets a caller branch through nested workflows and still preserve ordinary outcomes.
+  nodeBase.extend({ kind: z.literal('return'), source: z.string().min(1), outcomes: z.array(workflowOutcomeSchema).min(1) }),
   nodeBase.extend({ kind: z.literal('fork'), children: z.array(z.string().min(1)).min(1).max(32), join: z.discriminatedUnion('mode', [z.object({ mode: z.literal('all'), cancel: z.literal('on_terminal').default('on_terminal') }).strict(), z.object({ mode: z.literal('any'), cancel: z.literal('on_terminal').default('on_terminal') }).strict(), z.object({ mode: z.literal('quorum'), count: z.number().int().positive(), cancel: z.literal('on_terminal').default('on_terminal') }).strict()]), outcomes: z.array(workflowOutcomeSchema).min(1) }),
   nodeBase.extend({ kind: z.literal('join'), fork: z.string().min(1), outcomes: z.array(workflowOutcomeSchema).min(1) }),
 ]);
@@ -82,6 +85,18 @@ export const versionedWorkflowSchema = z.object({
     if (node.kind === 'agent' && node.dispatchKind === 'review' && node.session !== 'new') ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'session'], message: 'review nodes require a distinct new session' });
     if (node.retry && !node.outcomes.includes('exhausted')) ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'outcomes'], message: 'retryable nodes must declare an exhausted outcome' });
     if (node.kind === 'join' && !workflow.nodes.some((candidate) => candidate.kind === 'fork' && candidate.id === node.fork)) ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'fork'], message: 'join must reference a fork node' });
+    if (node.kind === 'return') {
+      if (!terminalSet.has(node.id)) ctx.addIssue({ code: 'custom', path: ['nodes', node.id], message: 'return nodes must be terminal' });
+      const source = nodeById.get(node.source);
+      if (!source || node.source === node.id) ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'source'], message: 'return source must reference a different node in the workflow' });
+      else {
+        for (const outcome of node.outcomes) if (!source.outcomes.includes(outcome)) ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'outcomes'], message: `return outcome "${outcome}" is not declared by source "${node.source}"` });
+        for (const output of node.outputs) {
+          const sourceOutput = source.outputs.find((candidate) => candidate.name === output.name);
+          if (!sourceOutput || sourceOutput.type !== output.type) ctx.addIssue({ code: 'custom', path: ['nodes', node.id, 'outputs'], message: `return output "${output.name}" must match a source output of the same type` });
+        }
+      }
+    }
   }
   for (const [i, transition] of workflow.transitions.entries()) {
     if (!known.has(transition.from) || !known.has(transition.to)) ctx.addIssue({ code: 'custom', path: ['transitions', i], message: 'transition references unknown node' });

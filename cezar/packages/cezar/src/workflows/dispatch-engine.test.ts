@@ -450,7 +450,8 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
         transitions: [],
       });
       const root = manager.startVersionedRun(workflow, { task: 'cancel the graph' }, {});
-      await waitFor(root.id, () => childrenOf(root.id).length === 2);
+      await waitFor(root.id, (record) => childrenOf(root.id).length === 2 || record?.status === 'failed');
+      expect(store.getRun(root.id), JSON.stringify(store.readEvents(root.id))).not.toMatchObject({ status: 'failed' });
       started.push(...childrenOf(root.id).map((child) => child.id));
       expect(manager.cancel(root.id)).toBe(true);
       await waitFor(root.id, (record) => record?.status === 'cancelled');
@@ -517,6 +518,75 @@ describe('the dispatch engine (spec 2026-09-10-dispatch)', () => {
       expect(store.getRun(nested.id)?.workflowExecution?.status).toBe('done');
       expect(store.getRun(nested.id)?.dispatch?.report).toMatchObject({ status: 'done', outcome: 'ready' });
       expect(store.getRun(root.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { 'call-leaf': 'ready' } });
+    }, 60_000);
+
+    it('calls investigation only on review uncertainty and returns its typed result and evidence', async () => {
+      const workflowDir = join(repoRoot, '.ai/cezar/workflows');
+      mkdirSync(workflowDir, { recursive: true });
+      writeFileSync(join(workflowDir, 'factory-investigation.workflow.json'), JSON.stringify({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'factory.investigation', version: '1.0.0',
+        entry: 'investigate', terminals: ['investigate'],
+        inputs: [
+          { type: 'string', required: true, name: 'task' },
+          { type: 'string', required: true, name: 'caller' },
+          { type: 'number', name: 'issue' },
+          { type: 'array', name: 'evidenceRefs' },
+        ],
+        nodes: [{ id: 'investigate', kind: 'agent', session: 'continue', prompt: 'mock:pause mock:done inspect {{input.caller}} {{input.issue}} {{input.evidenceRefs}}', outcomes: ['ready', 'needs_input'] }],
+        transitions: [], budget: {}, policyRefs: [], capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+      }));
+      const workflow = versionedWorkflowSchema.parse({
+        contract: 'cezar.workflow', schemaVersion: 1, id: 'factory.review', version: '1.0.0',
+        entry: 'stage', terminals: ['return-stage', 'return-investigation'],
+        inputs: [{ type: 'string', required: true, name: 'task' }, { type: 'number', name: 'issue' }, { type: 'array', name: 'evidenceRefs' }],
+        nodes: [
+          { id: 'stage', kind: 'agent', session: 'new', dispatchKind: 'review', prompt: 'mock:pause mock:done review', outcomes: ['passed', 'unknown'] },
+          { id: 'investigate', kind: 'child_workflow', workflow: 'factory.investigation', version: '1.0.0', outcomes: ['ready', 'needs_input'], outputs: [{ name: 'result', type: 'object' }, { name: 'evidenceRefs', type: 'array' }] },
+          { id: 'return-stage', kind: 'return', source: 'stage', outcomes: ['passed'] },
+          { id: 'return-investigation', kind: 'return', source: 'investigate', outcomes: ['ready', 'needs_input'], outputs: [{ name: 'result', type: 'object' }, { name: 'evidenceRefs', type: 'array' }] },
+        ],
+        transitions: [
+          { from: 'stage', outcome: 'passed', to: 'return-stage', order: 0 },
+          { from: 'stage', outcome: 'unknown', to: 'investigate', order: 1 },
+          { from: 'investigate', outcome: 'ready', to: 'return-investigation', order: 0 },
+          { from: 'investigate', outcome: 'needs_input', to: 'return-investigation', order: 1 },
+        ],
+        budget: {}, policyRefs: [], capabilities: [],
+        compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+      });
+      const evidenceRefs = [{ kind: 'attempt', ref: 'run-1/attempt-2' }];
+      const root = manager.startVersionedRun(workflow, { task: 'review issue 7', runner: 'claude' }, { task: 'review issue 7', issue: 7, evidenceRefs });
+      await waitFor(root.id, () => childrenOf(root.id).length === 1);
+      const reviewer = childrenOf(root.id)[0]!;
+      started.push(reviewer.id);
+      await waitFor(reviewer.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      expect(manager.recordReport(reviewer.id, { status: 'done', outcome: 'unknown', result: 'Review is inconclusive.', outputs: {}, evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+
+      await waitFor(root.id, () => childrenOf(root.id).length === 2);
+      const nested = childrenOf(root.id).find((candidate) => candidate.workflowExecution);
+      expect(nested?.workflowExecution?.inputs).toMatchObject({ caller: 'review', issue: 7, evidenceRefs });
+      await waitFor(nested!.id, () => childrenOf(nested!.id).length === 1);
+      const investigator = childrenOf(nested!.id)[0]!;
+      started.push(nested!.id, investigator.id);
+      await waitFor(investigator.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      const result = { caller: 'review', issue: 7, outcome: 'needs_input', evidenceRefs };
+      expect(manager.recordReport(investigator.id, { status: 'done', outcome: 'needs_input', result: 'Needs a decision.', outputs: { result, evidenceRefs }, evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+      await waitFor(root.id, (record) => record?.status === 'done', 40_000);
+      expect(store.getRun(root.id)?.workflowExecution).toMatchObject({
+        status: 'done', outcomes: { stage: 'unknown', investigate: 'needs_input', 'return-investigation': 'needs_input' },
+        outputs: { 'return-investigation': { result, evidenceRefs } },
+      });
+
+      const direct = manager.startVersionedRun(workflow, { task: 'review issue 8', runner: 'claude' }, { task: 'review issue 8', issue: 8 });
+      await waitFor(direct.id, () => childrenOf(direct.id).length === 1);
+      const directReviewer = childrenOf(direct.id)[0]!;
+      started.push(directReviewer.id);
+      await waitFor(directReviewer.id, (record) => record?.status === 'running' && record.steps.some((step) => Boolean(step.sessionId)));
+      expect(manager.recordReport(directReviewer.id, { status: 'done', outcome: 'passed', result: 'Review passed.', outputs: {}, evidence: [], side_effects: [], errors: [], suggestions: [] })).toBe(true);
+      await waitFor(direct.id, (record) => record?.status === 'done', 40_000);
+      expect(childrenOf(direct.id)).toHaveLength(1);
+      expect(store.getRun(direct.id)?.workflowExecution).toMatchObject({ status: 'done', outcomes: { stage: 'passed', 'return-stage': 'passed' } });
     }, 60_000);
 
     it('keeps one implementation session through repair and gives both reviews distinct sessions', async () => {

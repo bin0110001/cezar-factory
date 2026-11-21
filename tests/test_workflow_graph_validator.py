@@ -220,9 +220,36 @@ class VersionedLifecycle(unittest.TestCase):
         workflow_dir = self.ROOT / "workflows"
         files = sorted(workflow_dir.glob("lifecycle-*.workflow.json"))
         self.assertGreaterEqual(len(files), 8)
+        reports = {report["workflow"]: report for report in wg.validate_tree(self.ROOT)}
         for path in files:
-            report = wg.validate(json.loads(path.read_text(encoding="utf-8")))
+            report = reports[path.name.removesuffix(".workflow.json")]
             self.assertTrue(report["valid"], f"{path.name}: {report}")
+
+    def test_uncertain_intake_review_and_repair_call_investigation_and_return_every_typed_outcome(self):
+        for stage in ("intake", "review", "repair"):
+            workflow = json.loads((self.ROOT / "workflows" / f"lifecycle-{stage}.workflow.json").read_text(encoding="utf-8"))
+            nodes = {node["id"]: node for node in workflow["nodes"]}
+            calls = [node for node in workflow["nodes"] if node.get("kind") == "child_workflow" and node.get("workflow") == "factory.investigation"]
+            self.assertEqual(len(calls), 1, stage)
+            child = calls[0]
+            self.assertEqual(child["version"], "1.0.0", stage)
+            self.assertEqual(set(child["outcomes"]), {"ready", "needs_input", "split", "not_reproducible", "needs_research", "unknown", "interrupted", "exhausted"}, stage)
+            transitions = workflow["transitions"]
+            stage_route = [edge for edge in transitions if edge["from"] == "stage" and edge["outcome"] == "unknown"]
+            self.assertEqual([(edge["to"]) for edge in stage_route], [child["id"]], stage)
+            stage_return = [node for node in workflow["nodes"] if node.get("kind") == "return" and node.get("source") == "stage"]
+            self.assertEqual(len(stage_return), 1, stage)
+            self.assertIn(stage_return[0]["id"], workflow["terminals"], stage)
+            self.assertEqual(
+                {edge["outcome"] for edge in transitions if edge["from"] == child["id"]},
+                set(child["outcomes"]), stage,
+            )
+            child_return = [node for node in workflow["nodes"] if node.get("kind") == "return" and node.get("source") == child["id"]]
+            self.assertEqual(len(child_return), 1, stage)
+            self.assertEqual(set(child_return[0]["outcomes"]), set(child["outcomes"]), stage)
+            self.assertIn(child_return[0]["id"], workflow["terminals"], stage)
+            self.assertIn("issue", {port["name"] for port in workflow["inputs"]}, stage)
+            self.assertIn("evidenceRefs", {port["name"] for port in workflow["inputs"]}, stage)
 
     def test_each_legacy_workflow_exit_maps_to_one_declared_typed_outcome(self):
         lifecycle = json.loads((self.ROOT / "policies" / "lifecycle.json").read_text(encoding="utf-8"))

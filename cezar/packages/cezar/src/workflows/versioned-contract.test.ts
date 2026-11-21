@@ -27,6 +27,37 @@ describe('versioned workflow contract', () => {
     }
   });
 
+  it('routes uncertain outcomes through a child and returns prior typed outcomes and outputs', () => {
+    const workflow = versionedWorkflowSchema.parse({
+      contract: 'cezar.workflow', schemaVersion: 1, id: 'investigation-caller', version: '1.0.0', entry: 'triage',
+      terminals: ['return-triage', 'return-investigation'], inputs: [], policyRefs: [], budget: {}, capabilities: [],
+      compatibility: { mode: 'versioned-only', minConsumer: '0.14.0', maxConsumer: '0.14.0' },
+      nodes: [
+        { id: 'triage', kind: 'agent', prompt: 'classify', outcomes: ['passed', 'unknown'], outputs: [{ name: 'result', type: 'object' }] },
+        { id: 'investigate', kind: 'child_workflow', workflow: 'factory.investigation', version: '1.0.0', outcomes: ['ready', 'needs_input'], outputs: [{ name: 'result', type: 'object' }] },
+        { id: 'return-triage', kind: 'return', source: 'triage', outcomes: ['passed'], outputs: [{ name: 'result', type: 'object' }] },
+        { id: 'return-investigation', kind: 'return', source: 'investigate', outcomes: ['ready', 'needs_input'], outputs: [{ name: 'result', type: 'object' }] },
+      ],
+      transitions: [
+        { from: 'triage', outcome: 'passed', to: 'return-triage', order: 0 },
+        { from: 'triage', outcome: 'unknown', to: 'investigate', order: 1 },
+        { from: 'investigate', outcome: 'ready', to: 'return-investigation', order: 0 },
+        { from: 'investigate', outcome: 'needs_input', to: 'return-investigation', order: 1 },
+      ],
+    });
+    let execution = initializeWorkflowExecution(workflow, 'a'.repeat(64), [], {});
+    const triage = beginWorkflowNode(execution, 'triage');
+    execution = completeWorkflowNode(triage.execution, 'triage', 'unknown', { result: { issue: 7 } }, triage.transitionId).execution;
+    expect(execution.ready).toEqual(['investigate']);
+    const investigation = beginWorkflowNode(execution, 'investigate');
+    execution = completeWorkflowNode(investigation.execution, 'investigate', 'needs_input', { result: { issue: 7, evidenceRefs: [] } }, investigation.transitionId).execution;
+    const returned = beginWorkflowNode(execution, 'return-investigation');
+    const completed = completeWorkflowNode(returned.execution, 'return-investigation', 'needs_input', execution.outputs.investigate, returned.transitionId);
+    expect(completed.execution).toMatchObject({ status: 'done', outcomes: { investigate: 'needs_input', 'return-investigation': 'needs_input' }, outputs: { 'return-investigation': { result: { issue: 7, evidenceRefs: [] } } } });
+    expect(versionedWorkflowSchema.safeParse({ ...workflow, terminals: ['return-triage'] }).success).toBe(false);
+    expect(versionedWorkflowSchema.safeParse({ ...workflow, nodes: workflow.nodes.map((node) => node.id === 'return-investigation' ? { ...node, outcomes: ['unknown'] } : node) }).success).toBe(false);
+  });
+
   it('rejects missing outcomes, invalid references, unsupported capabilities, and unsafe guards', () => {
     const valid = sample('issue-delivery', 'action');
     expect(versionedWorkflowSchema.safeParse({ ...valid, nodes: [{ ...valid.nodes[0], outcomes: [] }, valid.nodes[1]] }).success).toBe(false);
