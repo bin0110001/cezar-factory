@@ -3,6 +3,7 @@ import { extname, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { sharedDirs } from '../shared-dirs.ts';
 import { factoryReleaseProvenance, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
+import { versionedWorkflowSchema, type VersionedWorkflow } from '@open-mercato/cezar-contract';
 import {
   QUICK_TASK_WORKFLOW,
   normalizeWorkflowDoc,
@@ -14,6 +15,11 @@ import {
 export const WORKFLOWS_DIR = '.ai/cezar/workflows';
 
 export interface WorkflowLoadIssue {
+  path: string;
+  message: string;
+}
+
+export interface VersionedWorkflowLoadIssue {
   path: string;
   message: string;
 }
@@ -87,5 +93,48 @@ export async function loadWorkflows(
     })),
   ];
   workflows.sort((a, b) => a.name.localeCompare(b.name));
+  return { workflows, issues };
+}
+
+/** Load exact id/version graph definitions without altering the legacy YAML catalog. */
+export async function loadVersionedWorkflows(
+  repoRoot: string,
+  options: { factoryRelease?: FactoryReleaseResolution } = {},
+): Promise<{ workflows: VersionedWorkflow[]; issues: VersionedWorkflowLoadIssue[] }> {
+  const issues: VersionedWorkflowLoadIssue[] = [];
+  const workflows: VersionedWorkflow[] = [];
+  const dirs = [
+    resolve(repoRoot, WORKFLOWS_DIR),
+    ...(options.factoryRelease
+      ? [join(options.factoryRelease.runtimeRoot, 'workflows')]
+      : sharedDirs('CEZ_SHARED_WORKFLOWS_DIRS')),
+  ];
+  const seen = new Set<string>();
+  for (const dir of dirs) {
+    let entries: string[] = [];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      // No local/shared catalog is an empty catalog.
+    }
+    for (const entry of entries.sort()) {
+      if (!entry.endsWith('.workflow.json')) continue;
+      const path = join(dir, entry);
+      try {
+        const parsed = versionedWorkflowSchema.safeParse(JSON.parse(await readFile(path, 'utf8')));
+        if (!parsed.success) {
+          issues.push({ path, message: parsed.error.issues.map((issue) => issue.message).join('; ') });
+          continue;
+        }
+        const key = `${parsed.data.id}@${parsed.data.version}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        workflows.push(parsed.data);
+      } catch (error) {
+        issues.push({ path, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+  workflows.sort((a, b) => a.id.localeCompare(b.id) || a.version.localeCompare(b.version));
   return { workflows, issues };
 }

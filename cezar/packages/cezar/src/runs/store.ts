@@ -13,7 +13,7 @@ import { MAX_REF } from './task-refs.ts';
 import { workflowDefSchema } from '../workflows/types.ts';
 // A contract VALUE, like `workspaceUiStateSchema` in `workspace/migrations.ts`: the persisted
 // `dispatch` object and its wire half are literally the same schema, so they cannot drift.
-import { dispatchSchema, factoryReleaseProvenanceSchema, trackerAssociationSchema, trackerAutomationEventSchema } from '@open-mercato/cezar-contract';
+import { dispatchSchema, factoryReleaseProvenanceSchema, trackerAssociationSchema, trackerAutomationEventSchema, workflowDefinitionPinSchema, workflowExecutionSchema, type DispatchIntent, type RunDispatch, type WorkflowDefinitionPin, type WorkflowExecution } from '@open-mercato/cezar-contract';
 
 import { RUNNER_IDS } from '../core/agent-runner.ts';
 
@@ -392,6 +392,9 @@ export const runRecordSchema = z.object({
    *  `workflowStepSchema` only with that in mind: a narrowing here silently eats
    *  queued runs rather than degrading them. */
   workflowDef: workflowDefSchema.optional().catch(undefined),
+  /** Immutable effective definition/policy digest captured when the run is created. */
+  workflowDefinitionPin: workflowDefinitionPinSchema.optional().catch(undefined),
+  workflowExecution: workflowExecutionSchema.optional().catch(undefined),
   factoryRelease: factoryReleaseProvenanceSchema.optional().catch(undefined),
 });
 
@@ -977,10 +980,18 @@ export class RunStore extends EventEmitter {
     variant?: string;
     /** Internal pinned base for a command-only verification run. */
     baseBranch?: string;
+    workflowDef?: z.infer<typeof workflowDefSchema>;
+    workflowDefinitionPin?: WorkflowDefinitionPin;
+    workflowExecution?: WorkflowExecution;
+    factoryRelease?: z.infer<typeof factoryReleaseProvenanceSchema>;
+    /** Created atomically with the record so restart cannot lose parentage/idempotency. */
+    dispatch?: RunDispatch;
+    dispatchIntent?: DispatchIntent;
     steps: Array<Pick<StepState, 'id' | 'name' | 'kind'>>;
   }): RunRecord {
+    const id = randomUUID();
     const run: RunRecord = {
-      id: randomUUID(),
+      id,
       // Scrubbed on the way in, exactly as `updateRun` scrubs it on the way
       // through (#456 review) — a token pasted into the prompt otherwise sat
       // verbatim in `runs.json` from creation. `task` is deliberately NOT
@@ -999,6 +1010,11 @@ export class RunStore extends EventEmitter {
       groupId: input.groupId,
       variant: input.variant,
       baseBranch: input.baseBranch,
+      workflowDef: input.workflowDef,
+      workflowDefinitionPin: input.workflowDefinitionPin,
+      workflowExecution: input.workflowExecution,
+      factoryRelease: input.factoryRelease,
+      dispatch: input.dispatch ?? (input.dispatchIntent ? { rootRunId: id, intent: input.dispatchIntent } : undefined),
       status: 'queued',
       createdAt: new Date().toISOString(),
       tokensUsed: 0,
@@ -1028,6 +1044,33 @@ export class RunStore extends EventEmitter {
       delete run.referencedIssueNumberSeeded;
     }
     const normalized = { ...patch };
+    if (Object.hasOwn(normalized, 'workflowDef') && run.workflowDefinitionPin) {
+      if (JSON.stringify(normalized.workflowDef) !== JSON.stringify(run.workflowDef)) {
+        throw new Error('pinned workflow definition is immutable after run creation');
+      }
+    }
+    if (Object.hasOwn(normalized, 'workflowDefinitionPin')) {
+      const parsedPin = normalized.workflowDefinitionPin === undefined
+        ? undefined
+        : workflowDefinitionPinSchema.safeParse(normalized.workflowDefinitionPin);
+      if (run.workflowDefinitionPin && (!parsedPin || !parsedPin.success || JSON.stringify(parsedPin.data) !== JSON.stringify(run.workflowDefinitionPin))) {
+        throw new Error('workflow definition pin is immutable after run creation');
+      }
+      if (!run.workflowDefinitionPin && parsedPin?.success) {
+        throw new Error('workflow definition pin can only be set when the run is created');
+      }
+    }
+    if (Object.hasOwn(normalized, 'workflowExecution') && run.workflowExecution) {
+      const next = normalized.workflowExecution;
+      if (!next || JSON.stringify(next.workflow) !== JSON.stringify(run.workflowExecution.workflow)
+        || next.definitionDigest !== run.workflowExecution.definitionDigest
+        || JSON.stringify(next.policyPins) !== JSON.stringify(run.workflowExecution.policyPins)) {
+        throw new Error('versioned workflow definition and policy pins are immutable after run creation');
+      }
+    }
+    if (Object.hasOwn(normalized, 'workflowExecution') && !run.workflowExecution && normalized.workflowExecution) {
+      throw new Error('versioned workflow execution can only be set when the run is created');
+    }
     if (normalized.status && !['running', 'waiting', 'queued'].includes(normalized.status)) {
       normalized.activity = undefined;
       normalized.monitoringWakeAt = undefined;

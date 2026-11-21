@@ -971,7 +971,7 @@ describe('a single agent step plus a check step gets NO chain note (#410)', () =
       { id: 'recover', status: 'done' },
       { id: 'finish', status: 'done' },
     ]);
-    expect(store.readEvents(record.id).some((event) => event.message?.includes('retrying from "recover"'))).toBe(true);
+    expect(store.readEvents(record.id).some((event) => typeof event.message === 'string' && event.message.includes('retrying from "recover"'))).toBe(true);
   }, 30_000);
 });
 

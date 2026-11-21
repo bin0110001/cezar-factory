@@ -2,6 +2,18 @@ import { z } from 'zod';
 import { runnerSchema } from './health.ts';
 import { factoryReleaseProvenanceSchema } from './releases.ts';
 
+/** Immutable run-time binding to the exact workflow and policies accepted at start. */
+export const workflowDefinitionPinSchema = z.object({
+  format: z.enum(['legacy', 'versioned']),
+  id: z.string().min(1),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  policyPins: z.array(z.object({ id: z.string().min(1), version: z.string().min(1), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).default([]),
+}).strict().superRefine((pin, ctx) => {
+  if (pin.format === 'versioned' && !pin.version) ctx.addIssue({ code: 'custom', path: ['version'], message: 'versioned workflow pins require a version' });
+});
+export type WorkflowDefinitionPin = z.infer<typeof workflowDefinitionPinSchema>;
+
 /**
  * The WORKFLOWS family: the chain catalog, the save/parse routes, and the planner.
  *

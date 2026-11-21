@@ -1,4 +1,4 @@
-import type { TrackerAssociation } from '@open-mercato/cezar-contract';
+import { beginWorkflowNode, canonicalJson, completeWorkflowNode, initializeWorkflowExecution, resumeWorkflowWait, validateWorkflowNodeOutputs, workflowEffectReceiptDataSchema, workflowExecutionSchema, workflowOutcomeSchema, type TrackerAssociation, type VersionedWorkflow, type WorkflowExecution, type WorkflowOutcome } from '@open-mercato/cezar-contract';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
@@ -54,12 +54,12 @@ import { readAgentModelProvider } from '../agent-config/models.ts';
 import { loadConfig, resolveWorktreeRetention } from '../config.ts';
 import { autosaveCommit, chooseForkBase, createWorktree, removeWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
-import { loadWorkflows } from './load.ts';
+import { loadVersionedWorkflows, loadWorkflows } from './load.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
 // Task dispatch (spec 2026-09-10-dispatch). Every import below is inert unless the feature is
 // ON *and* the run carries a `dispatch`: `dispatchOf()` is the single gate, and a run without one
 // takes byte-for-byte the path it took before this feature existed.
-import type { DispatchInput, DispatchIntent, DispatchReport, RunDispatch } from '@open-mercato/cezar-contract';
+import type { DispatchInput, DispatchIntent, DispatchJoin, DispatchReport, RunDispatch } from '@open-mercato/cezar-contract';
 import { resolveCapabilities } from '../server/capabilities.ts';
 import { composeDispatchPrompt } from '../dispatch/prompts.ts';
 import {
@@ -82,6 +82,7 @@ import {
   childSettleReport,
   childTaskEnvelope,
   childrenOf,
+  evaluateDispatchJoin,
   handoffSectionExcerpt,
   inFlightChildren,
   isTerminalStatus,
@@ -387,6 +388,41 @@ export function repositoryRootLockDisabled(env: NodeJS.ProcessEnv = process.env)
 
 const REPOSITORY_ROOT_LOCK_DISABLED_NOTE =
   'repository-root lock disabled by CEZ_DISABLE_REPO_LOCK=1 (shared checkout is unsafe)';
+
+function dispatchTransitionFingerprint(input: DispatchInput): string {
+  const request = { ...input };
+  delete request.transition_id;
+  return createHash('sha256').update(canonicalJson(request)).digest('hex');
+}
+
+function versionedGraphId(workflow: VersionedWorkflow, ...parts: string[]): string {
+  const digest = createHash('sha256').update(canonicalJson([workflow.id, workflow.version, ...parts])).digest('hex').slice(0, 32);
+  return `wf:${digest}`;
+}
+
+export function workflowDefinitionPinMatches(run: RunRecord): boolean {
+  const pin = run.workflowDefinitionPin;
+  if (!pin) return true; // pre-pin records retain their legacy recovery path
+  if (pin.format === 'versioned') {
+    const execution = run.workflowExecution;
+    if (!execution || pin.id !== execution.workflow.id || pin.version !== execution.workflow.version
+      || run.workflow !== `${execution.workflow.id}@${execution.workflow.version}`
+      || createHash('sha256').update(canonicalJson(execution.workflow)).digest('hex') !== pin.digest
+      || canonicalJson(pin.policyPins) !== canonicalJson(execution.policyPins)) return false;
+    return true;
+  }
+  const definition = run.workflowDef;
+  if (!definition || pin.id !== run.workflow || pin.id !== definition.name) return false;
+  if (createHash('sha256').update(canonicalJson(definition)).digest('hex') !== pin.digest) return false;
+  if (canonicalJson(run.factoryRelease) !== canonicalJson(definition.factoryRelease)) return false;
+  const release = run.factoryRelease ?? definition.factoryRelease;
+  const expectedPolicyPins = release ? [{
+    id: 'factory-release-manifest',
+    version: release.sourceSha,
+    digest: release.manifestDigest.slice('sha256:'.length),
+  }] : [];
+  return canonicalJson(pin.policyPins) === canonicalJson(expectedPolicyPins);
+}
 
 interface ActiveRun {
   /** Identity of this async owner; stale promises must not mutate a replacement owner. */
@@ -890,6 +926,33 @@ export interface FileBlock {
  *  will never see. Every RunManager entry point accepts this wider type. */
 export type PastedContent = ContentBlock | FileBlock;
 
+export interface VersionedWorkflowActionRequest {
+  runId: string;
+  workflowId: string;
+  workflowVersion: string;
+  nodeId: string;
+  action: string;
+  idempotencyKey: string;
+  task: string;
+  inputs: Record<string, unknown>;
+  priorOutputs: Record<string, Record<string, unknown>>;
+}
+
+export interface VersionedWorkflowActionResult {
+  outcome: WorkflowOutcome;
+  outputs?: Record<string, unknown>;
+  receipt: unknown;
+}
+
+export interface VersionedWorkflowActionAdapter {
+  execute(request: VersionedWorkflowActionRequest): Promise<VersionedWorkflowActionResult>;
+  reconcile(request: VersionedWorkflowActionRequest): Promise<
+    | { status: 'applied'; result: VersionedWorkflowActionResult }
+    | { status: 'not_applied' }
+    | { status: 'unknown'; reason?: string }
+  >;
+}
+
 // Metadata belongs to the original in-memory block, never the vendor protocol. Queue
 // persistence files the library copy before serializing; deferred delivery retains the block.
 const imageLibraryNames = new WeakMap<ContentBlock, string>();
@@ -1050,6 +1113,11 @@ export class RunManager {
    *  from the record rather than losing the wait. Runs here are `failed` and therefore NOT in
    *  `active`, which is why the timer cannot live on an `ActiveRun` like the monitoring one. */
   private readonly autoResumeTimers = new Map<string, NodeJS.Timeout>();
+  private readonly versionedWaitTimers = new Map<string, NodeJS.Timeout>();
+  private readonly versionedAttemptTimers = new Map<string, NodeJS.Timeout>();
+  private readonly versionedBudgetTimers = new Map<string, NodeJS.Timeout>();
+  private readonly versionedActionPromises = new Map<string, Promise<void>>();
+  private versionedWorkflowActions: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
   private pumping = false;
   /** A pump that arrived while one was in flight — replayed by `pump()`'s own
    *  loop so a slot freed mid-sweep is never a lost wakeup. */
@@ -1111,6 +1179,14 @@ export class RunManager {
     return resolveConfiguredFactoryRelease(this.projectId);
   }
 
+  /** Register a code-owned action adapter before starting runs that reference its exact action ID. */
+  registerVersionedWorkflowAction(action: string, adapter: VersionedWorkflowActionAdapter): void {
+    const id = action.trim();
+    if (!id) throw new Error('workflow action ID must not be empty');
+    if (this.versionedWorkflowActions[id]) throw new Error(`workflow action adapter "${id}" is already registered`);
+    this.versionedWorkflowActions = { ...this.versionedWorkflowActions, [id]: adapter };
+  }
+
   /** See the constructor option of the same name. */
   private readonly resolveTrackerEnv: ((root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>) | undefined;
   /** Startup workspace reconciliation completes before this manager launches agent work. */
@@ -1142,11 +1218,14 @@ export class RunManager {
        * reach an agent. Secrets are registered with RunStore before any output arrives.
        */
       resolveTrackerEnv?: (root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>;
+      /** Code-registered, idempotent action adapters; absent actions fail closed. */
+      versionedWorkflowActions?: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
     } = {},
   ) {
     this.dataDir = join(repoRoot, '.ai/cezar');
     this.projectId = options.projectId;
     this.resolveTrackerEnv = options.resolveTrackerEnv;
+    this.versionedWorkflowActions = options.versionedWorkflowActions ?? {};
     this.lifecycleStartup = getHeadCommit(repoRoot).then(async (head) => {
       if (!head) return;
       const report = await reconcileWorkspaceLifecycle({ cwd: repoRoot });
@@ -1225,6 +1304,13 @@ export class RunManager {
     }
     for (const timer of this.autoResumeTimers.values()) clearTimeout(timer);
     this.autoResumeTimers.clear();
+    for (const timer of this.versionedWaitTimers.values()) clearTimeout(timer);
+    this.versionedWaitTimers.clear();
+    for (const timer of this.versionedAttemptTimers.values()) clearTimeout(timer);
+    this.versionedAttemptTimers.clear();
+    for (const timer of this.versionedBudgetTimers.values()) clearTimeout(timer);
+    this.versionedBudgetTimers.clear();
+    this.versionedActionPromises.clear();
     this.active.clear();
     this.waiting.clear();
     // The monitoring subsets are cleared with `waiting`, whose subset they are: a disposed
@@ -1462,6 +1548,668 @@ export class RunManager {
     };
   }
 
+  /** Start an exact versioned graph as a coordinator record in this same run store. */
+  startVersionedRun(
+    workflow: VersionedWorkflow,
+    input: StartRunInput,
+    values: Record<string, unknown>,
+    parentDispatch?: RunDispatch,
+  ): RunRecord {
+    const definitionDigest = createHash('sha256').update(canonicalJson(workflow)).digest('hex');
+    const policyPins = workflow.policyRefs.map((policy) => ({ ...policy }));
+    const workflowExecution = initializeWorkflowExecution(workflow, definitionDigest, policyPins, values);
+    const transitionFingerprint = parentDispatch?.parentRunId
+      ? createHash('sha256').update(canonicalJson({ workflow: definitionDigest, task: input.task, inputs: values })).digest('hex')
+      : undefined;
+    if (parentDispatch?.parentRunId && parentDispatch.transitionId && transitionFingerprint) {
+      const replay = this.store.listRuns().find((candidate) => candidate.dispatch?.parentRunId === parentDispatch.parentRunId
+        && candidate.dispatch?.transitionId === parentDispatch.transitionId);
+      if (replay) {
+        if (replay.dispatch?.transitionFingerprint !== transitionFingerprint) throw new Error(`workflow transition "${parentDispatch.transitionId}" was already used with different workflow input`);
+        return replay;
+      }
+    }
+    if (parentDispatch?.parentRunId) {
+      const parent = this.store.getRun(parentDispatch.parentRunId);
+      if (!parent) throw new Error(`no such parent run: ${parentDispatch.parentRunId}`);
+      if (!parent.dispatch) this.store.updateRun(parent.id, { dispatch: { rootRunId: parent.id } });
+    }
+    const run = this.store.createRun({
+      title: makeRunTitle(input.task, { name: `${workflow.id}@${workflow.version}`, steps: [], source: 'file' }),
+      workflow: `${workflow.id}@${workflow.version}`,
+      task: input.task,
+      model: input.model,
+      runner: input.runner,
+      agentProfile: input.agentProfile,
+      generateFollowups: followupsEnabled() ? input.generateFollowups : false,
+      autonomous: true,
+      workflowDefinitionPin: { format: 'versioned', id: workflow.id, version: workflow.version, digest: definitionDigest, policyPins },
+      workflowExecution,
+      ...(parentDispatch ? { dispatch: { ...parentDispatch, ...(transitionFingerprint ? { transitionFingerprint } : {}) } } : {}),
+      ...(!parentDispatch && input.dispatchIntent ? { dispatchIntent: input.dispatchIntent } : {}),
+      steps: [],
+    });
+    this.store.updateRun(run.id, { status: workflowExecution.status === 'waiting' ? 'waiting' : 'running' });
+    this.store.appendEvent(run.id, { type: 'lifecycle', message: `started versioned workflow ${workflow.id}@${workflow.version}` });
+    this.armVersionedBudget(run.id);
+    if (workflowExecution.status === 'running') this.driveVersionedWorkflow(run.id);
+    else this.armVersionedWait(run.id);
+    return this.store.getRun(run.id) ?? run;
+  }
+
+  /** Resume a persisted human/event/time wait on the same graph run. */
+  resumeVersionedRun(runId: string, trigger: Parameters<typeof resumeWorkflowWait>[1]): { ok: boolean; error?: string } {
+    const run = this.store.getRun(runId);
+    if (!run?.workflowExecution) return { ok: false, error: 'run has no versioned workflow execution' };
+    if (trigger.kind === 'event' && trigger.eventId) {
+      const duplicate = run.workflowExecution.eventReceipts.find((receipt) => receipt.eventId === trigger.eventId);
+      if (duplicate) return duplicate.event === trigger.event ? { ok: true } : { ok: false, error: `event id "${trigger.eventId}" was replayed with a different event name` };
+    }
+    const priorWait = run.workflowExecution.wait;
+    const result = resumeWorkflowWait(run.workflowExecution, trigger);
+    if (result.error) return { ok: false, error: result.error };
+    this.clearVersionedWait(runId);
+    const waitAttempt = priorWait ? result.execution.attempts.find((attempt) => attempt.node === priorWait.node && attempt.status === 'done') : undefined;
+    if (waitAttempt) this.clearVersionedAttemptTimeout(runId, waitAttempt.transitionId);
+    this.store.updateRun(runId, {
+      workflowExecution: result.execution,
+      status: result.execution.status === 'done' ? 'done' : 'running',
+      ...(result.execution.status === 'done' ? { finishedAt: new Date().toISOString() } : {}),
+    });
+    if (['done', 'failed'].includes(result.execution.status)) this.clearVersionedBudget(runId);
+    this.store.appendEvent(runId, { type: 'lifecycle', message: `versioned workflow wait resumed (${trigger.kind})` });
+    if (result.execution.status === 'running') this.driveVersionedWorkflow(runId);
+    else if (result.execution.status === 'done' || result.execution.status === 'failed') this.reportSettledChildToParent(runId);
+    return { ok: true };
+  }
+
+  private clearVersionedWait(runId: string): void {
+    const timer = this.versionedWaitTimers.get(runId);
+    if (timer) clearTimeout(timer);
+    this.versionedWaitTimers.delete(runId);
+  }
+
+  private clearVersionedBudget(runId: string): void {
+    const timer = this.versionedBudgetTimers.get(runId);
+    if (timer) clearTimeout(timer);
+    this.versionedBudgetTimers.delete(runId);
+  }
+
+  private armVersionedBudget(runId: string): void {
+    if (this.versionedBudgetTimers.has(runId)) return;
+    const run = this.store.getRun(runId);
+    const seconds = run?.workflowExecution?.workflow.budget.maxDurationSeconds;
+    if (!run?.workflowExecution || !seconds || ['done', 'failed', 'cancelled'].includes(run.status)) return;
+    const deadline = Date.parse(run.createdAt) + seconds * 1000;
+    const timer = setTimeout(() => {
+      this.versionedBudgetTimers.delete(runId);
+      const current = this.store.getRun(runId);
+      if (!current?.workflowExecution || ['done', 'failed', 'cancelled'].includes(current.status)) return;
+      if (Date.now() < deadline) return this.armVersionedBudget(runId);
+      this.failVersionedRun(runId, `workflow exceeded its ${seconds}s duration budget`);
+    }, Math.min(Math.max(0, deadline - Date.now()), 2_147_000_000));
+    timer.unref?.();
+    this.versionedBudgetTimers.set(runId, timer);
+  }
+
+  private clearVersionedAttemptTimeout(runId: string, transitionId: string): void {
+    const key = `${runId}:${transitionId}`;
+    const timer = this.versionedAttemptTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.versionedAttemptTimers.delete(key);
+  }
+
+  private clearVersionedAttemptTimers(runId: string): void {
+    for (const key of [...this.versionedAttemptTimers.keys()]) {
+      if (!key.startsWith(`${runId}:`)) continue;
+      const timer = this.versionedAttemptTimers.get(key);
+      if (timer) clearTimeout(timer);
+      this.versionedAttemptTimers.delete(key);
+    }
+  }
+
+  private armVersionedAttemptTimeout(runId: string, transitionId: string): void {
+    const key = `${runId}:${transitionId}`;
+    if (this.versionedAttemptTimers.has(key)) return;
+    const attempt = this.store.getRun(runId)?.workflowExecution?.attempts.find((candidate) => candidate.transitionId === transitionId);
+    if (!attempt?.timeoutAt || !['running', 'waiting'].includes(attempt.status)) return;
+    const deadline = Date.parse(attempt.timeoutAt);
+    if (!Number.isFinite(deadline)) return this.failVersionedRun(runId, `node "${attempt.node}" has an invalid timeout deadline`);
+    const timer = setTimeout(() => {
+      this.versionedAttemptTimers.delete(key);
+      const current = this.store.getRun(runId)?.workflowExecution?.attempts.find((candidate) => candidate.transitionId === transitionId);
+      if (!current || !['running', 'waiting'].includes(current.status)) return;
+      if (Date.now() < deadline) return this.armVersionedAttemptTimeout(runId, transitionId);
+      this.store.updateRun(runId, {
+        workflowExecution: {
+          ...this.store.getRun(runId)!.workflowExecution!,
+          attempts: this.store.getRun(runId)!.workflowExecution!.attempts.map((candidate) => candidate.transitionId === transitionId
+            ? { ...candidate, status: 'failed' as const, finishedAt: new Date().toISOString(), error: 'node timeout expired' }
+            : candidate),
+        },
+      });
+      this.failVersionedRun(runId, `node "${current.node}" timed out`);
+    }, Math.min(Math.max(0, deadline - Date.now()), 2_147_000_000));
+    timer.unref?.();
+    this.versionedAttemptTimers.set(key, timer);
+  }
+
+  private armVersionedWait(runId: string): void {
+    const execution = this.store.getRun(runId)?.workflowExecution;
+    const wait = execution?.wait;
+    if (!wait || this.versionedWaitTimers.has(runId)) return;
+    const attempt = execution.attempts.find((candidate) => candidate.node === wait.node && candidate.status === 'waiting');
+    if (attempt?.timeoutAt) this.armVersionedAttemptTimeout(runId, attempt.transitionId);
+    if (wait.reason !== 'time' || !wait.resumeAt) return;
+    const delay = Math.max(0, Date.parse(wait.resumeAt) - Date.now());
+    const timer = setTimeout(() => {
+      this.versionedWaitTimers.delete(runId);
+      const resumed = this.resumeVersionedRun(runId, { kind: 'time' });
+      if (!resumed.ok && resumed.error !== 'time wait is not due yet') this.failVersionedRun(runId, resumed.error ?? 'time wait could not resume');
+      else if (!resumed.ok) this.armVersionedWait(runId);
+    }, Math.min(delay, 2_147_000_000));
+    timer.unref?.();
+    this.versionedWaitTimers.set(runId, timer);
+  }
+
+  private failVersionedRun(runId: string, error: string): void {
+    const run = this.store.getRun(runId);
+    if (!run?.workflowExecution || ['done', 'failed', 'cancelled'].includes(run.status)) return;
+    this.clearVersionedWait(runId);
+    this.clearVersionedBudget(runId);
+    this.clearVersionedAttemptTimers(runId);
+    this.store.updateRun(runId, {
+      workflowExecution: { ...run.workflowExecution, status: 'failed' },
+      status: 'failed', error, finishedAt: new Date().toISOString(),
+    });
+    this.store.appendEvent(runId, { type: 'lifecycle', message: `versioned workflow failed — ${error}` });
+    this.cancelDescendants(runId, new Set());
+    this.reportSettledChildToParent(runId);
+  }
+
+  private versionedTokenBudgetError(runId: string): string | undefined {
+    const root = this.store.getRun(runId);
+    const limit = root?.workflowExecution?.workflow.budget.maxTokens;
+    if (limit === undefined) return undefined;
+    const all = this.store.listRuns();
+    const descendants = new Set<string>();
+    const queue = [runId];
+    while (queue.length) {
+      const parentId = queue.shift()!;
+      for (const child of all) {
+        if (child.dispatch?.parentRunId !== parentId || descendants.has(child.id)) continue;
+        descendants.add(child.id);
+        queue.push(child.id);
+      }
+    }
+    let total = 0;
+    for (const id of descendants) {
+      const child = this.store.getRun(id);
+      if (!child || !isTerminalStatus(child.status)) continue;
+      if (child.workflowExecution) continue; // coordinator records do not consume provider tokens themselves
+      if (child.inputTokens === undefined || child.outputTokens === undefined) {
+        return `workflow token budget cannot be verified because child run "${id}" has incomplete usage evidence`;
+      }
+      total += child.inputTokens + child.outputTokens;
+    }
+    return total > limit ? `workflow exceeded its ${limit}-token budget (${total} observed)` : undefined;
+  }
+
+  private driveVersionedWorkflow(runId: string): void {
+    const run = this.store.getRun(runId);
+    const execution = run?.workflowExecution;
+    if (!run || !execution || ['done', 'failed', 'cancelled'].includes(run.status)) return;
+    this.armVersionedBudget(runId);
+    if (execution.status === 'waiting') {
+      if (run.status !== 'waiting') this.store.updateRun(runId, { status: 'waiting' });
+      this.armVersionedWait(runId);
+      return;
+    }
+    if (execution.status !== 'running') return;
+    const tokenBudgetError = this.versionedTokenBudgetError(runId);
+    if (tokenBudgetError) return this.failVersionedRun(runId, tokenBudgetError);
+    const nodeId = execution.ready[0] ?? [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
+      && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && ['action', 'agent', 'child_workflow', 'fork'].includes(candidate.kind)))?.node;
+    if (!nodeId) {
+      const activeFork = [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
+        && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && candidate.kind === 'fork'));
+      if (activeFork) return this.driveVersionedFork(runId, activeFork.node);
+      return this.failVersionedRun(runId, 'versioned workflow has no ready node or persisted wait');
+    }
+    const node = execution.workflow.nodes.find((candidate) => candidate.id === nodeId);
+    if (node?.kind === 'action') {
+      const claimedAction = beginWorkflowNode(execution, nodeId);
+      if (claimedAction.error || !claimedAction.transitionId) return this.failVersionedRun(runId, claimedAction.error ?? `action node "${nodeId}" could not start`);
+      this.store.updateRun(runId, { workflowExecution: claimedAction.execution, status: 'running' });
+      this.armVersionedAttemptTimeout(runId, claimedAction.transitionId);
+      void this.runVersionedAction(runId, nodeId, claimedAction.transitionId);
+      return;
+    }
+    if (node?.kind === 'fork') {
+      const claimedFork = beginWorkflowNode(execution, nodeId);
+      if (claimedFork.error) return this.failVersionedRun(runId, claimedFork.error);
+      this.store.updateRun(runId, { workflowExecution: claimedFork.execution, status: 'running' });
+      const activeAttempt = [...claimedFork.execution.attempts].reverse().find((attempt) => attempt.node === nodeId)!;
+      this.armVersionedAttemptTimeout(runId, activeAttempt.transitionId);
+      return this.driveVersionedFork(runId, nodeId);
+    }
+    if (node?.kind === 'child_workflow') {
+      const claimedChild = beginWorkflowNode(execution, nodeId);
+      if (claimedChild.error || !claimedChild.transitionId) return this.failVersionedRun(runId, claimedChild.error ?? `child workflow node "${nodeId}" could not start`);
+      this.store.updateRun(runId, { workflowExecution: claimedChild.execution, status: 'running' });
+      this.armVersionedAttemptTimeout(runId, claimedChild.transitionId);
+      void this.startVersionedChildWorkflow(runId, nodeId, claimedChild.transitionId);
+      return;
+    }
+    if (!node || node.kind !== 'agent') return this.failVersionedRun(runId, `node "${nodeId}" has no registered runtime adapter`);
+    if (node.session === 'external') return this.failVersionedRun(runId, `node "${nodeId}" requires an external session adapter`);
+    if (node.dispatchKind === 'review' && !['claude', 'pi'].includes(run.runner ?? '')) {
+      return this.failVersionedRun(runId, `review node "${nodeId}" requires a runner with enforced read-only tool permissions`);
+    }
+    const claimed = beginWorkflowNode(execution, nodeId);
+    if (claimed.error || !claimed.transitionId) return this.failVersionedRun(runId, claimed.error ?? `node "${nodeId}" could not start`);
+    this.store.updateRun(runId, { workflowExecution: claimed.execution, status: 'running' });
+    this.armVersionedAttemptTimeout(runId, claimed.transitionId);
+    const activeAttempt = [...claimed.execution.attempts].reverse().find((attempt) => attempt.transitionId === claimed.transitionId)!;
+    const prompt = node.prompt.replace(/\{\{task\}\}/g, run.task).replace(/\{\{input\.([A-Za-z][A-Za-z0-9_.-]*)\}\}/g, (_match, key: string) => {
+      const value = claimed.execution.inputs[key];
+      return value === undefined ? '' : typeof value === 'string' ? value : canonicalJson(value);
+    });
+    const previousImplementation = node.dispatchKind === 'implement' && node.session === 'continue'
+      ? [...claimed.execution.attempts].reverse().find((attempt) => {
+        if (!attempt.childRunId || attempt.status !== 'done' || attempt.transitionId === claimed.transitionId) return false;
+        const priorNode = claimed.execution.workflow.nodes.find((candidate) => candidate.id === attempt.node);
+        return priorNode?.kind === 'agent' && priorNode.dispatchKind === 'implement' && priorNode.session === 'continue';
+      })?.childRunId
+      : undefined;
+    if (previousImplementation) {
+      const child = this.store.getRun(previousImplementation);
+      if (!child || !['done', 'failed', 'review'].includes(child.status) || !child.steps.some((step) => step.sessionId)) {
+        return this.failVersionedRun(runId, `node "${nodeId}" cannot continue the prior implementation session`);
+      }
+      if (child.dispatch) this.store.updateRun(child.id, { dispatch: { ...child.dispatch, report: undefined } });
+      const resumed = this.continueRun(child.id, { text: prompt }, true);
+      if (!resumed.ok) return this.failVersionedRun(runId, `node "${nodeId}" could not continue the implementation session: ${resumed.error}`);
+      this.attachVersionedChild(runId, claimed.transitionId, child.id);
+      return;
+    }
+    const dispatched = this.dispatch(runId, {
+      title: `${execution.workflow.id}:${nodeId}`,
+      objective: prompt,
+      transition_id: claimed.transitionId,
+      kind: node.dispatchKind,
+      ...(node.dispatchKind === 'review' ? { allowed_tools: ['Read', 'Grep', 'Glob'] } : {}),
+      ...(node.dispatchKind === 'review' ? {
+        review_of: claimed.execution.attempts.flatMap((attempt) => {
+          const prior = claimed.execution.workflow.nodes.find((candidate) => candidate.id === attempt.node);
+          return prior?.kind === 'agent' && prior.dispatchKind === 'implement' && attempt.childRunId ? [attempt.childRunId] : [];
+        }).slice(-8),
+      } : {}),
+    });
+    if ('refused' in dispatched) return this.failVersionedRun(runId, `node "${nodeId}" dispatch refused: ${dispatched.refused}`);
+    this.attachVersionedChild(runId, claimed.transitionId, dispatched.id);
+    const child = this.store.getRun(dispatched.id);
+    if (child && isTerminalStatus(child.status)) this.advanceVersionedChild(child);
+  }
+
+  private runVersionedAction(runId: string, nodeId: string, transitionId: string): Promise<void> {
+    const key = `${runId}:${transitionId}`;
+    const existing = this.versionedActionPromises.get(key);
+    if (existing) return existing;
+    const promise = this.executeVersionedAction(runId, nodeId, transitionId).finally(() => this.versionedActionPromises.delete(key));
+    this.versionedActionPromises.set(key, promise);
+    return promise;
+  }
+
+  private async executeVersionedAction(runId: string, nodeId: string, transitionId: string): Promise<void> {
+    const run = this.store.getRun(runId);
+    const execution = run?.workflowExecution;
+    const node = execution?.workflow.nodes.find((candidate) => candidate.id === nodeId);
+    if (!run || !execution || !node || node.kind !== 'action') return;
+    const adapter = this.versionedWorkflowActions[node.action];
+    if (!adapter) return this.failVersionedRun(runId, `action "${node.action}" has no registered idempotent adapter`);
+    const attempt = execution.attempts.find((candidate) => candidate.transitionId === transitionId);
+    if (!attempt || !['running', 'pending'].includes(attempt.status)) return;
+    const idempotencyKey = createHash('sha256').update(canonicalJson([
+      runId, execution.workflow.id, execution.workflow.version, execution.definitionDigest, nodeId, transitionId, node.action,
+    ])).digest('hex');
+    const request: VersionedWorkflowActionRequest = {
+      runId, workflowId: execution.workflow.id, workflowVersion: execution.workflow.version,
+      nodeId, action: node.action, idempotencyKey, task: run.task,
+      inputs: execution.inputs, priorOutputs: execution.outputs,
+    };
+    let receipt = attempt.effectReceipt;
+    if (receipt && (receipt.action !== node.action || receipt.idempotencyKey !== idempotencyKey)) {
+      return this.failVersionedRun(runId, `action node "${nodeId}" has a mismatched persisted effect receipt`);
+    }
+    if (receipt?.status === 'confirmed' && receipt.outcome) {
+      return this.finishVersionedAction(runId, nodeId, transitionId, receipt.outcome, receipt.outputs ?? {});
+    }
+    if (!receipt) {
+      receipt = { action: node.action, idempotencyKey, status: 'pending', startedAt: new Date().toISOString() };
+      this.store.updateRun(runId, {
+        workflowExecution: workflowExecutionSchema.parse({
+          ...execution,
+          attempts: execution.attempts.map((candidate) => candidate.transitionId === transitionId ? { ...candidate, effectReceipt: receipt } : candidate),
+        }),
+      });
+    }
+    try {
+      let result: VersionedWorkflowActionResult;
+      if (receipt.status === 'pending' || receipt.status === 'unknown') {
+        const reconciled = await adapter.reconcile(request);
+        if (reconciled.status === 'applied') result = reconciled.result;
+        else if (reconciled.status === 'not_applied') result = await adapter.execute(request);
+        else {
+          const current = this.store.getRun(runId)?.workflowExecution;
+          if (current) this.store.updateRun(runId, { workflowExecution: workflowExecutionSchema.parse({
+            ...current,
+            attempts: current.attempts.map((candidate) => candidate.transitionId === transitionId ? { ...candidate, effectReceipt: { ...receipt!, status: 'unknown' as const } } : candidate),
+          }) });
+          return this.failVersionedRun(runId, `action "${node.action}" reconciliation is unknown${reconciled.reason ? `: ${reconciled.reason}` : ''}`);
+        }
+      } else {
+        result = await adapter.execute(request);
+      }
+      const parsedOutcome = workflowOutcomeSchema.safeParse(result.outcome);
+      const parsedReceipt = workflowEffectReceiptDataSchema.safeParse(result.receipt);
+      if (!parsedOutcome.success || !parsedReceipt.success) throw new Error(`action "${node.action}" returned an invalid outcome or effect receipt`);
+      const outputs = result.outputs ?? {};
+      const outputError = validateWorkflowNodeOutputs(node, outputs);
+      if (outputError) throw new Error(outputError);
+      const current = this.store.getRun(runId)?.workflowExecution;
+      if (!current) return;
+      const settledAt = new Date().toISOString();
+      const confirmedReceipt = {
+        action: node.action, idempotencyKey, status: 'confirmed' as const, startedAt: receipt.startedAt,
+        settledAt, receipt: parsedReceipt.data, outcome: parsedOutcome.data, outputs,
+      };
+      this.store.updateRun(runId, { workflowExecution: workflowExecutionSchema.parse({
+        ...current,
+        attempts: current.attempts.map((candidate) => candidate.transitionId === transitionId ? { ...candidate, effectReceipt: confirmedReceipt } : candidate),
+      }) });
+      this.finishVersionedAction(runId, nodeId, transitionId, parsedOutcome.data, outputs);
+    } catch (error) {
+      const current = this.store.getRun(runId)?.workflowExecution;
+      if (current) this.store.updateRun(runId, { workflowExecution: workflowExecutionSchema.parse({
+        ...current,
+        attempts: current.attempts.map((candidate) => candidate.transitionId === transitionId && candidate.effectReceipt
+          ? { ...candidate, effectReceipt: { ...candidate.effectReceipt, status: 'unknown' as const } }
+          : candidate),
+      }) });
+      this.failVersionedRun(runId, `action "${node.action}" has an unresolved external effect: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private finishVersionedAction(runId: string, nodeId: string, transitionId: string, outcome: WorkflowOutcome, outputs: Record<string, unknown>): void {
+    const execution = this.store.getRun(runId)?.workflowExecution;
+    if (!execution || ['done', 'failed', 'cancelled'].includes(execution.status)) return;
+    const completed = completeWorkflowNode(execution, nodeId, outcome, outputs, transitionId);
+    if (completed.error) return this.failVersionedRun(runId, completed.error);
+    this.clearVersionedAttemptTimeout(runId, transitionId);
+    this.store.updateRun(runId, {
+      workflowExecution: completed.execution,
+      status: completed.execution.status === 'done' ? 'done' : completed.execution.status === 'failed' ? 'failed' : completed.execution.status === 'waiting' ? 'waiting' : 'running',
+      ...(['done', 'failed'].includes(completed.execution.status) ? { finishedAt: new Date().toISOString() } : {}),
+    });
+    if (['done', 'failed'].includes(completed.execution.status)) this.clearVersionedBudget(runId);
+    this.store.appendEvent(runId, { type: 'lifecycle', message: `action node "${nodeId}" returned ${outcome} with a confirmed external receipt${completed.routedTo ? `; routed to "${completed.routedTo}"` : ''}` });
+    if (completed.execution.status === 'waiting') this.armVersionedWait(runId);
+    else if (completed.execution.status === 'running') this.driveVersionedWorkflow(runId);
+    else this.reportSettledChildToParent(runId);
+  }
+
+  private async startVersionedChildWorkflow(runId: string, nodeId: string, transitionId: string): Promise<void> {
+    try {
+      const parent = this.store.getRun(runId);
+      const execution = parent?.workflowExecution;
+      const node = execution?.workflow.nodes.find((candidate) => candidate.id === nodeId);
+      if (!parent || !execution || !node || node.kind !== 'child_workflow') return;
+      const catalog = await loadVersionedWorkflows(this.repoRoot);
+      const childWorkflow = catalog.workflows.find((candidate) => candidate.id === node.workflow && candidate.version === node.version);
+      if (!childWorkflow) return this.failVersionedRun(runId, `child workflow ${node.workflow}@${node.version} is unavailable`);
+      const values: Record<string, unknown> = {};
+      for (const port of childWorkflow.inputs) {
+        if (Object.hasOwn(execution.inputs, port.name)) {
+          values[port.name] = execution.inputs[port.name];
+          continue;
+        }
+        const matches = Object.values(execution.outputs).filter((outputs) => Object.hasOwn(outputs, port.name)).map((outputs) => outputs[port.name]);
+        if (matches.length === 1) values[port.name] = matches[0];
+        else if (matches.length > 1) return this.failVersionedRun(runId, `child workflow input "${port.name}" has ambiguous parent outputs`);
+      }
+      const rootRunId = parent.dispatch?.rootRunId ?? parent.id;
+      const child = this.startVersionedRun(childWorkflow, { task: parent.task, runner: parent.runner, model: parent.model, agentProfile: parent.agentProfile, autonomous: true }, values, {
+        rootRunId,
+        parentRunId: parent.id,
+        transitionId,
+      });
+      this.attachVersionedChild(runId, transitionId, child.id);
+      if (isTerminalStatus(child.status)) this.advanceVersionedChild(child);
+    } catch (error) {
+      this.failVersionedRun(runId, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private driveVersionedFork(runId: string, forkNodeId: string): void {
+    const parent = this.store.getRun(runId);
+    let execution = parent?.workflowExecution;
+    const fork = execution?.workflow.nodes.find((node) => node.id === forkNodeId);
+    const forkAttempt = execution && [...execution.attempts].reverse().find((attempt) => attempt.node === forkNodeId && attempt.status === 'running');
+    if (!parent || !execution) return;
+    if (!fork || fork.kind !== 'fork' || !forkAttempt) return this.failVersionedRun(runId, `fork node "${forkNodeId}" has no active durable attempt`);
+    const joinId = versionedGraphId(execution.workflow, 'join', forkNodeId, String(forkAttempt.attempt));
+    const branchAttempts: Array<{ node: string; transitionId: string }> = [];
+    for (const childNodeId of fork.children) {
+      const childNode = execution.workflow.nodes.find((node) => node.id === childNodeId);
+      if (!childNode || childNode.kind !== 'agent' || childNode.session !== 'new') return this.failVersionedRun(runId, `fork child "${childNodeId}" has no distinct agent worker`);
+      if (childNode.dispatchKind === 'review' && !['claude', 'pi'].includes(parent.runner ?? '')) {
+        return this.failVersionedRun(runId, `review fork child "${childNodeId}" requires a runner with enforced read-only tool permissions`);
+      }
+      let branchAttempt: WorkflowExecution['attempts'][number] | undefined = [...execution.attempts].reverse().find((attempt) => attempt.node === childNodeId
+        && attempt.transitionId.startsWith(`${joinId}:`));
+      if (!branchAttempt) {
+        const ordinal = Math.max(0, ...execution.attempts.filter((attempt) => attempt.node === childNodeId).map((attempt) => attempt.attempt)) + 1;
+        branchAttempt = {
+          node: childNodeId,
+          attempt: ordinal,
+          transitionId: `${joinId}:${childNodeId}:${ordinal}`,
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          ...(childNode.timeoutSeconds ? { timeoutAt: new Date(Date.now() + childNode.timeoutSeconds * 1000).toISOString() } : {}),
+        };
+        execution = workflowExecutionSchema.parse({ ...execution, attempts: [...execution.attempts, branchAttempt] });
+        this.store.updateRun(runId, { workflowExecution: execution });
+      }
+      this.armVersionedAttemptTimeout(runId, branchAttempt.transitionId);
+      branchAttempts.push({ node: childNodeId, transitionId: branchAttempt.transitionId });
+    }
+    for (let index = 0; index < branchAttempts.length; index += 1) {
+      const branch = branchAttempts[index]!;
+      const childNode = execution.workflow.nodes.find((node) => node.id === branch.node);
+      if (!childNode || childNode.kind !== 'agent') continue;
+      const currentAttempt = [...execution.attempts].reverse().find((attempt) => attempt.transitionId === branch.transitionId);
+      if (!currentAttempt || currentAttempt.status !== 'running') continue;
+      const prompt = childNode.prompt.replace(/\{\{task\}\}/g, parent.task).replace(/\{\{input\.([A-Za-z][A-Za-z0-9_.-]*)\}\}/g, (_match, key: string) => {
+        const value = execution!.inputs[key];
+        return value === undefined ? '' : typeof value === 'string' ? value : canonicalJson(value);
+      });
+      const dispatched = this.dispatch(runId, {
+        title: `${execution.workflow.id}:${branch.node}`,
+        objective: prompt,
+        transition_id: branch.transitionId,
+        kind: childNode.dispatchKind,
+        ...(childNode.dispatchKind === 'review' ? { allowed_tools: ['Read', 'Grep', 'Glob'] } : {}),
+        join_id: joinId,
+        join_mode: fork.join.mode,
+        join_size: fork.children.length,
+        ...(fork.join.mode === 'quorum' ? { join_quorum: fork.join.count } : {}),
+        ...(index === branchAttempts.length - 1 ? { join_sealed: true } : {}),
+      });
+      if ('refused' in dispatched) return this.failVersionedRun(runId, `fork "${forkNodeId}" dispatch refused: ${dispatched.refused}`);
+      this.attachVersionedChild(runId, branch.transitionId, dispatched.id);
+      const child = this.store.getRun(dispatched.id);
+      if (child && isTerminalStatus(child.status)) this.advanceVersionedChild(child);
+    }
+    const joined = this.resolveDispatchJoin(runId, joinId);
+    if (joined && joined.outcome !== 'waiting') this.advanceVersionedFork(runId, joinId, joined.outcome);
+  }
+
+  private attachVersionedChild(runId: string, transitionId: string, childRunId: string): void {
+    const current = this.store.getRun(runId)?.workflowExecution;
+    if (!current) return;
+    const attempt = current.attempts.find((candidate) => candidate.transitionId === transitionId);
+    if (!attempt || attempt.status !== 'running') return; // child may have settled synchronously
+    const workflowExecution: WorkflowExecution = {
+      ...current,
+      attempts: current.attempts.map((candidate) => candidate.transitionId === transitionId ? { ...candidate, childRunId } : candidate),
+    };
+    this.store.updateRun(runId, { workflowExecution });
+  }
+
+  private advanceVersionedFork(runId: string, joinId: string, joinOutcome: 'passed' | 'failed'): void {
+    const parent = this.store.getRun(runId);
+    const execution = parent?.workflowExecution;
+    if (!parent || !execution) return;
+    const fork = execution.workflow.nodes.find((node) => node.kind === 'fork'
+      && execution.attempts.some((attempt) => attempt.node === node.id && attempt.status === 'running'
+        && versionedGraphId(execution.workflow, 'join', node.id, String(attempt.attempt)) === joinId));
+    if (!fork || fork.kind !== 'fork' || execution.outcomes[fork.id] !== undefined) return;
+    const childRuns = this.store.listRuns().filter((run) => run.dispatch?.parentRunId === runId && run.dispatch.joinId === joinId);
+    const outcomes = { ...execution.outcomes };
+    const outputs = { ...execution.outputs };
+    const attempts = execution.attempts.map((attempt) => {
+      const child = childRuns.find((candidate) => candidate.dispatch?.transitionId === attempt.transitionId);
+      if (!child || !fork.children.includes(attempt.node)) return attempt;
+      const report = child.dispatch?.report;
+      const outcome = child.status === 'done' && report?.status === 'done' ? report.outcome ?? 'unknown' : child.status === 'cancelled' ? 'interrupted' as const : report?.outcome ?? 'unknown' as const;
+      outcomes[attempt.node] = outcome;
+      outputs[attempt.node] = report?.outputs ?? {};
+      return { ...attempt, status: child.status === 'cancelled' ? 'cancelled' as const : child.status === 'failed' ? 'failed' as const : 'done' as const, finishedAt: child.finishedAt ?? new Date().toISOString(), outcome, ...(report?.outputs ? {} : {}) };
+    });
+    const forkAttempt = execution.attempts.find((attempt) => attempt.node === fork.id && attempt.status === 'running');
+    if (forkAttempt) this.clearVersionedAttemptTimeout(runId, forkAttempt.transitionId);
+    const tokenBudgetError = this.versionedTokenBudgetError(runId);
+    if (tokenBudgetError) return this.failVersionedRun(runId, tokenBudgetError);
+    const passedBranches = fork.children.filter((childId) => outcomes[childId] === 'passed').length;
+    const enoughTypedPasses = fork.join.mode === 'all' ? passedBranches === fork.children.length
+      : fork.join.mode === 'any' ? passedBranches >= 1
+        : passedBranches >= fork.join.count;
+    const forkPassed = joinOutcome === 'passed' && enoughTypedPasses;
+    const forkOutcome = forkPassed ? 'passed' : fork.outcomes.includes('blocked') ? 'blocked' : 'unknown';
+    const completed = completeWorkflowNode({ ...execution, outcomes, outputs, attempts }, fork.id, forkOutcome, {}, forkAttempt?.transitionId);
+    if (completed.error) return this.failVersionedRun(runId, completed.error);
+    this.store.updateRun(runId, {
+      workflowExecution: completed.execution,
+      status: completed.execution.status === 'done' ? 'done' : completed.execution.status === 'failed' ? 'failed' : completed.execution.status === 'waiting' ? 'waiting' : 'running',
+      ...(['done', 'failed'].includes(completed.execution.status) ? { finishedAt: new Date().toISOString() } : {}),
+    });
+    if (['done', 'failed'].includes(completed.execution.status)) this.clearVersionedBudget(runId);
+    this.store.appendEvent(runId, { type: 'lifecycle', message: `fork "${fork.id}" joined with ${joinOutcome}${completed.routedTo ? `; routed to "${completed.routedTo}"` : ''}` });
+    if (completed.execution.status === 'waiting') this.armVersionedWait(runId);
+    else if (completed.execution.status === 'running') this.driveVersionedWorkflow(runId);
+    else if (completed.execution.status === 'done' || completed.execution.status === 'failed') this.reportSettledChildToParent(runId);
+  }
+
+  private advanceVersionedChild(child: RunRecord): void {
+    child = this.ensureVersionedChildOutcome(child);
+    const parentId = child.dispatch?.parentRunId;
+    const parent = parentId ? this.store.getRun(parentId) : undefined;
+    const execution = parent?.workflowExecution;
+    if (!parent || !execution || ['done', 'failed', 'cancelled'].includes(parent.status)) return;
+    if (child.dispatch?.joinId) {
+      const branchAttempt = [...execution.attempts].reverse().find((candidate) => candidate.transitionId === child.dispatch?.transitionId);
+      if (!branchAttempt) return;
+      const report = child.dispatch.report;
+      const outcome = child.status === 'done' && report?.status === 'done' ? report.outcome ?? 'unknown' : child.status === 'cancelled' ? 'interrupted' as const : report?.outcome ?? 'unknown' as const;
+      const outputs = report?.outputs ?? {};
+      const node = execution.workflow.nodes.find((candidate) => candidate.id === branchAttempt.node);
+      if (node) {
+        const outputError = validateWorkflowNodeOutputs(node, outputs);
+        if (outputError) return this.failVersionedRun(parent.id, outputError);
+      }
+      const nextExecution: WorkflowExecution = {
+        ...execution,
+        outcomes: { ...execution.outcomes, [branchAttempt.node]: outcome },
+        outputs: { ...execution.outputs, [branchAttempt.node]: outputs },
+        attempts: execution.attempts.map((attempt) => attempt.transitionId === branchAttempt.transitionId
+          ? { ...attempt, status: child.status === 'cancelled' ? 'cancelled' : 'done', finishedAt: child.finishedAt ?? new Date().toISOString(), outcome, childRunId: child.id }
+          : attempt),
+      };
+      this.clearVersionedAttemptTimeout(parent.id, branchAttempt.transitionId);
+      this.store.updateRun(parent.id, { workflowExecution: nextExecution });
+      const joined = this.resolveDispatchJoin(parent.id, child.dispatch.joinId);
+      if (joined && joined.outcome !== 'waiting') this.advanceVersionedFork(parent.id, child.dispatch.joinId, joined.outcome);
+      return;
+    }
+    const attempt = [...execution.attempts].reverse().find((candidate) => candidate.childRunId === child.id
+      || candidate.transitionId === child.dispatch?.transitionId);
+    if (!attempt || execution.outcomes[attempt.node] !== undefined) return;
+    this.clearVersionedAttemptTimeout(parent.id, attempt.transitionId);
+    const reported = child.dispatch?.report;
+    const tokenBudgetError = this.versionedTokenBudgetError(parent.id);
+    if (tokenBudgetError) return this.failVersionedRun(parent.id, tokenBudgetError);
+    // A successful run without an explicit typed outcome is unknown by contract. It cannot
+    // become PASS through a legacy `done` status alone.
+    const outcome = child.status === 'done' && reported?.status === 'done' && reported.outcome
+      ? reported.outcome
+      : child.status === 'cancelled' ? 'interrupted' as const
+        : reported?.outcome ?? 'unknown' as const;
+    const completed = completeWorkflowNode(execution, attempt.node, outcome, reported?.outputs ?? {}, attempt.transitionId);
+    if (completed.error) return this.failVersionedRun(parent.id, completed.error);
+    this.store.updateRun(parent.id, {
+      workflowExecution: completed.execution,
+      status: completed.execution.status === 'done' ? 'done' : completed.execution.status === 'failed' ? 'failed' : completed.execution.status === 'waiting' ? 'waiting' : 'running',
+      ...(['done', 'failed'].includes(completed.execution.status) ? { finishedAt: new Date().toISOString() } : {}),
+    });
+    if (['done', 'failed'].includes(completed.execution.status)) this.clearVersionedBudget(parent.id);
+    this.store.appendEvent(parent.id, { type: 'lifecycle', message: `node "${attempt.node}" returned ${outcome}${completed.routedTo ? `; routed to "${completed.routedTo}"` : ''}` });
+    if (completed.execution.status === 'done') this.clearVersionedWait(parent.id);
+    else if (completed.execution.status === 'waiting') this.armVersionedWait(parent.id);
+    else this.driveVersionedWorkflow(parent.id);
+    if (completed.execution.status === 'done' || completed.execution.status === 'failed') this.reportSettledChildToParent(parent.id);
+  }
+
+  private ensureVersionedChildOutcome(child: RunRecord): RunRecord {
+    if (!child.dispatch || !isTerminalStatus(child.status) || child.dispatch.report?.outcome) return child;
+    if (child.workflowExecution) {
+      const execution = child.workflowExecution;
+      const terminalPassed = execution.status === 'done' && execution.workflow.terminals.length > 0
+        && execution.workflow.terminals.every((nodeId) => execution.outcomes[nodeId] === 'passed');
+      const outputs = Object.assign({}, ...execution.workflow.terminals.map((nodeId) => execution.outputs[nodeId] ?? {}));
+      this.store.updateRun(child.id, {
+        dispatch: {
+          ...child.dispatch,
+          report: {
+            status: terminalPassed ? 'done' : 'failed',
+            outcome: terminalPassed ? 'passed' : 'unknown',
+            result: terminalPassed ? 'Nested versioned workflow completed.' : 'Nested versioned workflow did not produce a passing terminal result.',
+            outputs,
+            evidence: [], side_effects: [], errors: terminalPassed ? [] : ['nested workflow did not pass'], suggestions: [],
+          },
+        },
+      });
+      return this.store.getRun(child.id) ?? child;
+    }
+    const status = child.status === 'done' ? 'done' : child.status === 'cancelled' ? 'blocked' : 'failed';
+    const prior = child.dispatch.report;
+    this.store.updateRun(child.id, {
+      dispatch: {
+        ...child.dispatch,
+        report: {
+          ...(prior ?? { result: 'worker settled without a typed versioned outcome' }),
+          status,
+          outcome: 'unknown',
+          evidence: prior?.evidence ?? [],
+          side_effects: prior?.side_effects ?? [],
+          errors: prior?.errors ?? [],
+          suggestions: prior?.suggestions ?? [],
+        },
+      },
+    });
+    return this.store.getRun(child.id) ?? child;
+  }
+
   startRun(
     workflow: WorkflowDef,
     input: StartRunInput,
@@ -1475,6 +2223,25 @@ export class RunManager {
       // its commits, and an in-place run has no branch to fork. Overridden on the INPUT, which is
       // what `execute()` reads, not only on the record.
       ...(input.dispatchIntent && input.worktree === false ? { worktree: undefined } : {}),
+    };
+    // Resolve inherited release provenance and freeze the exact effective definition in the
+    // first durable write. A crash between create and metadata update must not leave a run whose
+    // queued work can silently resolve to a newer catalog definition.
+    const inheritedRelease = input.dispatch?.parentRunId
+      ? this.store.getRun(input.dispatch.parentRunId)?.factoryRelease
+      : undefined;
+    const pinnedWorkflow = workflow.factoryRelease || !inheritedRelease
+      ? workflow
+      : { ...workflow, factoryRelease: inheritedRelease };
+    const workflowDefinitionPin = {
+      format: 'legacy' as const,
+      id: pinnedWorkflow.name,
+      digest: createHash('sha256').update(canonicalJson(pinnedWorkflow)).digest('hex'),
+      policyPins: pinnedWorkflow.factoryRelease ? [{
+        id: 'factory-release-manifest',
+        version: pinnedWorkflow.factoryRelease.sourceSha,
+        digest: pinnedWorkflow.factoryRelease.manifestDigest.slice('sha256:'.length),
+      }] : [],
     };
     const run = this.store.createRun({
       title: makeRunTitle(input.task, workflow) + (group ? ` (${group.variant})` : ''),
@@ -1500,28 +2267,16 @@ export class RunManager {
       baseBranch: input.baseCommit,
       groupId: group?.groupId,
       variant: group?.variant,
+      dispatch: effectiveInput.dispatch,
+      dispatchIntent: effectiveInput.dispatchIntent,
+      workflowDef: pinnedWorkflow,
+      workflowDefinitionPin,
+      ...(pinnedWorkflow.factoryRelease ? { factoryRelease: pinnedWorkflow.factoryRelease } : {}),
       steps: workflow.steps.map((s) => ({ id: s.id, name: s.name ?? s.id, kind: stepKind(s) })),
     });
-    // Persist the full definition so a queued run survives a restart (#367) —
-    // ad-hoc "(planned)" chains exist nowhere else to re-resolve from.
-    const inheritedRelease = input.dispatch?.parentRunId
-      ? this.store.getRun(input.dispatch.parentRunId)?.factoryRelease
-      : undefined;
-    const pinnedWorkflow = workflow.factoryRelease || !inheritedRelease
-      ? workflow
-      : { ...workflow, factoryRelease: inheritedRelease };
-    this.store.updateRun(run.id, {
-      workflowDef: pinnedWorkflow,
-      ...(pinnedWorkflow.factoryRelease ? { factoryRelease: pinnedWorkflow.factoryRelease } : {}),
-    });
-    // The run's place in a dispatch tree (spec 2026-09-10-dispatch), written the way
-    // automation provenance is (`automations/task-template.ts`): an update straight after create,
-    // rather than a tenth key on `createRun`'s parameter object. Persisting it here — not merely
-    // holding it on the input — is what makes it survive: `execute()`, restart recovery and the
-    // turn-end handlers all read the RECORD, and a tree whose root lost its `dispatch` on a
-    // restart would be a tree with no root.
-    if (input.dispatch) this.store.updateRun(run.id, { dispatch: input.dispatch });
-    else if (input.dispatchIntent) this.store.updateRun(run.id, { dispatch: { rootRunId: run.id, intent: input.dispatchIntent } });
+    // Parent/root links and idempotency keys are part of the initial record write. A crash between
+    // record creation and a follow-up metadata patch used to leave an orphan run that a replayed
+    // graph transition could duplicate.
     // Initial pasted attachments must be visible while the run is still queued (#612),
     // and must survive a restart before a slot opens. Persist them before the job
     // enters `pendingJobs`; `hydrateQueuedInput` reconstructs their content blocks
@@ -1894,6 +2649,8 @@ export class RunManager {
    * Call once, before the server starts taking requests.
    */
   async recover(): Promise<void> {
+    await this.lifecycleStartup;
+    this.reconcileDispatchJoins();
     const live = this.store
       .listRuns()
       .filter((r) => ['queued', 'waiting', 'running'].includes(r.status))
@@ -1903,6 +2660,29 @@ export class RunManager {
     // per-run directory here — bounded to `<dataDir>/tmp`, never a sibling.
     sweepAgentTmpDirs(this.dataDir, live.map((r) => r.id));
     for (const run of live) {
+      if (run.workflowDefinitionPin && !workflowDefinitionPinMatches(run)) {
+        const finishedAt = new Date().toISOString();
+        this.store.updateRun(run.id, {
+          ...(run.workflowExecution ? { workflowExecution: { ...run.workflowExecution, status: 'failed' } } : {}),
+          status: 'failed', error: 'workflow definition or policy pin does not match the persisted run', finishedAt,
+        });
+        this.store.appendEvent(run.id, { type: 'lifecycle', message: 'recovery stopped because the persisted workflow definition or policy pin failed its immutable binding check' });
+        this.reportSettledChildToParent(run.id);
+        continue;
+      }
+      if (run.workflowExecution) {
+        this.armVersionedBudget(run.id);
+        if (run.workflowExecution.status === 'done') {
+          this.store.updateRun(run.id, { status: 'done', finishedAt: run.finishedAt ?? new Date().toISOString() });
+        } else if (run.workflowExecution.status === 'failed' || run.workflowExecution.status === 'cancelled') {
+          this.store.updateRun(run.id, { status: run.workflowExecution.status, finishedAt: run.finishedAt ?? new Date().toISOString() });
+        } else {
+          this.store.updateRun(run.id, { status: run.workflowExecution.status === 'waiting' ? 'waiting' : 'running' });
+          if (run.workflowExecution.status === 'waiting') this.armVersionedWait(run.id);
+          else this.driveVersionedWorkflow(run.id);
+        }
+        continue;
+      }
       if (run.status === 'queued') {
         await this.reviveQueuedRun(run, 'cezar restarted');
         continue;
@@ -2126,6 +2906,118 @@ export class RunManager {
     const dispatch = this.store.getRun(runId)?.dispatch;
     if (!dispatch) return;
     this.store.updateRun(runId, { dispatch: patch(dispatch) });
+  }
+
+  /** Register/reconcile one child against its parent's durable fork record. Child-side join fields
+   *  are the recovery source if the process dies after creating the child but before this write. */
+  private registerDispatchJoinChild(parentId: string, child: RunRecord, input: DispatchInput): void {
+    const joinId = child.dispatch?.joinId ?? input.join_id?.trim();
+    const mode = child.dispatch?.joinMode ?? input.join_mode;
+    const expectedChildren = child.dispatch?.joinSize ?? input.join_size;
+    const quorum = child.dispatch?.joinQuorum ?? input.join_quorum;
+    if (!joinId || !mode || expectedChildren === undefined) return;
+    this.updateDispatch(parentId, (dispatch) => {
+      const joins = [...(dispatch.joins ?? [])];
+      const index = joins.findIndex((join) => join.id === joinId);
+      const previous = joins[index];
+      const join: DispatchJoin = {
+        ...(previous ?? { id: joinId, mode, expectedChildren, childRunIds: [], outcome: 'waiting', sealed: false }),
+        childRunIds: [...new Set([...(previous?.childRunIds ?? []), child.id])],
+        sealed: (previous?.sealed ?? false) || child.dispatch?.joinSealed === true || input.join_sealed === true,
+      };
+      if (quorum !== undefined) join.quorum = quorum;
+      if (index < 0) joins.push(join);
+      else joins[index] = join;
+      return { ...dispatch, joins };
+    });
+    this.resolveDispatchJoin(parentId, joinId);
+  }
+
+  /** Rebuild incomplete parent join records from the child links, then settle them deterministically. */
+  private reconcileDispatchJoins(parentFilter?: string): void {
+    const groups = new Map<string, RunRecord[]>();
+    const processedGroups = new Set<string>();
+    const allRuns = this.store.listRuns();
+    for (const child of allRuns) {
+      const { parentRunId, joinId } = child.dispatch ?? {};
+      if (!parentRunId || !joinId || (parentFilter && parentRunId !== parentFilter)) continue;
+      const key = `${parentRunId}\0${joinId}`;
+      groups.set(key, [...(groups.get(key) ?? []), child]);
+    }
+    for (const [key, children] of groups) {
+      const [parentId, joinId] = key.split('\0');
+      if (!parentId || !joinId) continue;
+      const first = children[0]?.dispatch;
+      if (!first?.joinMode || first.joinSize === undefined) continue;
+      const existing = this.store.getRun(parentId)?.dispatch?.joins?.find((join) => join.id === joinId);
+      const reconciled: DispatchJoin = {
+        ...(existing ?? {
+          id: joinId, mode: first.joinMode, expectedChildren: first.joinSize,
+          ...(first.joinQuorum !== undefined ? { quorum: first.joinQuorum } : {}),
+          childRunIds: [], sealed: false, outcome: 'waiting',
+        }),
+        childRunIds: [...new Set([...(existing?.childRunIds ?? []), ...children.map((child) => child.id)])].slice(0, 32),
+        sealed: (existing?.sealed ?? false) || children.some((child) => child.dispatch?.joinSealed === true),
+      };
+      this.updateDispatch(parentId, (dispatch) => ({
+        ...dispatch,
+        joins: [
+          ...(dispatch.joins ?? []).filter((join) => join.id !== joinId),
+          reconciled,
+        ],
+      }));
+      this.resolveDispatchJoin(parentId, joinId);
+      processedGroups.add(`${parentId}\0${joinId}`);
+    }
+    // A parent may name a child whose record was lost/corrupt; child-only reconstruction cannot
+    // see that case. Resolve all remaining durable parent join records so the evaluator can fail
+    // unknown references closed instead of leaving them parked indefinitely.
+    for (const parent of allRuns) {
+      if (parentFilter && parent.id !== parentFilter) continue;
+      for (const join of parent.dispatch?.joins ?? []) {
+        if (!processedGroups.has(`${parent.id}\0${join.id}`)) this.resolveDispatchJoin(parent.id, join.id);
+      }
+    }
+  }
+
+  /** Persist the join decision before cooperatively cancelling sibling children. */
+  private resolveDispatchJoin(parentId: string, joinId: string): DispatchJoin | undefined {
+    const parent = this.store.getRun(parentId);
+    const existing = parent?.dispatch?.joins?.find((join) => join.id === joinId);
+    if (!parent?.dispatch || !existing) return undefined;
+    const runs = this.store.listRuns();
+    const children = childrenOf(runs, parentId).filter((child) => child.dispatch?.joinId === joinId);
+    const childRunIds = [...new Set([...existing.childRunIds, ...children.map((child) => child.id)])].slice(0, 32);
+    const sealed = existing.sealed || children.some((child) => child.dispatch?.joinSealed === true);
+    const current: DispatchJoin = { ...existing, childRunIds, sealed };
+    const decision = evaluateDispatchJoin(current, runs);
+    // A crash can land after the join decision is durable but before cooperative sibling
+    // cancellation. Reconcile that side of the decision on every recovery. If a formerly passing
+    // join no longer has sufficient known successful evidence, downgrade it to failed.
+    const settledOutcome = existing.outcome === 'failed'
+      ? 'failed'
+      : existing.outcome === 'passed' && decision.outcome !== 'passed' ? 'failed'
+        : decision.outcome;
+    const next: DispatchJoin = {
+      ...current,
+      outcome: settledOutcome,
+      ...(settledOutcome === 'waiting' ? {} : { completedAt: existing.completedAt ?? new Date().toISOString() }),
+    };
+    this.updateDispatch(parentId, (dispatch) => ({
+      ...dispatch,
+      joins: (dispatch.joins ?? []).map((join) => join.id === joinId ? next : join),
+    }));
+    if ((existing.outcome === 'waiting' && settledOutcome !== 'waiting') || (existing.outcome === 'passed' && settledOutcome === 'failed')) {
+      this.store.appendEvent(parentId, {
+        type: 'lifecycle',
+        message: `fork "${joinId}" joined with ${settledOutcome} (${current.mode}, ${childRunIds.length}/${current.expectedChildren} children)`,
+      });
+    }
+    if (settledOutcome !== 'waiting') {
+      const cancelIds = new Set([...decision.cancelRunIds, ...children.filter((child) => ['queued', 'running', 'waiting'].includes(child.status)).map((child) => child.id)]);
+      for (const childId of cancelIds) this.cancelOne(childId);
+    }
+    return next;
   }
 
   /**
@@ -2355,9 +3247,42 @@ export class RunManager {
    */
   dispatch(parentId: string, input: DispatchInput): { id: string; branch?: string } | { refused: string } {
     if (!this.dispatchEnabled()) return { refused: 'dispatch is disabled on this cockpit (CEZ_DISPATCH=0) — the operator turned it off. Do not substitute sub-agents or do the delegated work yourself: stop and report that dispatch is disabled.' };
+    this.reconcileDispatchJoins(parentId);
     const parent = this.store.getRun(parentId);
     if (!parent) return { refused: `no such run: ${parentId}` };
+    const transitionId = input.transition_id?.trim();
+    if (input.transition_id !== undefined && (!transitionId || !/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/.test(transitionId))) return { refused: 'transition_id must be a stable 1–120 character identifier' };
+    const transitionFingerprint = transitionId ? dispatchTransitionFingerprint(input) : undefined;
+    if (transitionId && transitionFingerprint) {
+      const replay = this.store.listRuns().find((run) =>
+        run.dispatch?.parentRunId === parentId && run.dispatch.transitionId === transitionId,
+      );
+      if (replay) {
+        if (replay.dispatch?.transitionFingerprint !== transitionFingerprint) {
+          return { refused: `transition_id "${transitionId}" was already used with different work` };
+        }
+        this.registerDispatchJoinChild(parentId, replay, input);
+        return { id: replay.id, ...(replay.branch ? { branch: replay.branch } : {}) };
+      }
+    }
     if (isTerminalStatus(parent.status)) return { refused: `run ${parentId} has already settled (${parent.status})` };
+    const joinId = input.join_id?.trim();
+    if (input.join_id !== undefined && (!joinId || !/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}$/.test(joinId))) return { refused: 'join_id must be a stable 1–120 character identifier' };
+    if (joinId) {
+      if (!input.join_mode || input.join_size === undefined) return { refused: 'fork membership requires join_mode and join_size' };
+      if (!Number.isInteger(input.join_size) || input.join_size < 1 || input.join_size > 32) return { refused: 'join_size must be between 1 and 32' };
+      if (input.join_mode === 'quorum' && (!Number.isInteger(input.join_quorum) || !input.join_quorum || input.join_quorum < 1 || input.join_quorum > input.join_size)) return { refused: 'quorum must be within join_size' };
+      if (input.join_mode !== 'quorum' && input.join_quorum !== undefined) return { refused: 'join_quorum is only valid for quorum joins' };
+      const existingJoin = parent.dispatch?.joins?.find((join) => join.id === joinId);
+      if (existingJoin?.outcome !== undefined && existingJoin.outcome !== 'waiting') return { refused: `join "${joinId}" is already ${existingJoin.outcome}` };
+      if (existingJoin && (existingJoin.mode !== input.join_mode || existingJoin.expectedChildren !== input.join_size || existingJoin.quorum !== input.join_quorum)) {
+        return { refused: `join "${joinId}" was already declared with different settings` };
+      }
+      if ((existingJoin?.childRunIds.length ?? 0) >= input.join_size) return { refused: `join "${joinId}" already has its expected ${input.join_size} children` };
+      if (input.join_sealed && (existingJoin?.childRunIds.length ?? 0) + 1 !== input.join_size) return { refused: `join "${joinId}" can be sealed only with exactly ${input.join_size} children` };
+    } else if (input.join_mode || input.join_size !== undefined || input.join_quorum !== undefined || input.join_sealed !== undefined) {
+      return { refused: 'fork membership requires join_id' };
+    }
     const note = (message: string, tone?: 'danger') =>
       this.store.appendEvent(parentId, { type: 'note', stepId: this.active.get(parentId)?.currentStepId, message, ...(tone ? { tone } : {}) });
 
@@ -2419,6 +3344,17 @@ export class RunManager {
         rootRunId,
         parentRunId: parentId,
         ...(input.kind && input.kind !== 'implement' ? { kind: input.kind } : {}),
+        ...(transitionId && transitionFingerprint ? {
+          transitionId,
+          transitionFingerprint,
+        } : {}),
+        ...(joinId ? {
+          joinId,
+          joinMode: input.join_mode,
+          joinSize: input.join_size,
+          ...(input.join_quorum !== undefined ? { joinQuorum: input.join_quorum } : {}),
+          ...(input.join_sealed ? { joinSealed: true } : {}),
+        } : {}),
         ...(input.review_of?.length ? { reviewOf: input.review_of } : {}),
         ...(budget.budgetUsd !== undefined ? { budgetUsd: budget.budgetUsd } : {}),
       },
@@ -2456,6 +3392,7 @@ export class RunManager {
       ...(budget.budgetUsd !== undefined ? { budgetUsd: budget.budgetUsd } : {}),
     });
     const child = this.store.getRun(record.id) ?? record;
+    this.registerDispatchJoinChild(parentId, child, input);
     note(`dispatched "${title}" (${input.kind ?? 'implement'}, ${record.id})${budget.budgetUsd !== undefined ? ` with ${usd(budget.budgetUsd)}` : ''}`);
     // This turn parks as a monitor for the child when it ends (see `handleDispatchTurn`).
     const state = this.active.get(parentId);
@@ -2523,8 +3460,20 @@ export class RunManager {
       const parent = this.store.getRun(parentId);
       if (!parent?.dispatch) return;
 
+      if (parent.workflowExecution) {
+        this.advanceVersionedChild(child);
+        return;
+      }
+
+      const joinResult = child.dispatch?.joinId
+        ? this.resolveDispatchJoin(parentId, child.dispatch.joinId)
+        : undefined;
+
       const resumeNotes = handoffSectionExcerpt(readHandoff(this.dataDir, runId), '## Resume notes');
-      const { text, report } = childSettleReport(child, { resumeNotes });
+      const { text: childText, report } = childSettleReport(child, { resumeNotes });
+      const text = joinResult && joinResult.outcome !== 'waiting'
+        ? `${childText}\n\nFork join "${joinResult.id}" resolved ${joinResult.outcome}.`
+        : childText;
       const at = new Date().toISOString();
       this.updateDispatch(parentId, (dispatch) =>
         withPendingReport(dispatch, { fromRunId: child.id, title: child.title, report, at }),
@@ -3081,6 +4030,15 @@ export class RunManager {
    * this run's own — a cascade that cancelled nothing must not make `cancel` claim it did.
    */
   cancel(runId: string): boolean {
+    const run = this.store.getRun(runId);
+    if (run?.workflowExecution && !isTerminalStatus(run.status)) {
+      // A graph coordinator owns no worker slot itself. Persist its cancellation before the
+      // children-first cascade so child settle callbacks cannot turn a user-cancelled graph into
+      // a failed or passing outcome while the cascade is in flight.
+      const cancelled = this.cancelOne(runId);
+      this.cancelDescendants(runId, new Set([runId]));
+      return cancelled;
+    }
     this.cancelDescendants(runId, new Set([runId]));
     return this.cancelOne(runId);
   }
@@ -3089,11 +4047,18 @@ export class RunManager {
   private cancelOne(runId: string): boolean {
     // Still waiting in the queue: just drop it there.
     const queuedAt = this.queue.indexOf(runId);
-    if (queuedAt >= 0) {
-      this.queue.splice(queuedAt, 1);
+    if (queuedAt >= 0 || this.store.getRun(runId)?.status === 'queued') {
+      if (queuedAt >= 0) this.queue.splice(queuedAt, 1);
       this.pendingJobs.delete(runId);
       this.pendingContinuations.delete(runId);
-      this.store.updateRun(runId, { status: 'cancelled', finishedAt: new Date().toISOString() });
+      const run = this.store.getRun(runId);
+      this.clearVersionedWait(runId);
+      this.clearVersionedBudget(runId);
+      this.clearVersionedAttemptTimers(runId);
+      this.store.updateRun(runId, {
+        status: 'cancelled', finishedAt: new Date().toISOString(),
+        ...(run?.workflowExecution ? { workflowExecution: { ...run.workflowExecution, status: 'cancelled' } } : {}),
+      });
       this.store.appendEvent(runId, { type: 'lifecycle', message: 'cancelled while queued' });
       // A queued run never entered `active`, so it never reaches `dropActive` — the one terminal
       // transition that misses the settle hook. Without this a parent waiting on a child the user
@@ -3102,7 +4067,20 @@ export class RunManager {
       return true;
     }
     const state = this.active.get(runId);
-    if (!state) return false;
+    if (!state) {
+      const run = this.store.getRun(runId);
+      if (!run?.workflowExecution || isTerminalStatus(run.status)) return false;
+      this.clearVersionedWait(runId);
+      this.clearVersionedBudget(runId);
+      this.clearVersionedAttemptTimers(runId);
+      this.store.updateRun(runId, {
+        workflowExecution: { ...run.workflowExecution, status: 'cancelled' },
+        status: 'cancelled', finishedAt: new Date().toISOString(),
+      });
+      this.store.appendEvent(runId, { type: 'lifecycle', message: 'versioned workflow cancelled' });
+      this.reportSettledChildToParent(runId);
+      return true;
+    }
     state.cancelled = true;
     this.clearIdleTimer(state);
     try {

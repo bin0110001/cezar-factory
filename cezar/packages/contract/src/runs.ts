@@ -3,12 +3,13 @@ import { runnerSchema } from './health.ts';
 import { referenceStatusSchema } from './github.ts';
 // The chain shapes belong to the workflows family; the run record embeds one, so this file
 // consumes them rather than redeclaring. One-way on purpose — see the header of `./workflows.ts`.
-import { workflowDefSchema, workflowStepDefSchema } from './workflows.ts';
+import { workflowDefSchema, workflowDefinitionPinSchema, workflowStepDefSchema } from './workflows.ts';
 // Same one-way direction: the dispatch family owns the `dispatch` object's shape, the run record embeds
 // one. `src/runs/store.ts` imports the SAME value for its persistence twin, so the two halves of
 // `contract-parity.runs.test.ts` cannot drift apart by construction.
-import { dispatchIntentSchema, dispatchSchema } from './dispatch.ts';
+import { dispatchIntentSchema, dispatchSchema, dispatchSummarySchema } from './dispatch.ts';
 import { factoryReleaseProvenanceSchema } from './releases.ts';
+import { workflowExecutionSchema } from './versioned-workflows.ts';
 
 /**
  * The RUNS family of `/api/v1` — a task's record, its lifecycle mutations, and the artifacts
@@ -315,6 +316,10 @@ export const runRecordSchema = z.object({
    * like every other key.
    */
   workflowDef: workflowDefSchema.optional(),
+  /** Exact definition and policy revisions used when this run started. */
+  workflowDefinitionPin: workflowDefinitionPinSchema.optional(),
+  /** Persisted graph coordinator state; existing RunStore/event history remains authoritative. */
+  workflowExecution: workflowExecutionSchema.optional().catch(undefined),
   /** Immutable Factory channel selection used by this run and its resumes. */
   factoryRelease: factoryReleaseProvenanceSchema.optional(),
 });
@@ -386,7 +391,7 @@ export const runIndexEntrySchema = z.object({
   /** The run's place in a dispatch tree (spec 2026-09-10-dispatch): the two keys the global
    *  page needs to nest a child under its parent, and the child's `kind` so a row can say
    *  `review` or `implement` next to its title. Absent on a plain task. */
-  dispatch: dispatchSchema.pick({ rootRunId: true, parentRunId: true, kind: true }).optional(),
+  dispatch: dispatchSummarySchema.optional(),
   /** When the agent actually started, as opposed to when the task was created. The global page's
    *  age column prefers it and falls back to `createdAt`, exactly as the per-project table does. */
   startedAt: z.string().optional(),
@@ -895,6 +900,8 @@ export const createRunInputBaseSchema = z
     /** An inline chain (spec 008 — an approved plan runs as an ad-hoc workflow, never written to
      *  a file). The catalog's own step shape, not a copy of it. */
     steps: z.array(workflowStepDefSchema).min(1).max(8).optional(),
+    /** Values for typed input ports when `workflow` names an exact versioned id@version. */
+    inputs: z.record(z.string(), z.unknown()).optional(),
     task: z.string().min(1).max(100_000, 'must be at most 100000 characters'),
     model: z.string().optional(),
     runner: runnerSchema.optional(),

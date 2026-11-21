@@ -28,6 +28,8 @@ const USAGE = `cez task — dispatch cezar tasks from inside a task (on by defau
                   [--scope "…"] [--budget <usd>] [--success "…"] [--evidence "…"] [--tools A,B]
                   [--runner ${RUNNER_IDS.join('|')}] [--model <model>] [--retry-limit <0-3>]
   cez task report --status done|partial|failed|blocked --result "…" [--evidence "…"]…
+                  [--outcome passed|changes_required|needs_input|investigate|blocked|skipped|unknown|interrupted|exhausted]
+                  [--outputs '<JSON object>']
                   [--verdict approve|changes|reject] [--suggestions "…"]… [--confidence <0-1>]
                   [--side-effect "…"]… [--error "…"]… [--next "…"]
   cez task list                       the tree this task belongs to, with status and cost
@@ -132,7 +134,9 @@ export async function runTaskCommand(
           allowPositionals: false,
           options: {
             status: { type: 'string' },
+            outcome: { type: 'string' },
             result: { type: 'string' },
+            outputs: { type: 'string' },
             evidence: { type: 'string', multiple: true },
             verdict: { type: 'string' },
             suggestions: { type: 'string', multiple: true },
@@ -144,9 +148,18 @@ export async function runTaskCommand(
         });
         if (!values.status || !values.result) throw new Error('--status and --result are required');
         if (!env.CEZ_TASK_ID) throw new Error('CEZ_TASK_ID is not set — only a running task can report');
+        let outputs: Record<string, unknown> | undefined;
+        if (values.outputs !== undefined) {
+          let decoded: unknown;
+          try { decoded = JSON.parse(values.outputs); } catch { throw new Error('--outputs must be a JSON object'); }
+          if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) throw new Error('--outputs must be a JSON object');
+          outputs = decoded as Record<string, unknown>;
+        }
         const body = {
           status: values.status,
           result: values.result,
+          ...(outputs ? { outputs } : {}),
+          ...(values.outcome ? { outcome: values.outcome } : {}),
           evidence: values.evidence ?? [],
           side_effects: values['side-effect'] ?? [],
           errors: values.error ?? [],
@@ -176,7 +189,7 @@ export async function runTaskCommand(
           status: string;
           costUsd?: number;
           branch?: string;
-          dispatch?: { rootRunId: string; parentRunId?: string; kind?: string; report?: { status: string; verdict?: string } };
+          dispatch?: { rootRunId: string; parentRunId?: string; kind?: string; report?: { status: string; outcome?: string; verdict?: string } };
         }>;
         const me = runs.find((run) => run.id === anchor || run.id.startsWith(anchor));
         if (!me) throw new Error(`no run ${anchor}`);
@@ -189,7 +202,7 @@ export async function runTaskCommand(
         }
         const print = (run: (typeof runs)[number], depth: number): void => {
           const cost = run.costUsd !== undefined ? ` $${run.costUsd.toFixed(2)}` : '';
-          const report = run.dispatch?.report ? ` → ${run.dispatch.report.status}${run.dispatch.report.verdict ? ` (${run.dispatch.report.verdict})` : ''}` : '';
+          const report = run.dispatch?.report ? ` → ${run.dispatch.report.outcome ?? run.dispatch.report.status}${run.dispatch.report.verdict ? ` (${run.dispatch.report.verdict})` : ''}` : '';
           io.log(`${'  '.repeat(depth)}${run.id.slice(0, 8)}  ${run.status}${cost}  ${run.title}${run.branch ? `  [${run.branch}]` : ''}${report}`);
           for (const child of byParent.get(run.id) ?? []) print(child, depth + 1);
         };
