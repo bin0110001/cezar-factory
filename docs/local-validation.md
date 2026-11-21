@@ -1,8 +1,9 @@
 # Local pre-commit validation
 
 The Linux host is the authority for validation. Windows is an authoring environment:
-the pre-commit hook runs only the fast static checks (`tests/run-tests.ps1 -StaticOnly`)
-and YAML lint and blocks the commit when either fails. The full suite runs on Linux for
+the pre-commit hook runs the fast static checks (`tests/run-tests.ps1 -StaticOnly`), the
+hermetic promotion-validator mount regression test (`tests/test-validate-in-container.sh`),
+and YAML lint, and blocks the commit when any fail. The full suite runs on Linux for
 the pushed commit (see "Linux before merge"), and its receipt is the validation evidence. GitHub Actions does
 not run this repository's test or lint scripts, and nothing in this repository may
 depend on a GitHub workflow or status check: all validation runs on our own compute
@@ -37,6 +38,7 @@ git config --local core.hooksPath .githooks
 
 ```powershell
 pwsh -NoProfile -File tests/run-tests.ps1 -StaticOnly
+bash tests/test-validate-in-container.sh
 yamllint -c .yamllint.yaml .yamllint.yaml workflows automations routing policies templates
 ```
 
