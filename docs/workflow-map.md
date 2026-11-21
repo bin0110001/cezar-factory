@@ -145,7 +145,7 @@ Use the `factory-update-workflow-guide` skill whenever a change alters issue rou
 
 ## Workflow graph validation (#764)
 
-Before a candidate release is activated, `factory_activation.py` runs the static workflow graph validator (`docs/workflow-graph-validator.md`). Native `workflows/*.workflow.json` definitions with error diagnostics block activation; legacy `workflows/*.yaml` are validated report-only and never block. The validator adapts the Cezar versioned contract through `adapt_definition`; legacy YAML remains a report-only compatibility path.
+Workflow definition create/edit changes run the static graph validator through `tests/run-tests.ps1 -StaticOnly` before commit, reached by the `workflows/**` changed-test owner and pre-commit hook. Candidate activation runs the same `validate_tree` from `factory_activation.py`. Native `workflows/*.workflow.json` definitions with error diagnostics block both gates; legacy `workflows/*.yaml` are validated report-only and never block. The validator adapts the Cezar versioned contract through `adapt_definition`; legacy YAML remains a report-only compatibility path.
 
 ## Versioned lifecycle child workflows (#773)
 

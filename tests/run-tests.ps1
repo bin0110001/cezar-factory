@@ -122,6 +122,24 @@ $required = 'README.md', 'VERSION', 'CHANGELOG.md', 'AGENTS.md', '.yamllint.yaml
 $required += 'scripts/release/workflow_liveness.py', 'schemas/workflow-liveness.schema.json', 'tests/test_workflow_liveness.py', 'docs/workflow-liveness.md'
 $required += 'scripts/repair/repair_receipts.py', 'schemas/repair-receipt.schema.json', 'tests/test_repair_receipts.py', 'docs/repair-receipts.md'
 foreach ($f in $required) { Assert "exists $f" (Test-Path (Join-Path $factory $f)) }
+$python3Command = Get-Command python3 -ErrorAction SilentlyContinue
+$graphPython = if ($python3Command -and $python3Command.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]') { 'python3' } elseif ($python3Command) {
+    $installedPython = @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '[\\/]\.pyenv[\\/]pyenv-win[\\/]shims[\\/]|[\\/]WindowsApps[\\/]' } | Select-Object -First 1)
+    if ($installedPython) { $installedPython[0].Source } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
+} elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { $null }
+Assert 'Python 3 is available for workflow graph create/edit validation' ($null -ne $graphPython)
+if ($graphPython) {
+    $graphPrefix = if ($graphPython -eq 'py') { @('-3', '-B') } else { @('-B') }
+    $graphOutput = & $graphPython @graphPrefix (Join-Path $factory 'scripts/release/workflow_graph_validator.py') $factory --mode enforce --format json *>&1 | Out-String
+    $graphExit = $LASTEXITCODE
+    if ($graphExit -ne 0) { Write-Host $graphOutput }
+    Assert 'native workflow definitions pass the create/edit graph gate; legacy YAML stays report-only' ($graphExit -eq 0)
+
+    $validatorTests = & $graphPython @graphPrefix -m unittest tests.test_workflow_graph_validator *>&1 | Out-String
+    $validatorTestsExit = $LASTEXITCODE
+    if ($validatorTestsExit -ne 0) { Write-Host $validatorTests }
+    Assert 'workflow graph negative and compatibility cases pass in the create/edit gate' ($validatorTestsExit -eq 0)
+}
 foreach ($schemaFile in 'schemas/evidence-manifest.schema.json', 'schemas/verification-query.schema.json', 'schemas/memory-candidate.schema.json', 'schemas/memory-record.schema.json', 'schemas/memory-recall.schema.json', 'schemas/memory-retrieval-capture.schema.json', 'schemas/hindsight-deterministic-index.schema.json') {
     try { Get-Content -Raw (Join-Path $factory $schemaFile) | ConvertFrom-Json | Out-Null; Assert "valid JSON $schemaFile" $true }
     catch { Assert "valid JSON $schemaFile" $false }
