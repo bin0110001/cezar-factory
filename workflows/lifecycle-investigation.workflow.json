@@ -13,7 +13,10 @@
       "type": "string",
       "required": true,
       "name": "task"
-    }
+    },
+    { "type": "number", "name": "issue" },
+    { "type": "string", "required": true, "name": "caller" },
+    { "type": "array", "name": "evidenceRefs" }
   ],
   "nodes": [
     {
@@ -30,9 +33,13 @@
         "interrupted",
         "exhausted"
       ],
-      "prompt": "Investigate the recorded failure using supplied evidence. Return exactly one declared typed outcome: ready, needs_input, split, not_reproducible, needs_research, unknown, interrupted, or exhausted. Do not edit lifecycle labels or invoke Factory scripts.",
+      "prompt": "Investigate the supplied uncertainty for caller {{input.caller}} and issue {{input.issue}}. Start with the supplied evidence references {{input.evidenceRefs}}, then gather only the bounded additional evidence allowed by the factory-investigate skill. Return exactly one declared typed outcome: ready, needs_input, split, not_reproducible, needs_research, unknown, interrupted, or exhausted. Also return a structured result conforming to schemas/investigation-result.schema.json with caller, outcome, and stable evidenceRefs. Keep evidence references concise and never copy logs or secrets. Do not edit lifecycle labels or invoke Factory scripts.",
       "skill": "factory-investigate",
-      "dispatchKind": "implement"
+      "dispatchKind": "implement",
+      "outputs": [
+        { "name": "result", "type": "object" },
+        { "name": "evidenceRefs", "type": "array" }
+      ]
     }
   ],
   "transitions": [],

@@ -1595,6 +1595,10 @@ try {
     $inv = @{ issue = 7; failureClassification = 'flaky-test'; evidence = 'e'; attemptsReviewed = 'a'; rootCauseHypothesis = 'h'; confidence = 'high'; recommendedAction = 'retry'; automaticRetryAppropriate = $true }
     Assert 'validate: good investigation passes' ((Test-Validate 'investigation' $inv) -eq 0)
     Assert 'validate: unknown classification fails' ((Test-Validate 'investigation' (With $inv @{ failureClassification = 'gremlins' })) -ne 0)
+    $typedInv = With $inv @{ schemaVersion = 1; caller = 'review'; outcome = 'needs_research'; evidenceRefs = @(@{ kind = 'artifact'; ref = '.factory/verification-checks.json'; digest = ('a' * 64) }) }
+    Assert 'validate: typed investigation accepts caller, outcome and content-addressed evidence references' ((Test-Validate 'investigation' $typedInv) -eq 0)
+    Assert 'validate: typed investigation rejects undeclared outcomes' ((Test-Validate 'investigation' (With $typedInv @{ outcome = 'retry-now' })) -ne 0)
+    Assert 'validate: typed investigation rejects malformed or secret-bearing evidence reference fields' ((Test-Validate 'investigation' (With $typedInv @{ evidenceRefs = @(@{ kind = 'artifact'; ref = 'log'; digest = 'short'; token = 'secret' }) })) -ne 0)
 
     $investigationHandoffRoot = Join-Path $tmp 'investigation-handoff'
     New-Item -ItemType Directory -Force $investigationHandoffRoot | Out-Null

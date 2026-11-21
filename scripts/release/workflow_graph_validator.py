@@ -151,6 +151,8 @@ def adapt_definition(raw: Any) -> dict[str, Any]:
                 normalized = {"id": node_id, "kind": kind, "outcomes": outcomes}
                 if kind == "child":
                     normalized["ref"] = f"{node.get('workflow')}@{node.get('version')}"
+                    # Versioned child runs execute under the workflow runtime's bounded attempt budget.
+                    normalized["inherit"] = True
                 if node.get("retry"):
                     retry_bounds[node_id] = {"max": node["retry"].get("maxAttempts", 1)}
                 nodes.append(normalized)
@@ -164,8 +166,16 @@ def adapt_definition(raw: Any) -> dict[str, Any]:
                     (node.get("retry", {}).get("on", []) for node in source_nodes if isinstance(node, dict) and node.get("id") == transition.get("from")), []):
                 edge["bound"] = retry_bounds[transition["from"]]
             edges.append(edge)
+        source_budget = raw.get("budget") or {}
+        budget = dict(source_budget)
+        if "maxAttempts" in budget:
+            budget["maxIterations"] = budget.pop("maxAttempts")
+        if "maxDurationSeconds" in budget:
+            budget["maxWallSeconds"] = budget.pop("maxDurationSeconds")
+        if "maxTokens" in budget:
+            budget["maxCost"] = budget.pop("maxTokens")
         return {"name": f"{raw.get('id', '')}@{raw.get('version', '')}", "entry": raw.get("entry"),
-                "nodes": nodes, "edges": edges, "permissions": {}, "budget": raw.get("budget") or {}, "legacy": False}
+                "nodes": nodes, "edges": edges, "permissions": {}, "budget": budget, "legacy": False}
     nodes = raw.get("nodes")
     edges = raw.get("edges")
     if not isinstance(nodes, list) or not isinstance(edges, list):
@@ -326,7 +336,10 @@ def validate_definition(raw: Any, children: dict[str, Any] | None = None, _stack
                 continue
             child_defs[nid] = cdef
             child_graph = adapt_definition(cdef)
-            results = sorted({x.get("result") for x in child_graph["nodes"] if isinstance(x, dict) and x.get("kind") == "terminal" and x.get("result")})
+            # A versioned child returns its declared typed outcomes; terminal graph result labels are
+            # only a coarse legacy projection and must not leak into the caller's contract.
+            results = (sorted(set(outs or [])) if cdef.get("contract") == "cezar.workflow" else
+                       sorted({x.get("result") for x in child_graph["nodes"] if isinstance(x, dict) and x.get("kind") == "terminal" and x.get("result")}))
             node_outcomes[nid] = sorted(set(results) | set(outs or []))
             for cd in validate_definition(cdef, children, _stack + (wf["name"],)):
                 if cd["severity"] == "error":

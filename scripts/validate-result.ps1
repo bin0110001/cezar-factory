@@ -250,6 +250,29 @@ function Test-Decisions($decisions) {
 }
 if (-not $errors.Count -and $result.ContainsKey('decisions') -and $Kind -in 'intake', 'plan', 'investigation') { Test-Decisions $result.decisions }
 
+if ($Kind -eq 'investigation') {
+    if ($result.ContainsKey('schemaVersion') -and $result.schemaVersion -ne 1) { $errors.Add("'schemaVersion' must be 1") }
+    if ($result.ContainsKey('caller') -and $result.caller -notin @('intake', 'review', 'repair')) { $errors.Add("'caller' must be one of: intake, review, repair") }
+    if ($result.ContainsKey('outcome') -and $result.outcome -notin @('ready', 'needs_input', 'split', 'not_reproducible', 'needs_research', 'unknown', 'interrupted', 'exhausted')) {
+        $errors.Add("'outcome' is not a declared investigation outcome")
+    }
+    if ($result.ContainsKey('evidenceRefs')) {
+        if ($result.evidenceRefs -isnot [array]) { $errors.Add("'evidenceRefs' must be an array") }
+        else {
+            $allowedEvidenceKinds = @('issue', 'run', 'attempt', 'artifact', 'commit', 'pull_request')
+            for ($i = 0; $i -lt $result.evidenceRefs.Count; $i++) {
+                $ref = $result.evidenceRefs[$i]
+                if ($ref -isnot [hashtable]) { $errors.Add("'evidenceRefs[$i]' must be an object"); continue }
+                if ($ref.kind -notin $allowedEvidenceKinds) { $errors.Add("'evidenceRefs[$i].kind' is not a supported evidence kind") }
+                if ($ref.ref -isnot [string] -or [string]::IsNullOrWhiteSpace($ref.ref) -or $ref.ref.Length -gt 500) { $errors.Add("'evidenceRefs[$i].ref' must be a non-empty string of at most 500 characters") }
+                if ($ref.ContainsKey('digest') -and ($ref.digest -isnot [string] -or $ref.digest -cnotmatch '^[a-f0-9]{64}$')) { $errors.Add("'evidenceRefs[$i].digest' must be a lowercase SHA-256 digest") }
+                $extra = @($ref.Keys | Where-Object { $_ -notin @('kind', 'ref', 'digest') })
+                if ($extra.Count) { $errors.Add("'evidenceRefs[$i]' contains unsupported fields: $($extra -join ', ')") }
+            }
+        }
+    }
+}
+
 if ($Kind -eq 'implementation' -and $result.status -eq 'incomplete' -and (Blank $result.incompleteReason)) {
     $errors.Add('incomplete result requires incompleteReason')
 }
