@@ -130,7 +130,7 @@ onFail:
 
 Constraints:
 - `onFail.retry` on a command/check may only reference an **earlier** step (loops only go backwards)
-- `onFail.retry` on an agent may reference any existing step; use a bounded recovery check for failures that need a handoff
+- Do not use a forward `onFail.retry` on an agent step: the loader of the Cezar runtime deployed on the host may predate that capability and silently drop the workflow, failing activation (#779). The test suite rejects it until the runtime is known to support it
 - Step IDs must be unique within a workflow
 - The `stepsIssue` validation function ensures these constraints
 
