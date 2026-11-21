@@ -27,7 +27,7 @@ authenticated. So the promoter (Python, on the host) reaches them with `podman e
 | Step | Runs | How |
 |---|---|---|
 | Review evidence, issues, stable ref | host promoter | `gh` through `ghCommand` (`podman exec cezar gh`) |
-| Full suite | fresh, init-enabled Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA; reuses the Cezar image, mounts and named network, without sharing the server's PID or network namespace) |
+| Full suite | fresh, init-enabled Cezar container | `scripts/release/validate-in-container.sh` (throwaway worktree at the exact SHA; reuses the Cezar image and named network, mounts only the shared projects volume, Factory source, and Git metadata, and disables SELinux separation for the disposable container; does not share the server's PID or network namespace) |
 | Pointer moves, rollback, quarantine | host promoter | release store is host-owned; the container cannot write it |
 | Canaries | host promoter → Cezar API | schedule automations, polled to a verdict |
 | Stable deploy | host | `factory-autodeploy.sh` (image build and restart are host-only) |

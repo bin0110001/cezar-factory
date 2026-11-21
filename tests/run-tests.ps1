@@ -1956,7 +1956,7 @@ if (-not $shellTestBash -and (Get-Command git -ErrorAction SilentlyContinue)) {
 # Skipping these silently is how they drifted into failure before, so a missing bash is a failure.
 Assert 'a POSIX bash is available for the deploy shell tests' ([bool]$shellTestBash)
 if ($shellTestBash) {
-    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh', 'test-install-boot-order.sh') {
+    foreach ($shellTest in 'test-factory-autodeploy.sh', 'test-deploy-cezar-runtime.sh', 'test-reconcile-container-git-metadata.sh', 'test-install-boot-order.sh', 'test-validate-in-container.sh') {
         $shellOutput = & $shellTestBash.Source (Join-Path $factory "tests/$shellTest") 2>&1
         Assert "deploy shell test passes: $shellTest" ($LASTEXITCODE -eq 0)
         if ($LASTEXITCODE -ne 0) { $shellOutput | Select-Object -Last 8 | ForEach-Object { Write-Host "    $_" } }

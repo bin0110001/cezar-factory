@@ -1,7 +1,7 @@
 # Changelog
 
 ## [Unreleased]
-- Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels.
+- Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.
 - Default Factory workflow and ownership guide: expand `docs/workflow-map.md` across issue routing, workflow/job ownership, PR merge responsibilities, validation, promotion and known recovery gaps; add `factory-update-workflow-guide` and route process-documentation upkeep through planning and implementation skills.
