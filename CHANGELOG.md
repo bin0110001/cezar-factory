@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Fix promotion activation failure (#779): `factory-investigate` no longer uses a forward `onFail.retry` on its agent step, which the deployed Cezar loader rejects; the local suite now rejects forward retry targets for every workflow step.
+
 - Investigation retries now have a fixed evidence scope and route failed agent steps through a bounded validation handoff; missing or invalid results become an explicit low-confidence outcome after one retry. The adaptive progress evaluator now normalizes duplicate finding metadata independent of row order and keeps the earliest observation on score ties.
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 

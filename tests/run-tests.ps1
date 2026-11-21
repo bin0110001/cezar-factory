@@ -231,7 +231,7 @@ Assert 'Factory validation captures bounded command output on timeout' ($validat
 Assert 'project verification allows the current version under an Unreleased heading while release validation stays strict by default' ((Get-Content -Raw (Join-Path $factory '.ai/factory/factory.config.yaml')) -match 'verify:.*validate-release\.ps1 -SkipTests -AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match 'AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match '\$AllowUnreleasedVersion -and \$changelog -match')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
-Assert 'investigation evidence scope is bounded and timeout failures return through the validated fallback' ($investigateWorkflow -match 'no more\s+than two earlier attempts' -and $investigateWorkflow -match 'at most three relevant small artifacts, 100 lines each' -and $investigateWorkflow -match '(?s)id: investigate.*?onFail:\s*\r?\n\s+retry: validate\s*\r?\n\s+max: 2' -and $investigateSkill.Contains('After this bounded pass, stop'))
+Assert 'investigation evidence scope is bounded and the validated fallback needs no forward agent onFail' ($investigateWorkflow -match 'no more\s+than two earlier attempts' -and $investigateWorkflow -match 'at most three relevant small artifacts, 100 lines each' -and $investigateWorkflow -match '(?s)id: investigate.*?id: validate' -and $investigateSkill.Contains('After this bounded pass, stop'))
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
@@ -637,9 +637,9 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
         if (-not $steps[$i].retry) { continue }
         $targetIndex = [array]::IndexOf([string[]]$steps.id, [string]$steps[$i].retry)
         $earlier = @(); if ($i -gt 0) { $earlier = @($steps[0..($i - 1)] | ForEach-Object { $_.id }) }
-        if ($targetIndex -lt 0 -or (-not $steps[$i].agent -and $earlier -notcontains $steps[$i].retry)) { $okRetry = $false }
+        if ($targetIndex -lt 0 -or $earlier -notcontains $steps[$i].retry) { $okRetry = $false }
     }
-    Assert "workflow $($f.Name) retry target is valid for its step type" $okRetry
+    Assert "workflow $($f.Name) retry targets an earlier step (the deployed Cezar loader rejects forward agent onFail; see #779)" $okRetry
 }
 
 # No script may define a function named like the external command it shells out to (`gh`): PowerShell
