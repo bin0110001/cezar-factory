@@ -30,7 +30,8 @@ Each has `code`, `severity` (error/warning/info), `certainty` (`proven`/`unknown
 ## Where it runs
 
 - CLI: `python3 scripts/release/workflow_graph_validator.py [--mode enforce|report-only] [--format json|text] PATH...` (a repo root checks `workflows/`). Exit 1 only for blocking reports.
-- Candidate activation (`factory_activation.py` `_validate_candidate`) runs `validate_tree`: native `workflows/*.workflow.json` are enforced; legacy `workflows/*.yaml` are report-only and never block.
+- Workflow create/edit validation runs as part of the local static gate (`tests/run-tests.ps1 -StaticOnly`), which validates the complete candidate catalog before commit. This is reached by the changed-test owner for `workflows/**` and by the pre-commit hook.
+- Candidate activation (`factory_activation.py` `_validate_candidate`) runs the same `validate_tree`: native `workflows/*.workflow.json` are enforced; legacy `workflows/*.yaml` are report-only and never block.
 - The same function is the entry point for create/edit paths of the hierarchical runtime (#765); a definition with errors is blocking in `enforce` mode.
 
 ## Tests
