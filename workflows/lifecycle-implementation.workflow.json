@@ -1,0 +1,48 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.implementation",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.implementation.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "passed",
+        "changes_required",
+        "needs_input",
+        "needs_research",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Implement the already selected and planned issue. Return one declared typed outcome: passed when implementation is complete, changes_required when review feedback remains, needs_input for a required decision, needs_research when a failure needs investigation, unknown when validation evidence is incomplete, interrupted if stopped, or exhausted when the declared budget is spent. Do not set lifecycle labels or invoke Factory scripts.",
+      "skill": "factory-implement",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

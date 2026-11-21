@@ -1,0 +1,44 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.verification",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.verification.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "validator",
+      "session": "none",
+      "outcomes": [
+        "passed",
+        "changes_required",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "validator": "factory.verification-ledger"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

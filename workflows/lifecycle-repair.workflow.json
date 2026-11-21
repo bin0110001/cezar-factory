@@ -1,0 +1,47 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.repair",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.repair.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "passed",
+        "changes_required",
+        "needs_input",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Repair the same implementation session using the supplied review or verification findings. Return one declared typed outcome: passed, changes_required, needs_input, unknown, interrupted, or exhausted. Preserve the existing PR and session ownership. Do not set lifecycle labels or invoke Factory scripts.",
+      "skill": "factory-fix",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

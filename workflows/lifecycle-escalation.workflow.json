@@ -1,0 +1,45 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.escalation",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.escalation.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "needs_input",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Summarize the unresolved blocker and the specific human decision needed. Do not decide the issue on behalf of the owner. Return needs_input.",
+      "skill": "factory-investigate",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

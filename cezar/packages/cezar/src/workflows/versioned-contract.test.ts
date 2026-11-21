@@ -163,6 +163,17 @@ describe('versioned workflow contract', () => {
     expect(completeWorkflowNode(running, 'gate', 'blocked').execution.status).toBe('failed');
   });
 
+  it('preserves typed terminal outcomes while keeping unknown results fail-closed', () => {
+    const workflow = versionedWorkflowSchema.parse({
+      ...sample('typed-terminal', 'policy_gate'), entry: 'gate', terminals: ['gate'], transitions: [],
+      nodes: [{ id: 'gate', kind: 'policy_gate', policy: 'lifecycle-result', outcomes: ['ready', 'unknown'] }],
+    });
+    const initial = initializeWorkflowExecution(workflow, 'a'.repeat(64), [], {});
+    const running = beginWorkflowNode(initial, 'gate').execution;
+    expect(completeWorkflowNode(running, 'gate', 'ready').execution).toMatchObject({ status: 'done', outcomes: { gate: 'ready' } });
+    expect(completeWorkflowNode(running, 'gate', 'unknown').execution).toMatchObject({ status: 'failed', outcomes: { gate: 'unknown' } });
+  });
+
   it('keeps legacy YAML normalization behavior intact', () => {
     const legacy = workflowFileSchema.parse({ name: 'legacy', skills: ['plan', 'implement'] });
     expect(normalizeWorkflowDoc(legacy).steps.map((step) => step.id)).toEqual(['plan', 'implement']);

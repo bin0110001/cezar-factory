@@ -1,0 +1,49 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.investigation",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.investigation.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "ready",
+        "needs_input",
+        "split",
+        "not_reproducible",
+        "needs_research",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Investigate the recorded failure using supplied evidence. Return exactly one declared typed outcome: ready, needs_input, split, not_reproducible, needs_research, unknown, interrupted, or exhausted. Do not edit lifecycle labels or invoke Factory scripts.",
+      "skill": "factory-investigate",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}

@@ -2174,18 +2174,20 @@ export class RunManager {
     if (!child.dispatch || !isTerminalStatus(child.status) || child.dispatch.report?.outcome) return child;
     if (child.workflowExecution) {
       const execution = child.workflowExecution;
-      const terminalPassed = execution.status === 'done' && execution.workflow.terminals.length > 0
-        && execution.workflow.terminals.every((nodeId) => execution.outcomes[nodeId] === 'passed');
-      const outputs = Object.assign({}, ...execution.workflow.terminals.map((nodeId) => execution.outputs[nodeId] ?? {}));
+      const reachedTerminals = execution.workflow.terminals.filter((nodeId) => execution.outcomes[nodeId] !== undefined);
+      const terminalOutcomes = [...new Set(reachedTerminals.map((nodeId) => execution.outcomes[nodeId]!))];
+      const terminalOutcome = terminalOutcomes.length === 1 ? terminalOutcomes[0]! : 'unknown';
+      const terminalRecorded = terminalOutcomes.length === 1 && ['done', 'failed'].includes(execution.status);
+      const outputs = Object.assign({}, ...reachedTerminals.map((nodeId) => execution.outputs[nodeId] ?? {}));
       this.store.updateRun(child.id, {
         dispatch: {
           ...child.dispatch,
           report: {
-            status: terminalPassed ? 'done' : 'failed',
-            outcome: terminalPassed ? 'passed' : 'unknown',
-            result: terminalPassed ? 'Nested versioned workflow completed.' : 'Nested versioned workflow did not produce a passing terminal result.',
+            status: execution.status === 'done' && terminalRecorded ? 'done' : 'failed',
+            outcome: terminalRecorded ? terminalOutcome : 'unknown',
+            result: terminalRecorded ? `Nested versioned workflow completed with outcome ${terminalOutcome}.` : 'Nested versioned workflow did not produce one consistent terminal result.',
             outputs,
-            evidence: [], side_effects: [], errors: terminalPassed ? [] : ['nested workflow did not pass'], suggestions: [],
+            evidence: [], side_effects: [], errors: execution.status === 'done' && terminalRecorded ? [] : ['nested versioned workflow did not produce one consistent terminal result'], suggestions: [],
           },
         },
       });

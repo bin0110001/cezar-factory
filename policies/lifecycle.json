@@ -7,6 +7,13 @@
     "factory:interactive": "Work done in a local dev window. Stale-work sweeps skip it.",
     "factory:auditing": "A temporary reservation by the backlog label audit. Released on expiry."
   },
+  "workflowOutcomeMappings": {
+    "intake-result": { "classified": "passed", "question": "needs_input" },
+    "plan-result": { "ready": "ready", "not-ready": "needs_input", "decomposed": "split" },
+    "implement-result": { "success": "passed", "failed": "needs_research" },
+    "review-result": { "approved": "passed", "changes": "changes_required", "limit": "exhausted" },
+    "investigate-result": { "retry": "ready", "replan": "needs_research", "escalate": "needs_input" }
+  },
   "profiles": {
     "standard": {
       "description": "The current process: intake, plan, implement, review, merge. People decide only unresolved major architectural questions.",

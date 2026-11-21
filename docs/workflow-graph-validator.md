@@ -5,14 +5,11 @@ randomness or LLM). It rejects invalid workflows before activation while accepti
 It is the *workflow* graph: it shares nothing with the issue dependency graph (#149) except the Tarjan SCC technique.
 Runtime loop/liveness detection (#766), the hierarchical runtime (#765), GitHub projection (#767), UI and simulator are out of scope.
 
-## Definition shape (v1 draft)
+## Definition shape
 
-The #763 schema is consumed through one seam, `adapt_definition`; change it there when #763 finalises field names.
-Nodes: `task`, `child` (`ref`, `inherit` or `budget`), `fork`, `join` (`joinsFrom`, `expects`, `mode`), `wait` (`humanGate.authorizedRoles`,
-`waitsFor`, `external`) and `terminal` (`result`: success, failure, needs-human-input, cancelled). Edges carry `outcome`, `guard`
-(`always`/`never` are decidable; any other expression is UNKNOWN) and `bound` (`{max: N}` or `escrow`). Workflow-level `permissions`
-(`ceiling`, `privileged`) and `budget` (`maxCost`, `maxIterations`, `maxWallSeconds`). Child outcomes are the child's terminal results.
-Legacy YAML steps are adapted linearly; `onFail.retry`/`max` becomes a bounded failure edge.
+Native definitions use the Cezar `cezar.workflow` v1 contract from `cezar/packages/contract/src/versioned-workflows.ts` and are normalized through the single `adapt_definition` seam. Nodes use `agent`, `action`, `validator`, `policy_gate`, `wait`, `child_workflow`, `fork`, and `join`; `terminals` lists nodes whose declared outcomes are workflow results. `transitions` carry the source outcome, target node, deterministic order, and an optional guard. Node retry limits become bounded failure edges. Child references are exact `id@version` pins. The contract's capabilities and budget fields remain authoritative; the validator does not create a second permissions or policy store.
+
+Legacy YAML steps are adapted linearly in report-only mode; `onFail.retry`/`max` becomes a bounded failure edge.
 
 ## Diagnostics (`schemas/workflow-diagnostics.schema.json`)
 

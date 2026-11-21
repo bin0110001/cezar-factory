@@ -145,4 +145,30 @@ Use the `factory-update-workflow-guide` skill whenever a change alters issue rou
 
 ## Workflow graph validation (#764)
 
-Before a candidate release is activated, `factory_activation.py` runs the static workflow graph validator (`docs/workflow-graph-validator.md`). Native `workflows/*.workflow.json` definitions with error diagnostics block activation; legacy `workflows/*.yaml` are validated report-only and never block. Known gap: the #763 schema is not final, so the validator consumes a v1 draft through one adapter, and create/edit enforcement beyond activation arrives with the hierarchical runtime (#765).
+Before a candidate release is activated, `factory_activation.py` runs the static workflow graph validator (`docs/workflow-graph-validator.md`). Native `workflows/*.workflow.json` definitions with error diagnostics block activation; legacy `workflows/*.yaml` are validated report-only and never block. The validator adapts the Cezar versioned contract through `adapt_definition`; legacy YAML remains a report-only compatibility path.
+
+## Versioned lifecycle child workflows (#773)
+
+The shared `workflows/lifecycle-*.workflow.json` catalog defines exact `id@1.0.0` child contracts for intake, investigation, planning, implementation, verification, repair, review, and escalation. These definitions use the Cezar versioned workflow schema and load beside the legacy YAML catalog. Existing `workflows/*.yaml` remain unchanged and keep owning current routing until a caller is migrated.
+
+Each child returns a declared typed outcome. The child does not choose a lifecycle label: `policies/lifecycle.json` remains the sole routing authority. Its `workflowOutcomeMappings` translates each existing result event/outcome into exactly one typed result, then that profile's existing exits choose the next state.
+
+| Existing result event | Existing outcome | Typed child outcome |
+|---|---|---|
+| `intake-result` | `classified` | `passed` |
+| `intake-result` | `question` | `needs_input` |
+| `plan-result` | `ready` | `ready` |
+| `plan-result` | `not-ready` | `needs_input` |
+| `plan-result` | `decomposed` | `split` |
+| `implement-result` | `success` | `passed` |
+| `implement-result` | `failed` | `needs_research` |
+| `review-result` | `approved` | `passed` |
+| `review-result` | `changes` | `changes_required` |
+| `review-result` | `limit` | `exhausted` |
+| `investigate-result` | `retry` | `ready` |
+| `investigate-result` | `replan` | `needs_research` |
+| `investigate-result` | `escalate` | `needs_input` |
+
+`interrupted`, `exhausted`, and `unknown` are explicit outcomes on each applicable child contract. A known typed terminal result is preserved through a nested return; `unknown`, `blocked`, `interrupted`, and `exhausted` still leave the Cezar execution failed and cannot become a passing result. Review uses a distinct read-only session; repair and implementation use the continuing session.
+
+The versioned verification definition names the validator adapter contract but is not activated by the legacy workflow. Deployments must register that adapter before starting it; missing adapters continue to fail closed. The static graph validator adapts versioned definitions through one seam and enforces their declared outcomes, reachability, and bounded retries. Current workflow activation remains opt-in.

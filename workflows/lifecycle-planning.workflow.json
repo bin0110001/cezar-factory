@@ -1,0 +1,48 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.planning",
+  "version": "1.0.0",
+  "description": "Reusable typed lifecycle stage: factory.planning.",
+  "entry": "stage",
+  "terminals": [
+    "stage"
+  ],
+  "inputs": [
+    {
+      "type": "string",
+      "required": true,
+      "name": "task"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stage",
+      "kind": "agent",
+      "session": "continue",
+      "outcomes": [
+        "ready",
+        "needs_input",
+        "split",
+        "needs_research",
+        "unknown",
+        "interrupted",
+        "exhausted"
+      ],
+      "prompt": "Plan the already selected issue from its prepared context. Return one declared typed outcome: ready, needs_input, split, needs_research, unknown, interrupted, or exhausted. Do not set lifecycle labels or invoke Factory scripts.",
+      "skill": "factory-plan",
+      "dispatchKind": "implement"
+    }
+  ],
+  "transitions": [],
+  "budget": {
+    "maxAttempts": 2
+  },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "maxConsumer": "0.14.99",
+    "minConsumer": "0.14.0"
+  }
+}
