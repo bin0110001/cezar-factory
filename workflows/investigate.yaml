@@ -20,12 +20,10 @@ steps:
   - id: investigate
     name: Run factory-investigate skill
     skill: factory-investigate
-    # Agent failures (including the runner's wall-clock timeout) route through
-    # the validator. The validator retries once, then writes a conservative
-    # unknown result so a killed app-server does not leave the issue in a loop.
-    onFail:
-      retry: validate
-      max: 2
+    # No forward onFail here: the Cezar runtime deployed on the host rejects an
+    # agent step whose onFail.retry points forward, which drops this workflow at
+    # activation (#779). The validate step below still writes a conservative
+    # unknown result when the handoff is missing.
     prompt: |
       Investigate repeated failures on this GitHub issue: {{task}}
 
