@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Added a deterministic workflow liveness library (#766) classifying stalls, cycles, wait-for deadlocks, starvation and UNKNOWN states with stable reason codes and graph witnesses, reusing the progress evaluator; versioned schema, tests and docs.
+
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.

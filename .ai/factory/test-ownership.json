@@ -73,6 +73,11 @@
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_progress_evaluator') } else { @('-B', '-m', 'unittest', 'tests.test_progress_evaluator') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Progress evaluator tests failed.' }"
     },
     {
+      "id": "workflow-liveness-tests",
+      "patterns": ["scripts/release/workflow_liveness.py", "tests/test_workflow_liveness.py", "docs/workflow-liveness.md", "schemas/workflow-liveness.schema.json"],
+      "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_workflow_liveness') } else { @('-B', '-m', 'unittest', 'tests.test_workflow_liveness') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'Workflow liveness tests failed.' }"
+    },
+    {
       "id": "mcp-profile-tests",
       "patterns": ["scripts/mcp/**", "tests/test_mcp_profile.py", "config/mcp-profiles.json", "docs/mcp-profiles.md"],
       "command": "$pythonRunner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $pythonArgs = if ($pythonRunner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_mcp_profile') } else { @('-B', '-m', 'unittest', 'tests.test_mcp_profile') }; & $pythonRunner @pythonArgs; if ($LASTEXITCODE -ne 0) { throw 'MCP profile tests failed.' }"

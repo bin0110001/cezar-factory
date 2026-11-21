@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workflow liveness input and result (#766)",
+  "description": "Versioned input to scripts/release/workflow_liveness.py; observations reuse the progress_evaluator shape (docs/progress-evaluator.md).",
+  "definitions": {
+    "input": {
+      "type": "object",
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "now": {"type": "number"},
+        "state": {"type": "string"},
+        "execution": {"type": "object", "properties": {"id": {"type": "string"}, "sha": {"type": "string"}, "verifiedSha": {"type": "string"}, "startedAt": {"type": "number"}, "resourceUsed": {"type": "number"}}},
+        "policy": {"type": "object", "properties": {"maxRepeatedEdge": {"type": "integer"}, "maxUnchangedRounds": {"type": "integer"}, "maxRounds": {"type": "integer"}, "maxElapsedSeconds": {"type": "number"}, "maxResource": {"type": "number"}, "starvationSeconds": {"type": "number"}, "admissionGraceSeconds": {"type": "number"}}},
+        "transitions": {"type": "array", "items": {"type": "object", "required": ["from", "to"], "properties": {"from": {"type": "string"}, "to": {"type": "string"}, "input": {"type": "string"}, "artifact": {"type": "string"}, "at": {"type": "number"}, "observation": {"type": "object"}}}},
+        "graph": {"type": "object", "properties": {"states": {"type": "object"}}},
+        "waits": {"type": "array", "items": {"type": "object", "required": ["id", "kind"], "properties": {"id": {"type": "string"}, "kind": {"enum": ["human", "time", "external", "child", "parent", "join"]}, "waitsFor": {"type": "string"}, "deadline": {"type": "number"}, "owner": {"type": "string"}}}},
+        "joins": {"type": "array", "items": {"type": "object", "required": ["id", "requires"]}},
+        "children": {"type": "array", "items": {"type": "object", "required": ["id"], "properties": {"rounds": {"type": "integer"}, "resets": {"type": "integer"}, "budgetRounds": {"type": "integer"}, "resourceUsed": {"type": "number"}}}},
+        "lease": {"type": "object", "properties": {"id": {"type": "string"}, "held": {"type": "boolean"}, "expiresAt": {"type": "number"}}},
+        "capacity": {"type": "object", "properties": {"queued": {"type": "integer"}, "running": {"type": "integer"}, "slots": {"type": "integer"}, "waitingSeconds": {"type": "number"}}},
+        "work": {"type": "array", "items": {"type": "object", "required": ["id"], "properties": {"runnable": {"type": "boolean"}, "admitted": {"type": "boolean"}, "since": {"type": "number"}}}},
+        "review": {"type": "object", "properties": {"expected": {"type": "integer"}, "covered": {"type": "integer"}}},
+        "verification": {"type": "object", "properties": {"present": {"type": "boolean"}}}
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["schemaVersion", "status", "classes", "reasonCodes", "nextAction", "witness"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "status": {"enum": ["progress", "waiting", "stalled", "unknown", "ok"]},
+        "classes": {"type": "array", "items": {"type": "string"}},
+        "reasonCodes": {"type": "array", "items": {"type": "string", "pattern": "^LIVENESS_[A-Z_]+$"}},
+        "nextAction": {"enum": ["none", "resume_reconcile", "infra_backoff", "same_session_repair", "investigate", "escalate", "human_action"]},
+        "allowedActions": {"type": "array", "items": {"type": "string"}},
+        "witness": {"type": "object"},
+        "unknown": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "object"},
+        "budget": {"type": "object"}
+      }
+    }
+  },
+  "oneOf": [{"$ref": "#/definitions/input"}]
+}
