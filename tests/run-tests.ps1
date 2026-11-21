@@ -1095,11 +1095,13 @@ try {
             '10' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:small'); comments = @(); title = 'healthy'; updatedAt = $fresh }
             '11' = @{ state = 'OPEN'; labels = @('factory:ready', 'complexity:large'); comments = @(); title = 'never consumed'; updatedAt = $longAgo }
             '12' = @{ state = 'OPEN'; labels = @('factory:blocked', 'factory:interactive'); comments = @(); title = 'a person owns it'; body = 'Blocked by #90'; updatedAt = $fresh }
+            '13' = @{ state = 'OPEN'; labels = @('factory:investigate'); comments = @(); title = 'investigation has an open conflicting PR'; updatedAt = $fresh }
         }
         openPrs = @(
             @{ number = 50; title = 'Fix'; body = 'Closes #8'; url = 'https://example/pull/50'; isDraft = $false; mergeable = 'CONFLICTING' },
             @{ number = 51; title = 'Draft work'; body = 'Closes #10'; url = 'https://example/pull/51'; isDraft = $true; mergeable = 'MERGEABLE' },
-            @{ number = 52; title = 'No issue named'; body = 'tidy up'; url = 'https://example/pull/52'; isDraft = $false; mergeable = 'MERGEABLE' }
+            @{ number = 52; title = 'No issue named'; body = 'tidy up'; url = 'https://example/pull/52'; isDraft = $false; mergeable = 'MERGEABLE' },
+            @{ number = 53; title = 'Existing implementation'; body = 'Closes #13'; url = 'https://example/pull/53'; isDraft = $false; mergeable = 'CONFLICTING' }
         ) } | ConvertTo-Json -Depth 8 | Set-Content $closeState
     $sweepOut = Join-Path $tmp 'lifecycle-sweep.json'
     $sweepRun = Run 'sweep-lifecycle.ps1' @{ GhCommand = (Join-Path $PSScriptRoot 'fake-delivery-gh.ps1'); OutputPath = $sweepOut }
@@ -1113,6 +1115,7 @@ try {
     Assert 'lifecycle sweep unblocks an issue whose named blockers are all closed, with evidence, into a state it can stay in' ($repairKinds['3'] -eq 'unblocked>factory:needs-plan' -and $sweepState.issues['3'].labels -notcontains 'factory:blocked' -and @($sweepState.issues['3'].comments | Where-Object { $_ -match '#90, #91' }).Count -eq 1)
     Assert 'lifecycle sweep leaves an issue blocked while a named blocker is open' (-not $repairKinds.ContainsKey('4') -and -not $violationKinds.ContainsKey('4') -and $sweepState.issues['4'].labels -contains 'factory:blocked')
     Assert 'lifecycle sweep routes an issue in review whose pull request conflicts to the fix automation' ($repairKinds['8'] -eq 'pr-conflict>factory:changes-requested' -and $sweepState.issues['8'].labels -contains 'factory:changes-requested')
+    Assert 'baseline reproduces the open-PR dead end: an investigated issue is not returned to its PR owner when the PR conflicts' (-not $repairKinds.ContainsKey('13') -and $sweepState.issues['13'].labels -contains 'factory:investigate' -and @($sweepState.issues['13'].labels | Where-Object { $_ -eq 'factory:changes-requested' }).Count -eq 0 -and @($sweepState.openPrs | Where-Object { $_.number -eq 53 -and $_.mergeable -eq 'CONFLICTING' }).Count -eq 1)
     Assert 'lifecycle sweep reports what it must not guess: two states, no stated blocker, overdue human and automated work, draft and unlinked pull requests' ($violationKinds['6'] -eq 'multiple-states' -and $violationKinds['5'] -eq 'blocked-without-blocker' -and $violationKinds['7'] -eq 'overdue' -and $violationKinds['11'] -eq 'overdue' -and $violationKinds['51'] -eq 'draft-pr' -and $violationKinds['52'] -eq 'pr-without-issue')
     Assert 'lifecycle sweep reports, and does not change, an issue a person owns in a dev window' (-not $repairKinds.ContainsKey('12') -and $violationKinds['12'] -eq 'unblocked' -and $sweepState.issues['12'].labels -contains 'factory:blocked')
     Assert 'lifecycle sweep leaves healthy work and tracking epics alone' (-not $repairKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('10') -and -not $violationKinds.ContainsKey('9') -and $sweepState.issues['10'].labels.Count -eq 2)
