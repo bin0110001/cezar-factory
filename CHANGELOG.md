@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 - GitHub workflow projection (#767, parent #761): a versioned typed-signal and label/status projection layer (`scripts/workflow-projection-lib.ps1`, `policies/workflow-projection.json`, `schemas/workflow-projection.schema.json`, `docs/workflow-projection.md`) with idempotent publish, Factory-authored-event loop guard, no-replay baseline watermark, bidirectional drift detection, queued/UNKNOWN handling for API outage, restricted writes and webhook loss, migration receipts for the existing `factory:*` labels, and approval that only real GitHub review state can satisfy (never a label or OCR clean review).
+- Fix promotion activation failure (#779): `factory-investigate` no longer uses a forward `onFail.retry` on its agent step, which the deployed Cezar loader rejects; the local suite now rejects forward retry targets for every workflow step.
+
+- Investigation retries now have a fixed evidence scope and route failed agent steps through a bounded validation handoff; missing or invalid results become an explicit low-confidence outcome after one retry. The adaptive progress evaluator now normalizes duplicate finding metadata independent of row order and keeps the earliest observation on score ties.
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.

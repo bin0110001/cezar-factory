@@ -27,5 +27,10 @@ they stay visible (`acceptedVisible`) but are not blocking; the evaluator never 
 
 `classification`, `reasonCodes`, `evidenceRefs`, `new/resolved/persistent/reopened/regressed`, `acceptedVisible`, `artifactChanged`,
 `consecutiveNoProgress` and `persistenceAllowed` (stagnation with a changed artifact; the budget issue #740 caps it),
-`bestComparison`/`bestObservation` (best is the lowest-score VERIFIED, complete-coverage prior observation; `worse_than_best_verified`
+`bestComparison`/`bestObservation` (best is the earliest lowest-score VERIFIED, complete-coverage prior observation; tied scores do not
+prefer fewer findings; `worse_than_best_verified`
 is reported as a reason code), `blockingCount`, `score`.
+
+Duplicate rows with the same fingerprint are one finding. The evaluator keeps the highest severity and unions all non-empty
+criterion and check identifiers in sorted order. This makes repeated validator reports order-independent and ensures an unrun
+associated check cannot make a finding appear resolved.
