@@ -4,9 +4,10 @@ set -Eeuo pipefail
 # Runs the full local suite for one candidate SHA in a fresh, init-enabled Cezar container.
 # The host-side promotion scheduler calls this as its required check. A separate PID namespace
 # prevents test subprocesses from accumulating as zombies in the long-lived server container.
-# The disposable container uses the server container's image, mounts, and named network, but it
-# does not exec into or share the server's PID/network namespace. Validation can therefore finish
-# even if the Cezar server process is stopped or restarts during the suite.
+# The disposable container uses the server's image and network, plus only the Factory source,
+# Git metadata, and shared projects volume. It does not import private home/runtime volumes or
+# share the server process. SELinux separation is disabled only for this disposable container:
+# mounting Cezar's private MCS-labeled volumes under a new label can break the live service.
 #
 # Needs: FACTORY_CANDIDATE_SHA, FACTORY_GITHUB_REPOSITORY (owner/name). Optional: CEZAR_CONTAINER, FACTORY_CANDIDATE_BRANCH.
 
@@ -25,12 +26,26 @@ IMAGE="$(podman inspect "$CONTAINER" --format '{{.Image}}')"
 NETWORKS="$(podman inspect "$CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}} {{end}}' | xargs)"
 NETWORK="${NETWORKS%% *}"
 [[ "$NETWORK" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "validate-in-container: could not resolve a named network for '$CONTAINER'" >&2; exit 2; }
+PROJECTS_VOLUME="$(podman inspect "$CONTAINER" --format '{{range .Mounts}}{{if and (eq .Type "volume") (eq .Destination "/projects")}}{{.Name}}{{end}}{{end}}')"
+PROJECT_SOURCE="$(podman inspect "$CONTAINER" --format '{{range .Mounts}}{{if and (eq .Type "bind") (eq .Destination "/projects/cezar-factory")}}{{.Source}}{{end}}{{end}}')"
+GIT_META_VOLUME="$(podman inspect "$CONTAINER" --format '{{range .Mounts}}{{if and (eq .Type "volume") (eq .Destination "/projects/cezar-factory/.git")}}{{.Name}}{{end}}{{end}}')"
+[[ "$PROJECTS_VOLUME" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "validate-in-container: could not resolve the shared projects volume for '$CONTAINER'" >&2; exit 2; }
+[[ "$GIT_META_VOLUME" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "validate-in-container: could not resolve the Factory Git metadata volume for '$CONTAINER'" >&2; exit 2; }
+if [[ -z "$PROJECT_SOURCE" ]] || [[ ! -d "$PROJECT_SOURCE" ]]; then
+  echo "validate-in-container: could not resolve the Factory source bind mount for '$CONTAINER'" >&2
+  exit 2
+fi
 
 echo "validate-in-container: installing cezar dependencies at ${SHA:0:9}"
 echo "validate-in-container: running tests in an init-enabled container at ${SHA:0:9}"
-# Reuse the server's image and mounts, but give each suite its own PID namespace, init process,
-# and network attachment. The source container may be stopped; its named volumes remain mounted.
-podman run --rm --init --volumes-from "$CONTAINER" --network "$NETWORK" \
+# Reuse only the source, Git metadata, and projects volumes. Do not use --volumes-from: it
+# imports private runtime/home volumes, and a new container label can relabel those shared with
+# Cezar. The /projects mount keeps validation worktrees visible while preserving volume labels.
+podman run --rm --init --security-opt label=disable \
+  --volume "$PROJECTS_VOLUME:/projects" \
+  --volume "$PROJECT_SOURCE:$ROOT" \
+  --volume "$GIT_META_VOLUME:$ROOT/.git" \
+  --network "$NETWORK" \
   --user 10001:10001 --env HOME=/home/cezar --env CEZ_HOME=/home/cezar/.cezar \
   --env FACTORY_RUNTIME_ROOT="$ROOT" --env FACTORY_RUNTIME_SOURCE_ROOT="$ROOT" \
   --workdir "$ROOT" --entrypoint bash "$IMAGE" -lc '
