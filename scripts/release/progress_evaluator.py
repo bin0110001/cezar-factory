@@ -4,7 +4,7 @@ Pure library: no clock, IO or randomness, and no LLM judgement. Given an ordered
 observations (oldest first, the last one is the round being judged) it classifies the round and returns
 reason codes and evidence references. See docs/progress-evaluator.md for the input contract and precedence.
 
-Observation shape (normalized; adapt #738 diagnostics into it):
+Observation shape (adapt #738 diagnostics into it):
   {"id": str, "verified": bool,
    "coverage": {"expected": [checkId...], "executed": [checkId...]},
    "artifact": {"hash": str},
@@ -33,17 +33,30 @@ def _weight(severity: str) -> int:
 
 
 def _norm(obs: dict[str, Any]) -> dict[str, Any]:
-    findings: dict[str, dict[str, str]] = {}
+    grouped: dict[str, list[dict[str, str]]] = {}
     for f in obs.get("findings") or []:
         fp = str(f["fingerprint"])
-        old = findings.get(fp)
-        if old is None or _weight(f.get("severity", "")) > _weight(old["severity"]):
-            findings[fp] = {
-                "fingerprint": fp,
-                "severity": str(f.get("severity", "critical")).lower(),
-                "criterionId": str(f.get("criterionId", "")),
-                "checkId": str(f.get("checkId", "")),
-            }
+        grouped.setdefault(fp, []).append({
+            "fingerprint": fp,
+            "severity": str(f.get("severity", "critical")).lower(),
+            "criterionId": str(f.get("criterionId", "")),
+            "checkId": str(f.get("checkId", "")),
+        })
+    findings: dict[str, dict[str, Any]] = {}
+    for fp, duplicates in grouped.items():
+        # A fingerprint is one finding even if several validators report it. Keep its
+        # worst severity and every referenced criterion/check so order and duplicates
+        # cannot hide a regression or make a missing check look like resolution.
+        severity = min(
+            {f["severity"] for f in duplicates},
+            key=lambda value: (-_weight(value), value not in SEVERITY_WEIGHT, value),
+        )
+        findings[fp] = {
+            "fingerprint": fp,
+            "severity": severity,
+            "criterionIds": sorted({f["criterionId"] for f in duplicates if f["criterionId"]}),
+            "checkIds": sorted({f["checkId"] for f in duplicates if f["checkId"]}),
+        }
     cov = obs.get("coverage") or {}
     return {
         "id": str(obs.get("id", "")),
@@ -55,11 +68,11 @@ def _norm(obs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _blocking(o: dict[str, Any], accepted: frozenset[str]) -> dict[str, dict[str, str]]:
+def _blocking(o: dict[str, Any], accepted: frozenset[str]) -> dict[str, dict[str, Any]]:
     return {k: v for k, v in o["findings"].items() if k not in accepted}
 
 
-def _score(findings: dict[str, dict[str, str]]) -> int:
+def _score(findings: dict[str, dict[str, Any]]) -> int:
     return sum(_weight(f["severity"]) for f in findings.values())
 
 
@@ -67,8 +80,8 @@ def _complete(o: dict[str, Any]) -> bool:
     return o["verified"] and bool(o["expected"]) and o["expected"] <= o["executed"]
 
 
-def _criteria(findings: dict[str, dict[str, str]]) -> frozenset[str]:
-    return frozenset(f["criterionId"] for f in findings.values() if f["criterionId"])
+def _criteria(findings: dict[str, dict[str, Any]]) -> frozenset[str]:
+    return frozenset(c for f in findings.values() for c in f["criterionIds"])
 
 
 def _criterion_resolved_before(prior: list[dict[str, Any]], c: str, accepted: frozenset[str]) -> bool:
@@ -86,13 +99,13 @@ def _criterion_resolved_before(prior: list[dict[str, Any]], c: str, accepted: fr
 
 
 def _best(history: list[dict[str, Any]], accepted: frozenset[str]) -> dict[str, Any] | None:
-    """Best VERIFIED, complete-coverage observation; ties go to the earliest."""
+    """Best VERIFIED, complete-coverage observation by score; ties go to the earliest."""
     best, best_key = None, None
     for o in history:
         if not _complete(o):
             continue
         b = _blocking(o, accepted)
-        key = (_score(b), len(b))
+        key = _score(b)
         if best_key is None or key < best_key:
             best, best_key = o, key
     return best
@@ -130,7 +143,7 @@ def evaluate(history: Iterable[dict[str, Any]], accepted_fingerprints: Iterable[
     dropped = sorted(prev["executed"] - cur["executed"]) if prev else []
     masked = sorted(
         fp for fp, f in (prev["findings"].items() if prev else [])
-        if fp not in cur["findings"] and f["checkId"] and f["checkId"] not in cur["executed"]
+        if fp not in cur["findings"] and any(check_id not in cur["executed"] for check_id in f["checkIds"])
     )
     inconclusive: list[str] = []
     if not cur["verified"]:

@@ -4606,6 +4606,27 @@ export class RunManager {
         if (state.cancelled) { this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'cancelled'); break; }
         if (failure) {
           this.recordStepTelemetry(runId, step, iteration, stepStartedAt, 'failed');
+          const used = retriesUsed.get(step.id) ?? 0;
+          if (step.onFail && used < step.onFail.max) {
+            retriesUsed.set(step.id, used + 1);
+            checkFailure = failure;
+            this.finishStep(runId, step.id, 'failed', 'agent step failed — routing through its bounded recovery step', emit);
+            const retryIdx = workflow.steps.findIndex((candidate) => candidate.id === step.onFail?.retry);
+            if (retryIdx < 0) {
+              runError = `agent step "${step.id}" failed and its onFail retry step "${step.onFail.retry}" was not found`;
+              break;
+            }
+            emit({
+              type: 'note',
+              stepId: step.id,
+              message: `agent step failed — retrying from "${step.onFail.retry}" (attempt ${used + 1}/${step.onFail.max})`,
+            });
+            for (const candidate of workflow.steps.slice(retryIdx, i + 1)) {
+              this.store.updateStep(runId, candidate.id, { status: 'pending', error: undefined, finishedAt: undefined });
+            }
+            i = retryIdx;
+            continue;
+          }
           this.finishStep(runId, step.id, 'failed', failure, emit);
           runError = `step "${step.id}" failed: ${failure}`;
           break;
@@ -5070,7 +5091,7 @@ export class RunManager {
     const treeBlocks = [treeReports, treeInbox].filter((block): block is string => Boolean(block));
     if (treeBlocks.length) userPrompt = `${treeBlocks.join('\n\n')}\n\n---\n\n${userPrompt}`;
     if (checkFailure) {
-      userPrompt += `\n\nA verification command failed after the previous attempt. Fix the cause. Failing output:\n\n${checkFailure}`;
+      userPrompt += `\n\nA previous workflow step failed. Address this failure before continuing. Diagnostic output:\n\n${checkFailure}`;
     }
     if (images?.length) {
       emit({

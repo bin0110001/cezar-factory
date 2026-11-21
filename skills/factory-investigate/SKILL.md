@@ -33,9 +33,11 @@ source: skills/factory-investigate/SKILL.md
 
 ### 2. Analyze Repeated Failures
 
-- Review all previous implementation attempts and their outcomes.
-- Identify patterns in the failures.
-- Look for common factors across attempts.
+- Inspect the issue and latest relevant attempt first, then at most two earlier attempts.
+- Read at most three relevant small artifacts, no more than 100 lines from each. Extract only the failure summary and nearby diagnostic lines.
+- Do not read an entire test suite, repository tree, or full log unless a specific diagnostic line points to it.
+- After this bounded pass, stop. If the evidence does not establish a cause, classify it as `unknown` with low confidence.
+- Identify patterns in the bounded evidence and look for common factors across attempts.
 - Record which project or Factory memory bank was queried and use only relevant
   prior fixes; keep the full memory bank out of the prompt.
 

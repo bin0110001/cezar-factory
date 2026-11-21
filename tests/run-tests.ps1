@@ -231,6 +231,7 @@ Assert 'Factory validation captures bounded command output on timeout' ($validat
 Assert 'project verification allows the current version under an Unreleased heading while release validation stays strict by default' ((Get-Content -Raw (Join-Path $factory '.ai/factory/factory.config.yaml')) -match 'verify:.*validate-release\.ps1 -SkipTests -AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match 'AllowUnreleasedVersion' -and (Get-Content -Raw (Join-Path $factory 'scripts/release/validate-release.ps1')) -match '\$AllowUnreleasedVersion -and \$changelog -match')
 Assert 'investigation output example includes the required issue field' ($investigateSkill -match '"issue"\s*:\s*272' -and $investigateWorkflow -match 'numeric issue number' -and $investigateWorkflow -match 'required integer "issue" field')
 Assert 'investigation workflow retries a missing handoff once, then preserves an explicit unknown result' ($investigateWorkflow -match 'ensure-investigation-result\.ps1 -Task "\{\{task\}\}"' -and $investigateWorkflow -match 'onFail:\s*\r?\n\s+retry: investigate\s*\r?\n\s+max: 1' -and $ensureInvestigationResult -match "failureClassification = 'unknown'" -and $ensureInvestigationResult -match "confidence = 'low'" -and $ensureInvestigationResult.Contains('automaticRetryAppropriate = $false'))
+Assert 'investigation evidence scope is bounded and timeout failures return through the validated fallback' ($investigateWorkflow -match 'no more\s+than two earlier attempts' -and $investigateWorkflow -match 'at most three relevant small artifacts, 100 lines each' -and $investigateWorkflow -match '(?s)id: investigate.*?onFail:\s*\r?\n\s+retry: validate\s*\r?\n\s+max: 2' -and $investigateSkill.Contains('After this bounded pass, stop'))
 Assert 'implement workflow prepares context before implementation' ($implementWorkflow -match 'id: prepare' -and $implementWorkflow -match 'prepare-implementation\.ps1 -Task' -and $implementWorkflow -match 'route-state\.ps1 -Event start -Task' -and $implementWorkflow -match 'implementation-context\.json')
 Assert 'implement workflow enforces a PR closing reference after the LLM step' ($implementWorkflow -match 'id: ensure-pr-closes-issue' -and $implementWorkflow -match 'ensure-pr-closes-issue\.ps1 -Path \.factory/implement-result\.json')
 Assert 'implement workflow preserves a missing result as a structured failure' ($implementWorkflow -match 'id: ensure-result' -and $implementWorkflow -match 'ensure-implementation-result\.ps1' -and $ensureImplementationResult -match "status = 'failure'" -and $closePrScript -match "status = 'skipped'; reason = 'implementation-failure'")
@@ -617,7 +618,7 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'automations') -Filter *.json) 
         Assert "automation $($f.Name) never replays history on creation if it starts or fixes work" (($d.task.workflow -notin 'factory-implement', 'factory-fix-review') -or $initialSync -ne 'eligible')
     }
 }
-# Workflows must satisfy Cezar's schema: unique ids, agent XOR check steps, onFail.retry -> earlier step.
+# Workflows must satisfy Cezar's schema: unique ids, agent XOR check steps, check retries -> earlier step, agent recovery -> existing step.
 foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     $ids = @(); $cur = $null; $steps = @()
     foreach ($l in Get-Content $f.FullName) {
@@ -632,8 +633,13 @@ foreach ($f in Get-ChildItem (Join-Path $factory 'workflows') -Filter *.yaml) {
     Assert "workflow $($f.Name) steps agent XOR check" (-not ($steps | Where-Object { $_.agent -eq $_.check }))
     Assert "workflow $($f.Name) unique ids" (@($steps.id | Sort-Object -Unique).Count -eq $steps.Count)
     $okRetry = $true
-    for ($i = 0; $i -lt $steps.Count; $i++) { if ($steps[$i].retry) { $earlier = @(); if ($i -gt 0) { $earlier = @($steps[0..($i - 1)] | ForEach-Object { $_.id }) }; if ($earlier -notcontains $steps[$i].retry) { $okRetry = $false } } }
-    Assert "workflow $($f.Name) retry targets earlier step" $okRetry
+    for ($i = 0; $i -lt $steps.Count; $i++) {
+        if (-not $steps[$i].retry) { continue }
+        $targetIndex = [array]::IndexOf([string[]]$steps.id, [string]$steps[$i].retry)
+        $earlier = @(); if ($i -gt 0) { $earlier = @($steps[0..($i - 1)] | ForEach-Object { $_.id }) }
+        if ($targetIndex -lt 0 -or (-not $steps[$i].agent -and $earlier -notcontains $steps[$i].retry)) { $okRetry = $false }
+    }
+    Assert "workflow $($f.Name) retry target is valid for its step type" $okRetry
 }
 
 # No script may define a function named like the external command it shells out to (`gh`): PowerShell
@@ -1578,6 +1584,12 @@ try {
         $preserved = Get-Content -Raw '.factory/investigate-result.json' | ConvertFrom-Json
         Assert 'investigation handoff: repeated absence creates a valid conservative result' ($handoff.Code -eq 0 -and $preserved.issue -eq 7 -and $preserved.failureClassification -eq 'unknown' -and $preserved.confidence -eq 'low' -and -not $preserved.automaticRetryAppropriate)
         Assert 'investigation handoff: retry marker is removed after fallback creation' (-not (Test-Path '.factory/investigate-result.json.validation-attempt.json'))
+        Set-Content '.factory/investigate-result.json' '{"issue":"bad"}'
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        Assert 'investigation handoff: first invalid result requests the configured retry' ($handoff.Code -eq 1 -and (Test-Path '.factory/investigate-result.json.validation-attempt.json'))
+        $handoff = Run 'ensure-investigation-result.ps1' @{ Task = 'Investigate GitHub issue #7'; Path = '.factory/investigate-result.json' }
+        $preserved = Get-Content -Raw '.factory/investigate-result.json' | ConvertFrom-Json
+        Assert 'investigation handoff: repeated invalid result becomes a valid conservative result' ($handoff.Code -eq 0 -and $preserved.issue -eq 7 -and $preserved.failureClassification -eq 'unknown' -and $preserved.evidence -match 'invalid')
     } finally { Pop-Location }
 
     Set-Gh @('factory:needs-plan', 'type:bug')
