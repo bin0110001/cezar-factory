@@ -1,0 +1,61 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "work",
+      "outcome": "success",
+      "to": "ask"
+    },
+    {
+      "from": "work",
+      "outcome": "failure",
+      "to": "bad"
+    },
+    {
+      "from": "ask",
+      "outcome": "approved",
+      "to": "ok"
+    },
+    {
+      "from": "ask",
+      "outcome": "rejected",
+      "to": "no"
+    }
+  ],
+  "entry": "work",
+  "name": "valid-human-wait",
+  "nodes": [
+    {
+      "id": "work",
+      "kind": "task"
+    },
+    {
+      "humanGate": {
+        "authorizedRoles": [
+          "maintainer"
+        ]
+      },
+      "id": "ask",
+      "kind": "wait"
+    },
+    {
+      "id": "ok",
+      "kind": "terminal",
+      "result": "success"
+    },
+    {
+      "id": "no",
+      "kind": "terminal",
+      "result": "failure"
+    },
+    {
+      "id": "bad",
+      "kind": "terminal",
+      "result": "failure"
+    }
+  ],
+  "schemaVersion": 1
+}

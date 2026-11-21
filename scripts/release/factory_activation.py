@@ -561,6 +561,11 @@ class ActivationCoordinator:
             raise ActivationError("candidate artifact has no workflows directory")
         if not any(workflow_dir.glob("*.yaml")) and not any(workflow_dir.glob("*.yml")):
             raise ActivationError("candidate artifact has no discoverable workflow files")
+        # #764: native workflow graphs are enforced; legacy YAML is validated report-only and never blocks.
+        from scripts.release import workflow_graph_validator
+        blocked = workflow_graph_validator.blocking_message(workflow_graph_validator.validate_tree(tree))
+        if blocked:
+            raise ActivationError(f"workflow graph validation failed: {blocked}")
 
     def _write_failure_receipts(self, journal: dict[str, Any], error: str) -> None:
         for saved in journal.get("projects", []):

@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+- Deterministic static workflow graph and policy validator (#764): `scripts/release/workflow_graph_validator.py` builds a graph from resolved workflow definitions (child outcomes, effective guards) and diagnoses unreachable nodes/terminals, missing outcomes, unsafe implicit success, unbounded cycles and self loops (bounded review/repair loops pass), traps, unsatisfiable branches, UNKNOWN (never proven) guards, fork/join deadlocks, event consumers, human gates, privilege escalation/gate bypass and budget inheritance, with byte-identical machine diagnostics (`schemas/workflow-diagnostics.schema.json`) and a dry-run text report. Native `*.workflow.json` definitions block candidate activation; legacy `workflows/*.yaml` are validated report-only (`docs/workflow-graph-validator.md`).
+
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.
