@@ -1,0 +1,42 @@
+{
+  "budget": {
+    "maxCost": 5,
+    "maxIterations": 10
+  },
+  "edges": [
+    {
+      "from": "a",
+      "outcome": "success",
+      "to": "done"
+    },
+    {
+      "from": "a",
+      "outcome": "failure",
+      "to": "failed"
+    }
+  ],
+  "entry": "a",
+  "name": "invalid-unreachable-terminal",
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task"
+    },
+    {
+      "id": "done",
+      "kind": "terminal",
+      "result": "success"
+    },
+    {
+      "id": "failed",
+      "kind": "terminal",
+      "result": "failure"
+    },
+    {
+      "id": "orphan",
+      "kind": "terminal",
+      "result": "success"
+    }
+  ],
+  "schemaVersion": 1
+}

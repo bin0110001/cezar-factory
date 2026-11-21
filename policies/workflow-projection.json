@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "factory-workflow-projection/v1",
+  "description": "Precedence, conflict rules and the label to workflow-state compatibility mapping for the GitHub workflow projection. Extends the lifecycle reconciler; it is not a second policy authority.",
+  "mappingVersion": 1,
+  "projectionMarker": "<!-- factory-projection:",
+  "factoryActors": ["factory-investigator", "github-actions[bot]"],
+  "labelToState": {
+    "factory:new": "intake",
+    "factory:needs-plan": "planning",
+    "factory:ready": "ready",
+    "factory:working": "implementing",
+    "factory:review": "reviewing",
+    "factory:changes-requested": "repairing",
+    "factory:investigate": "investigating",
+    "factory:needs-help": "waiting-human",
+    "factory:human-review": "waiting-human-review",
+    "factory:blocked": "blocked",
+    "factory:implemented": "delivering",
+    "factory:pr-open": "pr-open",
+    "factory:done": "done"
+  },
+  "humanOwnedStates": ["waiting-human", "waiting-human-review", "blocked"],
+  "precedence": {
+    "workflowState": "factory-run-state",
+    "approval": "github-pull-request-review",
+    "merge": "github-pull-request",
+    "protections": "github-branch-protection",
+    "manualLabelEdit": "reproject-unless-human-owned-state"
+  },
+  "unknownReasons": {
+    "api_outage": "GitHub API unreachable; Factory continues from its own state and the projection is queued.",
+    "restricted_write": "The token cannot write labels; projection is waiting for a permitted actor.",
+    "webhook_loss": "No event was seen for longer than the staleness window; level-triggered resync is required.",
+    "approval_unverified": "GitHub review state could not be read; approval is UNKNOWN, never assumed."
+  },
+  "staleEventSeconds": 3600
+}
