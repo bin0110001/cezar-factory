@@ -3,6 +3,9 @@
 ## [Unreleased]
 - Added a deterministic workflow liveness library (#766) classifying stalls, cycles, wait-for deadlocks, starvation and UNKNOWN states with stable reason codes and graph witnesses, reusing the progress evaluator; versioned schema, tests and docs.
 
+- Fix promotion activation failure (#779): `factory-investigate` no longer uses a forward `onFail.retry` on its agent step, which the deployed Cezar loader rejects; the local suite now rejects forward retry targets for every workflow step.
+
+- Investigation retries now have a fixed evidence scope and route failed agent steps through a bounded validation handoff; missing or invalid results become an explicit low-confidence outcome after one retry. The adaptive progress evaluator now normalizes duplicate finding metadata independent of row order and keeps the earliest observation on score ties.
 - Promotion validation now mounts only the Factory source, Git metadata, and projects volume with SELinux relabeling disabled for the disposable container, preventing validation from changing the live Cezar volume labels. A hermetic fake-Podman test checks the validator's exact mount allowlist and SELinux options.
 
 - Promotion validation now runs the full suite in a disposable init-enabled Cezar container, and the server CLI runs under Tini so orphaned child processes are reaped instead of exhausting the container task limit.

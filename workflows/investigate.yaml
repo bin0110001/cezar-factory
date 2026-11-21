@@ -20,6 +20,10 @@ steps:
   - id: investigate
     name: Run factory-investigate skill
     skill: factory-investigate
+    # No forward onFail here: the Cezar runtime deployed on the host rejects an
+    # agent step whose onFail.retry points forward, which drops this workflow at
+    # activation (#779). The validate step below still writes a conservative
+    # unknown result when the handoff is missing.
     prompt: |
       Investigate repeated failures on this GitHub issue: {{task}}
 
@@ -27,8 +31,11 @@ steps:
       line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
 
       Read `.factory/context/memory-recall.json` when present; record a real recall miss when unavailable.
-      Read compact evidence only (issue comments, PR checks, artifact summaries under scripts/artifacts or
-      .factory/); do not paste full logs. Do not modify code. Write the structured result as JSON to
+      Keep evidence collection bounded: inspect the issue and latest relevant attempt first, then no more
+      than two earlier attempts. Read at most three relevant small artifacts, 100 lines each; extract only
+      the failure summary and nearby diagnostic lines. Never read the full test suite or paste full logs.
+      If this evidence does not establish a cause, stop and report unknown with low confidence. Do not modify
+      code. Write the structured result as JSON to
       .factory/investigate-result.json (create the directory), copying the numeric issue number from the
       task into the required integer "issue" field.
   - id: validate
