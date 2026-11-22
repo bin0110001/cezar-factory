@@ -59,6 +59,7 @@ export function workflowDefinitionView(workflow: VersionedWorkflow) {
       session: node.session,
       ...(node.retry ? { retry: node.retry } : {}),
       ...(node.timeoutSeconds ? { timeoutSeconds: node.timeoutSeconds } : {}),
+      ...(node.kind === 'child_workflow' ? { childWorkflow: { id: safeText(node.workflow, 128), version: safeText(node.version, 64) } } : {}),
       inputs: node.inputs.map(({ name, type }) => ({ name: safeText(name, 128), type })),
       outputs: node.outputs.map(({ name, type }) => ({ name: safeText(name, 128), type })),
       ...(nodeDetail(node) ? { detail: nodeDetail(node) } : {}),
@@ -114,11 +115,20 @@ function safeAttemptOutputs(value: Record<string, unknown> | undefined) {
   const str = (key: string, max = 128) => typeof value[key] === 'string' ? safeText(value[key] as string, max) : undefined;
   const sha = (key: string) => typeof value[key] === 'string' && /^[a-f0-9]{40,64}$/i.test(value[key] as string) ? value[key] : undefined;
   const findings = Array.isArray(value.findings) ? value.findings.map(safeFinding).filter((item): item is NonNullable<typeof item> => Boolean(item)).slice(0, 24) : undefined;
+  const safePaths = (candidate: unknown) => Array.isArray(candidate) ? candidate.map(safeRelativePath).filter((path): path is string => Boolean(path)).slice(0, 100) : [];
+  const coverageSource = value.coverage && typeof value.coverage === 'object' && !Array.isArray(value.coverage) ? value.coverage as Record<string, unknown> : value;
+  const coveredPaths = safePaths(coverageSource.coveredPaths);
+  const excludedPaths = safePaths(coverageSource.excludedPaths);
+  const previousVerificationId = str('previousVerificationId', 128) ?? str('reReviewOf', 128);
+  const costUsd = typeof value.costUsd === 'number' && Number.isFinite(value.costUsd) && value.costUsd >= 0 ? value.costUsd : undefined;
   const result = {
     ...(str('status', 32) ? { status: str('status', 32) } : {}),
     ...(sha('commitSha') ? { commitSha: sha('commitSha') } : {}),
     ...(str('artifactRevision', 71) ? { artifactRevision: str('artifactRevision', 71) } : {}),
     ...(str('verificationId', 128) ? { verificationId: str('verificationId', 128) } : {}),
+    ...(costUsd !== undefined ? { costUsd } : {}),
+    ...(coveredPaths.length || excludedPaths.length ? { coverage: { coveredPaths, excludedPaths } } : {}),
+    ...(previousVerificationId || typeof value.sameSessionRepair === 'boolean' ? { reviewLineage: { ...(previousVerificationId ? { previousVerificationId } : {}), ...(typeof value.sameSessionRepair === 'boolean' ? { sameSessionRepair: value.sameSessionRepair } : {}) } } : {}),
     ...(findings ? { findings } : {}),
   };
   return Object.keys(result).length ? result : undefined;
@@ -132,6 +142,21 @@ export function workflowExecutionView(input: {
   if (!execution) return undefined;
   const childRuns = new Map(input.runs.filter((run) => run.dispatch?.parentRunId === input.run.id).map((run) => [run.id, run]));
   const childIds = [...new Set(execution.attempts.map((attempt) => attempt.childRunId).filter((id): id is string => Boolean(id)))].slice(0, 100);
+  const maxAttempts = Math.max(1, execution.workflow.budget.maxAttempts ?? 1);
+  const terminalAttempt = [...execution.attempts].reverse().find((attempt) => attempt.status === 'failed' || attempt.status === 'cancelled');
+  const reachable = new Set<string>();
+  const pendingNodes = [execution.workflow.entry];
+  while (pendingNodes.length) {
+    const nodeId = pendingNodes.pop()!;
+    if (reachable.has(nodeId)) continue;
+    reachable.add(nodeId);
+    const outcome = execution.outcomes[nodeId];
+    for (const transition of execution.workflow.transitions) {
+      if (transition.from === nodeId && (outcome === undefined || transition.outcome === outcome)) pendingNodes.push(transition.to);
+    }
+  }
+  const attempted = new Set(execution.attempts.map((attempt) => attempt.node));
+  const failed = new Set(execution.attempts.filter((attempt) => attempt.status === 'failed').map((attempt) => attempt.node));
   return workflowExecutionViewSchema.parse({
     runId: input.run.id,
     status: execution.status,
@@ -142,9 +167,17 @@ export function workflowExecutionView(input: {
     ready: execution.ready,
     ...(execution.wait ? { wait: {
       node: execution.wait.node, reason: execution.wait.reason,
+      actor: execution.wait.reason === 'human' ? 'authorized human operator' : execution.wait.reason === 'event' ? 'event publisher' : 'workflow scheduler',
       ...(execution.wait.detail ? { detail: safeText(execution.wait.detail, 500) } : {}),
       ...(execution.wait.resumeAt ? { resumeAt: execution.wait.resumeAt } : {}),
     } } : {}),
+    budget: { maxAttempts, usedAttempts: execution.attempts.length, remainingAttempts: Math.max(0, maxAttempts - execution.attempts.length) },
+    ...(terminalAttempt ? { stopReason: { node: safeText(terminalAttempt.node, 48), ...(terminalAttempt.outcome ? { outcome: terminalAttempt.outcome } : {}), errorPresent: Boolean(terminalAttempt.error) } } : {}),
+    nodeProgress: execution.workflow.nodes.map((node) => ({
+      node: safeText(node.id, 48),
+      state: failed.has(node.id) ? 'failed' : attempted.has(node.id) || execution.outcomes[node.id] !== undefined ? 'completed' : execution.ready.includes(node.id) ? 'current' : reachable.has(node.id) ? 'pending' : 'skipped',
+      ...(execution.outcomes[node.id] ? { outcome: execution.outcomes[node.id] } : {}),
+    })),
     attempts: execution.attempts.slice(-1000).map((attempt) => ({
       node: attempt.node, attempt: attempt.attempt, status: attempt.status, startedAt: attempt.startedAt,
       ...(attempt.finishedAt ? { finishedAt: attempt.finishedAt } : {}),

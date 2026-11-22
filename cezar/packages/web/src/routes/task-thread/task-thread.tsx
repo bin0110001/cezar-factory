@@ -333,7 +333,7 @@ export function ThreadView({
             onLoad={scroll.loadOlder}
           />
         ) : null}
-        <WorkflowExecutionPanel runId={run.id} enabled={Boolean(run.workflowExecution)} />
+        <WorkflowExecutionPanel runId={run.id} enabled={Boolean(run.workflowExecution)} issueUrl={issueUrl} prUrl={taskPrUrl(run)} />
         <SessionTranscript
           runId={run.id}
           viewId="main"

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '@/api/query-client'
 import type { Skill, WorkflowDef, WorkflowsResponse } from '@open-mercato/cezar-api-client'
+import type { VersionedWorkflowCatalog } from '@open-mercato/cezar-contract'
 import { Toaster, resetToasts } from '@/components/ui/toaster'
 
 import { WorkflowsRoute } from './workflows'
@@ -54,6 +55,16 @@ const FULL: WorkflowDef = {
   })),
 }
 
+const NATIVE_CATALOG: VersionedWorkflowCatalog = {
+  issues: [],
+  workflows: [{ id: 'factory.parent', version: '1.0.0', digest: 'a'.repeat(64), entry: 'invoke', terminals: ['invoke'],
+    compatibility: { mode: 'versioned-only' }, budget: { maxAttempts: 8 }, policyRefs: ['review@1'],
+    nodes: [{ id: 'invoke', kind: 'child_workflow', outcomes: ['passed'], session: 'inherit', inputs: [], outputs: [], detail: 'Nested workflow: factory.child@1.0.0', childWorkflow: { id: 'factory.child', version: '1.0.0' } }], transitions: [] },
+    { id: 'factory.child', version: '1.0.0', digest: 'b'.repeat(64), entry: 'review', terminals: ['review'],
+      compatibility: { mode: 'versioned-only' }, budget: { maxAttempts: 3 }, policyRefs: [],
+      nodes: [{ id: 'review', kind: 'agent', outcomes: ['passed'], session: 'new', inputs: [], outputs: [], detail: 'Independent review session' }], transitions: [] }],
+}
+
 interface SentRequest {
   path: string
   method: string
@@ -83,6 +94,7 @@ function stubFetch(
       if (method === 'GET' && path === '/api/v1/workflows') {
         return jsonResponse({ workflows, issues: [] } satisfies WorkflowsResponse)
       }
+      if (method === 'GET' && path === '/api/v1/workflows/versioned') return jsonResponse(NATIVE_CATALOG)
       if (method === 'GET' && path === '/api/v1/skills') return jsonResponse(SKILLS)
       if (method === 'GET' && path === '/api/v1/ui-state') return jsonResponse({})
       return jsonResponse({ error: 'not found' }, 404)
@@ -115,6 +127,17 @@ const addButton = (skill: string) =>
 // ---- seeding -----------------------------------------------------------------------------------
 
 describe('canvas seeding', () => {
+  it('shows typed graph metadata and expandable nested workflows', async () => {
+    stubFetch()
+    renderAt('/workflows')
+
+    expect(await screen.findByText('factory.parent')).toBeTruthy()
+    expect(screen.getByText('Policy pins: review@1 · digest aaaaaaaaaaaa')).toBeTruthy()
+    fireEvent.click(screen.getAllByText('Expand nested workflow')[0]!)
+    expect(screen.getAllByText('factory.child')).toHaveLength(2)
+    expect(screen.getAllByText(/Independent review session/)).toHaveLength(2)
+  })
+
   it('a cold /workflows opens the repo’s first saved workflow (built-ins skipped)', async () => {
     stubFetch()
     renderAt('/workflows')

@@ -34,6 +34,7 @@ import { useParams } from 'react-router'
 import { ApiError, createWorkflow, deleteWorkflow, getVersionedWorkflowCatalog, parseWorkflow, postPlan } from '@/api/client'
 import { queryKeys, useSkills, useUiState, useWorkflows } from '@/api/queries'
 import type { Skill, WorkflowDef, WorkflowStepDef } from '@open-mercato/cezar-api-client'
+import type { VersionedWorkflowCatalog, WorkflowDefinitionView } from '@open-mercato/cezar-contract'
 import { CenteredState } from '@/components/centered-state'
 import { SkillEmptyHintCompact } from '@/components/skill-empty-hint'
 import {
@@ -103,6 +104,26 @@ type DragItem = { type: 'palette'; skill: string } | { type: 'step'; step: Workf
 
 function emptyDraft(): Draft {
   return { name: 'my-workflow', description: '', steps: [] }
+}
+
+function NativeGraphCard({ graph, catalog, ancestors = [] }: { graph: WorkflowDefinitionView; catalog: VersionedWorkflowCatalog; ancestors?: string[] }) {
+  const graphKey = `${graph.id}@${graph.version}`
+  const path = [...ancestors, graphKey]
+  return <article className="rounded-md border border-border bg-card p-3">
+    <div className="flex items-baseline justify-between gap-2"><h3 className="font-mono text-xs">{graph.id}</h3><span className="text-xs text-muted-foreground">v{graph.version} · {graph.nodes.length} nodes · entry {graph.entry}</span></div>
+    <ul aria-label={`Nodes in ${graph.id}`} className="mt-2 flex flex-wrap gap-1.5">
+      {graph.nodes.map((node) => {
+        const nested = node.childWorkflow ? catalog.workflows.find((candidate) => candidate.id === node.childWorkflow?.id && candidate.version === node.childWorkflow?.version) : undefined
+        const cycle = nested ? path.includes(`${nested.id}@${nested.version}`) : false
+        return <li key={node.id} className="rounded bg-muted px-2 py-1 text-xs">
+          <span className="font-mono">{node.id}</span><span className="ml-1 text-muted-foreground">{node.kind}</span>{node.detail ? <span className="ml-1 text-muted-foreground">· {node.detail}</span> : null}
+          {node.childWorkflow ? nested && !cycle ? <details className="mt-1 basis-full"><summary className="cursor-pointer">Expand nested workflow</summary><div className="mt-2"><NativeGraphCard graph={nested} catalog={catalog} ancestors={path} /></div></details> : <p className="mt-1 text-muted-foreground">{cycle ? 'Nested workflow cycle detected' : 'Nested workflow definition unavailable'}</p> : null}
+        </li>
+      })}
+    </ul>
+    <ul aria-label={`Transitions in ${graph.id}`} className="mt-2 space-y-1 text-[11px] text-muted-foreground">{graph.transitions.map((edge, index) => <li key={`${edge.from}:${edge.order}:${index}`}><span className="font-mono">{edge.from}</span> · {edge.outcome} → <span className="font-mono">{edge.to}</span>{edge.guardLabel ? ` (${edge.guardLabel})` : ''}</li>)}</ul>
+    <p className="mt-2 text-[11px] text-muted-foreground">Policy pins: {graph.policyRefs.join(', ') || 'none'} · digest {graph.digest.slice(0, 12)}</p>
+  </article>
 }
 
 function draftFrom(workflow: WorkflowDef): Draft {
@@ -344,13 +365,7 @@ function WorkflowsBuilder({ routeName }: { routeName: string | undefined }) {
         <h2 className="mb-2 text-sm font-semibold">Native workflow graphs</h2>
         {versionedCatalog.data.issues.length ? <ul aria-label="Workflow configuration errors" className="mb-3 space-y-1 text-xs text-destructive">{versionedCatalog.data.issues.map((issue, index) => <li key={`${issue.path}:${index}`}><span className="font-mono">{issue.path}</span>: {issue.message}</li>)}</ul> : null}
         <div className="grid gap-3 md:grid-cols-2">
-          {versionedCatalog.data.workflows.map((graph) => <article key={`${graph.id}@${graph.version}`} className="rounded-md border border-border bg-card p-3">
-            <div className="flex items-baseline justify-between gap-2"><h3 className="font-mono text-xs">{graph.id}</h3><span className="text-xs text-muted-foreground">v{graph.version} · {graph.nodes.length} nodes</span></div>
-            <ul aria-label={`Nodes in ${graph.id}`} className="mt-2 flex flex-wrap gap-1.5">
-              {graph.nodes.map((node) => <li key={node.id} className="rounded bg-muted px-2 py-1 text-xs"><span className="font-mono">{node.id}</span><span className="ml-1 text-muted-foreground">{node.kind}</span>{node.detail ? <span className="ml-1 text-muted-foreground">· {node.detail}</span> : null}</li>)}
-            </ul>
-            <ul aria-label={`Transitions in ${graph.id}`} className="mt-2 space-y-1 text-[11px] text-muted-foreground">{graph.transitions.map((edge, index) => <li key={`${edge.from}:${edge.order}:${index}`}><span className="font-mono">{edge.from}</span> · {edge.outcome} → <span className="font-mono">{edge.to}</span>{edge.guardLabel ? ` (${edge.guardLabel})` : ''}</li>)}</ul>
-          </article>)}
+          {versionedCatalog.data.workflows.map((graph) => <NativeGraphCard key={`${graph.id}@${graph.version}`} graph={graph} catalog={versionedCatalog.data} />)}
         </div>
       </section> : null}
       {versionedCatalog.isError ? <p role="status" className="mx-auto w-full max-w-[var(--measure)] px-3 pt-4 text-xs text-muted-foreground md:px-6">Native workflow catalog unavailable: {versionedCatalog.error.message}</p> : null}
