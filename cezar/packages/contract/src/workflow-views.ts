@@ -8,6 +8,7 @@ export const workflowDefinitionNodeViewSchema = z.object({
   id: z.string(), kind: z.string(), outcomes: outcomeList, session: z.string(),
   retry: z.object({ maxAttempts: z.number().int().positive(), on: outcomeList }).strict().optional(),
   timeoutSeconds: z.number().int().positive().optional(), inputs: z.array(portView), outputs: z.array(portView),
+  childWorkflow: z.object({ id: z.string(), version: z.string() }).strict().optional(),
   detail: z.string().optional(),
 }).strict();
 
@@ -27,6 +28,7 @@ export const versionedWorkflowCatalogSchema = z.object({
   issues: z.array(z.object({ path: z.string(), message: z.string() }).strict()),
 }).strict();
 export type VersionedWorkflowCatalog = z.infer<typeof versionedWorkflowCatalogSchema>;
+export type WorkflowDefinitionView = z.infer<typeof workflowDefinitionViewSchema>;
 
 export const workflowFindingViewSchema = z.object({
   id: z.string().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/i).optional(), title: z.string().optional(),
@@ -40,8 +42,13 @@ export const workflowAttemptViewSchema = z.object({
   startedAt: z.string(), finishedAt: z.string().optional(), outcome: workflowOutcomeSchema.optional(), childRunId: z.string().optional(),
   errorPresent: z.boolean(), effectStatus: z.enum(['pending', 'confirmed', 'unknown']).optional(),
   outputs: z.object({ status: z.string().optional(), commitSha: z.string().optional(), artifactRevision: z.string().optional(),
-    verificationId: z.string().optional(), findings: z.array(workflowFindingViewSchema).optional() }).strict().optional(),
+    verificationId: z.string().optional(), costUsd: z.number().nonnegative().optional(),
+    coverage: z.object({ coveredPaths: z.array(z.string()), excludedPaths: z.array(z.string()) }).strict().optional(),
+    reviewLineage: z.object({ previousVerificationId: z.string().optional(), sameSessionRepair: z.boolean().optional() }).strict().optional(),
+    findings: z.array(workflowFindingViewSchema).optional() }).strict().optional(),
 }).strict();
+
+export const workflowNodeProgressSchema = z.object({ node: z.string(), state: z.enum(['current', 'completed', 'failed', 'skipped', 'pending']), outcome: workflowOutcomeSchema.optional() }).strict();
 
 export const workflowChildRunViewSchema = z.object({
   id: z.string(), status: z.string(), dispatchKind: z.string().optional(), workflow: workflowDefinitionViewSchema.optional(),
@@ -52,7 +59,10 @@ export const workflowExecutionViewSchema = z.object({
   workflow: workflowDefinitionViewSchema, definitionDigest: z.string().regex(/^[a-f0-9]{64}$/),
   policyPins: z.array(z.object({ id: z.string(), version: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
   outcomes: z.record(z.string(), workflowOutcomeSchema), ready: z.array(z.string()),
-  wait: z.object({ node: z.string(), reason: z.enum(['human', 'event', 'time']), detail: z.string().optional(), resumeAt: z.string().optional() }).strict().optional(),
+  wait: z.object({ node: z.string(), reason: z.enum(['human', 'event', 'time']), actor: z.string(), detail: z.string().optional(), resumeAt: z.string().optional() }).strict().optional(),
+  budget: z.object({ maxAttempts: z.number().int().positive(), usedAttempts: z.number().int().nonnegative(), remainingAttempts: z.number().int().nonnegative() }).strict(),
+  stopReason: z.object({ node: z.string(), outcome: workflowOutcomeSchema.optional(), errorPresent: z.boolean() }).strict().optional(),
+  nodeProgress: z.array(workflowNodeProgressSchema),
   attempts: z.array(workflowAttemptViewSchema), children: z.array(workflowChildRunViewSchema),
   githubApproval: z.literal('not-in-workflow-record'),
 }).strict();

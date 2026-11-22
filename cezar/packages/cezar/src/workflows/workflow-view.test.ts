@@ -57,10 +57,12 @@ describe('workflow operator views', () => {
     const initialized = initializeWorkflowExecution(definition, digest, definition.policyRefs, {});
     const execution = {
       ...initialized,
+      status: 'waiting',
+      wait: { node: 'review', reason: 'human', detail: 'approval needed' },
       outcomes: { implement: 'passed', verify: 'changes_required', repair: 'passed', review: 'passed' },
       attempts: [
         { node: 'implement', attempt: 1, transitionId: 'i1', childRunId: 'impl-run', status: 'done', startedAt: '2026-01-01T00:00:00Z', outcome: 'passed', outputs: { status: 'passed', commitSha: 'b'.repeat(40) } },
-        { node: 'verify', attempt: 1, transitionId: 'v1', status: 'done', startedAt: '2026-01-01T00:00:01Z', outcome: 'changes_required', outputs: { status: 'failed', commitSha: 'b'.repeat(40), artifactRevision: 'sha256:' + 'c'.repeat(64), findings: [{ fingerprint: digest, title: 'review token workflow-view-secret-value', path: 'src/file.ts', line: 8, confidence: 'unknown', reviewerSessionId: 'ocr-session' }, { title: 'unsafe path', path: 'C:\\private\\file.ts' }] } },
+        { node: 'verify', attempt: 1, transitionId: 'v1', status: 'done', startedAt: '2026-01-01T00:00:01Z', outcome: 'changes_required', outputs: { status: 'failed', commitSha: 'b'.repeat(40), artifactRevision: 'sha256:' + 'c'.repeat(64), costUsd: 0.125, coverage: { coveredPaths: ['src/file.ts'], excludedPaths: ['generated/output.ts', 'C:\\private\\file.ts'] }, reReviewOf: 'verification-previous', sameSessionRepair: true, findings: [{ fingerprint: digest, title: 'review token workflow-view-secret-value', path: 'src/file.ts', line: 8, confidence: 'unknown', reviewerSessionId: 'ocr-session' }, { title: 'unsafe path', path: 'C:\\private\\file.ts' }] } },
         { node: 'repair', attempt: 1, transitionId: 'r1', childRunId: 'impl-run', status: 'done', startedAt: '2026-01-01T00:00:02Z', outcome: 'passed' },
       ],
     };
@@ -71,8 +73,12 @@ describe('workflow operator views', () => {
     })!;
     expect(view.attempts.map(({ node, attempt }) => `${node}:${attempt}`)).toEqual(['implement:1', 'verify:1', 'repair:1']);
     expect(view.children).toEqual([{ id: 'impl-run', status: 'done', dispatchKind: 'implement' }]);
+    expect(view.wait).toMatchObject({ actor: 'authorized human operator', detail: 'approval needed' });
+    expect(view.budget).toEqual({ maxAttempts: 8, usedAttempts: 3, remainingAttempts: 5 });
+    expect(view.nodeProgress.find((node) => node.node === 'implement')).toMatchObject({ state: 'completed', outcome: 'passed' });
     expect(view.attempts[1]?.outputs?.findings?.[0]).toMatchObject({ path: 'src/file.ts', confidence: 'unknown', reviewerSessionId: 'ocr-session' });
     expect(view.attempts[1]?.outputs?.findings).toHaveLength(1);
+    expect(view.attempts[1]?.outputs).toMatchObject({ costUsd: 0.125, coverage: { coveredPaths: ['src/file.ts'], excludedPaths: ['generated/output.ts'] }, reviewLineage: { previousVerificationId: 'verification-previous', sameSessionRepair: true } });
     expect(view.githubApproval).toBe('not-in-workflow-record');
     expect(JSON.stringify(view)).not.toContain('workflow-view-secret-value');
     expect(JSON.stringify(view)).not.toContain('C:\\private');
