@@ -2788,17 +2788,17 @@ export class RunManager {
    *    session via the Continue path, pointing the agent at its handoff file.
    * Call once, before the server starts taking requests.
    */
-  async recover(): Promise<void> {
+  async recover(onlyRunId?: string): Promise<void> {
     await this.lifecycleStartup;
     this.reconcileDispatchJoins();
     const live = this.store
       .listRuns()
-      .filter((r) => ['queued', 'waiting', 'running'].includes(r.status))
+      .filter((r) => (!onlyRunId || r.id === onlyRunId) && ['queued', 'waiting', 'running'].includes(r.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     // A crash never reaches `dropActive`, so its temp directory (#785) outlived the run.
     // Startup is the one moment we know which runs are still live, so sweep every other
     // per-run directory here — bounded to `<dataDir>/tmp`, never a sibling.
-    sweepAgentTmpDirs(this.dataDir, live.map((r) => r.id));
+    if (!onlyRunId) sweepAgentTmpDirs(this.dataDir, live.map((r) => r.id));
     for (const run of live) {
       if (run.workflowDefinitionPin && !workflowDefinitionPinMatches(run)) {
         const finishedAt = new Date().toISOString();

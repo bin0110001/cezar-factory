@@ -1,9 +1,29 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 
-import { getRunWorkflowView } from '@/api/client'
+import { getRunWorkflowView, getWorkflowOperatorActions, submitWorkflowOperatorAction, type WorkflowOperatorAction } from '@/api/client'
+import { toast } from '@/components/ui/toaster'
 
 export function WorkflowExecutionPanel({ runId, enabled, issueUrl, prUrl }: { runId: string; enabled: boolean; issueUrl?: string; prUrl?: string }) {
+  const queryClient = useQueryClient()
+  const [rationale, setRationale] = useState('')
   const query = useQuery({ queryKey: ['run-workflow-view', runId], queryFn: ({ signal }) => getRunWorkflowView(runId, { signal }), enabled })
+  const actions = useQuery({ queryKey: ['run-workflow-actions', runId], queryFn: ({ signal }) => getWorkflowOperatorActions(runId, { signal }), enabled })
+  const submitAction = useMutation({
+    mutationFn: (action: WorkflowOperatorAction) => {
+      if (!actions.data?.snapshot) throw new Error('Run snapshot unavailable; refresh before acting')
+      return submitWorkflowOperatorAction(runId, { idempotencyKey: crypto.randomUUID(), action, expectedVersion: actions.data.snapshot, ...(action === 'escalate' ? { rationale } : {}) })
+    },
+    onSuccess: async (_result, action) => {
+      setRationale('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['run-workflow-actions', runId] }),
+        queryClient.invalidateQueries({ queryKey: ['run-workflow-view', runId] }),
+      ])
+      toast(`Workflow ${action} action recorded`)
+    },
+    onError: (error: Error) => toast(error.message, { tone: 'danger' }),
+  })
   const view = query.data
   if (!view) return query.isError ? <p role="status" className="text-xs text-muted-foreground">Workflow execution view unavailable; run activity remains available in the thread.</p> : null
   const findingCounts = new Map<string, number>()
@@ -35,6 +55,18 @@ export function WorkflowExecutionPanel({ runId, enabled, issueUrl, prUrl }: { ru
     {view.children.length ? <p className="mt-2 text-xs text-muted-foreground">Child runs: {view.children.map((child) => `${child.id} (${child.dispatchKind ?? child.status})`).join(', ')}</p> : null}
     <p className="mt-2 text-[11px] text-muted-foreground">Factory workflow outcome: {view.status}. GitHub approval is separate and is not recorded in this workflow execution.</p>
     {query.isError ? <p role="status" className="mt-1 text-[11px] text-muted-foreground">Refresh unavailable; showing the last cached workflow view.</p> : null}
+    {actions.data ? <div aria-label="Audited workflow actions" className="mt-3 border-t pt-3">
+      <p className="text-xs font-medium">Operator controls · actions are recorded to this project</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {(['resume', 'reconcile', 'cancel', 'approve'] as const).map((action) => <button key={action} type="button" className="rounded border px-2 py-1 text-xs disabled:opacity-50" disabled={submitAction.isPending || !actions.data.snapshot || (action === 'approve' && view.wait?.reason !== 'human') || (action === 'resume' && view.wait?.reason !== 'human')} onClick={() => submitAction.mutate(action)}>{action[0]!.toUpperCase() + action.slice(1)}</button>)}
+        <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); submitAction.mutate('escalate') }}>
+          <label className="sr-only" htmlFor={`workflow-escalation-${runId}`}>Escalation rationale</label>
+          <input id={`workflow-escalation-${runId}`} className="min-w-40 rounded border bg-background px-2 py-1 text-xs" maxLength={2000} required value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Escalation rationale" />
+          <button type="submit" className="rounded border px-2 py-1 text-xs disabled:opacity-50" disabled={submitAction.isPending || !actions.data.snapshot}>Escalate</button>
+        </form>
+      </div>
+      <ol aria-label="Workflow action audit" className="mt-2 space-y-1 text-[11px] text-muted-foreground">{actions.data.actions.slice(-5).reverse().map((action) => <li key={`${action.idempotencyKey}:${action.phase}`}>{action.action} · {action.phase} · {action.actor} · {new Date(action.at).toLocaleString()}{action.result ? ` · ${action.result}` : ''}{action.rationale ? ` · ${action.rationale}` : ''}</li>)}</ol>
+    </div> : actions.isError ? <p role="status" className="mt-2 text-[11px] text-muted-foreground">Operator controls unavailable; run remains readable.</p> : null}
     {issueUrl || prUrl ? <nav aria-label="Workflow context" className="mt-2 flex gap-3 text-xs">{issueUrl ? <a href={issueUrl} target="_blank" rel="noreferrer" className="underline">Backlog issue</a> : null}{prUrl ? <a href={prUrl} target="_blank" rel="noreferrer" className="underline">Pull request</a> : null}</nav> : null}
   </section>
 }

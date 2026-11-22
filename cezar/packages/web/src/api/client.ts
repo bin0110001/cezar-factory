@@ -628,6 +628,19 @@ export async function getRunWorkflowView(id: string, opts?: ReadOptions): Promis
   ), `/runs/${id}/workflow-view`)
 }
 
+export type WorkflowOperatorAction = 'resume' | 'reconcile' | 'cancel' | 'escalate' | 'approve'
+export interface WorkflowOperatorActionState { snapshot: string | null; actions: Array<{ idempotencyKey: string; action: WorkflowOperatorAction; actor: string; phase: string; at: string; rationale?: string; result?: string }> }
+export async function getWorkflowOperatorActions(id: string, opts?: ReadOptions): Promise<WorkflowOperatorActionState> {
+  return unwrap(await cez.api.v1.p[':projectId'].runs[':id']['operator-actions'].$get(
+    { param: { projectId: queryScope(), id: encodeURIComponent(id) } }, init(opts),
+  ), `/runs/${id}/operator-actions`)
+}
+export async function submitWorkflowOperatorAction(id: string, input: { idempotencyKey: string; action: WorkflowOperatorAction; expectedVersion: string; rationale?: string }): Promise<{ replayed?: boolean; action?: WorkflowOperatorActionState['actions'][number]; error?: string }> {
+  return unwrap(await cez.api.v1.p[':projectId'].runs[':id']['operator-actions'].$post(
+    { param: { projectId: queryScope(), id: encodeURIComponent(id) }, json: input },
+  ), `/runs/${id}/operator-actions`)
+}
+
 export type FactoryReleaseStatus =
   | { status: 'resolved'; projectId: string; channel: 'dev' | 'stable'; sourceSha: string; manifestDigest: string }
   | { status: 'legacy'; projectId: string; channel: 'stable' }

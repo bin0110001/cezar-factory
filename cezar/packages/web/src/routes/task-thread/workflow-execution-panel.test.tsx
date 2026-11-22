@@ -1,15 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { WorkflowExecutionView } from '@open-mercato/cezar-contract'
-import { getRunWorkflowView } from '@/api/client'
+import { getRunWorkflowView, getWorkflowOperatorActions, submitWorkflowOperatorAction } from '@/api/client'
 
 import { WorkflowExecutionPanel } from './workflow-execution-panel'
 
 vi.mock('@/api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/client')>(),
   getRunWorkflowView: vi.fn(),
+  getWorkflowOperatorActions: vi.fn(),
+  submitWorkflowOperatorAction: vi.fn(),
 }))
 
 const view: WorkflowExecutionView = {
@@ -34,6 +36,8 @@ describe('WorkflowExecutionPanel', () => {
 
   it('explains the wait owner and exposes expandable revision-bound review evidence', async () => {
     vi.mocked(getRunWorkflowView).mockResolvedValue(view)
+    vi.mocked(getWorkflowOperatorActions).mockResolvedValue({ snapshot: 'd'.repeat(64), actions: [] })
+    vi.mocked(submitWorkflowOperatorAction).mockResolvedValue({ replayed: false })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><WorkflowExecutionPanel runId="root-run" enabled /></QueryClientProvider>)
 
@@ -45,5 +49,8 @@ describe('WorkflowExecutionPanel', () => {
     expect(screen.getByText(/excluded: generated\/a\.ts/)).toBeTruthy()
     expect(screen.getByText(/repair reused the implementation session/)).toBeTruthy()
     expect(screen.getByText(/ai-review · unverified/)).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(submitWorkflowOperatorAction).toHaveBeenCalledWith('root-run', expect.objectContaining({ action: 'approve', expectedVersion: 'd'.repeat(64) })))
   })
 })
