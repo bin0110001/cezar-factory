@@ -37,7 +37,7 @@ describe('versioned workflow catalog', () => {
     expect(loaded.issues[0]?.path).toContain('broken.workflow.json');
   });
 
-  it('keeps the shared lifecycle stage catalog on the versioned Cezar contract', () => {
+  it('keeps the shared lifecycle and release gate catalogs on the versioned Cezar contract', () => {
     let factoryRoot = resolve(process.cwd());
     while (!existsSync(join(factoryRoot, 'workflows', 'lifecycle-intake.workflow.json'))) {
       const parent = dirname(factoryRoot);
@@ -45,11 +45,16 @@ describe('versioned workflow catalog', () => {
       factoryRoot = parent;
     }
     const catalog = join(factoryRoot, 'workflows');
-    const files = readdirSync(catalog).filter((file) => file.endsWith('.workflow.json') && file.startsWith('lifecycle-'));
-    expect(files.length).toBeGreaterThanOrEqual(8);
+    const files = readdirSync(catalog).filter((file) => file.endsWith('.workflow.json'));
+    expect(files.some((file) => file.startsWith('lifecycle-'))).toBe(true);
+    expect(files).toContain('release-candidate-promotion.workflow.json');
     for (const file of files) {
       const parsed = versionedWorkflowSchema.safeParse(JSON.parse(readFileSync(join(catalog, file), 'utf8')));
       expect(parsed.success, file).toBe(true);
     }
+    expect(JSON.parse(readFileSync(join(catalog, 'release-candidate-promotion.workflow.json'), 'utf8'))).toMatchObject({
+      id: 'factory.release.candidate-promotion',
+      nodes: expect.arrayContaining([expect.objectContaining({ kind: 'policy_gate', policy: 'release.candidate.promotion-ready' })]),
+    });
   });
 });

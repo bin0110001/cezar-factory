@@ -198,6 +198,19 @@ class Legacy(unittest.TestCase):
         self.assertFalse(r["valid"])
         self.assertFalse(r["blocking"])
 
+    def test_versioned_human_wait_satisfies_human_gate_contract(self):
+        native = {
+            "contract": "cezar.workflow", "id": "factory.human-wait", "version": "1.0.0",
+            "entry": "approval", "terminals": ["done"], "budget": {"maxAttempts": 1, "maxDurationSeconds": 60},
+            "nodes": [
+                {"id": "approval", "kind": "wait", "waitFor": "human", "reason": "Review", "outcomes": ["passed"]},
+                {"id": "done", "kind": "return", "source": "approval", "outcomes": ["passed"]},
+            ],
+            "transitions": [{"from": "approval", "outcome": "passed", "to": "done"}],
+        }
+        report = wg.validate(native)
+        self.assertNotIn("WG015", codes(report))
+
     def test_repository_workflows_report_only(self):
         reports = wg.validate_tree(pathlib.Path(__file__).parents[1])
         self.assertTrue(reports)

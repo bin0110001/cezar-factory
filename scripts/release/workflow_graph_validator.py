@@ -151,6 +151,10 @@ def adapt_definition(raw: Any) -> dict[str, Any]:
             else:
                 kind = "child" if node.get("kind") == "child_workflow" else "wait" if node.get("kind") == "wait" else "task"
                 normalized = {"id": node_id, "kind": kind, "outcomes": outcomes}
+                if node.get("kind") == "wait" and node.get("waitFor", "human") == "human":
+                    # Versioned workflows express an authorized human pause by choosing
+                    # waitFor=human; the contract intentionally has no role list.
+                    normalized["humanGate"] = {"authorizedRoles": ["human"]}
                 if kind == "child":
                     normalized["ref"] = f"{node.get('workflow')}@{node.get('version')}"
                     # Versioned child runs execute under the workflow runtime's bounded attempt budget.

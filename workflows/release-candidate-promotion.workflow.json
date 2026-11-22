@@ -1,0 +1,59 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.release.candidate-promotion",
+  "version": "1.0.0",
+  "description": "Read-only handoff guard for a host-approved, immutable release candidate.",
+  "entry": "approval-wait",
+  "terminals": ["return-approved", "return-blocked", "return-needs-input", "return-unknown"],
+  "inputs": [
+    { "name": "candidateId", "type": "string", "required": true },
+    { "name": "candidateSha", "type": "string", "required": true },
+    { "name": "candidateRevision", "type": "number", "required": true }
+  ],
+  "nodes": [
+    {
+      "id": "approval-wait",
+      "kind": "wait",
+      "session": "none",
+      "waitFor": "human",
+      "reason": "The host release engine must record the required human approval for this exact candidate before stable promotion.",
+      "outcomes": ["passed"]
+    },
+    {
+      "id": "verify-host-approval",
+      "kind": "policy_gate",
+      "policy": "release.candidate.promotion-ready",
+      "session": "none",
+      "outcomes": ["passed", "blocked", "needs_input", "unknown"],
+      "outputs": [
+        { "name": "status", "type": "string" },
+        { "name": "reasonCode", "type": "string" },
+        { "name": "candidateId", "type": "string" },
+        { "name": "candidateSha", "type": "string" },
+        { "name": "candidateRevision", "type": "number" },
+        { "name": "snapshotAt", "type": "string" },
+        { "name": "evidenceDigest", "type": "string" }
+      ]
+    },
+    { "id": "return-approved", "kind": "return", "source": "verify-host-approval", "outcomes": ["passed"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "candidateId", "type": "string" }, { "name": "candidateSha", "type": "string" }, { "name": "candidateRevision", "type": "number" }, { "name": "snapshotAt", "type": "string" }, { "name": "evidenceDigest", "type": "string" }] },
+    { "id": "return-blocked", "kind": "return", "source": "verify-host-approval", "outcomes": ["blocked"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }] },
+    { "id": "return-needs-input", "kind": "return", "source": "verify-host-approval", "outcomes": ["needs_input"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }] },
+    { "id": "return-unknown", "kind": "return", "source": "verify-host-approval", "outcomes": ["unknown"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }] }
+  ],
+  "transitions": [
+    { "from": "approval-wait", "outcome": "passed", "to": "verify-host-approval", "order": 0 },
+    { "from": "verify-host-approval", "outcome": "passed", "to": "return-approved", "order": 0 },
+    { "from": "verify-host-approval", "outcome": "blocked", "to": "return-blocked", "order": 1 },
+    { "from": "verify-host-approval", "outcome": "needs_input", "to": "return-needs-input", "order": 2 },
+    { "from": "verify-host-approval", "outcome": "unknown", "to": "return-unknown", "order": 3 }
+  ],
+  "budget": { "maxAttempts": 2, "maxDurationSeconds": 604800 },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": {
+    "mode": "versioned-only",
+    "minConsumer": "0.14.0",
+    "maxConsumer": "0.14.99"
+  }
+}
