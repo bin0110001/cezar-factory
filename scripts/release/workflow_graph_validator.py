@@ -133,6 +133,8 @@ def adapt_definition(raw: Any) -> dict[str, Any]:
                 raise ValueError("versioned workflow node requires a string id")
             node_id = node["id"]
             outcomes = node.get("outcomes") or (["passed"] if node.get("kind") == "wait" else [])
+            if node.get("kind") == "verification" and (not isinstance(node.get("suite"), str) or not node["suite"].strip() or "command" in node):
+                raise ValueError(f'verification node "{node_id}" requires a suite and cannot define a command')
             if node_id in terminal_ids:
                 # The Cezar contract declares terminal-capable nodes; each declared result becomes
                 # an explicit graph terminal so static reachability proves every typed exit.

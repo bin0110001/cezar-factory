@@ -5,9 +5,10 @@ import { normalizeWorkflowDoc, workflowFileSchema } from './types.ts';
 import { workflowDefinitionPinMatches } from './run.ts';
 import type { RunRecord } from '../runs/store.ts';
 
-function sample(id: string, kind: 'agent' | 'validator' | 'policy_gate' | 'action' = 'agent') {
+function sample(id: string, kind: 'agent' | 'validator' | 'policy_gate' | 'action' | 'verification' = 'agent') {
   const node = kind === 'agent' ? { id: 'work', kind, prompt: 'Complete {{task}}', outcomes: ['passed', 'changes_required', 'needs_input'] }
     : kind === 'validator' ? { id: 'work', kind, validator: 'local-suite', outcomes: ['passed', 'investigate'] }
+      : kind === 'verification' ? { id: 'work', kind, suite: 'quick', outcomes: ['passed', 'changes_required', 'unknown', 'interrupted'] }
       : kind === 'policy_gate' ? { id: 'work', kind, policy: 'review-required', outcomes: ['passed', 'blocked'] }
         : { id: 'work', kind, action: 'factory.issue.deliver', capabilities: ['github.issue.write'], outcomes: ['passed', 'investigate'] };
   const outcomes = node.outcomes;
@@ -22,9 +23,16 @@ function sample(id: string, kind: 'agent' | 'validator' | 'policy_gate' | 'actio
 
 describe('versioned workflow contract', () => {
   it('accepts issue delivery, investigation, review, and repair definitions', () => {
-    for (const value of [sample('issue-delivery', 'action'), sample('investigation', 'agent'), sample('review', 'policy_gate'), sample('repair', 'validator')]) {
+    for (const value of [sample('issue-delivery', 'action'), sample('investigation', 'agent'), sample('review', 'policy_gate'), sample('repair', 'validator'), sample('verify', 'verification')]) {
       expect(versionedWorkflowSchema.safeParse(value).success).toBe(true);
     }
+  });
+
+  it('accepts only a typed suite on verification nodes', () => {
+    const workflow = sample('verify', 'verification');
+    expect(versionedWorkflowSchema.safeParse({ ...workflow, nodes: [{ ...workflow.nodes[0], suite: '  ' }, workflow.nodes[1]] }).success).toBe(false);
+    expect(versionedWorkflowSchema.safeParse({ ...workflow, nodes: [{ ...workflow.nodes[0], command: 'npm test' }, workflow.nodes[1]] }).success).toBe(false);
+    expect(versionedWorkflowSchema.safeParse({ ...workflow, nodes: [{ ...workflow.nodes[0], outcomes: ['passed'] }, workflow.nodes[1]] }).success).toBe(false);
   });
 
   it('routes uncertain outcomes through a child and returns prior typed outcomes and outputs', () => {

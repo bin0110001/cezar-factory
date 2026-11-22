@@ -7,6 +7,8 @@ Runtime loop/liveness detection (#766), the hierarchical runtime (#765), GitHub 
 
 ## Definition shape
 
+Native `verification` nodes select a named project suite for the existing Cezar verifier. Their contract accepts no shell command, so validation remains owned by the registered project verification manifest.
+
 Native definitions use the Cezar `cezar.workflow` v1 contract from `cezar/packages/contract/src/versioned-workflows.ts` and are normalized through the single `adapt_definition` seam. Nodes use `agent`, `action`, `validator`, `policy_gate`, `wait`, `child_workflow`, `fork`, and `join`; `terminals` lists nodes whose declared outcomes are workflow results. `transitions` carry the source outcome, target node, deterministic order, and an optional guard. Node retry limits become bounded failure edges. Child references are exact `id@version` pins. The contract's capabilities and budget fields remain authoritative; the validator does not create a second permissions or policy store.
 
 Legacy YAML steps are adapted linearly in report-only mode; `onFail.retry`/`max` becomes a bounded failure edge.

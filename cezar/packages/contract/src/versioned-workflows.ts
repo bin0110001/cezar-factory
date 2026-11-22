@@ -39,6 +39,12 @@ export const workflowNodeSchema = z.discriminatedUnion('kind', [
   nodeBase.extend({ kind: z.literal('action'), action: z.string().min(1), capabilities: z.array(z.string().min(1)).default([]), outcomes: z.array(workflowOutcomeSchema).min(1) }),
   nodeBase.extend({ kind: z.literal('agent'), prompt: z.string().min(1), skill: z.string().optional(), dispatchKind: z.enum(['implement', 'review']).default('implement'), outcomes: z.array(workflowOutcomeSchema).min(1) }),
   nodeBase.extend({ kind: z.literal('validator'), validator: z.string().min(1), outcomes: z.array(workflowOutcomeSchema).min(1) }),
+  // Selects a project-owned suite for the existing verification executor. Graphs cannot supply shell commands.
+  nodeBase.extend({ kind: z.literal('verification'), suite: z.string().trim().min(1).max(128), outcomes: z.array(workflowOutcomeSchema).min(1) }).strict().superRefine((node, ctx) => {
+    for (const outcome of ['unknown', 'interrupted'] as const) if (!node.outcomes.includes(outcome)) {
+      ctx.addIssue({ code: 'custom', path: ['outcomes'], message: `verification nodes must declare the "${outcome}" outcome` });
+    }
+  }),
   nodeBase.extend({ kind: z.literal('policy_gate'), policy: z.string().min(1), outcomes: z.array(workflowOutcomeSchema).min(1) }),
   nodeBase.extend({
     kind: z.literal('wait'), reason: z.string().min(1), waitFor: z.enum(['human', 'event', 'time']).default('human'),
