@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Added read-only native workflow graph catalog and redacted run execution projection for operator review, including attempt outcomes, revision-bound findings, child runs and explicit separation from GitHub approval (#770).
 - Added cross-workflow lifecycle pilot E2E fixtures (#777) covering durable human waits and recovery, split child runs, same-session implementation repair with independent review, and bounded verification exhaustion; documented the fixture scope without changing lifecycle routing.
 - Added the versioned lifecycle child workflow catalog (#773): typed stage outcomes for intake, investigation, planning, implementation, verification, repair, review and escalation; deterministic mappings from existing lifecycle result outcomes; contract-aware static graph validation; legacy YAML remains unchanged.
 - Added a deterministic workflow liveness library (#766) classifying stalls, cycles, wait-for deadlocks, starvation and UNKNOWN states with stable reason codes and graph witnesses, reusing the progress evaluator; versioned schema, tests and docs.

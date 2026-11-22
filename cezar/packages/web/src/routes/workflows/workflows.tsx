@@ -12,7 +12,7 @@ import {
 import type { DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDownIcon,
   CheckIcon,
@@ -31,7 +31,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
 
-import { ApiError, createWorkflow, deleteWorkflow, parseWorkflow, postPlan } from '@/api/client'
+import { ApiError, createWorkflow, deleteWorkflow, getVersionedWorkflowCatalog, parseWorkflow, postPlan } from '@/api/client'
 import { queryKeys, useSkills, useUiState, useWorkflows } from '@/api/queries'
 import type { Skill, WorkflowDef, WorkflowStepDef } from '@open-mercato/cezar-api-client'
 import { CenteredState } from '@/components/centered-state'
@@ -122,6 +122,7 @@ export function WorkflowsRoute() {
 
 function WorkflowsBuilder({ routeName }: { routeName: string | undefined }) {
   const workflowsQuery = useWorkflows()
+  const versionedCatalog = useQuery({ queryKey: ['versioned-workflow-catalog'], queryFn: ({ signal }) => getVersionedWorkflowCatalog({ signal }) })
   const skillsQuery = useSkills()
   const uiStateQuery = useUiState()
   const queryClient = useQueryClient()
@@ -338,6 +339,21 @@ function WorkflowsBuilder({ routeName }: { routeName: string | undefined }) {
           Portable skill chains — the agent applies them top to bottom.
         </p>
       </header>
+
+      {versionedCatalog.data ? <section aria-label="Native workflow definitions" className="mx-auto w-full max-w-[var(--measure)] px-3 pt-4 md:px-6">
+        <h2 className="mb-2 text-sm font-semibold">Native workflow graphs</h2>
+        {versionedCatalog.data.issues.length ? <ul aria-label="Workflow configuration errors" className="mb-3 space-y-1 text-xs text-destructive">{versionedCatalog.data.issues.map((issue, index) => <li key={`${issue.path}:${index}`}><span className="font-mono">{issue.path}</span>: {issue.message}</li>)}</ul> : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          {versionedCatalog.data.workflows.map((graph) => <article key={`${graph.id}@${graph.version}`} className="rounded-md border border-border bg-card p-3">
+            <div className="flex items-baseline justify-between gap-2"><h3 className="font-mono text-xs">{graph.id}</h3><span className="text-xs text-muted-foreground">v{graph.version} · {graph.nodes.length} nodes</span></div>
+            <ul aria-label={`Nodes in ${graph.id}`} className="mt-2 flex flex-wrap gap-1.5">
+              {graph.nodes.map((node) => <li key={node.id} className="rounded bg-muted px-2 py-1 text-xs"><span className="font-mono">{node.id}</span><span className="ml-1 text-muted-foreground">{node.kind}</span>{node.detail ? <span className="ml-1 text-muted-foreground">· {node.detail}</span> : null}</li>)}
+            </ul>
+            <ul aria-label={`Transitions in ${graph.id}`} className="mt-2 space-y-1 text-[11px] text-muted-foreground">{graph.transitions.map((edge, index) => <li key={`${edge.from}:${edge.order}:${index}`}><span className="font-mono">{edge.from}</span> · {edge.outcome} → <span className="font-mono">{edge.to}</span>{edge.guardLabel ? ` (${edge.guardLabel})` : ''}</li>)}</ul>
+          </article>)}
+        </div>
+      </section> : null}
+      {versionedCatalog.isError ? <p role="status" className="mx-auto w-full max-w-[var(--measure)] px-3 pt-4 text-xs text-muted-foreground md:px-6">Native workflow catalog unavailable: {versionedCatalog.error.message}</p> : null}
 
       <DndContext
         sensors={sensors}

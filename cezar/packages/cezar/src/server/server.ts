@@ -122,6 +122,7 @@ import { buildWorkspaceManifest } from '../workspace/workspace-manifest.ts';
 import { dashboardRoutes } from './dashboard.ts';
 import { WORKFLOWS_DIR, loadVersionedWorkflows, loadWorkflows } from '../workflows/load.ts';
 import { appendWorkflowParityReceipt, loadWorkflowRolloutConfig, readWorkflowParityReceipts } from '../workflows/rollout.ts';
+import { versionedWorkflowCatalogView, workflowExecutionView } from '../workflows/workflow-view.ts';
 import {
   QUICK_TASK_WORKFLOW,
   normalizeWorkflowDoc,
@@ -2101,7 +2102,7 @@ export function createApp(deps: ServerDeps) {
         // command, because this string is also the copy-paste fallback the pane shows. Passing
         // it again here would set the variable twice.
         opened = await openTerminal(bootRoot, command);
-      } catch {
+      } catch (error) {
         // Terminal handoff is best-effort; the exact command remains the safe fallback.
       }
       if (!opened) {
@@ -3713,7 +3714,17 @@ export function createApp(deps: ServerDeps) {
         const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
         return c.json(await loadWorkflows(project.root, { factoryRelease }));
       } catch (error) {
-        return c.json({ error: error instanceof Error ? error.message : String(error) }, 503);
+        return c.json({ error: 'versioned workflow catalog unavailable' }, 503);
+      }
+    })
+    .get('/workflows/versioned', async (c) => {
+      const project = c.get('project');
+      try {
+        const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
+        const catalog = await loadVersionedWorkflows(project.root, { factoryRelease });
+        return c.json(versionedWorkflowCatalogView(catalog));
+      } catch {
+        return c.json({ error: 'versioned workflow catalog unavailable' }, 503);
       }
     })
 
@@ -4649,6 +4660,15 @@ export function createApp(deps: ServerDeps) {
       const { store } = c.get('project');
       const run = store.getRun(c.req.param('id'));
       return run ? c.json(withUsage(run)) : c.json({ error: 'not found' }, 404);
+    })
+
+    .get('/runs/:id/workflow-view', (c) => {
+      const { store } = c.get('project');
+      const id = c.req.param('id');
+      const run = store.getRun(id);
+      if (!run) return c.json({ error: 'not found' }, 404);
+      const view = workflowExecutionView({ run, runs: store.listRuns() });
+      return view ? c.json(view) : c.json({ error: 'run has no versioned workflow execution' }, 409);
     })
 
     .get(
