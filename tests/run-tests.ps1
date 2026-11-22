@@ -221,6 +221,7 @@ Assert 'full Factory validation installs Cezar dependencies in a fresh worktree'
 $repairReceiptOwner = @($testOwnership.checks | Where-Object { $_.id -eq 'repair-receipts-tests' -and $_.patterns -contains 'tests/test_repair_receipts.py' })
 Assert 'repair-receipt tests have a focused changed-validation owner' ($repairReceiptOwner.Count -eq 1 -and $repairReceiptOwner[0].command -match 'tests\.test_repair_receipts')
 $cezarTestOwners = @($testOwnership.checks | Where-Object { $_.id -in 'cezar-api-client', 'cezar-server', 'cezar-web' })
+Assert 'lifecycle pilot E2E fixture is covered by the Cezar server changed-test owner' (@($cezarTestOwners | Where-Object { $_.id -eq 'cezar-server' -and $_.patterns -contains 'cezar/packages/cezar/**' }).Count -eq 1 -and (Test-Path (Join-Path $factory 'cezar/packages/cezar/src/workflows/lifecycle-pilot-e2e.test.ts')))
 # Every Factory change bumps VERSION and CHANGELOG.md. A path with no focused owner expands to the whole suite inside the
 # implement run, which cost three six-minute attempts and failed a correct docs-only change (fixture issue #528,
 # STABILIZATION-PLAN.md item 3.3). Both must have an owner in the ownership map.

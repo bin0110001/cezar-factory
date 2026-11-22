@@ -200,6 +200,8 @@ implementation automation.
 
 ## Enforcement
 
+The opt-in native workflow pilot has cross-workflow runtime fixtures for human wait/recovery, split work, verification, review and repair. They exercise execution behavior; lifecycle state ownership and transitions remain defined by `policies/lifecycle.json`. See [workflow-map.md](workflow-map.md#cross-workflow-pilot-fixtures) for their coverage and platform scope.
+
 `.ai/factory/scripts/route-state.ps1` applies every transition driven by an agent result: it refuses a transition from the wrong source state, removes all other `factory:*` labels when setting one (so conflicting states cannot persist), and posts the plan, findings or escalation summary as an issue comment.
 
 | Event | Required source | Result |
