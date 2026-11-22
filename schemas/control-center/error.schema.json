@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/error.schema.json",
+  "title": "Factory Control Center typed error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "error"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center-error/v1" },
+    "error": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": { "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" }, "message": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+    }
+  }
+}

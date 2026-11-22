@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/read-model.schema.json",
+  "title": "Factory Control Center read model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "source", "projects", "releases", "promotions", "incidents", "workerResources"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center/v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "observedAt", "reasons"],
+      "properties": {
+        "status": { "enum": ["online", "degraded", "offline"] },
+        "observedAt": { "type": ["string", "null"], "format": "date-time" },
+        "reasons": { "type": "array", "items": { "type": "string", "maxLength": 128 } }
+      }
+    },
+    "projects": { "type": "array", "items": { "$ref": "#/definitions/project" } },
+    "releases": { "type": "array", "items": { "$ref": "#/definitions/release" } },
+    "promotions": { "type": "array", "items": { "$ref": "#/definitions/promotion" } },
+    "incidents": { "type": "array", "items": { "$ref": "#/definitions/incident" } },
+    "workerResources": { "$ref": "#/definitions/workerResources" }
+  },
+  "definitions": {
+    "sha": { "type": ["string", "null"], "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "time": { "type": ["string", "null"], "format": "date-time" },
+    "digest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+    "project": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "name", "channels"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "channels": { "type": "array", "items": { "$ref": "#/definitions/target" } }
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["channel", "desiredSha", "actualSha", "observedSha", "state", "freshness", "observedAt", "receiptId", "reasonCode"],
+      "properties": {
+        "channel": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" },
+        "desiredSha": { "$ref": "#/definitions/sha" }, "actualSha": { "$ref": "#/definitions/sha" }, "observedSha": { "$ref": "#/definitions/sha" },
+        "state": { "enum": ["pending", "staged", "activating", "active", "incompatible", "failed", "rolled_back", "unknown"] },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] },
+        "observedAt": { "$ref": "#/definitions/time" },
+        "receiptId": { "type": ["string", "null"], "maxLength": 128 },
+        "reasonCode": { "type": ["string", "null"], "maxLength": 256 }
+      }
+    },
+    "verification": {
+      "type": ["object", "null"], "additionalProperties": false,
+      "required": ["status", "digest"],
+      "properties": { "status": { "enum": ["passed", "failed", "unknown"] }, "digest": { "$ref": "#/definitions/digest" } }
+    },
+    "release": {
+      "type": "object", "additionalProperties": false,
+      "required": ["channel", "sourceSha", "desiredSha", "actualSha", "observedSha", "state", "stagedAt", "observedAt", "freshness", "drift", "health", "manifestDigest", "artifactDigest", "verification", "stage", "promotionStatus", "targets"],
+      "properties": {
+        "channel": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" },
+        "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+        "desiredSha": { "$ref": "#/definitions/sha" }, "actualSha": { "$ref": "#/definitions/sha" }, "observedSha": { "$ref": "#/definitions/sha" },
+        "state": { "enum": ["verified", "failed", "unknown"] }, "stagedAt": { "$ref": "#/definitions/time" }, "observedAt": { "$ref": "#/definitions/time" },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] }, "drift": { "enum": ["clear", "drift", "unknown"] }, "health": { "enum": ["healthy", "unknown"] },
+        "manifestDigest": { "$ref": "#/definitions/digest" }, "artifactDigest": { "$ref": "#/definitions/digest" }, "verification": { "$ref": "#/definitions/verification" },
+        "stage": { "type": "string", "maxLength": 128 }, "promotionStatus": { "type": "string", "maxLength": 128 },
+        "targets": { "type": "array", "items": { "$ref": "#/definitions/target" } }
+      }
+    },
+    "promotion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceSha", "status", "stage", "startedAt", "finishedAt", "recordDigest", "checks"],
+      "properties": {
+        "sourceSha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }, "status": { "type": "string", "maxLength": 128 }, "stage": { "type": "string", "maxLength": 128 },
+        "startedAt": { "$ref": "#/definitions/time" }, "finishedAt": { "$ref": "#/definitions/time" }, "recordDigest": { "$ref": "#/definitions/digest" },
+        "checks": { "type": "array", "items": { "$ref": "#/definitions/check" } }
+      }
+    },
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "required", "durationMs", "exitCode"],
+      "properties": { "id": { "type": "string", "maxLength": 128 }, "status": { "type": "string", "maxLength": 64 }, "required": { "type": "boolean" }, "durationMs": { "type": ["integer", "null"], "minimum": 0 }, "exitCode": { "type": ["integer", "null"] } }
+    },
+    "incident": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "sourceSha", "state", "summary", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 }, "sourceSha": { "$ref": "#/definitions/sha" }, "state": { "type": "string", "maxLength": 64 },
+        "reasonCode": { "type": "string", "maxLength": 256 }, "failureClass": { "type": "string", "maxLength": 128 }, "summary": { "type": "string", "maxLength": 2000 },
+        "attemptCount": { "type": "integer", "minimum": 0 }, "updatedAt": { "$ref": "#/definitions/time" }
+      }
+    },
+    "worker": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workerId", "state", "cpuMillis", "memoryBytes", "gpuSlots", "observedAt"],
+      "properties": {
+        "workerId": { "type": "string", "minLength": 1, "maxLength": 128 }, "state": { "enum": ["idle", "running", "waiting", "offline", "unknown"] },
+        "cpuMillis": { "type": ["integer", "null"], "minimum": 0 }, "memoryBytes": { "type": ["integer", "null"], "minimum": 0 }, "gpuSlots": { "type": ["integer", "null"], "minimum": 0 }, "observedAt": { "$ref": "#/definitions/time" }
+      }
+    },
+    "workerResources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["availability", "observedAt", "workers"],
+      "properties": {
+        "availability": { "enum": ["available", "partial", "unknown"] }, "observedAt": { "$ref": "#/definitions/time" }, "workers": { "type": "array", "items": { "$ref": "#/definitions/worker" } },
+        "activeSlots": { "type": ["integer", "null"], "minimum": 0 }, "slotLimit": { "type": ["integer", "null"], "minimum": 0 }, "unknownMetrics": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

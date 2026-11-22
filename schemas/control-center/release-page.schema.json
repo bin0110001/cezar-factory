@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/release-page.schema.json",
+  "title": "Factory Control Center release page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items", "nextCursor"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center-release-page/v1" },
+    "items": { "type": "array", "items": { "$ref": "read-model.schema.json#/$defs/release" } },
+    "nextCursor": { "type": ["string", "null"], "maxLength": 512 }
+  }
+}

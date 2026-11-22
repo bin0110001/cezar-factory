@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "factory-control-center-access/v1",
+  "tokens": [
+    { "tokenId": "fixture-viewer", "tokenSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "roles": ["viewer"] },
+    { "tokenId": "fixture-operator", "tokenSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "roles": ["operator"] }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/event-page.schema.json",
+  "title": "Factory Control Center event page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items", "cursor", "hasMore"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center-event-page/v1" },
+    "items": { "type": "array", "items": { "$ref": "audit-event.schema.json" } },
+    "cursor": { "type": "integer", "minimum": 0 },
+    "hasMore": { "type": "boolean" }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "factory-control-center-action/v1",
+  "idempotencyKey": "fixture-action-00000001",
+  "action": "verify",
+  "channel": "dev",
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reason": "Verify the fixture candidate."
+}
