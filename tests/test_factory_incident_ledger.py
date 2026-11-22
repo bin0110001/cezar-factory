@@ -99,12 +99,50 @@ class IncidentLedgerTests(unittest.TestCase):
 
         db = sqlite3.connect(self.db)
         try:
-            db.execute("PRAGMA user_version=2")
+            db.execute("PRAGMA user_version=3")
             db.commit()
         finally:
             db.close()
         with self.assertRaisesRegex(IncidentLedgerError, "newer than supported"):
             IncidentLedger(self.db)
+
+    def test_event_id_makes_delivery_idempotent_without_spending_another_attempt(self):
+        summaries = []
+        ledger = IncidentLedger(self.db, policies={"infrastructure": {"budget": 3, "baseDelaySeconds": 0, "maxDelaySeconds": 0}}, hindsight_summarizer=summaries.append)
+        first = ledger.record_failure("infrastructure", "network unavailable", event_id="delivery-1", now=10)
+        duplicate = ledger.record_failure("infrastructure", "network unavailable", event_id="delivery-1", now=20)
+        self.assertEqual(duplicate["attempt"], first["attempt"])
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(len(ledger.attempts("infrastructure", first["fingerprint"])), 1)
+        self.assertEqual(len(summaries), 1)
+        with self.assertRaisesRegex(IncidentLedgerError, "different incident"):
+            ledger.record_failure("infrastructure", "different failure", event_id="delivery-1", now=30)
+
+    def test_event_id_caches_backoff_and_budget_denials(self):
+        ledger = IncidentLedger(self.db, policies={"infrastructure": {"budget": 2, "baseDelaySeconds": 30, "maxDelaySeconds": 30}})
+        first = ledger.record_failure("infrastructure", "network unavailable", event_id="delivery-1", now=10)
+        self.assertFalse(first["escalated"])
+        denied = ledger.record_failure("infrastructure", "network unavailable", event_id="delivery-2", now=20)
+        duplicate = ledger.record_failure("infrastructure", "network unavailable", event_id="delivery-2", now=90)
+        self.assertEqual(denied["reason"], "backoff")
+        self.assertEqual(duplicate["reason"], "backoff")
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(len(ledger.attempts("infrastructure", first["fingerprint"])), 1)
+
+    def test_version_one_migrates_additively_to_event_deduplication(self):
+        IncidentLedger(self.db)
+        db = sqlite3.connect(self.db)
+        try:
+            db.execute("DROP TABLE incident_events")
+            db.execute("PRAGMA user_version=1")
+            db.commit()
+        finally:
+            db.close()
+        migrated = IncidentLedger(self.db)
+        result = migrated.record_failure("infrastructure", "migration check", event_id="migrated-event", now=1)
+        duplicate = migrated.record_failure("infrastructure", "migration check", event_id="migrated-event", now=2)
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(duplicate["attempt"], result["attempt"])
 
     def test_hindsight_summary_is_best_effort_and_receives_only_safe_metadata(self):
         seen = []

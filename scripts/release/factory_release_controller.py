@@ -659,6 +659,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--registry", help="Explicit Cezar project registry used by detect/repair")
     p.add_argument("--api-url", default="", help="Optional Cezar API origin override for detect/repair")
     p.add_argument("--apply", action="store_true", help="Apply safe, ledger-admitted repairs (repair is a dry run by default)")
+    p.add_argument("--event-id", help="Stable delivery identifier for idempotent incident-ledger admission during repair")
     return p
 
 
@@ -682,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
                 result = drift.detect()
             else:
                 with exclusive_lock(controller.store / "controller.lock"):
-                    result = drift.repair(apply=args.apply)
+                    result = drift.repair(apply=args.apply, event_id=args.event_id)
         elif args.command == "sync":
             with exclusive_lock(controller.store / "controller.lock"):
                 controller.recover_interrupted_attempts()

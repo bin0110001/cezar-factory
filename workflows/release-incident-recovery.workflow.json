@@ -1,0 +1,56 @@
+{
+  "contract": "cezar.workflow",
+  "schemaVersion": 1,
+  "id": "factory.release.incident-recovery",
+  "version": "1.0.0",
+  "description": "Map authoritative release ledger and repair receipts to typed recovery outcomes.",
+  "entry": "classify-recovery-result",
+  "terminals": ["return-recovered", "return-validation-failed", "return-retryable", "return-escalated", "return-exhausted", "return-unknown"],
+  "inputs": [
+    { "name": "eventId", "type": "string", "required": true },
+    { "name": "failureClass", "type": "string", "required": true },
+    { "name": "fingerprint", "type": "string", "required": true },
+    { "name": "evidenceReferences", "type": "array", "required": true },
+    { "name": "ledgerAdmission", "type": "object", "required": true },
+    { "name": "repairResult", "type": "object", "required": true }
+  ],
+  "nodes": [
+    {
+      "id": "classify-recovery-result",
+      "kind": "policy_gate",
+      "policy": "release.incident.recovery-result",
+      "session": "none",
+      "outcomes": ["passed", "blocked", "needs_input", "needs_research", "exhausted", "unknown"],
+      "outputs": [
+        { "name": "status", "type": "string" },
+        { "name": "reasonCode", "type": "string" },
+        { "name": "nextAction", "type": "string" },
+        { "name": "eventId", "type": "string" },
+        { "name": "failureClass", "type": "string" },
+        { "name": "fingerprint", "type": "string" },
+        { "name": "attempt", "type": "number" },
+        { "name": "budget", "type": "number" },
+        { "name": "nextAttemptAt", "type": "string" },
+        { "name": "evidenceReferences", "type": "array" }
+      ]
+    },
+    { "id": "return-recovered", "kind": "return", "source": "classify-recovery-result", "outcomes": ["passed"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "eventId", "type": "string" }, { "name": "failureClass", "type": "string" }, { "name": "fingerprint", "type": "string" }, { "name": "attempt", "type": "number" }, { "name": "budget", "type": "number" }, { "name": "evidenceReferences", "type": "array" }] },
+    { "id": "return-validation-failed", "kind": "return", "source": "classify-recovery-result", "outcomes": ["blocked"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "eventId", "type": "string" }, { "name": "failureClass", "type": "string" }, { "name": "fingerprint", "type": "string" }, { "name": "attempt", "type": "number" }, { "name": "budget", "type": "number" }, { "name": "evidenceReferences", "type": "array" }] },
+    { "id": "return-retryable", "kind": "return", "source": "classify-recovery-result", "outcomes": ["needs_input"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "eventId", "type": "string" }, { "name": "failureClass", "type": "string" }, { "name": "fingerprint", "type": "string" }, { "name": "attempt", "type": "number" }, { "name": "budget", "type": "number" }, { "name": "nextAttemptAt", "type": "string" }, { "name": "evidenceReferences", "type": "array" }] },
+    { "id": "return-escalated", "kind": "return", "source": "classify-recovery-result", "outcomes": ["needs_research"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "eventId", "type": "string" }, { "name": "failureClass", "type": "string" }, { "name": "fingerprint", "type": "string" }, { "name": "attempt", "type": "number" }, { "name": "budget", "type": "number" }, { "name": "evidenceReferences", "type": "array" }] },
+    { "id": "return-exhausted", "kind": "return", "source": "classify-recovery-result", "outcomes": ["exhausted"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "eventId", "type": "string" }, { "name": "failureClass", "type": "string" }, { "name": "fingerprint", "type": "string" }, { "name": "attempt", "type": "number" }, { "name": "evidenceReferences", "type": "array" }] },
+    { "id": "return-unknown", "kind": "return", "source": "classify-recovery-result", "outcomes": ["unknown"], "session": "none", "outputs": [{ "name": "status", "type": "string" }, { "name": "reasonCode", "type": "string" }, { "name": "nextAction", "type": "string" }, { "name": "evidenceReferences", "type": "array" }] }
+  ],
+  "transitions": [
+    { "from": "classify-recovery-result", "outcome": "passed", "to": "return-recovered", "order": 0 },
+    { "from": "classify-recovery-result", "outcome": "blocked", "to": "return-validation-failed", "order": 1 },
+    { "from": "classify-recovery-result", "outcome": "needs_input", "to": "return-retryable", "order": 2 },
+    { "from": "classify-recovery-result", "outcome": "needs_research", "to": "return-escalated", "order": 3 },
+    { "from": "classify-recovery-result", "outcome": "exhausted", "to": "return-exhausted", "order": 4 },
+    { "from": "classify-recovery-result", "outcome": "unknown", "to": "return-unknown", "order": 5 }
+  ],
+  "budget": { "maxAttempts": 1, "maxDurationSeconds": 300 },
+  "policyRefs": [],
+  "capabilities": [],
+  "compatibility": { "mode": "versioned-only", "minConsumer": "0.14.0", "maxConsumer": "0.14.99" }
+}

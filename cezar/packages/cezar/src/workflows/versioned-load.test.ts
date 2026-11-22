@@ -48,6 +48,7 @@ describe('versioned workflow catalog', () => {
     const files = readdirSync(catalog).filter((file) => file.endsWith('.workflow.json'));
     expect(files.some((file) => file.startsWith('lifecycle-'))).toBe(true);
     expect(files).toContain('release-candidate-promotion.workflow.json');
+    expect(files).toContain('release-incident-recovery.workflow.json');
     for (const file of files) {
       const parsed = versionedWorkflowSchema.safeParse(JSON.parse(readFileSync(join(catalog, file), 'utf8')));
       expect(parsed.success, file).toBe(true);
@@ -55,6 +56,10 @@ describe('versioned workflow catalog', () => {
     expect(JSON.parse(readFileSync(join(catalog, 'release-candidate-promotion.workflow.json'), 'utf8'))).toMatchObject({
       id: 'factory.release.candidate-promotion',
       nodes: expect.arrayContaining([expect.objectContaining({ kind: 'policy_gate', policy: 'release.candidate.promotion-ready' })]),
+    });
+    expect(JSON.parse(readFileSync(join(catalog, 'release-incident-recovery.workflow.json'), 'utf8'))).toMatchObject({
+      id: 'factory.release.incident-recovery',
+      nodes: expect.arrayContaining([expect.objectContaining({ kind: 'policy_gate', policy: 'release.incident.recovery-result' })]),
     });
   });
 });

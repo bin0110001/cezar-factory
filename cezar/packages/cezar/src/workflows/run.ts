@@ -56,6 +56,7 @@ import { autosaveCommit, chooseForkBase, createWorktree, removeWorktree, worktre
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
 import { loadVersionedWorkflows, loadWorkflows } from './load.ts';
 import { releaseCandidatePromotionGate } from '../release-candidates/workflow-gates.ts';
+import { releaseIncidentRecoveryGate } from '../factory-release/incident-workflow.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
 // Task dispatch (spec 2026-09-10-dispatch). Every import below is inert unless the feature is
 // ON *and* the run carries a `dispatch`: `dispatchOf()` is the single gate, and a run without one
@@ -1259,6 +1260,7 @@ export class RunManager {
     this.versionedWorkflowActions = options.versionedWorkflowActions ?? {};
     this.versionedWorkflowPolicyGates = {
       [releaseCandidatePromotionGate.policy]: { evaluate: releaseCandidatePromotionGate.evaluate },
+      [releaseIncidentRecoveryGate.policy]: { evaluate: releaseIncidentRecoveryGate.evaluate },
       ...options.versionedWorkflowPolicyGates,
     };
     this.verificationProviders = options.verificationProviders ?? {};
