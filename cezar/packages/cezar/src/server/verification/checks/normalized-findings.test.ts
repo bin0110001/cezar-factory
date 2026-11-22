@@ -50,4 +50,12 @@ describe('normalizers', () => {
     const sast = (rule: string) => normalizeSarif({ runs: [{ results: [{ ruleId: rule, level: 'warning', message: { text: 'xss CWE-79' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'src/a.ts' } } }] }] }] }, ctx('p', { category: 'sast' }))[0]!;
     expect(sast('rule-a').fingerprint).toBe(sast('other-provider-rule').fingerprint);
   });
+  it('keeps AI audit findings advisory and carries line, suggestion and reviewer session provenance', () => {
+    const doc = { findings: [{ id: 'possible-oob', severity: 'critical', confidence: 'high', title: 'Possible bounds error', path: 'src/a.ts', line: 12,
+      suggestion: 'Check the loop boundary', reviewerSessionId: 'review-123' }] };
+    const f = normalizeGenericJson(doc, ctx('factory-ai-audit', { category: 'ai-audit' }))[0]!;
+    expect(f).toMatchObject({ severity: 'info', confidence: 'unknown', path: 'src/a.ts', line: 12, reviewerSessionId: 'review-123',
+      aiAudit: { state: 'needs-verification', claimedSeverity: 'critical', suggestion: 'Check the loop boundary' } });
+    expect(f.fingerprint).toBe(normalizeGenericJson({ findings: [{ ...doc.findings[0], line: 37 }] }, ctx('factory-ai-audit', { category: 'ai-audit' }))[0]!.fingerprint);
+  });
 });

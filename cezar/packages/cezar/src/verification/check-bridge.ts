@@ -53,7 +53,7 @@ export function toIngestInput(o: RunCheckOutcome, ctx: BridgeContext): CheckInge
       diagnostics: [{ code: f.ruleId, message: f.evidence || f.ruleId, severity: f.severity === 'info' || f.severity === 'low' ? 'warning' : 'error', ...(f.path ? { file: f.path } : {}), ...(f.line ? { line: f.line } : {}) }],
     })),
     run: runFactsOf(o, ctx),
-    evidenceRefs: [o.provenance.inputsDigest, o.provenance.configDigest].filter(Boolean),
+    evidenceRefs: [o.provenance.inputsDigest, o.provenance.configDigest, ...active.map((f) => f.reviewerSessionId)].filter((v): v is string => Boolean(v)),
   };
 }
 
