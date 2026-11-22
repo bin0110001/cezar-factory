@@ -2,7 +2,7 @@ import { FileCogIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ApiError } from '@/api/client'
-import { useAgentConfig, useAgentConfigFile, useHealth, usePutAgentConfigFile } from '@/api/queries'
+import { useAgentConfig, useAgentConfigFile, useCheckMcpGateway, useHealth, useMcpGatewayStatus, usePutAgentConfigFile, useSkills } from '@/api/queries'
 import type { AgentConfigFile, AgentConfigListing, Runner } from '@open-mercato/cezar-api-client'
 import { CenteredState } from '@/components/centered-state'
 import { CodeEditor } from '@/components/code-editor'
@@ -36,6 +36,9 @@ function effectLabel(file: AgentConfigFile): string {
 export function AgentConfigSection() {
   const listing = useAgentConfig()
   const health = useHealth()
+  const skills = useSkills()
+  const gateway = useMcpGatewayStatus()
+  const checkGateway = useCheckMcpGateway()
   const installed = useMemo<Runner[]>(
     () => (health.data ? availableRunners(health.data.checks) : AGENT_DESCRIPTORS.map((d) => d.id)),
     [health.data],
@@ -59,10 +62,16 @@ export function AgentConfigSection() {
       />
     )
   }
-  return <AgentConfigView listing={listing.data} installed={installed} />
+  return <AgentConfigView listing={listing.data} installed={installed} skills={skills} gateway={gateway} checkGateway={checkGateway} />
 }
 
-function AgentConfigView({ listing, installed }: { listing: AgentConfigListing; installed: Runner[] }) {
+function AgentConfigView({ listing, installed, skills, gateway, checkGateway }: {
+  listing: AgentConfigListing
+  installed: Runner[]
+  skills: ReturnType<typeof useSkills>
+  gateway: ReturnType<typeof useMcpGatewayStatus>
+  checkGateway: ReturnType<typeof useCheckMcpGateway>
+}) {
   const [agentId, setAgentId] = useState<Runner>('claude')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const agent = descriptorFor(agentId)
@@ -137,6 +146,67 @@ function AgentConfigView({ listing, installed }: { listing: AgentConfigListing; 
           )}
         </div>
       </div>
+
+      <section data-slot="mcp-runtime-read-model" className="rounded-md border border-border p-4">
+        <h3 className="text-[13px] font-semibold">Gateway and project skills</h3>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="font-medium">MCP gateway:</span>
+          {gateway.isPending ? <span className="text-soft-foreground">Loading status…</span> : gateway.isError ? (
+            <span className="text-destructive">Status unavailable</span>
+          ) : gateway.data.configured && gateway.data.endpointValid ? (
+            <span>Configured{gateway.data.endpointHost ? ` · ${gateway.data.endpointHost}` : ''}</span>
+          ) : gateway.data.configured ? (
+            <span className="text-destructive">Gateway configuration is invalid</span>
+          ) : <span className="text-soft-foreground">Not configured</span>}
+          {gateway.data?.configured && gateway.data.endpointValid && !checkGateway.data && <span className="text-soft-foreground">Not checked</span>}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!gateway.data?.configured || !gateway.data.endpointHost || checkGateway.isPending}
+            onClick={() => checkGateway.mutate()}
+          >
+            {checkGateway.isPending ? 'Checking…' : 'Test connection'}
+          </Button>
+        </div>
+        {checkGateway.data && (
+          <p data-slot="mcp-gateway-check-result" role="status" className="mt-2 text-[12px]">
+            {checkGateway.data.status === 'healthy'
+              ? `Connected to ${checkGateway.data.serverName} ${checkGateway.data.serverVersion}${checkGateway.data.protocolVersion ? ` · protocol ${checkGateway.data.protocolVersion}` : ''}.`
+              : checkGateway.data.status === 'unconfigured'
+                ? 'Gateway is not configured.'
+                : `Connection failed (${checkGateway.data.errorCategory ?? 'unknown'}).`}
+            {' '}Checked {new Date(checkGateway.data.checkedAt).toLocaleString()}.
+          </p>
+        )}
+        {checkGateway.isError && <p role="alert" className="mt-2 text-[12px] text-destructive">Connection check failed.</p>}
+        <p className="mt-1 text-[12px] text-soft-foreground">
+          Effective tools and run-level MCP profile resolution are unavailable until Cezar dispatch provides those read models.
+          The files above show configured agent MCP profiles; they do not indicate what a particular run received.
+        </p>
+        <div className="mt-3">
+          <h4 className="text-[12px] font-medium">Discovered skills available to this project</h4>
+          <p className="mt-1 text-[12px] text-soft-foreground">This catalog shows discovered sources, not a per-run resolver result.</p>
+          {skills.isPending ? (
+            <p className="mt-1 text-[12px] text-soft-foreground">Loading project skills…</p>
+          ) : skills.isError ? (
+            <p className="mt-1 text-[12px] text-destructive">Project skills are unavailable: {skills.error.message}</p>
+          ) : skills.data.length > 0 ? (
+            <ul data-slot="project-skill-bundle" className="mt-2 flex flex-wrap gap-1">
+              {skills.data.map((skill) => (
+                <li key={`${skill.source}:${skill.path}`} className="flex items-center gap-1 rounded-md border px-2 py-1">
+                  <span>{skill.name}</span>
+                  <span className="text-soft-foreground">{skill.source}</span>
+                  {skill.team?.repo && <span className="text-soft-foreground">{skill.team.repo}</span>}
+                  <code className="font-mono text-soft-foreground">{skill.team?.commit?.slice(0, 12) ?? 'unpinned'}</code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-[12px] text-soft-foreground">No project skills were discovered.</p>
+          )}
+        </div>
+      </section>
     </div>
   )
 }

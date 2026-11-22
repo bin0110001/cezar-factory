@@ -46,7 +46,7 @@ const HEALTH = {
   capabilities: { localHandoff: true },
 }
 
-function serve(listing: AgentConfigListing, fileContent = '{"a":1}') {
+function serve(listing: AgentConfigListing, fileContent = '{"a":1}', skills: unknown[] = [], gatewayConfigured = false) {
   const json = (payload: unknown, status = 200) =>
     new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } })
   vi.stubGlobal(
@@ -55,6 +55,12 @@ function serve(listing: AgentConfigListing, fileContent = '{"a":1}') {
       const url = String(input)
       const method = init?.method ?? 'GET'
       if (url.endsWith('/api/v1/health')) return json(HEALTH)
+      if (url.includes('/api/v1/skills')) return json(skills)
+      if (url.includes('/mcp-gateway/check')) return json({
+        status: 'healthy', checkedAt: '2026-11-22T12:00:00.000Z',
+        serverName: 'obot', serverVersion: '1.2.3', protocolVersion: '2025-03-26',
+      })
+      if (url.includes('/mcp-gateway')) return json({ configured: gatewayConfigured, endpointHost: gatewayConfigured ? 'gateway.example:8443' : null, endpointValid: gatewayConfigured })
       if (url.endsWith('/api/v1/agent-config')) return json(listing)
       if (url.includes('/api/v1/agent-config/') && method === 'GET') {
         return json({ id: 'x', path: '/repo/x', exists: true, content: fileContent, version: 'v1' })
@@ -88,6 +94,26 @@ afterEach(() => {
 })
 
 describe('AgentConfigSection', () => {
+  it('shows discovered project skills and labels dispatch-only MCP details unavailable', async () => {
+    serve(
+      { editable: true, files: [], userMcp: null },
+      undefined,
+      [{ name: 'release-check', body: '...', path: '/repo/.ai/skills/release-check/SKILL.md', source: 'ai' }],
+    )
+    renderSection()
+    await waitFor(() => expect(screen.getByText('release-check')).toBeTruthy())
+    expect(screen.getByText(/Effective tools and run-level MCP profile resolution are unavailable/)).toBeTruthy()
+    expect(screen.getByText(/they do not indicate what a particular run received/)).toBeTruthy()
+  })
+
+  it('shows redacted gateway configuration and runs the initialize-only connection check', async () => {
+    serve({ editable: true, files: [], userMcp: null }, undefined, [], true)
+    renderSection()
+    await waitFor(() => expect(screen.getByText('Configured · gateway.example:8443')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    await waitFor(() => expect(screen.getByText(/Connected to obot 1\.2\.3 · protocol 2025-03-26/)).toBeTruthy())
+  })
+
   it('renders the agent selector with a not-installed badge from health', async () => {
     serve({
       editable: true,
