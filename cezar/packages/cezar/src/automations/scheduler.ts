@@ -9,6 +9,7 @@ import type { TrackerFailure } from '@open-mercato/cezar-contract';
 import { TrackerPoller, type TrackerAutomationCandidate } from './tracker-poller.ts';
 import type { DependencyAdmission } from '../server/dependency-graph/admission.ts';
 import { isGithubAutomation, isScheduleAutomation, isTrackerAutomation, type AutomationRuntimeState, type GithubAutomationDefinition, type TrackerAutomationDefinition } from './types.ts';
+import { effectiveAdmissionPriority } from '../server/capacity/quota-admission.ts';
 
 const CURSOR_OVERLAP_MS = 120_000;
 
@@ -22,6 +23,9 @@ export type AutomationLauncher = (
   admission?: Extract<DependencyAdmission, { status: 'ready' }>,
 ) => Promise<AutomationLaunchResult>;
 export type AutomationAdmissionCheck = (candidate: GithubCandidate) => Promise<DependencyAdmission>;
+export type AutomationCapacityAdmission = (definition: GithubAutomationDefinition, jobId: string) => Promise<{
+  status: 'admitted'; leaseId?: string; profileId?: string; agentAccountId?: string; model?: string;
+} | { status: 'deferred'; reason: string; retryAt?: string }>;
 export type TrackerAutomationLauncher = (
   definition: TrackerAutomationDefinition,
   candidate: TrackerAutomationCandidate,
@@ -45,6 +49,9 @@ export interface ProjectAutomationHandle {
   tracker?: { getDriver: () => Promise<TrackerDriver | TrackerFailure>; poller: TrackerPoller };
   launch?: AutomationLauncher;
   admit?: AutomationAdmissionCheck;
+  admitCapacity?: AutomationCapacityAdmission;
+  releaseCapacity?: (leaseId: string) => Promise<void>;
+  trackCapacity?: (runId: string, leaseId: string) => Promise<void>;
   /** Optional backlog lane/conflict/WIP gate layered after `admit` (#198); undefined = off. */
   backlogAdmit?: (candidate: GithubCandidate) => Promise<{ allow: boolean; reason: string; shadow: boolean }>;
   launchSchedule?: ScheduleLauncher;
@@ -121,9 +128,11 @@ export class ProjectAutomationScheduler {
         // Recheck a small bounded batch each scheduler turn. Receipts stay durable and ordered;
         // unknown or blocked work remains deferred for a later graph sync and poll.
         const waiting = store.deferredReceipts(definition.id)
-          .sort((a, b) => candidatePriority(b.candidate ?? { labels: [] }) - candidatePriority(a.candidate ?? { labels: [] }));
+          .sort((a, b) => effectiveAdmissionPriority(candidatePriority(b.candidate ?? { labels: [] }), Date.parse(b.observedAt), Date.now())
+            - effectiveAdmissionPriority(candidatePriority(a.candidate ?? { labels: [] }), Date.parse(a.observedAt), Date.now()));
         for (const deferred of waiting.slice(0, 10)) {
           if (deferred.revision !== definition.revision) continue;
+          if (deferred.deferredUntil && Date.parse(deferred.deferredUntil) > Date.now()) continue;
           if (capReached()) break;
           const candidate = deferred.candidate;
           if (!candidate || !candidate.event.startsWith('issue.')) continue;
@@ -134,7 +143,7 @@ export class ProjectAutomationScheduler {
             admission = result;
             await this.assertStillEligible(definition, candidate);
           } catch (error) {
-            if (error instanceof AutomationAdmissionDeferredError) store.deferReceipt(deferred.receiptId, error.reason);
+            if (error instanceof AutomationAdmissionDeferredError) store.deferReceipt(deferred.receiptId, error.reason, error.retryAt);
             continue;
           }
           const mutation = store.acquireMutationLease();
@@ -143,7 +152,7 @@ export class ProjectAutomationScheduler {
             const reserved = store.reserveDeferred(deferred.receiptId);
             if (!reserved) continue;
             try {
-              const launched = await this.handle.launch(definition, candidate, reserved.receiptId, admission);
+              const launched = await this.launchWithCapacity(definition, candidate, reserved.receiptId, admission);
               turn.admitted += 1;
               store.appendReceipt({ ...reserved, status: 'launched', runId: launched.runId, updatedAt: new Date().toISOString() });
               store.appendLog({ automationId: definition.id, revision: definition.revision, event: candidate.event, githubNumber: candidate.number, githubTitle: candidate.title, githubUrl: candidate.url, result: 'launched', reason: `Deferred issue event admitted at graph revision ${admission.graphRevision}.`, receiptId: reserved.receiptId, runId: launched.runId });
@@ -278,11 +287,40 @@ export class ProjectAutomationScheduler {
             if (!backlog.allow) throw new AutomationAdmissionDeferredError(`backlog-scheduling: ${backlog.reason}`);
           }
         }
-        const launched = await this.handle.launch!(definition, candidate, receiptId, admission);
+        const launched = await this.launchWithCapacity(definition, candidate, receiptId, admission);
         if (candidate.event.startsWith('issue.')) turn.admitted += 1;
         return launched;
       },
     });
+  }
+
+  private async launchWithCapacity(
+    definition: GithubAutomationDefinition,
+    candidate: GithubCandidate,
+    receiptId: string,
+    admission?: Extract<DependencyAdmission, { status: 'ready' }>,
+  ): Promise<AutomationLaunchResult> {
+    let effective = definition;
+    let leaseId: string | undefined;
+    if (this.handle.admitCapacity) {
+      const quota = await this.handle.admitCapacity(definition, receiptId);
+      if (quota.status === 'deferred') throw new AutomationAdmissionDeferredError(quota.reason, quota.retryAt);
+      leaseId = quota.leaseId;
+      if (quota.agentAccountId && !definition.task.agentProfile) {
+        effective = { ...definition, task: { ...definition.task, agentProfile: quota.agentAccountId } };
+      }
+      if (quota.model && quota.model !== effective.task.model) {
+        effective = { ...effective, task: { ...effective.task, model: quota.model } };
+      }
+    }
+    try {
+      const launched = await this.handle.launch!(effective, candidate, receiptId, admission);
+      if (leaseId) await this.handle.trackCapacity?.(launched.runId, leaseId).catch(() => undefined);
+      return launched;
+    } catch (error) {
+      if (leaseId) await this.handle.releaseCapacity?.(leaseId);
+      throw error;
+    }
   }
 
   private hasRecentReviewRequestReceipt(definition: GithubAutomationDefinition, candidate: GithubCandidate): boolean {

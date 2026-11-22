@@ -49,6 +49,7 @@ import { AutomationCoordinator } from '../automations/coordinator.ts';
 import { GithubPoller } from '../automations/github-poller.ts';
 import { TrackerPoller } from '../automations/tracker-poller.ts';
 import { ProjectAutomationScheduler, ProjectTrackerAutomationScheduler, WorkspaceAutomationScheduler, type ProjectAutomationHandle } from '../automations/scheduler.ts';
+import { admitAutomationCapacity, heartbeatAutomationCapacity, releaseAutomationCapacity, reportAutomationRateLimit } from './capacity/automation-admission.ts';
 import { ScheduleRunner } from '../automations/schedule-runner.ts';
 import { automationStats } from '../automations/stats.ts';
 import { automationTemplatesOf } from '../automations/templates.ts';
@@ -297,6 +298,42 @@ import {
   isSafeAssetFilename,
   resolveGetRequest,
 } from './static-ui.ts';
+
+function trackAutomationCapacityLease(store: RunStore, runId: string, leaseId: string): Promise<void> {
+  return new Promise(resolve => {
+    let finished = false;
+    let rateLimitReported = false;
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(heartbeat);
+      store.off('run', onRun);
+      store.off('event', onEvent);
+      void releaseAutomationCapacity(leaseId).finally(resolve);
+    };
+    const onRun = (run: RunRecord) => {
+      if (run.id === runId && ['review', 'done', 'failed', 'cancelled'].includes(run.status)) cleanup();
+    };
+    const onEvent = (row: { runId: string; event: RunEvent }) => {
+      if (row.runId !== runId || row.event.type !== 'error' || typeof row.event.message !== 'string') return;
+      if (rateLimitReported) return;
+      const message = row.event.message;
+      if (!/rate.?limit|secondary|abuse|\b429\b|retry.?after/i.test(message)) return;
+      rateLimitReported = true;
+      const retry = /retry[-_ ]after\s*[:=]?\s*(\d+(?:\.\d+)?)/i.exec(message);
+      const seconds = retry ? Number(retry[1]) : undefined;
+      void reportAutomationRateLimit(leaseId, Number.isFinite(seconds) ? seconds : undefined).finally(cleanup);
+    };
+    const heartbeat = setInterval(() => { void heartbeatAutomationCapacity(leaseId).catch(() => undefined); }, 10 * 60_000);
+    heartbeat.unref?.();
+    store.on('run', onRun);
+    store.on('event', onEvent);
+    for (const event of store.readEvents(runId)) onEvent({ runId, event });
+    const current = store.getRun(runId);
+    if (!current || ['review', 'done', 'failed', 'cancelled'].includes(current.status)) cleanup();
+    else resolve();
+  });
+}
 
 export interface ServerDeps {
   /** Register app-owned cleanup for the hosting server lifecycle. */
@@ -4254,6 +4291,9 @@ export function createApp(deps: ServerDeps) {
             store,
             github: { owner: remote.owner, repo: remote.repo, poller: new GithubPoller() },
             admit: candidate => checkDependencyAdmission(project.root, candidate),
+            admitCapacity: (definition, jobId) => admitAutomationCapacity(project.root, definition, jobId),
+            releaseCapacity: releaseAutomationCapacity,
+            trackCapacity: (runId, leaseId) => trackAutomationCapacityLease(project.store, runId, leaseId),
             ...backlogAdmitFragment(remote.owner, remote.repo, project.root),
             launch: parsed.data.mode === 'execute'
               ? (definition, candidate, receiptId, admission) => launchAutomationRun({ root: project.root, manager: project.manager, store: project.store, definition, candidate, receiptId, admission, recheckAdmission: () => checkDependencyAdmission(project.root, candidate, { refresh: false }), dispatchEnabled: capabilities().dispatch })
@@ -7959,6 +7999,12 @@ export function startServer(deps: ServerDeps, port: number): ServerType {
         timeZone: localTimeZone(),
         ...(project.github ? { github: { ...project.github, poller: new GithubPoller() } } : {}),
         admit: candidate => checkScheduledDependencyAdmission(project.root, candidate),
+        admitCapacity: (definition, jobId) => admitAutomationCapacity(project.root, definition, jobId),
+        releaseCapacity: releaseAutomationCapacity,
+        trackCapacity: async (runId, leaseId) => {
+          const context = await contextOf();
+          await trackAutomationCapacityLease(context.store, runId, leaseId);
+        },
         ...(project.github ? backlogAdmitFragment(project.github.owner, project.github.repo, project.root) : {}),
         // Present unconditionally (unlike `github`, precomputed above from a sync remote parse):
         // whether the project actually has a tracker connection is resolved lazily, at poll time,

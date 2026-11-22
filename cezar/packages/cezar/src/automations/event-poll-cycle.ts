@@ -6,7 +6,7 @@ export class LeaseHeldError extends Error {
 }
 
 export class AutomationAdmissionDeferredError extends Error {
-  constructor(readonly reason: string) { super(reason); }
+  constructor(readonly reason: string, readonly retryAt?: string) { super(reason); }
 }
 
 /** One lease/eligibility/launch/checkpoint protocol for every event provider. */
@@ -186,7 +186,7 @@ export async function launchEventCandidate(input: {
     store.appendLog({ ...identity, ...input.log, result: 'launched', receiptId: receipt.receiptId, runId: launched.runId });
   } catch (error) {
     if (error instanceof AutomationAdmissionDeferredError) {
-      const deferred = store.deferReceipt(receipt.receiptId, error.reason);
+      const deferred = store.deferReceipt(receipt.receiptId, error.reason, error.retryAt);
       if (deferred) {
         store.appendLog({ ...identity, ...input.log, result: 'deferred', reason: deferred.deferReason, receiptId: deferred.receiptId });
         return;

@@ -219,6 +219,7 @@ export const automationReceiptSchema = z
     updatedAt: z.string().datetime(),
     error: z.string().max(2_000).optional(),
     deferReason: z.string().max(2_000).optional(),
+    deferredUntil: z.string().datetime().optional(),
     /** schedule kind: the occurrence this receipt reserved, so a retry can fire it again. */
     occurrenceAt: z.string().datetime().optional(),
     candidate: z
