@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readCodingRunArtifactByDigest } from '../workspace/coding-run-artifacts.ts';
+import { encodePng, solidImage } from './visual-evidence-fixtures.ts';
 import { storeVisualEvidence } from './visual-evidence-capture.ts';
 
 const homeDirs: string[] = [];
@@ -13,11 +14,11 @@ async function tempHome() {
 }
 afterEach(async () => { await Promise.all(homeDirs.splice(0).map((home) => rm(home, { recursive: true, force: true }))); });
 
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
+const png = encodePng(solidImage([10, 20, 30, 255], 1));
 const evidence = {
   version: 1 as const, kind: 'png' as const, verificationId: 'verify-1', attempt: 1, role: 'actual',
   sessionId: 'session-1', testId: 'visual-check', commitSha: '1'.repeat(40), manifestSha256: '2'.repeat(64),
-  policyVersion: 'policy-1', workerFingerprint: 'worker-1', capturedAt: '2026-11-22T12:00:00.000Z', retention: 'pending',
+  policyVersion: 'policy-1', workerFingerprint: 'worker-1', capturedAt: '2026-11-22T12:00:00.000Z',
   accessPolicy: 'private' as const, redactionState: 'redacted' as const,
   renderer: { os: 'linux', resolution: { width: 1280, height: 720 }, dpi: 96, displayBackend: 'x11', renderer: 'software' as const,
     graphicsApi: null, driver: null, appVersion: '1.0', colorSettings: {}, renderFeatures: [] },
@@ -39,6 +40,8 @@ describe('storeVisualEvidence', () => {
     const home = await tempHome();
     await expect(storeVisualEvidence({ content: new Uint8Array(), mediaType: 'image/png', evidence, redaction: 'already-redacted', home })).rejects.toThrow(/non-empty/);
     await expect(storeVisualEvidence({ content: Buffer.from('partial'), mediaType: 'image/png', evidence, redaction: 'already-redacted', home })).rejects.toThrow(/signature/);
+    const corruptPng = Buffer.from(png); corruptPng[41] = corruptPng[41]! ^ 0xff;
+    await expect(storeVisualEvidence({ content: corruptPng, mediaType: 'image/png', evidence, redaction: 'already-redacted', home })).rejects.toThrow(/signature/);
     await expect(readCodingRunArtifactByDigest({ sha256: 'a'.repeat(64), reference: `sha256/aa/${'a'.repeat(64)}`, home })).resolves.toMatchObject({ status: 'missing' });
   });
 });

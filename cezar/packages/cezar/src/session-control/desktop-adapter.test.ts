@@ -3,8 +3,8 @@ import { createDesktopSessionControl, type DesktopBackend, type DesktopGrant } f
 import { godotCreateRoomAction } from './godot-pilot.ts';
 
 /** In-memory non-Godot desktop fixture on a "virtual display": one button and one text field. */
-function fixture(grants: DesktopGrant[] = [], opts: { display?: string; uid?: number; leaseValid?: () => boolean; maxPerMinute?: number } = {}) {
-  const state = { clicks: 0, text: '', clipboard: 'secret', closed: 0, recording: false, files: new Map<string, Uint8Array>() };
+function fixture(grants: DesktopGrant[] = [], opts: { display?: string; uid?: number; leaseValid?: () => boolean; maxPerMinute?: number; saveVisualArtifact?: (input: { sessionId: string; name: string; bytes: Uint8Array; mediaType: string }) => Promise<string> } = {}) {
+  const state = { clicks: 0, text: '', clipboard: 'secret', closed: 0, recording: false, recordingOptions: undefined as { fps: number; quality: 'low' | 'medium' | 'high'; maxDurationMs: number; maxBytes: number } | undefined, files: new Map<string, Uint8Array>() };
   const backend: DesktopBackend = {
     display: opts.display ?? ':77', uid: opts.uid ?? 1001,
     snapshot: async () => ({ nodes: [{ id: 'btn', role: 'push button', name: 'OK' }, { id: 'txt', role: 'text', name: 'Name' }], truncated: false }),
@@ -14,7 +14,7 @@ function fixture(grants: DesktopGrant[] = [], opts: { display?: string; uid?: nu
     pixelClick: async () => { state.clicks++; }, pixelType: async () => undefined, pixelKey: async () => undefined,
     readClipboard: async () => state.clipboard, writeClipboard: async (t) => { state.clipboard = t; },
     putFile: async (p, b) => { state.files.set(p, b); }, getFile: async (p) => state.files.get(p) ?? new Uint8Array(),
-    startRecording: async () => { state.recording = true; }, stopRecording: async () => { state.recording = false; return new Uint8Array([9]); },
+    startRecording: async (options) => { state.recording = true; state.recordingOptions = options; }, stopRecording: async () => { state.recording = false; return new Uint8Array([9]); },
     close: async () => { state.closed++; },
   };
   const events: Array<Record<string, unknown>> = [];
@@ -25,6 +25,7 @@ function fixture(grants: DesktopGrant[] = [], opts: { display?: string; uid?: nu
     projectActions: [godotCreateRoomAction(harness)],
     isLeaseValid: opts.leaseValid ?? (() => true),
     saveArtifact: async ({ name }) => `artifact/${name}`,
+    ...(opts.saveVisualArtifact ? { saveVisualArtifact: opts.saveVisualArtifact } : {}),
     recordEvent: (e) => { events.push(e as never); },
     limits: opts.maxPerMinute ? { maxRequestsPerMinute: opts.maxPerMinute } : {},
     now: () => t,
@@ -86,7 +87,24 @@ describe('desktop adapter', () => {
     expect(code(await s.handle(req({ type: 'fileUpload', path: '../x', base64: 'AA==' }, 'r2')))).toBe('invalid_request');
     expect(code(await s.handle(req({ type: 'fileUpload', path: 'in/a.txt', base64: 'AA==' }, 'r3')))).toBe('ok');
     expect(code(await s.handle(req({ type: 'recordingStart' }, 'r4')))).toBe('ok');
+    expect(f.state.recordingOptions).toEqual({ fps: 5, quality: 'medium', maxDurationMs: 300_000, maxBytes: 16_777_216 });
     expect(code(await s.handle(req({ type: 'recordingStop' }, 'r5')))).toBe('ok');
+    expect(code(await s.handle(req({ type: 'recordingStart', fps: 12, quality: 'high' }, 'r6')))).toBe('ok');
+    expect(f.state.recordingOptions).toEqual({ fps: 12, quality: 'high', maxDurationMs: 300_000, maxBytes: 16_777_216 });
+    expect(code(await s.handle(req({ type: 'recordingStop' }, 'r7')))).toBe('ok');
+  });
+
+  it('routes screenshots and recordings through the verification artifact sink', async () => {
+    const captures: string[] = [];
+    const f = fixture(['screenshot', 'recording', 'fileTransfer'], {
+      saveVisualArtifact: async ({ name }) => { captures.push(name); return `verification/${name}`; },
+    });
+    const s = await f.create();
+    expect((await s.handle(req({ type: 'screenshot' }))).ok).toBe(true);
+    await s.handle(req({ type: 'fileDownload', path: 'receipt.txt' }, 'r2'));
+    await s.handle(req({ type: 'recordingStart' }, 'r3'));
+    expect((await s.handle(req({ type: 'recordingStop' }, 'r4'))).ok).toBe(true);
+    expect(captures).toEqual(['desktop-screenshot.png', 'desktop-recording.webm']);
   });
 
   it('rejects another session, stale leases, rate overruns and expired sessions', async () => {
