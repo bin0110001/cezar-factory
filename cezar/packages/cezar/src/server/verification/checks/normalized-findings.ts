@@ -35,6 +35,9 @@ export const normalizedFindingSchema = z.object({
   references: z.array(z.string().max(2048)).max(20).default([]),
   waiver: z.object({ status: z.enum(['none', 'false-positive', 'waived']), reason: z.string().max(500).optional(), expiresAt: z.string().datetime().optional() }).strict().default({ status: 'none' }),
   provenance: providerIdentitySchema,
+  /** Session provenance is retained for AI audit findings and never treated as confirmation. */
+  reviewerSessionId: z.string().min(1).max(256).optional(),
+  aiAudit: z.object({ state: z.enum(['needs-verification', 'confirmed']), claimedSeverity: severitySchema.optional(), suggestion: z.string().max(2000).optional() }).strict().optional(),
   /** Redacted message/evidence; raw secret values never reach here. */
   evidence: z.string().max(4000),
 }).strict();
@@ -91,7 +94,7 @@ export function commonFingerprint(f: Pick<NormalizedFinding, 'category' | 'commo
 interface RawFinding {
   providerFingerprint?: string; ruleId: string; severity?: string; confidence?: string; message: string;
   path?: string; line?: number; dependency?: NormalizedFinding['dependency']; fixedVersion?: string;
-  references?: string[]; extraIdText?: string[]; falsePositive?: boolean;
+  references?: string[]; extraIdText?: string[]; falsePositive?: boolean; reviewerSessionId?: string; suggestion?: string;
 }
 
 function build(raw: RawFinding, ctx: NormalizeContext): NormalizedFinding {
@@ -106,13 +109,14 @@ function build(raw: RawFinding, ctx: NormalizeContext): NormalizedFinding {
     fingerprint: commonFingerprint(partial),
     sourceFingerprints: raw.providerFingerprint ? [{ provider: ctx.provider.name, value: redact(raw.providerFingerprint) }] : [],
     category: ctx.category, class: classOfCategory(ctx.category), ruleId: redact(raw.ruleId), commonIds,
-    severity: mapSeverity(raw.severity),
-    confidence: (['high', 'medium', 'low'] as const).find((c) => c === (raw.confidence ?? '').toLowerCase()) ?? 'unknown',
+    severity: ctx.category === 'ai-audit' ? 'info' : mapSeverity(raw.severity),
+    confidence: ctx.category === 'ai-audit' ? 'unknown' : (['high', 'medium', 'low'] as const).find((c) => c === (raw.confidence ?? '').toLowerCase()) ?? 'unknown',
     dependency: raw.dependency, path: partial.path, line: raw.line, sourceSha: ctx.sourceSha,
     fix: { available: Boolean(raw.fixedVersion), version: raw.fixedVersion },
     references: (raw.references ?? []).slice(0, 20).map(redact),
     waiver: raw.falsePositive ? { status: 'false-positive' } : { status: 'none' },
     provenance: ctx.provider, evidence: redact(raw.message).slice(0, 4000),
+    ...(ctx.category === 'ai-audit' ? { reviewerSessionId: raw.reviewerSessionId, aiAudit: { state: 'needs-verification', claimedSeverity: mapSeverity(raw.severity), suggestion: raw.suggestion ? redact(raw.suggestion).slice(0, 2000) : undefined } } : {}),
   });
 }
 
@@ -161,7 +165,7 @@ export function normalizeGenericJson(doc: unknown, ctx: NormalizeContext): Norma
       message: str(f.title) ?? str(f.message) ?? '', path: str(f.path), line: typeof f.line === 'number' ? f.line : undefined,
       dependency: pkg ? { ecosystem: str(f.ecosystem), name: pkg, version: str(f.version) } : undefined,
       fixedVersion: str(f.fixedVersion), references: arr(f.references).map(String), extraIdText: arr(f.cwe).map(String),
-      falsePositive: f.falsePositive === true,
+      falsePositive: f.falsePositive === true, reviewerSessionId: str(f.reviewerSessionId), suggestion: str(f.suggestion),
     }, ctx);
   });
 }

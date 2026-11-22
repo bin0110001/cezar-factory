@@ -95,6 +95,24 @@ class Decide(unittest.TestCase):
         d = ai.decide(bad, req(), state(), now=NOW)
         self.assertEqual((d["action"], d["reason"], d["llmCalls"]), ("skip", "invalid-config", 0))
         self.assertTrue(any("opt-in" in e for e in d["detail"]))
+        nonfinite = cfg()
+        nonfinite["budgets"]["maxUsd"] = float("nan")
+        self.assertEqual(ai.decide(nonfinite, req(), state(), now=NOW)["reason"], "invalid-config")
+
+    def test_gateway_is_local_and_run_decision_exposes_all_limits(self):
+        d = ai.decide(cfg(), req(), state(), now=NOW)
+        self.assertEqual(d["gateway"], ai.DEFAULT_GATEWAY)
+        self.assertEqual((d["maxTokens"], d["maxUsd"], d["maxAttempts"], d["monthlyUsd"], d["concurrency"]), (200_000, 5.0, 2, 50.0, 1))
+        bad = cfg(gateway={"provider": "litellm", "endpoint": "https://example.com/v1", "modelAlias": "factory-code"})
+        self.assertEqual(ai.decide(bad, req(), state(), now=NOW)["reason"], "invalid-config")
+
+    def test_actual_usage_over_budget_or_missing_is_partial(self):
+        self.assertEqual(ai.validate_usage(cfg(), tokens=20, cost_usd=1)["status"], "complete")
+        self.assertEqual(ai.validate_usage(cfg(), tokens=200_001, cost_usd=1)["status"], "partial")
+        self.assertEqual(ai.validate_usage(cfg(), tokens=20, cost_usd=5.01)["status"], "partial")
+        self.assertIn("monthly-spend-cap", ai.validate_usage(cfg(), tokens=20, cost_usd=3, monthly_spent_usd=48)["exceeded"])
+        self.assertEqual(ai.validate_usage(cfg(), tokens=None, cost_usd=1)["status"], "partial")
+        self.assertEqual(ai.validate_usage(cfg(), tokens=20, cost_usd=float("nan"))["status"], "partial")
 
     def test_spend_summary(self):
         rs = [{"spentUsd": 1.5, "tokens": 100}, {"spentUsd": 0.25, "tokens": 50}]
@@ -130,7 +148,7 @@ class Context(unittest.TestCase):
         self.assertNotIn(planted, ctx["untrustedContext"])
         self.assertLessEqual(len(ctx["untrustedContext"].encode()), 200 + 300)
 
-    def test_findings_must_cite_the_manifest_and_are_never_authoritative(self):
+    def test_findings_must_cite_manifest_and_are_never_authoritative(self):
         ctx = ai.build_context(self.FILES, commit="c" * 40)
         raw = [
             {"path": "src/a.py", "line": 2, "commit": "c" * 40, "severity": "critical", "confidence": "high", "claim": f"leaks {SECRET}", "proof": "line 1"},
@@ -139,12 +157,15 @@ class Context(unittest.TestCase):
             {"path": "src/a.py", "line": 1, "commit": "e" * 40, "claim": "wrong commit"},
             {"path": "src/a.py", "line": "2", "commit": "c" * 40, "claim": "bad line type"},
         ]
-        out = ai.normalize_findings(raw, ctx["manifest"])
+        out = ai.normalize_findings(raw, ctx["manifest"], reviewer_session_id="session-42")
         self.assertEqual(len(out), 1)
         f = out[0]
         self.assertEqual((f["status"], f["gateEffect"], f["source"]), ("needs-verification", "advisory", "ai-audit"))
         self.assertNotIn(SECRET, f["claim"])
-        self.assertEqual(f["severity"], "critical")  # reported as-is, but advisory only
+        self.assertEqual((f["severity"], f["claimedSeverity"], f["confidence"], f["reviewerSessionId"]), ("info", "critical", "unknown", "session-42"))
+        rerun = ai.build_context(self.FILES, commit="d" * 40)
+        same_claim = ai.normalize_findings([dict(raw[0], commit="d" * 40, line=3)], rerun["manifest"], reviewer_session_id="session-43")[0]
+        self.assertEqual(f["fingerprint"], same_claim["fingerprint"])
 
     def test_only_deterministic_validation_or_authorized_review_confirms(self):
         ctx = ai.build_context(self.FILES, commit="c" * 40)
@@ -155,7 +176,7 @@ class Context(unittest.TestCase):
         with self.assertRaises(ValueError):
             ai.confirm(f, kind="authorized-review", evidence="")
         ok = ai.confirm(f, kind="deterministic-validation", evidence="test t_123 reproduces")
-        self.assertEqual((ok["status"], ok["gateEffect"], ok["confirmedBy"]), ("confirmed", "per-policy", "deterministic-validation"))
+        self.assertEqual((ok["severity"], ok["status"], ok["gateEffect"], ok["confirmedBy"]), ("info", "confirmed", "per-policy", "deterministic-validation"))
         self.assertEqual(f["status"], "needs-verification")  # the original is not mutated
 
 
