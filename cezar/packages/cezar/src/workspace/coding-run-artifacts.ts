@@ -178,6 +178,26 @@ export async function readCodingRunArtifact(options: {
   }
 }
 
+/** Read a visual artifact from its public content reference without exposing store paths. */
+export async function readCodingRunArtifactByDigest(options: {
+  sha256: string;
+  reference: string;
+  home?: string;
+  now?: Date;
+}): Promise<CodingRunArtifactRead> {
+  if (!/^[a-f0-9]{64}$/.test(options.sha256) || options.reference !== `sha256/${options.sha256.slice(0, 2)}/${options.sha256}`) {
+    return { status: 'corrupt', reason: 'metadata-invalid' };
+  }
+  try {
+    const metadata = JSON.parse(await readFile(metadataPath(storageRoot(options.home), options.sha256), 'utf8')) as CodingRunArtifactReference;
+    if (metadata.sha256 !== options.sha256 || metadata.reference !== options.reference) return { status: 'corrupt', reason: 'metadata-invalid' };
+    return readCodingRunArtifact({ reference: metadata, home: options.home, now: options.now });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
+    return { status: 'corrupt', reason: 'metadata-invalid' };
+  }
+}
+
 /** Delete expired blobs and metadata; active run references are retained by extending expiry on put. */
 export async function pruneCodingRunArtifacts(options: { home?: string; now?: Date }): Promise<{ deleted: number; retained: number; invalid: number }> {
   const root = storageRoot(options.home);

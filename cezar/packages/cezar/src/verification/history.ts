@@ -20,6 +20,7 @@ import type { RunEvent, RunRecord } from '../runs/store.ts';
 import { getCodingRunSnapshot } from '../workspace/lifecycle.ts';
 import type { CodingRunSnapshot } from '@open-mercato/cezar-contract';
 import { verifyCodingAttemptManifest } from '../workspace/coding-run-manifest.ts';
+import { readCodingRunArtifactByDigest } from '../workspace/coding-run-artifacts.ts';
 
 const INLINE_BYTES = 2_048;
 const EXCERPT_CHARS = 512;
@@ -611,6 +612,10 @@ export async function readVerificationArtifact(context: ProjectContext, verifica
 
 /** Read a recorded artifact's bytes from its owning worktree, verifying the recorded digest. */
 export async function readRecordedBytes(context: ProjectContext, record: HistoryRecord, path: string, sha256: string) {
+  if (path.startsWith('sha256/')) {
+    const stored = await readCodingRunArtifactByDigest({ sha256, reference: path });
+    return stored.status === 'available' ? { status: 200 as const, bytes: Buffer.from(stored.bytes) } : { status: 410 as const };
+  }
   const owner = record.owner;
   const root = owner.worktreePath && existsSync(owner.worktreePath) ? owner.worktreePath : owner.worktree === false ? context.root : undefined;
   if (!root) return { status: 410 as const };
