@@ -12,8 +12,8 @@
  *
  * Zero-config: the safe env is the default and needs no configuration. Two
  * opt-in escape hatches (both read from the host env, both off by default):
- *   - `CEZ_ENV_PASSTHROUGH=A,B,C` forwards those extra named vars;
- *   - `CEZ_AGENT_ENV_FULL=1` restores the legacy full-`process.env` behavior.
+ *   - `CEZ_ENV_PASSTHROUGH=A,B,C` forwards extra named vars except host GitHub CLI credentials;
+ *   - `CEZ_AGENT_ENV_FULL=1` restores legacy inheritance except host GitHub CLI credentials.
  */
 
 import type { AgentBackend } from './agent-runner.ts';
@@ -237,19 +237,17 @@ export const BACKEND_ALLOW_PREFIXES: Record<AgentBackend, readonly string[]> = {
   // cezar never passes, and nothing documents junie reading the provider env vars —
   // so no provider prefix is granted on the strength of a flag.
   junie: ['JUNIE_'],
-  // Copilot routes every model through GitHub, so it needs only its own family. The `gh` names
-  // it authenticates with (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`) are already forwarded to every
-  // backend below, and `COPILOT_GITHUB_TOKEN` is covered by this prefix — so nothing else widens.
+  // Copilot routes every model through GitHub, so it needs only its own family. Its provider
+  // credential (`COPILOT_GITHUB_TOKEN`) is covered here. General gh CLI credentials stay at the
+  // host boundary and are never forwarded to an agent process.
   copilot: ['COPILOT_'],
 };
 
-/** `gh` handoff (draft PRs) works in every backend — the one credential the
- *  project deliberately keeps in the environment (AGENTS.md "No secrets in
- *  state files": GITHUB_TOKEN stays in env, never on disk). */
-const GH_ALLOW_NAMES: ReadonlySet<string> = upperSet([
+/** General GitHub CLI auth belongs to the Cezar host, not a spawned coding agent. */
+const GH_HOST_CREDENTIAL_NAMES: ReadonlySet<string> = upperSet([
   'GITHUB_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
   'GH_TOKEN',
-  'GH_HOST',
   'GH_ENTERPRISE_TOKEN',
   'GH_CONFIG_DIR',
 ]);
@@ -341,9 +339,13 @@ export function buildChildEnv(opts: BuildChildEnvOptions): NodeJS.ProcessEnv {
   if (isTruthy(readVar(source, 'CEZ_AGENT_ENV_FULL'))) {
     const full: NodeJS.ProcessEnv = {};
     for (const [name, value] of Object.entries(source)) {
-      if (!overridden.has(name.toUpperCase())) full[name] = value;
+      const key = name.toUpperCase();
+      if (!overridden.has(key) && !GH_HOST_CREDENTIAL_NAMES.has(key)) full[name] = value;
     }
-    return { ...full, ...extra };
+    for (const [name, value] of Object.entries(extra)) {
+      if (!GH_HOST_CREDENTIAL_NAMES.has(name.toUpperCase())) full[name] = value;
+    }
+    return full;
   }
 
   const backendPrefixes = BACKEND_ALLOW_PREFIXES[opts.backend] ?? BACKEND_ALLOW_PREFIXES.claude;
@@ -376,7 +378,9 @@ export function buildChildEnv(opts: BuildChildEnvOptions): NodeJS.ProcessEnv {
     if (allow(name)) out[name] = value;
   }
   // Per-run env last — it is cezar's own, never a host secret, and must win.
-  for (const [name, value] of Object.entries(extra)) out[name] = value;
+  for (const [name, value] of Object.entries(extra)) {
+    if (!GH_HOST_CREDENTIAL_NAMES.has(name.toUpperCase())) out[name] = value;
+  }
   return out;
 
   /** `name` is matched normalized; the caller keeps the original spelling. */
@@ -384,11 +388,11 @@ export function buildChildEnv(opts: BuildChildEnvOptions): NodeJS.ProcessEnv {
     const key = name.toUpperCase();
     // cezar's own namespace (CEZ_DRY_RUN plumbing, mock hooks, run wiring).
     if (key.startsWith('CEZ_')) return true;
-    // Backend auth + gh handoff + the cloud creds an active Bedrock/Vertex
-    // toggle needs: forwarded even though they are secrets — the backend cannot
+    // Backend auth + the cloud creds an active Bedrock/Vertex toggle needs:
+    // forwarded even though they are secrets — the backend cannot
     // authenticate without them. They are still redacted before anything
     // reaches the on-disk NDJSON (see secret-redaction.ts).
-    if (GH_ALLOW_NAMES.has(key)) return true;
+    if (GH_HOST_CREDENTIAL_NAMES.has(key)) return false;
     if (matchesPrefix(key, backendPrefixes)) return true;
     if (cloudNames.has(key) || matchesPrefix(key, cloudPrefixes)) return true;
     // Explicit opt-in passthrough.

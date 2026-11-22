@@ -32,12 +32,12 @@ export const COPILOT_META_KEY = 'github.com/copilot';
 
 /** What a user needs in order to run Copilot CLI. */
 export const COPILOT_AUTH_HINT =
-  'GitHub Copilot CLI needs a Copilot-entitled login — run `copilot login`, or export COPILOT_GITHUB_TOKEN (GH_TOKEN and GITHUB_TOKEN are also read, in that order).';
+  'GitHub Copilot CLI needs a Copilot-entitled login — run `copilot login` or configure COPILOT_GITHUB_TOKEN.';
 
 /** The run-time line for a rejected credential. "authentication failed" is what
  *  `isRuntimeProviderAuthFailure` keys on, so the server raises `provider-auth-required`. */
 export const COPILOT_AUTH_FAILURE_MESSAGE =
-  'Copilot CLI authentication failed — run `copilot login`, or set COPILOT_GITHUB_TOKEN (GH_TOKEN and GITHUB_TOKEN are read too, in that order).';
+  'Copilot CLI authentication failed — run `copilot login` or configure COPILOT_GITHUB_TOKEN.';
 
 /**
  * Copilot answers an unauthenticated `session/new` with JSON-RPC `-32000 "Authentication

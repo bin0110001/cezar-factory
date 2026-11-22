@@ -97,8 +97,8 @@ export function renderScheduleTask(
  * credentials ride along as plain env vars for this read and any requested write-back.
  *
  * KNOWN LIMITATION, tracked as follow-up debt: those credentials are the project's own tracker
- * write credentials, forwarded into this agent's env the same way `GITHUB_TOKEN` is today
- * (`RunManager.agentEnvForStep` in `workflows/run.ts`) — NOT behind the safer, narrower
+ * write credentials, forwarded into this agent's env by `RunManager.agentEnvForStep`
+ * (`workflows/run.ts`) — NOT behind the safer, narrower
  * server-side-only write path discussed and deferred for speed. Never printed here: the agent
  * reads the variable itself, so the raw value never enters this prompt or the run transcript.
  */
