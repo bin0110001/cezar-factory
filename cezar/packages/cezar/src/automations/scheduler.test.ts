@@ -70,6 +70,51 @@ describe('ProjectAutomationScheduler', () => {
     expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'run-after-unblock' });
   });
 
+  it('keeps quota deferrals dormant until their retry deadline, then retries the same receipt', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async () => ({ runId: 'quota-run' }));
+    let available = false;
+    const handle: ProjectAutomationHandle = {
+      projectId: 'p', timeZone: 'UTC', store,
+      github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never },
+      admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }),
+      admitCapacity: async () => available
+        ? { status: 'admitted' }
+        : { status: 'deferred', reason: 'window-exhausted: 5h', retryAt: new Date(Date.now() + 60_000).toISOString() },
+      launch,
+    };
+    const scheduler = new ProjectAutomationScheduler(handle);
+    await scheduler.check(definition);
+    const deferred = store.latestReceipt(definition.id, candidate.eventId)!;
+    expect(deferred).toMatchObject({ status: 'deferred', deferReason: 'window-exhausted: 5h' });
+    expect(Date.parse(deferred.deferredUntil!)).toBeGreaterThan(Date.now());
+    available = true;
+    await scheduler.check(definition);
+    expect(launch).not.toHaveBeenCalled();
+    store.deferReceipt(deferred.receiptId, deferred.deferReason!, new Date(Date.now() - 1_000).toISOString());
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(store.latestReceipt(definition.id, candidate.eventId)).toMatchObject({ status: 'launched', runId: 'quota-run' });
+  });
+
+  it('launches the quota-selected fallback model and account used by admission', async () => {
+    const { store, definition } = await setup();
+    const launch = vi.fn(async (_definition: GithubAutomationDefinition) => ({ runId: 'fallback-run' }));
+    const scheduler = new ProjectAutomationScheduler({
+      projectId: 'p', timeZone: 'UTC', store,
+      github: { owner: 'acme', repo: 'demo', poller: { poll: async () => ({ candidates: [candidate], truncated: false, pages: 1 }) } as never },
+      admit: async () => ({ status: 'ready', repository: 'acme/demo', issueNumber: 7, nodeId: 'issue:github.com/acme/demo:7', graphRevision: 1, reason: 'ready' }),
+      admitCapacity: async () => ({ status: 'admitted', leaseId: 'lease-1', profileId: 'claude-work', agentAccountId: 'work', model: 'anthropic/claude-sonnet' }),
+      releaseCapacity: async () => undefined,
+      trackCapacity: async () => undefined,
+      launch,
+    });
+    await scheduler.check(definition);
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({
+      task: expect.objectContaining({ agentProfile: 'work', model: 'anthropic/claude-sonnet' }),
+    }), expect.anything(), expect.any(String), expect.anything());
+  });
+
   it('defers a launch the backlog gate refuses and launches once it allows (after the dependency gate)', async () => {
     const { store, definition } = await setup();
     const launch = vi.fn(async () => ({ runId: 'run-backlog' }));

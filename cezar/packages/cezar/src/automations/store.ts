@@ -219,10 +219,10 @@ export class AutomationStore {
     return reserved;
   }
 
-  deferReceipt(receiptId: string, reason: string): AutomationReceipt | undefined {
+  deferReceipt(receiptId: string, reason: string, retryAt?: string): AutomationReceipt | undefined {
     const current = [...this.latestReceipts().values()].find((receipt) => receipt.receiptId === receiptId);
     if (!current || !['reserved', 'deferred'].includes(current.status) || !current.candidate) return undefined;
-    const deferred = automationReceiptSchema.parse({ ...current, status: 'deferred', runId: undefined, error: undefined, deferReason: reason.slice(0, 2_000), updatedAt: this.now().toISOString() });
+    const deferred = automationReceiptSchema.parse({ ...current, status: 'deferred', runId: undefined, error: undefined, deferReason: reason.slice(0, 2_000), deferredUntil: retryAt, updatedAt: this.now().toISOString() });
     this.appendReceipt(deferred);
     return deferred;
   }
