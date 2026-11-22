@@ -115,6 +115,8 @@ import type {
   SetWorkspaceUiStateInput,
   ImportableSkill,
   Skill,
+  McpGatewayStatus,
+  McpGatewayCheckResponse,
   StartTodoResponse,
   TodoItem,
   UiState,
@@ -800,6 +802,18 @@ export async function getSkills(opts?: ReadOptions): Promise<Skill[]> {
     ),
     '/skills',
   )
+}
+
+export async function getMcpGatewayStatus(opts?: ReadOptions): Promise<McpGatewayStatus> {
+  return unwrap(await cez.api.v1.p[':projectId']['mcp-gateway'].$get(
+    { param: { projectId: queryScope() } }, init(opts),
+  ), '/mcp-gateway')
+}
+
+export async function checkMcpGateway(opts?: ReadOptions): Promise<McpGatewayCheckResponse> {
+  return unwrap(await cez.api.v1.p[':projectId']['mcp-gateway'].check.$post(
+    { param: { projectId: queryScope() } }, init(opts),
+  ), '/mcp-gateway/check')
 }
 
 /** Wait for the server's already-started team-skill load. Used only after the fast catalog

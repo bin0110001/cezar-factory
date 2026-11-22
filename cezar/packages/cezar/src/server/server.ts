@@ -136,6 +136,9 @@ import {
 } from '../workflows/types.ts';
 import { planChain, slugify } from '../planner.ts';
 import { discoverSkills } from '../skills.ts';
+import { resolveMcpGateway } from '../core/mcp-gateway.ts';
+import { checkMcpGateway, mcpGatewayStatus } from '../core/mcp-gateway-health.ts';
+import { mcpGatewayCheckResponseSchema, mcpGatewayStatusSchema } from '@open-mercato/cezar-contract';
 import { SkillsUpdateConflictError, SkillsUpdateCoordinator, SkillsUpdateService, type SkillsUpdateState } from '../skills-update.ts';
 import { selfUpdateApplyRequestSchema, selfUpdateChannelRequestSchema, selfUpdateDevelopmentQuerySchema } from '@open-mercato/cezar-contract';
 import { SelfUpdateBusyError, SelfUpdateService } from '../self-update/service.ts';
@@ -3567,6 +3570,10 @@ export function createApp(deps: ServerDeps) {
       await refreshTeamSkills(repoRoot);
       return c.json(await discoverSkills(repoRoot, { factoryReleaseRoot: factoryRelease?.runtimeRoot }));
     });
+
+  const mcpGatewayRoutes = new Hono<ProjectApiEnv>()
+    .get('/mcp-gateway', (c) => c.json(mcpGatewayStatusSchema.parse(mcpGatewayStatus(resolveMcpGateway()))))
+    .post('/mcp-gateway/check', async (c) => c.json(mcpGatewayCheckResponseSchema.parse(await checkMcpGateway(resolveMcpGateway()))));
 
   // ---- chained family: GUI prefs / ui-state (project-scoped) ----
   const uiStateRoutes = new Hono<ProjectApiEnv>()
@@ -7494,6 +7501,7 @@ export function createApp(deps: ServerDeps) {
   const v1 = new Hono<ProjectApiEnv>()
     .use('*', resolveProjectScope)
     .route('/', launchKeyRoutes)
+    .route('/', mcpGatewayRoutes)
     .route('/', skillsRoutes)
     .route('/', uiStateRoutes)
     .route('/', workflowsRoutes)

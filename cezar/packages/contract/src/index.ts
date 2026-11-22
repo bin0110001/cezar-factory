@@ -22,6 +22,7 @@ export * from './release-candidates.ts';
 export * from './release-pipeline-policy.ts';
 export * from './release-quality.ts';
 export * from './skills.ts';
+export * from './mcp-gateway.ts';
 export * from './agent-config.ts';
 export * from './agent-profiles.ts';
 export * from './zoned-time.ts';

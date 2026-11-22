@@ -50,6 +50,8 @@ import {
   getImportableSkillsWhenReady,
   getSkills,
   getSkillsWhenReady,
+  getMcpGatewayStatus,
+  checkMcpGateway,
   getTodos,
   getTrackerAssociation, getTrackerConnection,
   getTrackerCandidates,
@@ -209,6 +211,9 @@ export const queryKeys = {
   },
   get skills() {
     return [queryScope(), 'skills'] as const
+  },
+  get mcpGateway() {
+    return [queryScope(), 'mcp-gateway'] as const
   },
   get skillsReady() {
     return [queryScope(), 'skills', 'ready'] as const
@@ -1336,6 +1341,17 @@ export function useSkills(enabled = true) {
   }, [queryClient, ready.data, skillsScope])
 
   return skills
+}
+
+export function useMcpGatewayStatus() {
+  return useQuery({
+    queryKey: queryKeys.mcpGateway,
+    queryFn: ({ signal }) => getMcpGatewayStatus({ signal }),
+  })
+}
+
+export function useCheckMcpGateway() {
+  return useMutation({ mutationFn: () => checkMcpGateway() })
 }
 
 /** The opt-in catalog for the "Import skills" panel — the default (vendor) repo's full skill
