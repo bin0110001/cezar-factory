@@ -94,3 +94,45 @@ normalizer forces informational severity and unknown confidence until a person v
 
 Fixtures exercise only the adapter contract; no hosted OCR or live model calls are part of tests. Enabling the provider
 in a check configuration is a separate policy choice and does not change the default scanner worker's network profile.
+
+## Typed workflow verification
+
+Native workflow `verification` nodes continue to select a named suite from the project's
+`.ai/factory/factory.config.yaml`. A suite may include a provider-backed check:
+
+```yaml
+verification:
+  version: 1
+  checks:
+    ai-review:
+      runner: provider
+      providerId: ocr
+      timeoutSeconds: 600
+      optional: false
+      definition:
+        id: ai-review
+        category: ai-audit
+        provider: { name: ocr, version: 1.14.0, digest: sha256:<pinned-provider-digest> }
+        scopes: [baseline-diff]
+        triggers: [manual]
+        policy:
+          mandatory: true
+          timeoutMs: 600000
+          onFailure: error
+          onFeedUnavailable: unknown
+          cache: { enabled: false }
+  suites:
+    review: [ai-review]
+```
+
+The runtime does not execute YAML commands for provider checks. A server must register
+`providerId` with a code-owned factory that returns a `CheckProviderPlugin`; an absent
+registration produces `unknown`. OCR factories must construct the existing OCR adapter
+with an isolated-worker executor and immutable base/head revisions from the verification
+context. Provider output passes through `runCheck`, is normalized into verification
+diagnostics, and is persisted by the normal verification finding ledger. OCR diagnostics
+retain the reviewer session id and suggestion as untrusted evidence. Any active claim
+yields `changes_required`; incomplete results stay `unknown`. The verification event and
+artifact bind to the exact commit SHA, and only an exact revision result enters the ledger.
+Typed workflow graphs still cannot supply commands, provider code, credentials, or
+approval/waiver authority.
