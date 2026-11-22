@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/action-request.schema.json",
+  "title": "Factory Control Center action request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "idempotencyKey", "action", "channel", "reason"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center-action/v1" },
+    "idempotencyKey": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{16,128}$" },
+    "action": { "enum": ["sync", "stage", "rollback", "verify", "protect", "unprotect"] },
+    "channel": { "enum": ["dev", "stable"] },
+    "sha": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "referenceKind": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" },
+    "referenceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "reason": { "type": "string", "minLength": 3, "maxLength": 500 }
+  },
+  "allOf": [
+    { "if": { "properties": { "action": { "enum": ["rollback", "verify", "protect", "unprotect"] } } }, "then": { "required": ["sha"] } },
+    { "if": { "properties": { "action": { "enum": ["protect", "unprotect"] } } }, "then": { "required": ["referenceKind", "referenceId"] }, "else": { "not": { "anyOf": [{ "required": ["referenceKind"] }, { "required": ["referenceId"] }, { "required": ["expiresAt"] }] } } },
+    { "if": { "properties": { "action": { "const": "unprotect" } } }, "then": { "not": { "required": ["expiresAt"] } } },
+    { "if": { "properties": { "action": { "const": "sync" } } }, "then": { "not": { "required": ["sha"] } } }
+  ]
+}

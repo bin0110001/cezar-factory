@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/audit-event.schema.json",
+  "title": "Factory Control Center audit event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cursor", "eventId", "occurredAt", "eventType", "actorId", "payload"],
+  "properties": {
+    "schemaVersion": { "const": "factory-control-center-audit-event/v1" },
+    "cursor": { "type": "integer", "minimum": 1 },
+    "eventId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "eventType": { "enum": ["action-denied", "action-accepted", "action-completed", "read-model-changed"] },
+    "actorId": { "type": "string", "maxLength": 64 },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

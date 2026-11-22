@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cezar-factory.local/schemas/control-center/worker-resources.schema.json",
+  "title": "Structured local worker resource snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "observedAt", "workers"],
+  "properties": {
+    "schemaVersion": { "const": "factory-worker-resources/v1" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "workers": {
+      "type": "array", "maxItems": 1000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["workerId", "state", "cpuMillis", "memoryBytes", "gpuSlots", "observedAt"],
+        "properties": {
+          "workerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "state": { "enum": ["idle", "running", "waiting", "offline", "unknown"] },
+          "cpuMillis": { "type": ["integer", "null"], "minimum": 0 },
+          "memoryBytes": { "type": ["integer", "null"], "minimum": 0 },
+          "gpuSlots": { "type": ["integer", "null"], "minimum": 0 },
+          "observedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    }
+  }
+}
