@@ -3,7 +3,7 @@ import { evaluateAction, recordAction } from '../release-candidates/actions.ts';
 import { previewPolicy, readPolicyDocument, savePolicy } from '../release-candidates/pipeline-policy-store.ts';
 import { buildHistory, computeMetrics } from '../release-candidates/history-metrics.ts';
 import { DEFAULT_MAX_WAIVER_DAYS, dryRunPolicy, evaluateWaiver, recordWaiver } from '../release-candidates/quality-actions.ts';
-import { execFile as backlogExecFileCb } from 'node:child_process';
+import { execFile as backlogExecFileCb, execFileSync } from 'node:child_process';
 import { promisify as backlogPromisify } from 'node:util';
 import { backlogAdmitFragment, sharedBacklogStore, sharedObligationStore } from './backlog/admission-hook.ts';
 import { syncOpenIssues } from './backlog/github-sync.ts';
@@ -96,7 +96,7 @@ import {
   updateProjectInputSchema,
 } from '@open-mercato/cezar-contract';
 import { dispatchInputSchema, dispatchIntentSchema, dispatchReportSchema } from '@open-mercato/cezar-contract';
-import { canonicalJson, initializeWorkflowExecution, versionedWorkflowEventInputSchema } from '@open-mercato/cezar-contract';
+import { canonicalJson, initializeWorkflowExecution, resolveWorkflowAuthority, versionedWorkflowEventInputSchema, workflowParityCompareRequestSchema, workflowParityReceiptSchema } from '@open-mercato/cezar-contract';
 import { detectEnvironment } from '../core/backend-detect.ts';
 import { hostUsageSampler, type HostSampler } from '../core/host-usage.ts';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
@@ -121,6 +121,7 @@ import { DashboardReader } from '../workspace/dashboard.ts';
 import { buildWorkspaceManifest } from '../workspace/workspace-manifest.ts';
 import { dashboardRoutes } from './dashboard.ts';
 import { WORKFLOWS_DIR, loadVersionedWorkflows, loadWorkflows } from '../workflows/load.ts';
+import { appendWorkflowParityReceipt, loadWorkflowRolloutConfig, readWorkflowParityReceipts } from '../workflows/rollout.ts';
 import {
   QUICK_TASK_WORKFLOW,
   normalizeWorkflowDoc,
@@ -171,6 +172,7 @@ import {
   type DeleteDraftResponse,
 } from '@open-mercato/cezar-contract';
 import { toPastedContent, type PastedContent, type RunManager } from '../workflows/run.ts';
+import { worktreeArtifactRevision } from '../workflows/adaptive-repair.ts';
 import { removeWorktree, worktreeDiff, worktreeDiffStat, worktreeSizeBytes } from '../git-worktree.ts';
 import { isReclaimable, reclaimWorktrees } from '../runs/retention.ts';
 import { getBranches, getCommit, getDiff, getLog, getRepoInfo, getStatus } from './git.ts';
@@ -4511,6 +4513,7 @@ export function createApp(deps: ServerDeps) {
       catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 503); }
       let workflow: WorkflowDef | undefined;
       let versionedWorkflow: Awaited<ReturnType<typeof loadVersionedWorkflows>>['workflows'][number] | undefined;
+      let rolloutSelection: { legacyWorkflow: string; mode: 'legacy' | 'shadow' | 'versioned'; policyVersion: string; authority: 'legacy' | 'versioned' } | undefined;
       if (parsed.data.steps) {
         // Inline chain (spec 008): an approved plan runs as an ad-hoc workflow.
         const issue = stepsIssue(parsed.data.steps);
@@ -4535,6 +4538,30 @@ export function createApp(deps: ServerDeps) {
               steps: versionedWorkflow.nodes.filter((node) => node.kind === 'agent').map((node) => ({ id: node.id, prompt: node.prompt })),
             };
           }
+        }
+        if (at <= 0) {
+          try {
+            const rollout = await loadWorkflowRolloutConfig(repoRoot);
+            const rule = rollout.workflows[parsed.data.workflow!];
+            if (rule) {
+              const authority = resolveWorkflowAuthority(parsed.data.workflow!, rule, readWorkflowParityReceipts(project.store, parsed.data.workflow!));
+              rolloutSelection = { legacyWorkflow: parsed.data.workflow!, mode: rule.mode, policyVersion: rule.policyVersion, authority };
+              if (authority === 'versioned') {
+                const candidate = versioned.find((entry) => entry.id === rule.versionedWorkflow.id && entry.version === rule.versionedWorkflow.version);
+                const digest = candidate ? createHash('sha256').update(canonicalJson(candidate)).digest('hex') : undefined;
+                if (candidate && digest === rule.versionedWorkflow.digest) versionedWorkflow = candidate;
+                else rolloutSelection = { legacyWorkflow: parsed.data.workflow!, mode: rule.mode, policyVersion: rule.policyVersion, authority: 'legacy' };
+              }
+            }
+          } catch (error) {
+            // Invalid or unreadable opt-in config must preserve the legacy workflow path.
+            console.warn(`[workflow-rollout] ignored invalid project rollout config: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          if (versionedWorkflow) workflow = {
+            name: `${versionedWorkflow.id}@${versionedWorkflow.version}`,
+            source: 'file',
+            steps: versionedWorkflow.nodes.filter((node) => node.kind === 'agent').map((node) => ({ id: node.id, prompt: node.prompt })),
+          };
         }
         if (!workflow) {
           const { workflows } = await loadWorkflows(repoRoot, { factoryRelease });
@@ -4610,6 +4637,10 @@ export function createApp(deps: ServerDeps) {
       const run = versionedWorkflow
         ? manager.startVersionedRun(versionedWorkflow, input, parsed.data.inputs ?? {})
         : manager.startRun(workflow, input);
+      if (rolloutSelection) project.store.appendEvent(run.id, {
+        type: 'workflow-rollout-selection', legacyWorkflow: rolloutSelection.legacyWorkflow,
+        mode: rolloutSelection.mode, authority: rolloutSelection.authority, policyVersion: rolloutSelection.policyVersion,
+      });
       if (parsed.data.todoId) await noteTodoStarted(dataDir, parsed.data.todoId, run.id);
       return c.json(run, 201);
     })
@@ -4862,6 +4893,65 @@ export function createApp(deps: ServerDeps) {
       });
       if (!result.ok) return c.json({ error: result.error }, 409);
       return c.json({ continued: true });
+    })
+
+    // Explicit shadow-pilot pairing: compare two separately requested executions without
+    // automatically launching a duplicate agent, worktree, or PR.
+    .post('/runs/:id/workflow-parity', jsonZodValidator(workflowParityCompareRequestSchema), async (c) => {
+      const { root: repoRoot, store } = c.get('project');
+      const primary = store.getRun(c.req.param('id'));
+      const comparison = store.getRun(c.req.valid('json').comparisonRunId);
+      if (!primary || !comparison) return c.json({ error: 'both parity runs must exist in this project' }, 404);
+      if (primary.id === comparison.id || primary.task !== comparison.task) return c.json({ error: 'parity requires distinct runs for the same task' }, 409);
+      const primaryPin = primary.workflowDefinitionPin;
+      const comparisonPin = comparison.workflowDefinitionPin;
+      const graphRun = primaryPin?.format === 'versioned' ? primary : comparisonPin?.format === 'versioned' ? comparison : undefined;
+      const legacyRun = graphRun === primary ? comparison : graphRun === comparison ? primary : undefined;
+      if (!graphRun?.workflowDefinitionPin || !graphRun.workflowExecution || !legacyRun) return c.json({ error: 'parity requires one legacy run and one pinned versioned graph run' }, 409);
+      if (!['done', 'failed', 'cancelled'].includes(graphRun.status) || !['done', 'failed', 'cancelled'].includes(legacyRun.status)) {
+        return c.json({ error: 'parity can only compare terminal runs' }, 409);
+      }
+      let rollout;
+      try { rollout = await loadWorkflowRolloutConfig(repoRoot); }
+      catch (error) { return c.json({ error: `workflow rollout config is invalid: ${error instanceof Error ? error.message : String(error)}` }, 409); }
+      const legacyWorkflow = legacyRun.workflow;
+      const rule = rollout.workflows[legacyWorkflow];
+      if (!rule || rule.mode !== 'shadow') return c.json({ error: 'parity receipts can only be recorded for a configured shadow workflow' }, 409);
+      const graphDigest = graphRun.workflowDefinitionPin.digest;
+      if (graphRun.workflowDefinitionPin.id !== rule.versionedWorkflow.id || graphRun.workflowDefinitionPin.version !== rule.versionedWorkflow.version
+        || graphDigest !== rule.versionedWorkflow.digest) return c.json({ error: 'versioned run does not match the configured workflow pin' }, 409);
+
+      const implementationPath = (run: RunRecord): string | undefined => {
+        if (!run.workflowExecution) return run.worktreePath;
+        const attempt = [...run.workflowExecution.attempts].reverse().find((candidate) => {
+          const node = run.workflowExecution?.workflow.nodes.find((entry) => entry.id === candidate.node);
+          return candidate.status === 'done' && Boolean(candidate.childRunId) && node?.kind === 'agent' && node.dispatchKind === 'implement';
+        });
+        return attempt?.childRunId ? store.getRun(attempt.childRunId)?.worktreePath : undefined;
+      };
+      const legacyPath = implementationPath(legacyRun);
+      const graphPath = implementationPath(graphRun);
+      if (!legacyPath || !graphPath || !existsSync(legacyPath) || !existsSync(graphPath)) return c.json({ error: 'parity requires both retained task worktrees' }, 409);
+      let revisionDigest: string;
+      try {
+        const treeOf = (cwd: string) => execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd, encoding: 'utf8', windowsHide: true }).trim();
+        const digestOf = (cwd: string) => createHash('sha256').update(`${treeOf(cwd)}\0${worktreeArtifactRevision(cwd)}`).digest('hex');
+        const legacyRevision = digestOf(legacyPath);
+        const graphRevision = digestOf(graphPath);
+        if (legacyRevision !== graphRevision) return c.json({ error: 'parity requires identical final worktree revisions' }, 409);
+        revisionDigest = legacyRevision;
+      } catch (error) { return c.json({ error: `parity worktree revision is unreadable: ${error instanceof Error ? error.message : String(error)}` }, 409); }
+      const finalGraphAttempt = [...graphRun.workflowExecution.attempts].reverse().find((attempt) => graphRun.workflowExecution!.workflow.terminals.includes(attempt.node) && attempt.status === 'done');
+      const versionedOutcome = finalGraphAttempt?.outcome ?? 'unknown';
+      const legacyOutcome = legacyRun.status === 'done' ? 'passed' as const : legacyRun.status === 'cancelled' ? 'interrupted' as const : 'unknown' as const;
+      const receipt = workflowParityReceiptSchema.parse({
+        schemaVersion: 1, legacyWorkflow, versionedWorkflow: rule.versionedWorkflow, policyVersion: rule.policyVersion,
+        taskDigest: createHash('sha256').update(canonicalJson(legacyRun.task)).digest('hex'), revisionDigest,
+        legacyRunId: legacyRun.id, versionedRunId: graphRun.id, legacyOutcome, versionedOutcome,
+        result: legacyOutcome === versionedOutcome ? 'match' : 'mismatch', recordedAt: new Date().toISOString(),
+      });
+      const recorded = appendWorkflowParityReceipt(store, receipt);
+      return c.json({ receipt: recorded }, 201);
     })
 
     // Durable event-wait adapter. The caller's stable event ID is recorded with the resumed node,
