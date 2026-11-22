@@ -3,12 +3,14 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { executeVerification, verificationFindingFingerprint, type VerificationAdapter } from './executor.ts';
+import { encodePng, solidImage } from './visual-evidence-fixtures.ts';
 import type { CheckProviderPlugin } from '../server/verification/checks/check-runner.ts';
 
 const exec = promisify(execFile);
 const roots: string[] = [];
+const artifactHomes: string[] = [];
 
 async function fixture(label: string) {
   const root = await mkdtemp(join(tmpdir(), `verification ${label} `));
@@ -20,9 +22,63 @@ async function fixture(label: string) {
   return root;
 }
 
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await Promise.all([...roots.splice(0), ...artifactHomes.splice(0)].map((root) => rm(root, { recursive: true, force: true })));
+});
 
 describe('generic verification executor', () => {
+  it('binds adapter captures to the run and makes expected missing or invalid evidence non-passing', async () => {
+    const root = await fixture('visual-capture');
+    const home = await mkdtemp(join(tmpdir(), 'verification visual artifacts '));
+    artifactHomes.push(home);
+    vi.stubEnv('CEZ_HOME', home);
+    const renderer = { os: 'linux', resolution: { width: 1280, height: 720 }, dpi: 96, displayBackend: 'x11', renderer: 'software' as const,
+      graphicsApi: null, driver: null, appVersion: '1.0', colorSettings: {}, renderFeatures: [] };
+    const expectCapture = (context: Parameters<NonNullable<VerificationAdapter['preflight']>>[0]) => {
+      context.expectVisualEvidence({ sessionId: 'session-1', roles: [{ role: 'host', checkpoints: ['final'] }] });
+      return {};
+    };
+    const passing = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: {
+        preflight: async (context) => expectCapture(context),
+        execute: async (context) => {
+          const saveArtifact = context.createSessionArtifactSaver({ role: 'host', checkpointId: 'final', policyVersion: 'policy-1',
+            workerFingerprint: 'worker-1', accessPolicy: 'private', redactionState: 'redacted', renderer });
+          await saveArtifact({ sessionId: 'session-1', name: 'screenshot.png', bytes: encodePng(solidImage([10, 20, 30, 255], 1)), mediaType: 'image/png' });
+          return { status: 'passed', code: 0, output: 'ok', truncated: false, durationMs: 1 };
+        },
+      },
+    });
+    expect(passing.run.status).toBe('passed');
+    expect(passing.run.checks[0]?.artifacts[0]?.visualEvidence).toMatchObject({
+      verificationId: passing.run.verificationId, testId: 'check', commitSha: passing.run.commitSha,
+      manifestSha256: passing.run.manifestSha256, checkpointId: 'final', sessionId: 'session-1',
+    });
+
+    const missing = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: { preflight: async (context) => expectCapture(context), execute: async () => ({ status: 'passed', code: 0, output: 'ok', truncated: false, durationMs: 1 }) },
+    });
+    expect(missing.run.status).toBe('unknown');
+
+    const corrupt = await executeVerification({
+      worktreePath: root, cezarRunId: 'run', projectId: 'project', suite: 'quick',
+      adapter: {
+        preflight: async (context) => expectCapture(context),
+        execute: async (context) => {
+          const saveArtifact = context.createSessionArtifactSaver({ role: 'host', checkpointId: 'final', policyVersion: 'policy-1',
+            workerFingerprint: 'worker-1', accessPolicy: 'private', redactionState: 'redacted', renderer });
+          await saveArtifact({ sessionId: 'session-1', name: 'screenshot.png', bytes: Buffer.from('partial upload'), mediaType: 'image/png' }).catch(() => undefined);
+          return { status: 'passed', code: 0, output: 'ok', truncated: false, durationMs: 1 };
+        },
+      },
+    });
+    expect(corrupt.run.status).toBe('unknown');
+    expect(corrupt.run.checks[0]?.artifacts).toEqual([]);
+  });
+
   it('runs in a spaced worktree, writes a unique contract-validated artifact and records provenance', async () => {
     const root = await fixture('success');
     const [first, second] = await Promise.all([

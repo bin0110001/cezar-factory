@@ -25,7 +25,7 @@ type Outcome = 'passed' | 'failed' | 'incomplete' | 'inconclusive';
 function access(evidence: NonNullable<HistoryRecord['result']['checks'][number]['artifacts'][number]['visualEvidence']>, mediaType: string, bytes: number, viewer: EvidenceViewer) {
   const visible = evidence.accessPolicy !== 'private' || viewer.localOperator;
   const redacted = evidence.redactionState === 'redacted';
-  const imageKind = evidence.kind === 'png' || evidence.kind === 'diff';
+  const imageKind = evidence.kind === 'png' || evidence.kind === 'jpeg' || evidence.kind === 'diff';
   const preview: Item['preview'] = !visible || !redacted ? 'denied'
     : imageKind && mediaType === 'image/png' && bytes <= EVIDENCE_PREVIEW_MAX_BYTES ? 'available' : 'unsupported';
   const download: Item['download'] = visible && bytes <= EVIDENCE_DOWNLOAD_MAX_BYTES
@@ -74,7 +74,7 @@ function groupFor(check: Check, record: HistoryRecord, viewer: EvidenceViewer, r
 
   let outcome: Outcome;
   let reason: string;
-  const captures = refs.filter(({ ref }) => ref.visualEvidence!.kind === 'png' || ref.visualEvidence!.kind === 'video').length;
+  const captures = refs.filter(({ ref }) => ref.visualEvidence!.kind === 'png' || ref.visualEvidence!.kind === 'jpeg' || ref.visualEvidence!.kind === 'video').length;
   if (stale) { outcome = 'inconclusive'; reason = 'evidence belongs to a different revision than the one requested'; }
   else if (check.status === 'failed') { outcome = 'failed'; reason = 'the visual check failed'; }
   else if (check.status !== 'passed') { outcome = 'inconclusive'; reason = `the check ended ${check.status}; no verdict can be drawn`; }

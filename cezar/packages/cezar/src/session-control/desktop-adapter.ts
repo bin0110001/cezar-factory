@@ -40,7 +40,7 @@ export const desktopActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('clipboardWrite'), text: z.string().max(DESKTOP_LIMITS.maxClipboardBytes) }).strict(),
   z.object({ type: z.literal('fileUpload'), path: relativePath, base64: z.string().max(Math.ceil(DESKTOP_LIMITS.maxFileBytes * 4 / 3) + 4) }).strict(),
   z.object({ type: z.literal('fileDownload'), path: relativePath }).strict(),
-  z.object({ type: z.literal('recordingStart') }).strict(),
+  z.object({ type: z.literal('recordingStart'), fps: z.number().int().min(1).max(30).default(5), quality: z.enum(['low', 'medium', 'high']).default('medium') }).strict(),
   z.object({ type: z.literal('recordingStop') }).strict(),
   z.object({ type: z.literal('projectAction'), name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/), args: z.record(z.string(), z.unknown()).default({}) }).strict(),
   z.object({ type: z.literal('requestStop') }).strict(),
@@ -100,7 +100,7 @@ export interface DesktopBackend {
   writeClipboard(text: string): Promise<void>;
   putFile(path: string, bytes: Uint8Array): Promise<void>;
   getFile(path: string): Promise<Uint8Array>;
-  startRecording(): Promise<void>;
+  startRecording(options?: { fps: number; quality: 'low' | 'medium' | 'high'; maxDurationMs: number; maxBytes: number }): Promise<void>;
   stopRecording(): Promise<Uint8Array>;
   /** Idempotent: release display, input and clipboard handles and delete session scratch. */
   close(): Promise<void>;
@@ -129,6 +129,8 @@ export interface DesktopSessionOptions {
   projectActions?: readonly DesktopProjectAction[];
   isLeaseValid: () => boolean;
   saveArtifact: (input: { sessionId: string; name: string; bytes: Uint8Array; mediaType: string }) => Promise<string>;
+  /** Optional verification-linked sink for screenshots and recordings; downloads keep their ordinary artifact path. */
+  saveVisualArtifact?: (input: { sessionId: string; name: string; bytes: Uint8Array; mediaType: string }) => Promise<string>;
   recordEvent: (event: DesktopTraceEvent) => Promise<void> | void;
   limits?: { maxRequestsPerMinute?: number; maxSessionMs?: number; maxRecordingMs?: number };
   now?: () => number;
@@ -186,7 +188,9 @@ export async function createDesktopSessionControl(options: DesktopSessionOptions
   const now = options.now ?? Date.now;
   const maxPerMinute = options.limits?.maxRequestsPerMinute ?? DESKTOP_LIMITS.maxRequestsPerMinute;
   const maxSessionMs = options.limits?.maxSessionMs ?? DESKTOP_LIMITS.maxSessionMs;
-  const maxRecordingMs = options.limits?.maxRecordingMs ?? DESKTOP_LIMITS.maxRecordingMs;
+  const requestedRecordingMs = options.limits?.maxRecordingMs ?? DESKTOP_LIMITS.maxRecordingMs;
+  if (!Number.isInteger(requestedRecordingMs) || requestedRecordingMs < 1) throw new Error('maximum recording duration must be a positive integer');
+  const maxRecordingMs = Math.min(requestedRecordingMs, DESKTOP_LIMITS.maxRecordingMs);
   const startedAt = now();
   const requestTimes: number[] = [];
   let closed = false;
@@ -215,7 +219,7 @@ export async function createDesktopSessionControl(options: DesktopSessionOptions
       case 'screenshot': {
         const bytes = await b.screenshot();
         if (bytes.byteLength > DESKTOP_LIMITS.maxScreenshotBytes) throw new DesktopError('capture_too_large');
-        const reference = await options.saveArtifact({ sessionId: options.sessionId, name: 'desktop-screenshot.png', bytes, mediaType: 'image/png' });
+        const reference = await (options.saveVisualArtifact ?? options.saveArtifact)({ sessionId: options.sessionId, name: 'desktop-screenshot.png', bytes, mediaType: 'image/png' });
         return { kind: 'screenshot', reference, bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') };
       }
       case 'invokeElement': await b.invoke(action.element.id, action.action); return { kind: 'action', completed: true };
@@ -243,7 +247,7 @@ export async function createDesktopSessionControl(options: DesktopSessionOptions
       }
       case 'recordingStart':
         if (recordingStartedAt !== undefined) throw new DesktopError('action_failed');
-        await b.startRecording();
+        await b.startRecording({ fps: action.fps, quality: action.quality, maxDurationMs: maxRecordingMs, maxBytes: DESKTOP_LIMITS.maxRecordingBytes });
         recordingStartedAt = now();
         return { kind: 'action', completed: true };
       case 'recordingStop': {
@@ -252,7 +256,7 @@ export async function createDesktopSessionControl(options: DesktopSessionOptions
         recordingStartedAt = undefined;
         const bytes = await b.stopRecording();
         if (bytes.byteLength > DESKTOP_LIMITS.maxRecordingBytes || elapsed > maxRecordingMs) throw new DesktopError('capture_too_large');
-        const reference = await options.saveArtifact({ sessionId: options.sessionId, name: 'desktop-recording.webm', bytes, mediaType: 'video/webm' });
+        const reference = await (options.saveVisualArtifact ?? options.saveArtifact)({ sessionId: options.sessionId, name: 'desktop-recording.webm', bytes, mediaType: 'video/webm' });
         return { kind: 'recording', reference, bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') };
       }
       case 'projectAction': {

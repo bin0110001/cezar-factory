@@ -2,9 +2,23 @@
 
 Issue #354 (epic #330). Visual evidence rides the **existing** verification contract
 (`verificationArtifactRefSchema.visualEvidence`, `cezar/packages/contract/src/verification.ts`) and the existing
-verification store and artifact files. There is no evidence database, no duplicated media storage and no
-GitHub Actions compute. Media stays in the run's worktree artifact storage and is never copied into traces,
-issues or PR payloads.
+content-addressed coding-run artifact store. There is no evidence database or duplicate media store. Captures
+stay outside the worktree and are never copied into traces, prompts, issue comments or PR payloads. The reference
+and verification metadata are recorded on the owning check.
+
+## Capture adapters
+
+`VerificationAdapterContext.createSessionArtifactSaver()` returns the existing `saveArtifact` callback shape used
+by Playwright and desktop session controls. It binds each screenshot, WebM recording or Playwright trace to the
+current verification ID, check, attempt, source commit and manifest digest. The adapter declares required
+role/checkpoint pairs with `expectVisualEvidence()`; missing, failed or invalid captures downgrade that
+check to incomplete/unknown, even if adapter code catches a storage error. Desktop session controls route
+screenshots and recordings through `saveVisualArtifact` while file downloads retain their ordinary artifact path.
+Recording requests accept bounded frame rate and quality, and the backend receives hard duration and byte limits.
+
+The capture store rejects empty, oversized and signature-mismatched media. Binary capture callers must explicitly
+assert the bytes were inspected for redaction. Reads verify metadata, expiry, byte length and SHA-256 before serving;
+the existing local-operator, project access, redaction and preview limits still apply.
 
 ## API
 
@@ -17,7 +31,7 @@ issues or PR payloads.
 Outcomes are `passed`, `failed`, `incomplete`, `inconclusive`, or `null` with `state: "none"` when a run recorded no
 visual evidence at all (feature disabled, headless, missing backend). Missing evidence is never a pass:
 
-- **incomplete**: no capture, a required role (`roles=host,guest`) has no capture, or a baseline exists without an actual.
+- **incomplete**: no capture, a required role (`roles=host,guest`) has no capture, a capture is invalid, or a baseline exists without an actual.
 - **inconclusive**: the check did not finish, the baseline renderer is not comparable (`rendererMismatch`), or the
   requested `commitSha` differs from the evidence's commit (`state: "stale"`).
 - **failed** / **passed**: only from the deterministic check status over complete, comparable captures.

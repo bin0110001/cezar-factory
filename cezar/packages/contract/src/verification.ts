@@ -124,10 +124,11 @@ export const verificationRendererFingerprintSchema = z.object({
   colorSettings: z.record(z.string(), z.string().max(128)),
   renderFeatures: z.array(z.string().min(1).max(128)).max(128),
 }).strict();
+export type VerificationRendererFingerprint = z.infer<typeof verificationRendererFingerprintSchema>;
 
 export const verificationVisualEvidenceSchema = z.object({
   version: z.literal(1),
-  kind: z.enum(['png', 'video', 'trace', 'diff', 'metadata']),
+  kind: z.enum(['png', 'jpeg', 'video', 'trace', 'diff', 'metadata']),
   contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
   verificationId: z.string().min(1).max(128),
   attempt: z.number().int().positive(),
@@ -155,6 +156,7 @@ export const verificationArtifactRefSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   visualEvidence: verificationVisualEvidenceSchema.optional(),
 }).strict();
+export type VerificationArtifactRef = z.infer<typeof verificationArtifactRefSchema>;
 
 export const verificationVisualRegionSchema = z.object({
   x: z.number().int().nonnegative(),
@@ -475,7 +477,7 @@ export const verificationEvidenceParamsSchema = z.object({ runId: z.string().min
 export const verificationEvidenceContentQuerySchema = z.object({ disposition: z.enum(['preview', 'download']).default('preview') }).strict();
 export const verificationEvidenceItemSchema = z.object({
   id: z.string().min(1).max(128),
-  kind: z.enum(['png', 'video', 'trace', 'diff', 'metadata']),
+  kind: z.enum(['png', 'jpeg', 'video', 'trace', 'diff', 'metadata']),
   /** `expected` and `actual` are comparison sides; `diff` is the pixel diff. Other roles are session roles. */
   side: z.enum(['expected', 'actual', 'diff', 'other']),
   role: z.string(), sessionId: z.string(), attempt: z.number().int().positive(),

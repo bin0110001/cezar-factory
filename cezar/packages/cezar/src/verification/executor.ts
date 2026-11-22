@@ -6,13 +6,15 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { nodeScriptCommand } from '../core/disclaim-spawn.ts';
 import {
-  VERIFICATION_LIMITS, verificationCheckRunSchema, verificationManifestSchema, verificationRunSchema,
-  type VerificationCheckRun, type VerificationManifest, type VerificationRun,
+  VERIFICATION_LIMITS, aggregateRoleEvidence, verificationCheckRunSchema, verificationManifestSchema, verificationRunSchema,
+  type VerificationArtifactRef, type VerificationCheckRun, type VerificationManifest, type VerificationRendererFingerprint,
+  type VerificationRoleExpectation, type VerificationRun,
 } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
 import { fingerprintFinding, type FingerprintedFinding, type VerificationFindingKind } from './fingerprint.ts';
 import { runCheck, type CheckProviderPlugin } from '../server/verification/checks/check-runner.ts';
 import { checkDefinitionSchema } from '../server/verification/checks/check-provider.ts';
+import { storeVisualEvidence } from './visual-evidence-capture.ts';
 
 const execFileAsync = promisify(execFile);
 const MANIFEST_PATH = '.ai/factory/factory.config.yaml';
@@ -51,6 +53,21 @@ export interface VerificationAdapterContext {
   check: VerificationManifest['checks'][string];
   cwd: string;
   cancelled: () => boolean;
+  /** Capture bytes under this check's run/attempt/revision identity; bytes never enter prompts or run output. */
+  saveVisualCapture: (capture: {
+    content: Uint8Array; mediaType: string; kind: 'png' | 'jpeg' | 'video' | 'trace' | 'diff' | 'metadata';
+    role: string; sessionId: string; checkpointId?: string; policyVersion: string; workerFingerprint: string;
+    accessPolicy: 'private' | 'project' | 'link'; redactionState: 'redacted' | 'unredacted' | 'unknown';
+    renderer: VerificationRendererFingerprint;
+  }) => Promise<VerificationArtifactRef>;
+  /** Adapter-compatible saveArtifact callback for Playwright/native sessions. */
+  createSessionArtifactSaver: (metadata: {
+    role: string; checkpointId?: string; policyVersion: string; workerFingerprint: string;
+    accessPolicy: 'private' | 'project' | 'link'; redactionState: 'redacted' | 'unredacted' | 'unknown';
+    renderer: VerificationRendererFingerprint;
+  }) => (capture: { sessionId: string; name: string; bytes: Uint8Array; mediaType: string }) => Promise<string>;
+  /** Declare the roles/checkpoints that must be present for this check to pass. */
+  expectVisualEvidence: (expectation: { sessionId: string; roles: VerificationRoleExpectation[] }) => void;
 }
 
 /** Lifecycle hooks for project-owned adapters layered over the safe command runner. */
@@ -332,6 +349,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
   const availableCapabilities = new Set([...(input.availableCapabilities ?? []), ...(discovered ?? [])]);
   const toolVersions: Record<string, string> = { node: process.versions.node };
   const id = randomUUID();
+  const manifestSha256 = createHash('sha256').update(raw).digest('hex');
   const startedAt = new Date().toISOString();
   const checkRuns: VerificationCheckRun[] = [];
   let combined = '';
@@ -342,7 +360,51 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     const checkStarted = Date.now();
     const target = resolve(root, check.cwd);
     const realTarget = await realpath(target).catch(() => target);
-    const context: VerificationAdapterContext = { root, checkId, check, cwd: realTarget, cancelled: () => Boolean(input.cancelled?.()) };
+    const visualArtifacts: VerificationArtifactRef[] = [];
+    const visualCaptureErrors: string[] = [];
+    let visualExpectation: { sessionId: string; roles: VerificationRoleExpectation[] } | undefined;
+    const context: VerificationAdapterContext = {
+      root, checkId, check, cwd: realTarget, cancelled: () => Boolean(input.cancelled?.()),
+      expectVisualEvidence: (expectation) => { visualExpectation = structuredClone(expectation); },
+      createSessionArtifactSaver: (metadata) => async (capture) => {
+        const kind = capture.mediaType === 'image/png' ? 'png'
+          : capture.mediaType === 'image/jpeg' ? 'jpeg'
+          : capture.mediaType === 'video/webm' ? 'video'
+            : capture.mediaType === 'application/zip' ? 'trace' : undefined;
+        if (!kind) {
+          visualCaptureErrors.push('unsupported visual capture media type');
+          throw new Error('unsupported visual capture media type');
+        }
+        const reference = await context.saveVisualCapture({
+          content: capture.bytes, mediaType: capture.mediaType, kind, role: metadata.role, sessionId: capture.sessionId,
+          ...(metadata.checkpointId ? { checkpointId: metadata.checkpointId } : {}), policyVersion: metadata.policyVersion,
+          workerFingerprint: metadata.workerFingerprint, accessPolicy: metadata.accessPolicy,
+          redactionState: metadata.redactionState, renderer: metadata.renderer,
+        });
+        return reference.path;
+      },
+      saveVisualCapture: async (capture) => {
+        try {
+          const reference = await storeVisualEvidence({
+            content: capture.content,
+            mediaType: capture.mediaType,
+            redaction: 'already-redacted',
+            evidence: {
+              version: 1, kind: capture.kind, verificationId: id, attempt: 1, role: capture.role,
+              ...(capture.checkpointId ? { checkpointId: capture.checkpointId } : {}), sessionId: capture.sessionId,
+              testId: checkId, commitSha: initialHead, manifestSha256, policyVersion: capture.policyVersion,
+              workerFingerprint: capture.workerFingerprint, capturedAt: new Date().toISOString(),
+              accessPolicy: capture.accessPolicy, redactionState: capture.redactionState, renderer: capture.renderer,
+            },
+          });
+          visualArtifacts.push(reference);
+          return reference;
+        } catch (error) {
+          visualCaptureErrors.push(error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      },
+    };
     let status: VerificationCheckRun['status'];
     let rawExitCode: number | null = null;
     let output = '';
@@ -450,6 +512,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     } catch (error) {
       checkRun = { ...executedCheckRun, status: 'infrastructure-error', semanticExitCode: 3, outputTruncated: false, outputPreview: `adapter collect failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), coverage: { selected: 1, passed: 0, skipped: 0 } };
     }
+    if (visualArtifacts.length) checkRun = { ...checkRun, artifacts: [...checkRun.artifacts, ...visualArtifacts] };
     const validCheck = verificationCheckRunSchema.safeParse(checkRun);
     const consistencyError = validCheck.success
       ? !adapterPreservedExecutionFields(validCheck.data, executedCheckRun)
@@ -477,6 +540,26 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
           checkRun.findingStrategyId = identity.strategyId;
           checkRun.findingStrategyVersion = identity.strategyVersion;
         }
+      }
+    }
+    // Apply executor-owned visual gates only after checking the adapter's result. An adapter may not
+    // manufacture a passing result by swallowing a capture/storage failure or omitting a checkpoint.
+    if (visualCaptureErrors.length) {
+      checkRun = { ...checkRun, status: 'unknown', semanticExitCode: 2, outputTruncated: false,
+        outputPreview: 'visual evidence capture was incomplete or invalid', coverage: { selected: 1, passed: 0, skipped: 0 } };
+    }
+    if (visualExpectation) {
+      const roleResult = aggregateRoleEvidence({
+        verificationId: id, attempt: 1, sessionId: visualExpectation.sessionId, expected: visualExpectation.roles,
+        evidence: visualArtifacts.flatMap((artifact) => artifact.visualEvidence ? [artifact.visualEvidence] : []),
+      });
+      if (roleResult.status !== 'passed') {
+        const failed = roleResult.status === 'failed';
+        const infrastructure = roleResult.status === 'infrastructure-error';
+        const status = failed ? 'failed' as const : infrastructure ? 'infrastructure-error' as const : 'unknown' as const;
+        checkRun = { ...checkRun, status, semanticExitCode: failed ? 1 : infrastructure ? 3 : 2,
+          outputTruncated: false, outputPreview: `visual evidence ${roleResult.status}: required role/checkpoint captures are missing or invalid`,
+          coverage: { selected: 1, passed: 0, skipped: 0 } };
       }
     }
     try { await input.adapter?.cleanup?.(context); }
@@ -549,7 +632,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
     commitSha: initialHead,
     ...(input.baseSha ? { baseSha: input.baseSha } : {}),
-    manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt, finishedAt: new Date().toISOString(),
+    manifestSha256, startedAt, finishedAt: new Date().toISOString(),
     toolVersions,
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
     coverage: { selected: checkRuns.length, passed: checkRuns.filter((c) => c.status === 'passed').length, failed: checkRuns.filter((c) => c.status === 'failed').length, skipped: checkRuns.filter((c) => c.status === 'skipped').length, unknown: checkRuns.filter((c) => ['unknown', 'infrastructure-error', 'cancelled', 'no-tests'].includes(c.status)).length },
