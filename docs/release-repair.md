@@ -23,3 +23,17 @@ reconciled with dev, without merging the regression branch into dev.
 
 Opening the forward-port PR goes through the existing merge coordinator (#199); this library only tracks the obligation
 and its status.
+
+## Host incident recovery outcomes
+
+The host-local release controller remains the authority for incident fingerprints, attempt budgets, backoff,
+repair actions, and the original post-repair probe. `factory_release_controller.py repair --apply --event-id <stable-id>`
+records one idempotent ledger admission per finding and returns that admission alongside the bounded repair result and
+inline receipt record. Replaying a delivery ID returns the existing admission and does not repeat a repair side effect.
+Operators without a delivery system can omit `--event-id` and keep the existing backoff behavior.
+
+`workflows/release-incident-recovery.workflow.json` adapts those structured records into child-workflow outcomes for
+release or verification callers. It returns `passed` only when the receipt fingerprint matches and says both
+`state: fixed` and `probePassed: true`; a still-failing probe stays blocked, a ledger backoff is retryable, a final
+unresolved attempt escalates, and missing or conflicting evidence remains unknown. It only accepts bounded redacted
+evidence references. Agent and Hindsight summaries do not participate in the decision.

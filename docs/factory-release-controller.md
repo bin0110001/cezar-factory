@@ -172,7 +172,7 @@ Factory test suite. This controller does not claim to have run that suite.
 `scripts/release/factory_incident_ledger.py` provides a separate, host-local SQLite ledger for
 release self-healing work. Callers should place `incidents.sqlite3` under the configured release
 store; it must not replace or migrate `controller.sqlite3`, which remains the activation
-checkpoint. The module uses additive schema version 1 migrations, WAL, and bounded busy waits.
+checkpoint. The module uses additive schema version 2 migrations, WAL, and bounded busy waits.
 
 `IncidentLedger.record_failure()` normalizes commit SHAs, timestamps, paths, labeled IDs, durations,
 and secrets before computing a stable SHA-256 fingerprint. It records attempts by failure class,
@@ -183,8 +183,22 @@ receipt, or evidence ID. Evidence fields are allowlisted and bounded.
 
 An optional `hindsight_summarizer` callback receives only the fingerprint, class, attempt, and
 outcome flags. Callback failures are logged as warnings and cannot change the durable ledger result.
-No Hindsight service is required for ledger operation. This module is an API for the later
-controller-integration phase; it does not change the release controller or service invocation.
+No Hindsight service is required for ledger operation.
+
+`record_failure(..., event_id=...)` supports event-driven callers that need delivery idempotency.
+The optional stable ID is stored with the ledger admission in `incident_events`. Replaying it for
+the same class and fingerprint returns the original decision with `duplicate: true` and does not
+consume another attempt. Reusing it for a different incident is rejected. The controller repair
+command accepts `--event-id`; it hashes the delivery ID with each finding fingerprint and does not
+repeat a repair side effect for a duplicate delivery. Callers that omit the option retain the
+existing backoff behavior.
+
+`workflows/release-incident-recovery.workflow.json` is the typed Cezar child-result adapter. Its
+`release.incident.recovery-result` gate maps the controller's ledger admission and inline repair
+receipt to `recovered`, `validation_failed`, `retryable`, `escalated`, `exhausted`, or `unknown`.
+The invoking workflow supplies the normalized controller result and redacted evidence references;
+free-form agent and Hindsight summaries are ignored. A pass requires the matching fingerprint's
+durable receipt to say `fixed` and `probePassed: true`.
 
 Run its unit tests with `python -B -m unittest discover -s tests -p test_factory_incident_ledger.py -v`.
 

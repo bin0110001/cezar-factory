@@ -128,6 +128,17 @@ class FactoryDriftRepairTests(unittest.TestCase):
         self.assertEqual(repeated["results"][0]["reason"], "backoff")
         self.assertEqual(self.coordinator.reconcile_count, 1)
 
+    def test_duplicate_delivery_does_not_repeat_controller_repair(self):
+        self.coordinator.fail_reconcile = True
+        first = self.drift.repair(apply=True, event_id="delivery-42")
+        self.assertEqual(first["results"][0]["status"], "failed")
+        self.coordinator.fail_reconcile = False
+        duplicate = self.drift.repair(apply=True, event_id="delivery-42")
+        self.assertEqual(duplicate["results"][0]["status"], "skipped")
+        self.assertEqual(duplicate["results"][0]["reason"], "duplicate-event")
+        self.assertFalse(duplicate["results"][0]["receiptRecord"]["probePassed"])
+        self.assertEqual(self.coordinator.reconcile_count, 1)
+
     def test_shadow_and_compatibility_probes_are_reported_without_mutation(self):
         self.coordinator.diagnostic_sha = "f" * 40
         self.assertIn("shadow_drift", [item["failureClass"] for item in self.drift.detect()["findings"]])

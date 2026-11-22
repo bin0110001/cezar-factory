@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FAILURE_CLASSES = (
     "release", "automation", "shadow_drift", "failed_refetch", "compatibility", "infrastructure",
 )
@@ -200,6 +200,15 @@ class IncidentLedger:
                     FOREIGN KEY(failure_class, fingerprint) REFERENCES incidents(failure_class, fingerprint) ON DELETE CASCADE
                 )""")
                 db.execute("CREATE INDEX IF NOT EXISTS incident_attempts_recent ON incident_attempts(failure_class, fingerprint, occurred_at DESC)")
+            if version < 2:
+                db.execute("""CREATE TABLE IF NOT EXISTS incident_events (
+                    event_id TEXT PRIMARY KEY,
+                    failure_class TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )""")
+            if version != SCHEMA_VERSION:
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     @staticmethod
@@ -217,10 +226,13 @@ class IncidentLedger:
         candidate_sha: str | None = None,
         causal_evidence: Mapping[str, Any] | None = None,
         now: float | None = None,
+        event_id: str | None = None,
     ) -> dict[str, Any]:
         """Record one failed attempt, refusing repeats before backoff or after escalation."""
         if failure_class not in self.policies:
             raise IncidentLedgerError(f"unknown failure class: {failure_class}")
+        if event_id is not None and (not isinstance(event_id, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", event_id)):
+            raise IncidentLedgerError("event_id must be a bounded stable identifier")
         instant = self._epoch(now, self.clock)
         normalized = normalize_failure(reason) or "unknown failure"
         fingerprint = failure_fingerprint(failure_class, reason)
@@ -229,46 +241,61 @@ class IncidentLedger:
         release_failure = failure_class == "release" and linked
         known_debt = failure_class == "release" and not linked
         policy = self.policies[failure_class]
+        duplicate_result: dict[str, Any] | None = None
+        result: dict[str, Any]
         with self._db() as db:
-            row = db.execute(
-                "SELECT * FROM incidents WHERE failure_class=? AND fingerprint=?",
-                (failure_class, fingerprint),
-            ).fetchone()
-            if row and row["escalated"]:
-                return {"allowed": False, "reason": "budget-exhausted", "fingerprint": fingerprint, "attempt": row["attempt_count"]}
-            if row and row["next_attempt_at"] is not None and instant < row["next_attempt_at"]:
-                return {"allowed": False, "reason": "backoff", "fingerprint": fingerprint, "attempt": row["attempt_count"], "nextAttemptAt": row["next_attempt_at"]}
-
-            attempt = (row["attempt_count"] if row else 0) + 1
-            escalated = attempt >= policy["budget"]
-            delay = min(policy["baseDelaySeconds"] * (2 ** (attempt - 1)), policy["maxDelaySeconds"])
-            next_attempt_at = None if escalated else instant + delay
-            serialized_evidence = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
-            if row:
-                db.execute("""UPDATE incidents SET summary=?,last_seen=?,attempt_count=?,next_attempt_at=?,escalated=?,
-                    release_failure_count=release_failure_count+?,known_debt=?,candidate_sha=?,causal_evidence=?
-                    WHERE failure_class=? AND fingerprint=?""", (
-                    normalized, instant, attempt, next_attempt_at, int(escalated), int(release_failure), int(known_debt),
-                    candidate_sha, serialized_evidence, failure_class, fingerprint,
-                ))
+            if event_id is not None:
+                delivered = db.execute("SELECT failure_class,fingerprint,result_json FROM incident_events WHERE event_id=?", (event_id,)).fetchone()
+                if delivered:
+                    if delivered["failure_class"] != failure_class or delivered["fingerprint"] != fingerprint:
+                        raise IncidentLedgerError("event_id was already used for a different incident")
+                    duplicate_result = json.loads(delivered["result_json"])
+            if duplicate_result is not None:
+                pass
             else:
-                db.execute("""INSERT INTO incidents(failure_class,fingerprint,summary,first_seen,last_seen,attempt_count,
-                    next_attempt_at,escalated,release_failure_count,known_debt,candidate_sha,causal_evidence)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
-                    failure_class, fingerprint, normalized, instant, instant, attempt, next_attempt_at, int(escalated),
-                    int(release_failure), int(known_debt), candidate_sha, serialized_evidence,
-                ))
-            db.execute("""INSERT INTO incident_attempts(failure_class,fingerprint,attempt,occurred_at,next_attempt_at,
-                escalated,known_debt,release_failure) VALUES(?,?,?,?,?,?,?,?)""", (
-                failure_class, fingerprint, attempt, instant, next_attempt_at, int(escalated), int(known_debt), int(release_failure),
-            ))
-
-        result: dict[str, Any] = {
-            "allowed": True, "failureClass": failure_class, "fingerprint": fingerprint, "attempt": attempt,
-            "budget": policy["budget"], "nextAttemptAt": next_attempt_at, "escalated": escalated,
-            "knownDebt": known_debt, "releaseFailure": release_failure,
-        }
-        if self.hindsight_summarizer:
+                row = db.execute(
+                    "SELECT * FROM incidents WHERE failure_class=? AND fingerprint=?",
+                    (failure_class, fingerprint),
+                ).fetchone()
+                if row and row["escalated"]:
+                    result = {"allowed": False, "reason": "budget-exhausted", "failureClass": failure_class, "fingerprint": fingerprint, "attempt": row["attempt_count"]}
+                elif row and row["next_attempt_at"] is not None and instant < row["next_attempt_at"]:
+                    result = {"allowed": False, "reason": "backoff", "failureClass": failure_class, "fingerprint": fingerprint, "attempt": row["attempt_count"], "nextAttemptAt": row["next_attempt_at"]}
+                else:
+                    attempt = (row["attempt_count"] if row else 0) + 1
+                    escalated = attempt >= policy["budget"]
+                    delay = min(policy["baseDelaySeconds"] * (2 ** (attempt - 1)), policy["maxDelaySeconds"])
+                    next_attempt_at = None if escalated else instant + delay
+                    serialized_evidence = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+                    if row:
+                        db.execute("""UPDATE incidents SET summary=?,last_seen=?,attempt_count=?,next_attempt_at=?,escalated=?,
+                            release_failure_count=release_failure_count+?,known_debt=?,candidate_sha=?,causal_evidence=?
+                            WHERE failure_class=? AND fingerprint=?""", (
+                            normalized, instant, attempt, next_attempt_at, int(escalated), int(release_failure), int(known_debt),
+                            candidate_sha, serialized_evidence, failure_class, fingerprint,
+                        ))
+                    else:
+                        db.execute("""INSERT INTO incidents(failure_class,fingerprint,summary,first_seen,last_seen,attempt_count,
+                            next_attempt_at,escalated,release_failure_count,known_debt,candidate_sha,causal_evidence)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                            failure_class, fingerprint, normalized, instant, instant, attempt, next_attempt_at, int(escalated),
+                            int(release_failure), int(known_debt), candidate_sha, serialized_evidence,
+                        ))
+                    db.execute("""INSERT INTO incident_attempts(failure_class,fingerprint,attempt,occurred_at,next_attempt_at,
+                        escalated,known_debt,release_failure) VALUES(?,?,?,?,?,?,?,?)""", (
+                        failure_class, fingerprint, attempt, instant, next_attempt_at, int(escalated), int(known_debt), int(release_failure),
+                    ))
+                    result = {
+                        "allowed": True, "failureClass": failure_class, "fingerprint": fingerprint, "attempt": attempt,
+                        "budget": policy["budget"], "nextAttemptAt": next_attempt_at, "escalated": escalated,
+                        "knownDebt": known_debt, "releaseFailure": release_failure,
+                    }
+                if event_id is not None:
+                    db.execute("INSERT INTO incident_events(event_id,failure_class,fingerprint,result_json,created_at) VALUES(?,?,?,?,?)",
+                               (event_id, failure_class, fingerprint, json.dumps(result, sort_keys=True, separators=(",", ":")), instant))
+        if duplicate_result is not None:
+            return {**duplicate_result, "duplicate": True}
+        if result.get("allowed") and self.hindsight_summarizer:
             safe_summary = {key: result[key] for key in ("failureClass", "fingerprint", "attempt", "escalated", "knownDebt", "releaseFailure")}
             try:
                 self.hindsight_summarizer(safe_summary)

@@ -107,7 +107,7 @@ class DriftRepair:
             findings.append(self._finding("failed_refetch", str(row["id"]), "a bounded controller refetch attempt failed", {"sourceSha": row["source_sha"], "finishedAt": row["finished_at"], "reason": str(row["reason"] or "")[:300]}))
         return {"status": "drift" if findings else "ok", "channel": self.controller.channel, "findings": findings}
 
-    def repair(self, *, apply: bool = False) -> dict[str, Any]:
+    def repair(self, *, apply: bool = False, event_id: str | None = None) -> dict[str, Any]:
         report = self.detect()
         results: list[dict[str, Any]] = []
         if apply and not report["findings"]:
@@ -127,9 +127,21 @@ class DriftRepair:
         for finding in report["findings"]:
             failure_class = finding["failureClass"]
             fingerprint = failure_fingerprint(failure_class, finding["summary"])
-            admission = ledger.record_failure(failure_class, finding["summary"], causal_evidence={"source": "factory-release-controller", "stage": "drift-repair"}) if ledger else {"allowed": True}
-            result: dict[str, Any] = {"failureClass": failure_class, "fingerprint": fingerprint, "status": "dry-run" if not apply else "skipped", "reason": None}
-            if not admission.get("allowed"):
+            finding_event_id = f"drift:{hashlib.sha256(f'{event_id}\0{fingerprint}'.encode()).hexdigest()}" if event_id else None
+            admission = ledger.record_failure(failure_class, finding["summary"], causal_evidence={"source": "factory-release-controller", "stage": "drift-repair"}, event_id=finding_event_id) if ledger else {"allowed": True}
+            result: dict[str, Any] = {"failureClass": failure_class, "fingerprint": fingerprint, "status": "dry-run" if not apply else "skipped", "reason": None, "ledgerAdmission": admission}
+            if finding_event_id:
+                result["eventId"] = finding_event_id
+            receipt_path = self.receipt_dir / f"{hashlib.sha256(finding['key'].encode()).hexdigest()[:16]}-{fingerprint[:16]}.json"
+            if admission.get("duplicate"):
+                result.update(status="skipped", reason="duplicate-event")
+                try:
+                    result["receiptRecord"] = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    result["receipt"] = str(receipt_path)
+                    result["evidenceReferences"] = [f"receipt:{receipt_path.stem}"]
+                except (OSError, ValueError):
+                    pass
+            elif not admission.get("allowed"):
                 result.update(status="skipped", reason=admission.get("reason"))
             elif apply and finding["key"] == "pointer-checkpoint":
                 try:
@@ -166,9 +178,10 @@ class DriftRepair:
                 passed = followup is None
                 receipt = {"schemaVersion": "factory-drift-repair-receipt/v1", "channel": self.controller.channel, "key": finding["key"], "failureClass": failure_class, "fingerprint": fingerprint, "probePassed": passed, "state": "fixed" if passed else "open", "updatedAt": utc_now()}
                 self.receipt_dir.mkdir(parents=True, exist_ok=True)
-                receipt_path = self.receipt_dir / f"{hashlib.sha256(finding['key'].encode()).hexdigest()[:16]}-{fingerprint[:16]}.json"
                 receipt_path.write_bytes(canonical_json(receipt))
                 result["receipt"] = str(receipt_path)
+                result["receiptRecord"] = receipt
+                result["evidenceReferences"] = [f"receipt:{receipt_path.stem}"]
                 if not passed and result["status"] == "applied":
                     result["status"] = "failed"
                     result["reason"] = "original probe did not pass after repair"
