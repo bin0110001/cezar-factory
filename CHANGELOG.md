@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Added YAML-selected provider checks to the typed verification executor, preserving normalized OCR claims and reviewer-session evidence in the exact-revision verification result and existing finding ledger; unavailable providers remain unknown (#783).
 - Extended read-only workflow operator views with expandable pinned child graphs, reachable/current/skipped node states, review coverage and lineage, finding recurrence, attempt cost, actionable wait ownership and stop reasons; documented projection compatibility and redaction (#770).
 - Added cross-workflow lifecycle pilot E2E fixtures (#777) covering durable human waits and recovery, split child runs, same-session implementation repair with independent review, and bounded verification exhaustion; documented the fixture scope without changing lifecycle routing.
 - Added the versioned lifecycle child workflow catalog (#773): typed stage outcomes for intake, investigation, planning, implementation, verification, repair, review and escalation; deterministic mappings from existing lifecycle result outcomes; contract-aware static graph validation; legacy YAML remains unchanged.

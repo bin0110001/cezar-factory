@@ -339,6 +339,8 @@ export const runRecordSchema = z.object({
   branch: z.string().optional(),
   /** Stable baseline for session git views: a worktree's fork ref, or an in-place run's starting commit. */
   baseBranch: z.string().optional(),
+  /** Immutable fork point captured when a worktree is first created; provider reviews use it as their range base. */
+  baseCommitSha: z.string().regex(/^[a-f0-9]{40,64}$/i).optional(),
   /** Set when count-based retention (#483) reclaimed this run's worktree
    *  *directory* (the `cez/<id8>` branch is kept). Presence means "materialized
    *  dir gone, recoverable via `git worktree add`"; it excludes the run from the

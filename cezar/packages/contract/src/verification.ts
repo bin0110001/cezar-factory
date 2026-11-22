@@ -17,10 +17,7 @@ const relativePathSchema = z.string().min(1).max(1_024).refine((path) => {
   return path.split('/').every((part) => part !== '..' && part !== '.' && part.length > 0);
 }, 'must be a normalized relative path');
 
-const verificationCheckSchema = z.object({
-  runner: z.literal('command'),
-  executable: z.string().trim().min(1).max(512),
-  args: z.array(z.string().max(4_096)).max(256),
+const verificationCheckCommonSchema = z.object({
   cwd: relativePathSchema.default('.'),
   timeoutSeconds: z.number().int().min(1).max(3_600),
   tags: z.array(z.string().min(1).max(64)).max(64).optional(),
@@ -28,7 +25,42 @@ const verificationCheckSchema = z.object({
   requires: z.array(z.string().min(1).max(128)).max(128).optional(),
   optional: z.boolean().default(false),
   resources: z.array(z.string().min(1).max(128)).max(64).optional(),
+});
+
+// Keep provider checks declarative in the shared contract package. The server validates this
+// same object against its provider runner schema before invoking any code-owned plugin.
+const providerDefinitionSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
+  category: z.enum(['format', 'lint', 'type', 'test', 'sast', 'sca', 'secrets', 'iac', 'container', 'license', 'sbom', 'complexity', 'custom', 'ai-audit']),
+  provider: z.object({ name: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/), version: z.string().min(1).max(64), digest: z.string().regex(/^sha256:[0-9a-f]{64}$/) }).strict(),
+  applicability: z.array(z.string().min(1).max(64)).max(64).default([]),
+  scopes: z.array(z.enum(['changed-files', 'full-repo', 'baseline-diff', 'binary-image', 'git-history'])).min(1),
+  triggers: z.array(z.enum(['pr-dev', 'release-candidate', 'periodic-independent', 'manual', 'risk-event'])).min(1),
+  schedule: z.object({ cron: z.string().min(1).max(128), timezone: z.string().min(1).max(64) }).strict().optional(),
+  inputs: z.array(z.string().min(1).max(256)).max(64).default([]),
+  artifacts: z.array(z.string().min(1).max(256)).max(64).default([]),
+  hints: z.object({ cpus: z.number().positive().max(64).optional(), memoryMib: z.number().int().positive().max(262_144).optional(), expectedSeconds: z.number().int().positive().max(6 * 3600).optional(), costUnits: z.number().min(0).max(1_000_000).optional() }).strict().default({}),
+  policy: z.object({
+    mandatory: z.boolean(), timeoutMs: z.number().int().min(1_000).max(21_600_000),
+    onFailure: z.enum(['fail', 'unknown', 'error']).default('error'), onFeedUnavailable: z.enum(['fail', 'unknown', 'error']).default('unknown'),
+    maxAgeHours: z.number().positive().max(8_760).optional(),
+    cache: z.object({ enabled: z.boolean().default(false), ttlHours: z.number().positive().max(720).optional() }).strict().default(() => ({ enabled: false })),
+  }).strict(),
 }).strict();
+
+const verificationCheckSchema = z.discriminatedUnion('runner', [
+  verificationCheckCommonSchema.extend({
+  runner: z.literal('command'),
+  executable: z.string().trim().min(1).max(512),
+  args: z.array(z.string().max(4_096)).max(256),
+  }).strict(),
+  // Provider identity and policy stay in YAML; code supplies the isolated provider runtime.
+  verificationCheckCommonSchema.extend({
+    runner: z.literal('provider'),
+    providerId: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
+    definition: providerDefinitionSchema,
+  }).strict(),
+]);
 
 export const verificationManifestSchema = z.object({
   version: z.literal(1),
@@ -60,6 +92,9 @@ export const verificationDiagnosticSchema = z.object({
   file: relativePathSchema.optional(),
   line: z.number().int().positive().optional(),
   column: z.number().int().positive().optional(),
+  /** Reviewer identity and suggested patch are evidence only; neither confirms a claim. */
+  reviewerSessionId: z.string().min(1).max(256).optional(),
+  suggestion: z.string().max(2_000).optional(),
 }).strict();
 
 export const verificationFindingKindSchema = z.enum(['parse-error', 'test-failure', 'startup-error', 'performance-finding', 'check-finding']);

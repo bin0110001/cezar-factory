@@ -120,7 +120,9 @@ import {
 } from './types.ts';
 import { freshContinuationContext } from './continuation-context.ts';
 import { factoryRuntimeRootForSha, resolveConfiguredFactoryRelease, resolvePinnedFactoryRelease, type FactoryReleaseResolution } from '../factory-release/resolver.ts';
-import { executeVerification } from '../verification/executor.ts';
+import { executeVerification, type VerificationProviderFactory } from '../verification/executor.ts';
+import { FileFindingLedgerStore } from '../verification/finding-ledger.ts';
+import { FindingAuditLog, ingestVerificationRun } from '../verification/finding-ingest.ts';
 import { ingestWorkflowVerification } from '../verification/workflow-ingest.ts';
 import { listProjects } from '../workspace/projects.ts';
 import { createChildTraceContext, createTraceContext, stableSpanId } from '../observability/trace-context.ts';
@@ -1118,6 +1120,7 @@ export class RunManager {
   private readonly versionedBudgetTimers = new Map<string, NodeJS.Timeout>();
   private readonly versionedActionPromises = new Map<string, Promise<void>>();
   private versionedWorkflowActions: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
+  private readonly verificationProviders: Readonly<Record<string, VerificationProviderFactory>>;
   private pumping = false;
   /** A pump that arrived while one was in flight — replayed by `pump()`'s own
    *  loop so a slot freed mid-sweep is never a lost wakeup. */
@@ -1220,12 +1223,15 @@ export class RunManager {
       resolveTrackerEnv?: (root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>;
       /** Code-registered, idempotent action adapters; absent actions fail closed. */
       versionedWorkflowActions?: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
+      /** Code-registered isolated verification providers selected by project-owned YAML suites. */
+      verificationProviders?: Readonly<Record<string, VerificationProviderFactory>>;
     } = {},
   ) {
     this.dataDir = join(repoRoot, '.ai/cezar');
     this.projectId = options.projectId;
     this.resolveTrackerEnv = options.resolveTrackerEnv;
     this.versionedWorkflowActions = options.versionedWorkflowActions ?? {};
+    this.verificationProviders = options.verificationProviders ?? {};
     this.lifecycleStartup = getHeadCommit(repoRoot).then(async (head) => {
       if (!head) return;
       const report = await reconcileWorkspaceLifecycle({ cwd: repoRoot });
@@ -1902,6 +1908,7 @@ export class RunManager {
       const artifactRevision = worktreeArtifactRevision(worktreePath);
       const result = await executeVerification({
         worktreePath, cezarRunId: child.id, projectId: this.projectId, suite: node.suite,
+        ...(child.baseCommitSha ? { baseSha: child.baseCommitSha } : {}), providers: this.verificationProviders,
         cancelled: () => {
           const current = this.store.getRun(runId);
           const activeAttempt = current?.workflowExecution?.attempts.find((candidate) => candidate.transitionId === transitionId);
@@ -1912,6 +1919,10 @@ export class RunManager {
       const currentHead = await getHeadCommit(worktreePath);
       const exactRevision = Boolean(currentHead && currentHead === result.run.commitSha && artifactRevision === worktreeArtifactRevision(worktreePath));
       const status = exactRevision ? result.run.status : 'unknown';
+      if (exactRevision) {
+        const ledger = FileFindingLedgerStore.open(this.dataDir, this.projectId);
+        ingestVerificationRun(ledger, new FindingAuditLog(this.dataDir, this.projectId), result.run);
+      }
       this.store.appendEvent(child.id, {
         type: 'verification-result', verificationId: result.run.verificationId, status: result.run.status,
         artifactPath: relativePath(worktreePath, result.artifactPath).replaceAll('\\', '/'),
@@ -1924,10 +1935,15 @@ export class RunManager {
           : status === 'cancelled' ? 'interrupted' : 'unknown';
       const findings = result.run.checks.filter((check) => check.status !== 'passed').slice(0, 24).map((check) => ({
         checkId: check.checkId, status: check.status, output: check.outputPreview.slice(0, 1_000),
-        diagnostics: check.diagnostics.slice(0, 4).map((diagnostic) => ({ code: diagnostic.code, message: diagnostic.message.slice(0, 400) })),
+        diagnostics: check.diagnostics.slice(0, 12).map((diagnostic) => ({
+          code: diagnostic.code, message: diagnostic.message.slice(0, 400),
+          ...(diagnostic.file ? { file: diagnostic.file } : {}), ...(diagnostic.line ? { line: diagnostic.line } : {}),
+          ...(diagnostic.reviewerSessionId ? { reviewerSessionId: diagnostic.reviewerSessionId } : {}),
+          ...(diagnostic.suggestion ? { suggestion: diagnostic.suggestion.slice(0, 1_000) } : {}),
+        })),
       }));
       const outputs = {
-        verificationId: result.run.verificationId, commitSha: result.run.commitSha, artifactRevision, status,
+        verificationId: result.run.verificationId, baseSha: result.run.baseSha ?? null, commitSha: result.run.commitSha, artifactRevision, status,
         artifactPath: relativePath(worktreePath, result.artifactPath).replaceAll('\\', '/'), findings,
       };
       if (!exactRevision) outputs.findings.unshift({ checkId: 'revision', status: 'unknown', output: 'worktree revision changed during verification; result is not authoritative', diagnostics: [] });
@@ -5448,7 +5464,7 @@ export class RunManager {
       // Pin the starting commit: the session's Changes and Commits views use it
       // as their stable lower bound while reading the current working copy.
       const startingCommit = await getHeadCommit(repo.root);
-      if (startingCommit) this.store.updateRun(runId, { baseBranch: startingCommit });
+      if (startingCommit) this.store.updateRun(runId, { baseBranch: startingCommit, baseCommitSha: startingCommit });
       emit({ type: 'note', message: 'worktree off — running in the repo working tree' });
     } else if (repo) {
       emit({
@@ -5474,12 +5490,15 @@ export class RunManager {
           emit({ type: 'note', message }),
         ));
       try {
+        const beforeWorktree = this.store.getRun(runId);
         const wt = await createWorktree(this.repoRoot, runId, base);
+        const baseCommitSha = !beforeWorktree?.branch && !beforeWorktree?.worktreePath ? await getHeadCommit(wt.path) : beforeWorktree?.baseCommitSha;
         state.cwd = wt.path;
         this.store.updateRun(runId, {
           worktreePath: wt.path,
           branch: wt.branch,
           baseBranch: wt.baseBranch,
+          ...(baseCommitSha ? { baseCommitSha } : {}),
         });
         const lifecycleRun = this.store.getRun(runId);
         const lifecycleWorkflow = factoryWorkflowParticipatesInWorkspaceLifecycle(workflow.name);

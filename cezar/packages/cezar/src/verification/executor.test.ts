@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { executeVerification, verificationFindingFingerprint, type VerificationAdapter } from './executor.ts';
+import type { CheckProviderPlugin } from '../server/verification/checks/check-runner.ts';
 
 const exec = promisify(execFile);
 const roots: string[] = [];
@@ -83,6 +84,37 @@ describe('generic verification executor', () => {
     expect(result.run.status).toBe('unknown');
     expect(result.run.checks[0]?.checkId).toBe('manifest');
     expect(result.run.semanticExitCode).toBe(2);
+  });
+
+  it('routes YAML-selected provider findings through the typed verification result with revision and reviewer provenance', async () => {
+    const root = await fixture('provider');
+    const config = join(root, '.ai/factory/factory.config.yaml');
+    await writeFile(config, `verification:\n  version: 1\n  checks:\n    ocr-review:\n      runner: provider\n      providerId: ocr\n      timeoutSeconds: 60\n      optional: false\n      definition:\n        id: ocr-review\n        category: ai-audit\n        provider: { name: ocr, version: 1.14.0, digest: sha256:${'a'.repeat(64)} }\n        scopes: [baseline-diff]\n        triggers: [manual]\n        policy: { mandatory: true, timeoutMs: 30000, onFailure: error, onFeedUnavailable: unknown, cache: { enabled: false } }\n  suites:\n    review: [ocr-review]\n`);
+    const { stdout: head } = await exec('git', ['rev-parse', 'HEAD'], { cwd: root });
+    let seen: { sourceSha: string; baseSha?: string; checkId: string } | undefined;
+    const plugin: CheckProviderPlugin = { run: async ({ sourceSha }) => ({ format: 'json', document: { findings: [{ id: 'ocr-claim', severity: 'medium', title: 'Check this claim', path: 'src/example.ts', line: 8, reviewerSessionId: 'ocr-session-1', suggestion: 'guard the value' }] }, inputsDigest: `sha256:${'b'.repeat(64)}` }) };
+    const result = await executeVerification({
+      worktreePath: root, cezarRunId: 'run-provider', projectId: 'project', suite: 'review', baseSha: 'c'.repeat(40),
+      providers: { ocr: (context) => { seen = { sourceSha: context.sourceSha, baseSha: context.baseSha, checkId: context.checkId }; return plugin; } },
+    });
+    expect(seen).toEqual({ sourceSha: head.trim(), baseSha: 'c'.repeat(40), checkId: 'ocr-review' });
+    expect(result.run.commitSha).toBe(head.trim());
+    expect(result.run.baseSha).toBe('c'.repeat(40));
+    expect(result.run.status).toBe('failed');
+    expect(result.run.checks[0]).toMatchObject({
+      status: 'failed', findingFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), findingStrategyId: 'provider-normalized',
+      diagnostics: [{ code: 'ocr-claim', message: 'Check this claim', file: 'src/example.ts', line: 8, reviewerSessionId: 'ocr-session-1', suggestion: 'guard the value' }],
+    });
+  });
+
+  it('keeps a missing code-owned provider unknown instead of falling back to YAML command execution', async () => {
+    const root = await fixture('missing-provider');
+    const config = join(root, '.ai/factory/factory.config.yaml');
+    const providerManifest = `verification:\n  version: 1\n  checks:\n    ocr-review:\n      runner: provider\n      providerId: ocr\n      timeoutSeconds: 60\n      optional: false\n      definition:\n        id: ocr-review\n        category: ai-audit\n        provider: { name: ocr, version: 1.14.0, digest: sha256:${'a'.repeat(64)} }\n        scopes: [baseline-diff]\n        triggers: [manual]\n        policy: { mandatory: true, timeoutMs: 30000, onFailure: error, onFeedUnavailable: unknown, cache: { enabled: false } }\n  suites:\n    review: [ocr-review]\n`;
+    await writeFile(config, providerManifest);
+    const result = await executeVerification({ worktreePath: root, cezarRunId: 'run-missing-provider', projectId: 'project', suite: 'review' });
+    expect(result.run.status).toBe('unknown');
+    expect(result.run.checks[0]?.outputPreview).toContain('provider unavailable: ocr');
   });
 
   it('classifies a timeout as infrastructure failure and caps/truncates output as unknown', async () => {

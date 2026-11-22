@@ -11,6 +11,8 @@ import {
 } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
 import { fingerprintFinding, type FingerprintedFinding, type VerificationFindingKind } from './fingerprint.ts';
+import { runCheck, type CheckProviderPlugin } from '../server/verification/checks/check-runner.ts';
+import { checkDefinitionSchema } from '../server/verification/checks/check-provider.ts';
 
 const execFileAsync = promisify(execFile);
 const MANIFEST_PATH = '.ai/factory/factory.config.yaml';
@@ -24,9 +26,24 @@ export interface VerificationExecutionInput {
   suite: string;
   availableCapabilities?: string[];
   adapter?: VerificationAdapter;
+  /** Code-owned isolated provider runtimes selected by project YAML checks. */
+  providers?: Readonly<Record<string, VerificationProviderFactory>>;
+  baseSha?: string;
   cancelled?: () => boolean;
   onOutput?: (text: string) => void;
 }
+
+export interface VerificationProviderContext {
+  root: string;
+  checkId: string;
+  check: VerificationManifest['checks'][string];
+  cwd: string;
+  sourceSha: string;
+  baseSha?: string;
+  cancelled: () => boolean;
+}
+
+export type VerificationProviderFactory = (context: VerificationProviderContext) => CheckProviderPlugin;
 
 export interface VerificationAdapterContext {
   root: string;
@@ -279,6 +296,7 @@ async function incompleteRun(input: VerificationExecutionInput, root: string, ra
   const run = verificationRunSchema.parse({
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32), commitSha: headSha,
+    ...(input.baseSha ? { baseSha: input.baseSha } : {}),
     manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt: now, finishedAt: now,
     toolVersions: { node: process.versions.node }, environment: { platform: process.platform, node: process.versions.node },
     status: 'unknown', semanticExitCode: 2,
@@ -346,6 +364,52 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       output = `unavailable capabilities: ${missingCapabilities.join(', ')}`;
     } else if (input.cancelled?.()) {
       status = 'cancelled'; output = 'verification cancelled before launch';
+    } else if (check.runner === 'provider') {
+      const providerFactory = input.providers?.[check.providerId];
+      if (!providerFactory) {
+        status = 'unknown'; output = `verification provider unavailable: ${check.providerId}`;
+      } else {
+        const providerStarted = Date.now();
+        const providerContext: VerificationProviderContext = {
+          root, checkId, check, cwd: realTarget, sourceSha: initialHead,
+          ...(input.baseSha ? { baseSha: input.baseSha } : {}), cancelled: () => Boolean(input.cancelled?.()),
+        };
+        try {
+          const started = Date.now();
+          const plugin = providerFactory(providerContext);
+          const definition = checkDefinitionSchema.parse(check.definition);
+          const outcome = await runCheck({
+            definition, plugin, sourceSha: initialHead,
+            scope: `${input.baseSha ?? initialHead}..${initialHead}`, artifactDigest: initialHead,
+            workerProfile: `verification-provider:${check.providerId}`, secrets: secretValues,
+            now: () => new Date(),
+          });
+          durationMs = Date.now() - started;
+          const findings = outcome.findings.filter((finding) => finding.waiver.status === 'none');
+          const diagnostics = findings.map((finding) => ({
+            code: finding.ruleId.slice(0, 128),
+            severity: finding.severity === 'critical' || finding.severity === 'high' || finding.severity === 'medium' ? 'error' as const : 'warning' as const,
+            message: (finding.evidence || finding.ruleId).slice(0, VERIFICATION_LIMITS.diagnosticMessageChars),
+            ...(finding.path ? { file: finding.path } : {}), ...(finding.line ? { line: finding.line } : {}),
+            ...(finding.reviewerSessionId ? { reviewerSessionId: finding.reviewerSessionId } : {}),
+            ...(finding.aiAudit?.suggestion ? { suggestion: finding.aiAudit.suggestion.slice(0, 2_000) } : {}),
+          }));
+          status = outcome.result.status === 'error' || outcome.result.status === 'unknown' ? 'unknown'
+            : outcome.result.status === 'not-applicable' ? 'skipped'
+              : findings.length > 0 ? 'failed' : 'passed';
+          rawExitCode = status === 'passed' ? 0 : status === 'failed' ? 1 : status === 'skipped' ? 0 : 2;
+          output = findings.length ? `${findings.length} provider finding(s)` : `provider result ${outcome.result.status}`;
+          toolVersions[checkId] = `${definition.provider.name}@${definition.provider.version}`;
+          (context as VerificationAdapterContext & { providerDiagnostics?: typeof diagnostics }).providerDiagnostics = diagnostics;
+          if (findings.length) {
+            (context as VerificationAdapterContext & { providerFingerprints?: string[] }).providerFingerprints = findings.map((finding) => finding.fingerprint);
+          }
+        } catch {
+          status = input.cancelled?.() ? 'cancelled' : 'unknown';
+          output = 'verification provider returned an incomplete or unavailable result';
+          durationMs = Date.now() - providerStarted;
+        }
+      }
     } else {
       try {
         let versionCancelled = false;
@@ -378,7 +442,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       checkId, required, attempt: 1, status, rawExitCode,
       semanticExitCode: status === 'passed' ? 0 : status === 'failed' ? 1 : status === 'infrastructure-error' ? 3 : status === 'cancelled' ? 4 : 2,
       durationMs, outputPreview: safeOutput.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), outputTruncated: truncated,
-      diagnostics: [], metrics: [], coverage: { selected: 1, passed: status === 'passed' ? 1 : 0, skipped: status === 'skipped' ? 1 : 0 }, artifacts: [],
+      diagnostics: (context as VerificationAdapterContext & { providerDiagnostics?: VerificationCheckRun['diagnostics'] }).providerDiagnostics ?? [], metrics: [], coverage: { selected: 1, passed: status === 'passed' ? 1 : 0, skipped: status === 'skipped' ? 1 : 0 }, artifacts: [],
     };
     const executedCheckRun = structuredClone(checkRun);
     try {
@@ -401,7 +465,12 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       };
     } else {
       checkRun = { ...validCheck.data, outputPreview: sanitizeOutput(validCheck.data.outputPreview, root, secretValues) };
-      if (checkRun.status === 'failed' && !checkRun.findingFingerprint) {
+      const providerFingerprints = (context as VerificationAdapterContext & { providerFingerprints?: string[] }).providerFingerprints;
+      if (checkRun.status === 'failed' && providerFingerprints?.length) {
+        checkRun.findingFingerprint = providerFingerprints.length === 1 ? providerFingerprints[0]! : createHash('sha256').update([...providerFingerprints].sort().join('\0')).digest('hex');
+        checkRun.findingStrategyId = 'provider-normalized';
+        checkRun.findingStrategyVersion = 1;
+      } else if (checkRun.status === 'failed' && !checkRun.findingFingerprint) {
         const identity = verificationFindingIdentity(checkRun);
         if (identity) {
           checkRun.findingFingerprint = identity.fingerprint;
@@ -479,6 +548,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
     resultVersion: 1, verificationId: id, cezarRunId: input.cezarRunId, projectId: input.projectId,
     worktreeId: createHash('sha256').update(root).digest('hex').slice(0, 32),
     commitSha: initialHead,
+    ...(input.baseSha ? { baseSha: input.baseSha } : {}),
     manifestSha256: createHash('sha256').update(raw).digest('hex'), startedAt, finishedAt: new Date().toISOString(),
     toolVersions,
     environment: { platform: process.platform, node: process.versions.node }, status, semanticExitCode: semanticExit(status),
