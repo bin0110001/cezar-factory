@@ -66,8 +66,9 @@ import {
 import { trackerTriggerSchema, trackerAutomationOptionsSchema, trackerAutomationOptionsQuerySchema, automationScheduleSchema, localTimeZone, nextOccurrence } from '@open-mercato/cezar-contract';
 import type { IncomingMessage } from 'node:http';
 import { access, constants as fsConstants, mkdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { workflowActionService } from './workflow-actions.ts';
 import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import type { Next } from 'hono';
@@ -4741,12 +4742,43 @@ export function createApp(deps: ServerDeps) {
       return c.json(store.getRun(id));
     })
 
-    .post('/runs/:id/cancel', (c) => {
+    .get('/runs/:id/operator-actions', (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'workflow operator controls require the local operator surface' }, 403);
+      const project = c.get('project');
+      const runId = c.req.param('id');
+      if (!project.store.getRun(runId)) return c.json({ error: 'not found' }, 404);
+      const service = workflowActionService(project.dataDir, project.store, project.manager);
+      return c.json({ snapshot: service.snapshot(runId), actions: service.history(runId) });
+    })
+    .post('/runs/:id/operator-actions', jsonZodValidator(z.object({
+      idempotencyKey: z.string().min(1).max(128),
+      action: z.enum(['resume', 'reconcile', 'cancel', 'escalate', 'approve']),
+      expectedVersion: z.string().regex(/^[a-f0-9]{64}$/),
+      rationale: z.string().trim().min(1).max(2000).optional(),
+    }).strict()), async (c) => {
+      if (!capabilities().localHandoff) return c.json({ error: 'workflow operator controls require the local operator surface' }, 403);
+      const project = c.get('project');
+      const service = workflowActionService(project.dataDir, project.store, project.manager);
+      const input = c.req.valid('json');
+      if (input.action === 'escalate' && !input.rationale) return c.json({ error: 'escalation rationale is required' }, 400);
+      const result = await service.submit(
+        { actor: userInfo().username, roles: ['operator', 'admin'] },
+        { ...input, runId: c.req.param('id') },
+      );
+      if (!result.ok) return c.json({ error: result.error, ...(result.record ? { action: result.record } : {}) }, result.error === 'forbidden' ? 403 : 409);
+      return c.json({ replayed: result.replayed ?? false, action: result.record });
+    })
+    .post('/runs/:id/cancel', async (c) => {
       const { store, manager } = c.get('project');
       const id = c.req.param('id');
       if (!store.getRun(id)) return c.json({ error: 'not found' }, 404);
-      const cancelled = manager.cancel(id);
-      return c.json({ cancelled });
+      if (!capabilities().localHandoff) return c.json({ error: 'run cancellation requires the local operator surface' }, 403);
+      const service = workflowActionService(c.get('project').dataDir, store, manager);
+      const result = await service.submit({ actor: userInfo().username, roles: ['operator', 'admin'] }, {
+        idempotencyKey: randomUUID(), action: 'cancel', runId: id, expectedVersion: service.snapshot(id)!,
+      });
+      if (!result.ok) return c.json({ error: result.error }, 409);
+      return c.json({ cancelled: result.record?.result === 'cancelled' });
     })
 
     // Live-session participation (spec 002): deliver a user message (text +
@@ -4883,7 +4915,11 @@ export function createApp(deps: ServerDeps) {
       const run = store.getRun(id);
       if (!run) return c.json({ error: 'not found' }, 404);
       if (run.workflowExecution) {
-        const resumed = manager.resumeVersionedRun(id, { kind: 'human' });
+        if (!capabilities().localHandoff) return c.json({ error: 'workflow resume requires the local operator surface' }, 403);
+        const service = workflowActionService(c.get('project').dataDir, store, manager);
+        const resumed = await service.submit({ actor: userInfo().username, roles: ['operator', 'admin'] }, {
+          idempotencyKey: randomUUID(), action: 'resume', runId: id, expectedVersion: service.snapshot(id)!,
+        });
         if (!resumed.ok) return c.json({ error: resumed.error }, 409);
         return c.json({ continued: true });
       }
