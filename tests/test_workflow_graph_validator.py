@@ -281,6 +281,16 @@ class VersionedLifecycle(unittest.TestCase):
             declared = {outcome for node in workflow["nodes"] for outcome in node.get("outcomes", [])}
             self.assertTrue(set(mappings[event].values()) <= declared, f"{event}: {mappings[event]} not declared by {file_name}")
 
+    def test_typed_verification_node_requires_suite_and_rejects_command(self):
+        definition = {"contract": "cezar.workflow", "schemaVersion": 1, "id": "typed-verification", "version": "1.0.0",
+                      "entry": "verify", "terminals": ["verify"], "nodes": [{"id": "verify", "kind": "verification",
+                      "suite": "quick", "outcomes": ["passed", "unknown"]}],
+                      "transitions": [], "budget": {"maxAttempts": 3}}
+        self.assertEqual(wg.adapt_definition(definition)["nodes"][0]["kind"], "task")
+        for invalid in ({**definition["nodes"][0], "suite": " "}, {**definition["nodes"][0], "command": "npm test"}):
+            with self.assertRaisesRegex(ValueError, "verification node"):
+                wg.adapt_definition({**definition, "nodes": [invalid]})
+
 
 if __name__ == "__main__":
     unittest.main()
