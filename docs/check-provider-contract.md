@@ -72,3 +72,25 @@ opened/still-open/fixed; a run that did not complete fixes nothing.
 
 Assumption: persisting reconciled findings through the #52 ledger needs a new finding kind in the contract enum and is
 not done here (see the normalized findings note).
+
+## Alibaba Open Code Review adapter (#781)
+
+`checks/providers/ocr-adapter.ts` adapts Alibaba Open Code Review CLI **v1.14.0** (Apache-2.0) through an injected
+executor. The adapter never launches a process itself. The executor must run the pinned binary in the isolated scanner
+worker with a read-only source checkout, disposable home directory, scrubbed environment, and egress restricted to the
+configured local LiteLLM gateway. The CLI receives full immutable base/head SHAs, a pinned read-only rules file, an
+explicit LiteLLM model alias, concurrency, timeout, and token limits. Endpoint, model alias, rules digest, policy/budget
+digest, tool version, and exact revisions are part of the cache input digest. Credentials are passed only through the explicit OCR token
+environment variable and never included in diagnostics.
+
+The adapter first invokes `ocr version` and `ocr review --preview`, then runs the same review range. It validates the
+version and manifest, requires the preview and execution to select the same paths, and checks terminal state, per-file
+coverage, exclusions, warnings, tool-call failures, reported tokens, and a matching local LiteLLM usage receipt. Missing receipts,
+partial or failed coverage, waived or excluded work, warnings, malformed comments, any budget overrun, or CLI/provider errors make
+the result `unknown`; any recoverable claims remain visible but cannot turn an incomplete run into a clean pass. A
+complete run with no comments is a usable clean review. Claims are normalized as `ai-audit` findings: their provider
+severity is retained as a claim only, reviewer session provenance and suggestions are preserved, and the shared
+normalizer forces informational severity and unknown confidence until a person verifies the claim.
+
+Fixtures exercise only the adapter contract; no hosted OCR or live model calls are part of tests. Enabling the provider
+in a check configuration is a separate policy choice and does not change the default scanner worker's network profile.
