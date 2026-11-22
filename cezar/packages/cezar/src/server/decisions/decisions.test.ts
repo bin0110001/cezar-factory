@@ -57,12 +57,13 @@ describe('buildDecisionItem', () => {
     expect(item.details).not.toContain('factory-decision:v1');
   });
 
-  it('turns a legacy escalation into a contextual, recommended choice', () => {
+  it('turns a legacy escalation into a contextual written decision', () => {
     const item = buildDecisionItem(issue({ comments: [legacyComment] }), 'factory:needs-help');
     expect(item.source).toBe('legacy');
     expect(item.decisions).toHaveLength(1);
-    expect(item.decisions[0]).toMatchObject({ id: 'open-question', question: 'Which data source is authoritative?', recommendedOptionId: 'recommended-next-step', options: [{ id: 'recommended-next-step' }, { id: 'provide-direction' }] });
+    expect(item.decisions[0]).toMatchObject({ id: 'open-question', question: 'Which data source is authoritative?', options: [] });
     expect(item.decisions[0]?.context).toContain('billing');
+    expect(item.decisions[0]?.context).toContain('specific path you choose');
   });
 
   const fullEscalation = {
@@ -89,17 +90,25 @@ describe('buildDecisionItem', () => {
     expect(item.background?.find((b) => b.label === 'Investigator’s root cause')?.text).toBe('The fixture is stale.');
   });
 
-  it('offers and recommends the escalation action on a legacy ask', () => {
+  it('does not turn free-text recommendations into generic selectable options', () => {
     const item = buildDecisionItem(issue({ comments: [investigation('Regenerate the fixture.'), fullEscalation] }), 'factory:needs-help');
-    expect(item.decisions[0]?.options[0]?.summary).toBe('Decide one: narrow, split or close.');
-    expect(item.decisions[0]?.recommendedOptionId).toBe('recommended-next-step');
+    expect(item.decisions[0]?.options).toEqual([]);
+    expect(item.decisions[0]?.context).toContain('Decide one: narrow, split or close.');
   });
 
-  it('leaves a structured ask’s own paths alone and adds only investigation background', () => {
+  it('leaves a structured ask’s paths alone and surfaces the newest planning finding', () => {
     const item = buildDecisionItem(issue({ comments: [investigation('Regenerate the fixture.'), structuredComment(), fullEscalation] }), 'factory:needs-help');
     expect(item.source).toBe('structured');
     expect(item.decisions[0]?.options.map((o) => o.id)).toEqual(['registry', 'local']);
     expect(item.background?.map((b) => b.label)).toEqual(['Investigator’s root cause', 'Investigator’s recommended action']);
+  });
+
+  it('shows specific architecture alternatives from the latest planning finding on a legacy card', () => {
+    const finding = { body: '## Planning finding: runtime contract still unresolved\n\n1. Port admission into TypeScript.\n2. Keep Python and define cross-process leases.' };
+    const item = buildDecisionItem(issue({ comments: [legacyComment, finding] }), 'factory:needs-help');
+    expect(item.background?.find((b) => b.label === 'Latest planning analysis')?.text).toContain('Port admission into TypeScript');
+    expect(item.background?.find((b) => b.label === 'Latest planning analysis')?.text).toContain('cross-process leases');
+    expect(item.decisions[0]?.options).toEqual([]);
   });
 
   it('omits background entirely when the issue carries nothing to show', () => {
@@ -112,25 +121,23 @@ describe('buildDecisionItem', () => {
     expect(item).toMatchObject({ source: 'legacy', state: 'factory:human-review' });
     expect(item.decisions[0]?.question).toContain('Pick storage');
     expect(item.decisions[0]?.context).toContain('Review the issue details');
-    expect(item.decisions[0]?.recommendedOptionId).toBe('recommended-next-step');
+    expect(item.decisions[0]?.options).toEqual([]);
   });
 
   it('uses the issue body as decision context for older issues', () => {
     const item = buildDecisionItem(issue({ body: 'Blocked because PR #724 has no review record.' }), 'factory:needs-help');
     expect(item.decisions[0]?.context).toContain('PR #724');
-    expect(item.decisions[0]?.options[0]?.summary).toContain('Keep the issue blocked');
+    expect(item.decisions[0]?.options).toEqual([]);
   });
 
-  it('recommends completing the existing gate for a legacy promotion blocker', () => {
+  it('shows the blocking evidence without inventing a legacy choice for a promotion blocker', () => {
     const sha = '7c5fe25a6589318402c92419a8ee7fe7143015e7';
     const body = `\`${sha}\` has been blocked for 60 minutes.\n\n\`\`\`\ndev SHA ${sha} has no merged dev PR satisfying the self-review gate (#724: approved review or recorded self-review missing; #725: not the merged pull request for this commit)\n\`\`\``;
     const item = buildDecisionItem(issue({ title: '[promotion] candidate blocked before validation', body }), 'factory:needs-help');
-    expect(item.decisions[0]?.question).toContain(sha);
+    expect(item.decisions[0]?.question).toContain('candidate');
     expect(item.decisions[0]?.context).toContain('Issue description');
-    expect(item.decisions[0]?.options[0]?.summary).toContain('Do not bypass the gate');
-    expect(item.decisions[0]?.options[0]?.summary).toContain('#724');
-    expect(item.decisions[0]?.recommendedOptionId).toBe('complete-prerequisite');
-    expect(item.decisions[0]?.options[1]?.label).toBe('Review whether the gate policy needs to change');
+    expect(item.decisions[0]?.context).toContain('#724');
+    expect(item.decisions[0]?.options).toEqual([]);
   });
 });
 

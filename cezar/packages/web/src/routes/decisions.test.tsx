@@ -47,11 +47,7 @@ const legacy: DecisionItem = {
   source: 'legacy',
   decisions: [{
     id: 'open-question', question: 'Which data source is authoritative?',
-    context: 'Two sources are mentioned in the issue.', recommendedOptionId: 'recommended-next-step',
-    options: [
-      { id: 'recommended-next-step', label: 'Follow the recommendation', summary: 'Use the source supported by the issue evidence.' },
-      { id: 'provide-direction', label: 'Provide a different direction', summary: 'Explain another preferred path.' },
-    ],
+    context: 'Two sources are mentioned in the issue. State the specific path you choose and why.', options: [],
   }],
 }
 
@@ -71,6 +67,8 @@ describe('answer helpers', () => {
     expect(isAnswerable(decisions, { 'state-owner': { note: '   ' } })).toBe(false)
     expect(isAnswerable(decisions, { 'state-owner': { optionId: 'local', note: '' } })).toBe(true)
     expect(isAnswerable(decisions, { 'state-owner': { note: 'Something else' } })).toBe(true)
+    expect(isAnswerable([{ id: 'legacy', question: 'Choose?', context: 'No options supplied.', options: [] }], { legacy: { optionId: 'recommended-next-step', note: '' } })).toBe(false)
+    expect(isAnswerable([{ id: 'legacy', question: 'Choose?', context: 'No options supplied.', options: [] }], { legacy: { note: 'Choose TypeScript because it shares dispatch ownership.' } })).toBe(true)
   })
 
   it('builds the request body without empty fields', () => {
@@ -96,31 +94,28 @@ describe('DecisionsRoute', () => {
     expect(within(card).getByText('Full Factory comment')).toBeTruthy()
   })
 
-  it('explains what the Factory found and offers its suggested fix on an escalation that had no paths', async () => {
+  it('explains that a legacy ask needs a specific written decision', async () => {
     const withFix: DecisionItem = {
       ...legacy,
       background: [
+        { label: 'Latest planning analysis', text: 'The alternatives are: 1. Port admission into TypeScript. 2. Keep Python and define durable leases.' },
         { label: 'Investigator’s root cause', text: 'The fixture is stale.' },
         { label: 'Current hypothesis', text: 'Scope is too broad.' },
       ],
-      decisions: [{
-        id: 'open-question',
-        question: 'Which data source is authoritative?',
-        context: 'The test fixture is stale and the investigation recommends regenerating it.',
-        recommendedOptionId: 'investigator-fix',
-        options: [
-          { id: 'investigator-fix', label: 'Apply the investigator’s recommended fix', summary: 'Regenerate the fixture.' },
-          { id: 'provide-direction', label: 'Provide a different direction', summary: 'Explain another preferred path.' },
-        ],
-      }],
+      decisions: [{ id: 'open-question', question: 'Which data source is authoritative?', context: 'State the path and why.', options: [] }],
     }
     renderRoute({ available: true, items: [withFix] })
     const card = await screen.findByRole('listitem')
     const blocks = [...card.querySelectorAll('[data-slot="decision-background-block"]')]
-    expect(blocks.map((b) => b.textContent)).toEqual(['Investigator’s root causeThe fixture is stale.', 'Current hypothesisScope is too broad.'])
-    const option = card.querySelector('[data-option="investigator-fix"]')
-    expect(option?.textContent).toContain('Regenerate the fixture.')
-    expect(option?.textContent).toContain('Recommended')
+    expect(blocks.map((b) => b.textContent)).toEqual([
+      'Latest planning analysisThe alternatives are: 1. Port admission into TypeScript. 2. Keep Python and define durable leases.',
+      'Investigator’s root causeThe fixture is stale.',
+      'Current hypothesisScope is too broad.',
+    ])
+    expect(within(card).getByText(/Port admission into TypeScript/)).toBeTruthy()
+    expect(within(card).getByText(/no reliable answer choices/i)).toBeTruthy()
+    expect(within(card).getByLabelText(/Your decision \(required\)/)).toBeTruthy()
+    expect(card.querySelectorAll('[data-slot="decision-option"]')).toHaveLength(0)
   })
 
   it('shows no background section when the Factory had nothing to add', async () => {
@@ -166,11 +161,11 @@ describe('DecisionsRoute', () => {
     answerDecision.mockResolvedValue({ number: 9, state: 'factory:needs-plan' })
     renderRoute({ available: true, items: [legacy] })
     const send = await screen.findByRole('button', { name: /send answer/i })
-    expect(document.querySelectorAll('[data-slot="decision-option"]')).toHaveLength(2)
+    expect(document.querySelectorAll('[data-slot="decision-option"]')).toHaveLength(0)
     expect((send as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(/Your own answer/), { target: { value: 'Use billing' } })
+    fireEvent.change(screen.getByLabelText(/Your decision \(required\)/), { target: { value: 'Use billing as the authoritative source because it owns account state.' } })
     fireEvent.click(send)
-    await waitFor(() => expect(answerDecision).toHaveBeenCalledWith(9, { answers: [{ decisionId: 'open-question', note: 'Use billing' }] }))
+    await waitFor(() => expect(answerDecision).toHaveBeenCalledWith(9, { answers: [{ decisionId: 'open-question', note: 'Use billing as the authoritative source because it owns account state.' }] }))
   })
 
   it('keeps the card and says why when the server refuses', async () => {

@@ -29,13 +29,14 @@ through the normal workflow. If the issue moved in the meantime the answer is re
 nothing is written.
 
 Above the questions, **What the Factory found** lists the context the agent had when it
-stopped: the newest investigation's root cause and recommended action, and, on older
-free-text escalations, the current hypothesis, attempts made and the Factory's recommended
-next step. Legacy issues without a structured marker still receive a complete card: the
-issue body and escalation comments supply context, and the card includes a recommended next
-step plus a free-text alternative. New requests cannot be routed to a person without
-context, explained options, and a recommendation. An issue that keeps failing without
-converging asks a structured question rather than a bare "decide something".
+stopped: the newest planning finding, investigation root cause and recommended action, and,
+on older free-text escalations, the current hypothesis, attempts made and the Factory's
+recommended next step. A legacy escalation without structured choices is shown as a written
+question, not as a generic "follow the recommendation" button. The user must state the
+specific path they choose, why, and any constraints or trade-offs; that text is recorded in
+the answer comment. New requests cannot be routed to a person without context, at least two
+explained options, and a recommendation. An issue that keeps failing without converging asks
+a structured question rather than a bare "decide something".
 
 ## Decision request format
 

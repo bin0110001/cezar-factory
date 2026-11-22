@@ -18,7 +18,7 @@ import {
  * The Factory parks an issue in `factory:needs-help` (or `factory:human-review`) and posts an
  * escalation comment. Newer comments carry a `factory-decision:v1` marker (see
  * `scripts/route-state.ps1`, `schemas/decision.schema.json`) with the question, details and suggested
- * paths; older ones are free text and degrade to a single open question. Answering posts a
+ * paths; older ones show recent planning findings and require a written answer. Answering posts a
  * `factory-decision-answer:v1` comment and returns the issue to `factory:needs-plan`, the
  * transition `docs/lifecycle.md` defines for "user resolves a major architectural decision".
  *
@@ -108,6 +108,19 @@ function latestSections(comments: IssueComment[], heading: string): Map<string, 
   return null;
 }
 
+/** The newest planning finding often records concrete choices before an older escalation is revisited. */
+function latestPlanningFinding(comments: IssueComment[]): string | null {
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const body = comments[i]!.body.trim();
+    const heading = body.indexOf('## Planning finding');
+    if (heading >= 0) {
+      const text = body.slice(heading).replace(/<!--\s*[\s\S]*?-->/g, '').trim();
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
 /**
  * What the Factory knew when it parked the issue. The escalation comment (legacy ones only: a
  * structured ask already carries its own context) and the newest investigation supply the
@@ -118,6 +131,7 @@ function backgroundFor(comments: IssueComment[], includeEscalation: boolean): De
   const add = (label: string, text: string | undefined) => {
     if (text && !isPointer(text)) out.push({ label, text });
   };
+  add('Latest planning analysis', latestPlanningFinding(comments) ?? undefined);
   const investigation = latestSections(comments, '## Factory investigation');
   if (investigation) {
     add('Investigator’s root cause', investigation.get('Root cause'));
@@ -160,39 +174,16 @@ export function buildDecisionItem(issue: RawIssue, state: DecisionItem['state'])
     return parts.join('\n\n');
   };
   const completeLegacy = (question: string, context: string, recommendation?: string): DecisionRequest => {
-    const title = (issue.title ?? '').toLowerCase();
-    const body = issue.body ?? '';
-    const promotionBlocker = title.includes('[promotion]') && title.includes('blocked');
-    const citedGate = body.match(/```\s*([\s\S]*?)\s*```/)?.[1]?.replace(/\s+/g, ' ').trim();
-    const candidate = /`([0-9a-f]{40})`/i.exec(body)?.[1];
-    const specificBlocker = citedGate && citedGate.length > 0 ? citedGate.slice(0, 600) : undefined;
-    const promotionQuestion = `How should ${candidate ? `candidate ${candidate}` : 'this candidate'} proceed while its promotion prerequisite is missing?`;
-    const recommended = recommendation?.trim() || (promotionBlocker
-      ? `Keep the promotion gate in place. ${specificBlocker ? `The reported blocker is: ${specificBlocker}. ` : ''}Complete the required review/self-review and merge prerequisites, then rerun validation for this exact candidate. Do not bypass the gate.`
-      : title.includes('[promotion]') && title.includes('circuit breaker')
-        ? 'Keep automatic promotion paused. Investigate and repair the latest quarantined failure, validate the repaired candidate, and reset the breaker only after the evidence shows it is safe.'
-        : body.toLowerCase().includes('self-review') && body.toLowerCase().includes('merged pr')
-          ? 'Complete and record the required self-review, merge the PR for this change to dev, then let the normal validation gate retry.'
-          : 'Keep the issue blocked until the missing facts are reviewed and the safe next step is clear.');
-    const requestQuestion = promotionBlocker ? promotionQuestion : question;
-    const options = promotionBlocker
-      ? [
-          { id: 'complete-prerequisite', label: 'Complete the prerequisite and retry', summary: recommended },
-          { id: 'review-gate-policy', label: 'Review whether the gate policy needs to change', summary: 'Use this path only if the gate is incorrect. Review the documented policy change process before changing host-side promotion configuration.' },
-        ]
-      : [
-          { id: 'recommended-next-step', label: 'Follow the recommended next step', summary: recommended },
-          { id: 'provide-direction', label: 'Provide a different direction', summary: 'Use the answer field to explain the preferred path and any constraints.' },
-        ];
+    const decisionContext = context || `Issue #${issue.number}: ${issue.title}. Review the issue details and linked evidence before choosing a path.`;
     return {
-      id: 'open-question', question: requestQuestion,
-      context: context || `The issue “${issue.title}” is waiting for a decision. Review the issue details and linked evidence before choosing a path.`,
-      options,
-      recommendedOptionId: promotionBlocker ? 'complete-prerequisite' : 'recommended-next-step',
+      id: 'open-question', question,
+      context: [decisionContext, recommendation?.trim() ? `Factory recommendation: ${recommendation.trim()}` : undefined,
+        'This older ask does not contain structured choices. State the specific path you choose, why, and any constraints or trade-offs.'].filter(Boolean).join('\n\n'),
+      options: [],
     };
   };
-  // A legacy ask has no paths of its own, but a completed investigation names a fix: offer it as
-  // the starting point (the user can still answer in their own words beside it).
+  // Prefer a real structured ask if one exists. Free-text fallbacks never invent selectable paths;
+  // the latest planning finding is shown separately and the user states the chosen path explicitly.
   for (let i = comments.length - 1; i >= 0; i--) {
     const comment = comments[i]!;
     const decisions = parseDecisionMarker(comment.body);
