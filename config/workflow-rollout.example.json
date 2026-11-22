@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "workflows": {
+    "factory-implement": {
+      "mode": "shadow",
+      "versionedWorkflow": {
+        "id": "factory.implementation",
+        "version": "1.0.0",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "policyVersion": "nested-lifecycle-pilot-1",
+      "minParitySamples": 2
+    }
+  }
+}
