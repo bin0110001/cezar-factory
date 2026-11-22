@@ -28,7 +28,7 @@ import type { UiEvent } from './ui-events.ts';
  * this file and fix the fixtures.
  */
 const enabled = process.env.COPILOT_REAL_SMOKE === '1'
-  && Boolean(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
+  && Boolean(process.env.COPILOT_GITHUB_TOKEN);
 const model = process.env.COPILOT_SMOKE_MODEL;
 
 describe.skipIf(!enabled)('copilot runner against the real `copilot --acp` (opt-in)', () => {

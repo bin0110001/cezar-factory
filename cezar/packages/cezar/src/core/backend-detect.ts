@@ -203,7 +203,7 @@ async function probeCopilot(): Promise<BackendCheck> {
       name: 'copilot',
       available: true,
       version: stdout.trim().split(/\r?\n/)[0] ?? '',
-      hint: 'if not authenticated, run `copilot login` (COPILOT_GITHUB_TOKEN, GH_TOKEN or GITHUB_TOKEN also work)',
+      hint: 'if not authenticated, run `copilot login` or configure COPILOT_GITHUB_TOKEN',
     };
   } catch {
     // A missing Copilot CLI is never a boot failure — the runner just isn't offered.

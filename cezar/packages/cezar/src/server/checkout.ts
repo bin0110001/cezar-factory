@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { lstat, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
@@ -70,8 +70,8 @@ export interface RepoRef {
    *  a machine configured with `gh config set git_protocol ssh` may have an
    *  OAuth token authorized for an organization's SAML policy while its SSH key
    *  is not. Passing only `owner/repo` silently selects that rejected key.
-   *  The resulting HTTPS `origin` needs a credential path of its own after the
-   *  clone — see `persistGhCredentialHelper`. */
+   *  Native Git credentials remain in the host's global configuration; this
+   *  checkout must not persist a credential helper in its local config. */
   cloneUrl: string;
 }
 
@@ -188,23 +188,6 @@ export function ghCloneArgs(ref: RepoRef, dir: string): string[] {
   return ['repo', 'clone', ref.cloneUrl, dir, '--', '--progress'];
 }
 
-/** PR #968: gh injects credentials only for the clone command. Persist the
- * helper locally so subsequent raw git pushes (including task worktrees) use
- * the same OAuth grant. Reset inherited helpers first, as gh setup-git does. */
-async function persistGhCredentialHelper(dir: string): Promise<boolean> {
-  for (const args of [
-    ['--replace-all', 'credential.https://github.com.helper', ''],
-    ['--add', 'credential.https://github.com.helper', '!gh auth git-credential'],
-  ]) {
-    const ok = await new Promise<boolean>((resolvePromise) => {
-      execFile('git', ['-C', dir, 'config', '--local', ...args],
-        { timeout: 10_000 }, (err) => resolvePromise(!err));
-    });
-    if (!ok) return false;
-  }
-  return true;
-}
-
 /**
  * `gh repo clone <validated HTTPS URL> <dir> -- --progress`.
  *
@@ -273,9 +256,7 @@ export const ghCloneRunner: CloneRunner = (ref, dir, onLine, signal) =>
     child.on('close', (code) => {
       signal?.removeEventListener('abort', onAbort);
       if (code === 0) {
-        void persistGhCredentialHelper(dir).then((ok) => finish(ok
-          ? { ok: true }
-          : { ok: false, error: 'Could not configure GitHub credentials for the checkout. Check directory permissions and retry.' }));
+        finish({ ok: true });
         return;
       }
       // The tail of gh/git's own output IS the error message — `gh` writes

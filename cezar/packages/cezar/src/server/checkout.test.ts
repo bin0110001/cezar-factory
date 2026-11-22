@@ -111,8 +111,8 @@ describe('checkout — GitHub transport', () => {
   });
 });
 
-describe('checkout — persisted GitHub credentials', () => {
-  it('leaves HTTPS origin and a local helper usable from task worktrees', async () => {
+describe('checkout — host-owned GitHub credentials', () => {
+  it('leaves HTTPS origin without persisting a credential helper into the checkout or task worktree', async () => {
     const root = mkdtempSync(join(realpathSync(tmpdir()), 'cez-credentials-'));
     const bin = join(root, 'bin');
     const repo = join(root, 'repo');
@@ -126,11 +126,11 @@ describe('checkout — persisted GitHub credentials', () => {
       expect(await ghCloneRunner(parseRepoRef('owner/repo')!, repo, () => {}, undefined)).toEqual({ ok: true });
       const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
       expect(git('remote', 'get-url', 'origin').trim()).toBe('https://github.com/owner/repo.git');
-      expect(git('config', '--local', '--get-all', 'credential.https://github.com.helper')).toBe('\n!gh auth git-credential\n');
+      expect(git('config', '--local', '--list')).not.toContain('credential.https://github.com.helper');
       git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'initial');
       const worktree = join(root, 'task');
       git('worktree', 'add', '-qb', 'task', worktree);
-      expect(execFileSync('git', ['-C', worktree, 'config', '--get-all', 'credential.https://github.com.helper'], { encoding: 'utf8' })).toBe('\n!gh auth git-credential\n');
+      expect(execFileSync('git', ['-C', worktree, 'config', '--local', '--list'], { encoding: 'utf8' })).not.toContain('credential.https://github.com.helper');
     } finally {
       vi.unstubAllEnvs();
       rmSync(root, { recursive: true, force: true });

@@ -4,7 +4,8 @@ import { BACKEND_ALLOW_PREFIXES, buildChildEnv, isClaudeBackend, looksSecret } f
 /**
  * #427: the spawned backend must NOT inherit the full host environment. It
  * gets a curated allowlist — safe shell/toolchain vars + the backend's own
- * auth + gh + cezar's `CEZ_*` — and nothing else.
+ * auth + cezar's `CEZ_*` — and nothing else. General GitHub CLI auth stays
+ * with the host and is excluded even from the explicit full-env escape hatch.
  */
 describe('buildChildEnv — least-privilege child env (#427)', () => {
   const HOST: NodeJS.ProcessEnv = {
@@ -56,17 +57,42 @@ describe('buildChildEnv — least-privilege child env (#427)', () => {
     expect(codex.ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it('keeps GITHUB_TOKEN for the gh handoff and the CEZ_* namespace', () => {
+  it('keeps general GitHub CLI credentials at the host boundary', () => {
     const src = {
       ...HOST,
       GITHUB_TOKEN: 'gho_token',
+      GITHUB_ENTERPRISE_TOKEN: 'gho_enterprise',
+      GH_TOKEN: 'gho_token_2',
+      GH_ENTERPRISE_TOKEN: 'gho_token_3',
+      GH_CONFIG_DIR: '/host/gh-config',
       CEZ_DRY_RUN: '1',
       CEZ_MOCK_ARGS_FILE: '/tmp/args',
     };
     const env = buildChildEnv({ backend: 'claude', source: src });
-    expect(env.GITHUB_TOKEN).toBe('gho_token');
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(env.GITHUB_ENTERPRISE_TOKEN).toBeUndefined();
+    expect(env.GH_TOKEN).toBeUndefined();
+    expect(env.GH_ENTERPRISE_TOKEN).toBeUndefined();
+    expect(env.GH_CONFIG_DIR).toBeUndefined();
     expect(env.CEZ_DRY_RUN).toBe('1');
     expect(env.CEZ_MOCK_ARGS_FILE).toBe('/tmp/args');
+  });
+
+  it('does not reintroduce GitHub CLI credentials via passthrough, extraEnv, or full-env mode', () => {
+    const env = buildChildEnv({
+      backend: 'claude',
+      source: {
+        ...HOST,
+        CEZ_AGENT_ENV_FULL: '1',
+        CEZ_ENV_PASSTHROUGH: 'GITHUB_TOKEN,GH_CONFIG_DIR',
+        GITHUB_TOKEN: 'host-token',
+        GH_CONFIG_DIR: '/host/gh-config',
+      },
+      extraEnv: { GH_TOKEN: 'run-token', GITHUB_TOKEN: 'run-token-2' },
+    });
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(env.GH_TOKEN).toBeUndefined();
+    expect(env.GH_CONFIG_DIR).toBeUndefined();
   });
 
   it('applies extraEnv (spec.env) last so per-run vars always win', () => {
