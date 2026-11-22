@@ -12,6 +12,8 @@ export * from './projects.ts';
 export * from './workspace.ts';
 export * from './workflows.ts';
 export * from './versioned-workflows.ts';
+export * from './workflow-simulation.ts';
+export * from './workflow-simulator.ts';
 export * from './workflow-views.ts';
 export * from './workflow-rollout.ts';
 export * from './releases.ts';

@@ -47,6 +47,7 @@ import { resolveConfiguredFactoryRelease } from './factory-release/resolver.ts';
 
 import { runTrackerConnectionsCommand } from './server/tracker/connections-cli.ts';
 import { runWorkerProfilesCommand } from './server/verification/worker-profiles-cli.ts';
+import { runWorkflowSimulationCommand } from './workflows/simulation-cli.ts';
 
 const HELP = `cezar — local cockpit for AI agent tasks in your repo
 
@@ -55,6 +56,7 @@ Usage:
   cezar run "<task>"        run a task headless in the terminal
   cezar task <create|report|list>  dispatch or report from inside a running task (CEZ_DISPATCH=0 turns it off)
   cezar workspace <command>      claim, adopt, validate, history, inspect, recover and prune issue workspaces
+  cezar workflow simulate <request.json>  run an offline native workflow dry-run fixture
   cezar automation <add|create|check|run|list|…>  create and manage automations (GitHub polls, schedules) on a running cockpit
   cezar init                scaffold .ai/cezar/ (example workflow + skill)
   cezar projects            list the projects this cockpit serves
@@ -127,6 +129,10 @@ async function main(): Promise<void> {
   }
   if (process.argv[2] === 'worker-profiles') {
     process.exitCode = await runWorkerProfilesCommand(process.argv.slice(3));
+    return;
+  }
+  if (process.argv[2] === 'workflow' && process.argv[3] === 'simulate') {
+    process.exitCode = await runWorkflowSimulationCommand(process.argv.slice(4));
     return;
   }
   const { values, positionals } = parseArgs({

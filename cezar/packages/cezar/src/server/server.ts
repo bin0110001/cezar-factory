@@ -97,7 +97,7 @@ import {
   updateProjectInputSchema,
 } from '@open-mercato/cezar-contract';
 import { dispatchInputSchema, dispatchIntentSchema, dispatchReportSchema } from '@open-mercato/cezar-contract';
-import { canonicalJson, initializeWorkflowExecution, resolveWorkflowAuthority, versionedWorkflowEventInputSchema, workflowParityCompareRequestSchema, workflowParityReceiptSchema } from '@open-mercato/cezar-contract';
+import { canonicalJson, initializeWorkflowExecution, resolveWorkflowAuthority, simulateWorkflow, versionedWorkflowEventInputSchema, workflowCatalogSimulationRequestSchema, workflowParityCompareRequestSchema, workflowParityReceiptSchema, workflowSimulationRequestSchema } from '@open-mercato/cezar-contract';
 import { detectEnvironment } from '../core/backend-detect.ts';
 import { hostUsageSampler, type HostSampler } from '../core/host-usage.ts';
 import { RUNNER_IDS } from '../core/agent-runner.ts';
@@ -3727,6 +3727,35 @@ export function createApp(deps: ServerDeps) {
       } catch {
         return c.json({ error: 'versioned workflow catalog unavailable' }, 503);
       }
+    })
+    .post('/workflows/simulate', jsonZodValidator(workflowSimulationRequestSchema), async (c) => {
+      const project = c.get('project');
+      const request = c.req.valid('json');
+      try {
+        const pinned = request.compareTo ? project.store.listRuns().filter((run) => run.workflowDefinitionPin
+          && run.workflowDefinitionPin.id === request.compareTo!.id
+          && run.workflowDefinitionPin.version === request.compareTo!.version
+          && run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled').length : 0;
+        const result = await simulateWorkflow(request, pinned);
+        return c.json(result);
+      } catch (error) {
+        return c.json({ error: `workflow simulation failed: ${error instanceof Error ? error.message : String(error)}` }, 400);
+      }
+    })
+    .post('/workflows/simulate-catalog', jsonZodValidator(workflowCatalogSimulationRequestSchema), async (c) => {
+      const project = c.get('project');
+      const request = c.req.valid('json');
+      const factoryRelease = await resolveConfiguredFactoryRelease(project.id);
+      const catalog = await loadVersionedWorkflows(project.root, { factoryRelease });
+      const workflow = catalog.workflows.find((candidate) => candidate.id === request.id && candidate.version === request.version);
+      const compareTo = request.compareTo ? catalog.workflows.find((candidate) => candidate.id === request.compareTo!.id && candidate.version === request.compareTo!.version) : undefined;
+      if (!workflow) return c.json({ error: 'unknown versioned workflow' }, 404);
+      if (request.compareTo && !compareTo) return c.json({ error: 'comparison workflow is unavailable' }, 404);
+      const pinned = compareTo ? project.store.listRuns().filter((run) => run.workflowDefinitionPin
+        && run.workflowDefinitionPin.id === compareTo.id && run.workflowDefinitionPin.version === compareTo.version
+        && run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled').length : 0;
+      const result = await simulateWorkflow({ workflow, scenarios: request.scenarios, ...(compareTo ? { compareTo } : {}) }, pinned);
+      return c.json(result);
     })
 
     // Save an approved plan as a reusable chain (spec 008): YAML in

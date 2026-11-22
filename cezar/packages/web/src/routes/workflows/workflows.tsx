@@ -31,7 +31,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
 
-import { ApiError, createWorkflow, deleteWorkflow, getVersionedWorkflowCatalog, parseWorkflow, postPlan } from '@/api/client'
+import { ApiError, createWorkflow, deleteWorkflow, getVersionedWorkflowCatalog, parseWorkflow, postPlan, simulateCatalogWorkflow } from '@/api/client'
 import { queryKeys, useSkills, useUiState, useWorkflows } from '@/api/queries'
 import type { Skill, WorkflowDef, WorkflowStepDef } from '@open-mercato/cezar-api-client'
 import type { VersionedWorkflowCatalog, WorkflowDefinitionView } from '@open-mercato/cezar-contract'
@@ -107,6 +107,10 @@ function emptyDraft(): Draft {
 }
 
 function NativeGraphCard({ graph, catalog, ancestors = [] }: { graph: WorkflowDefinitionView; catalog: VersionedWorkflowCatalog; ancestors?: string[] }) {
+  const [fixtureText, setFixtureText] = useState('{"scenarios":[{"id":"preview","outcomes":{}}]}')
+  const [simulation, setSimulation] = useState<unknown>()
+  const [simulationError, setSimulationError] = useState('')
+  const [simulating, setSimulating] = useState(false)
   const graphKey = `${graph.id}@${graph.version}`
   const path = [...ancestors, graphKey]
   return <article className="rounded-md border border-border bg-card p-3">
@@ -123,6 +127,22 @@ function NativeGraphCard({ graph, catalog, ancestors = [] }: { graph: WorkflowDe
     </ul>
     <ul aria-label={`Transitions in ${graph.id}`} className="mt-2 space-y-1 text-[11px] text-muted-foreground">{graph.transitions.map((edge, index) => <li key={`${edge.from}:${edge.order}:${index}`}><span className="font-mono">{edge.from}</span> · {edge.outcome} → <span className="font-mono">{edge.to}</span>{edge.guardLabel ? ` (${edge.guardLabel})` : ''}</li>)}</ul>
     <p className="mt-2 text-[11px] text-muted-foreground">Policy pins: {graph.policyRefs.join(', ') || 'none'} · digest {graph.digest.slice(0, 12)}</p>
+    <details className="mt-3 border-t border-border pt-2">
+      <summary className="cursor-pointer text-xs font-medium">Dry-run fixtures</summary>
+      <p className="mt-2 text-[11px] text-muted-foreground">Enter a JSON array of explicit scenario fixtures. No workers, effects, or child runs are started.</p>
+      <Textarea aria-label={`Simulation fixtures for ${graph.id}`} className="mt-2 min-h-20 font-mono text-xs" value={fixtureText} onChange={(event) => setFixtureText(event.target.value)} />
+      <Button size="sm" className="mt-2" disabled={simulating} onClick={async () => {
+        setSimulationError(''); setSimulation(undefined); setSimulating(true)
+        try {
+          const fixture = JSON.parse(fixtureText)
+          if (!Array.isArray(fixture.scenarios)) throw new Error('Provide a JSON object with a scenarios array.')
+          setSimulation(await simulateCatalogWorkflow({ id: graph.id, version: graph.version, scenarios: fixture.scenarios, ...(fixture.compareTo ? { compareTo: fixture.compareTo } : {}) }))
+        } catch (error) { setSimulationError(error instanceof Error ? error.message : String(error)) }
+        finally { setSimulating(false) }
+      }}>{simulating ? 'Simulating…' : 'Simulate'}</Button>
+      {simulationError ? <p role="alert" className="mt-2 text-xs text-destructive">{simulationError}</p> : null}
+      {simulation ? <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-[10px]">{JSON.stringify(simulation, null, 2)}</pre> : null}
+    </details>
   </article>
 }
 
