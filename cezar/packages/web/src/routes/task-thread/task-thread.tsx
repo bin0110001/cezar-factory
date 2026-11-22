@@ -42,6 +42,7 @@ import { RunHeader } from './run-header'
 import { AskCard } from './ask-card'
 import { useRunRecordReconcile } from './run-reconcile'
 import { ThreadLoading } from './thread-loading'
+import { WorkflowExecutionPanel } from './workflow-execution-panel'
 import { threadRenderMode } from './thread-scroll'
 import { JumpToLatestPill, useThreadScroll } from './thread-scroller'
 import {
@@ -332,6 +333,7 @@ export function ThreadView({
             onLoad={scroll.loadOlder}
           />
         ) : null}
+        <WorkflowExecutionPanel runId={run.id} enabled={Boolean(run.workflowExecution)} />
         <SessionTranscript
           runId={run.id}
           viewId="main"
