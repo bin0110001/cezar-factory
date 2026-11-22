@@ -28,7 +28,7 @@ function result(over: Record<string, unknown> = {}) {
 function options(over: Partial<OcrPluginOptions> = {}): OcrPluginOptions {
   return {
     repoPath: '/workspace/repo', fromSha: FROM, toSha: TO, gatewayUrl: 'http://litellm:4000', gatewayToken: 'secret-token', modelAlias: 'reviewer',
-    budget: { maxTokens: 100, concurrency: 2, timeoutMinutes: 10 }, policyDigest: DIGEST, rulePath: '/workspace/rules/ocr.yaml', ruleDigest: DIGEST,
+    budget: { maxTokens: 100, concurrency: 2, timeoutMinutes: 10 }, policyDigest: DIGEST, rulePath: '/workspace/rules/ocr.json', ruleDigest: DIGEST,
     readUsage: async () => ({ tokens: 37, costUsd: 0.01, receiptId: 'receipt-1' }),
     exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? `ocr ${OCR_PROVIDER_VERSION}` : JSON.stringify(argv.includes('--preview') ? { manifest: manifest(), comments: [] } : result()) }),
     ...over,
@@ -50,26 +50,32 @@ describe('OCR provider adapter', () => {
     const calls: string[][] = [];
     const output = await ocrPlugin(options({ exec: async (argv) => {
       calls.push(argv);
-      return { exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : result()) };
+      return { exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : result()) };
     } })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     expect(calls.map((argv) => argv[1])).toEqual(['version', 'review', 'review']);
     expect(calls[1]).toContain('--preview');
     expect(output.unknown).toBeUndefined();
     expect(output.document).toMatchObject({ findings: [{ id: expect.stringMatching(/^ocr-/), path: 'src/example.ts', line: 4, reviewerSessionId: 'ocr-run-1', suggestion: 'if (value == null) return;' }] });
+    expect(output.ocrReviewEvidence).toMatchObject({
+      status: 'complete', baseSha: FROM, headSha: TO, sessionId: 'ocr-run-1',
+      usageReceiptId: 'receipt-1', usageTokens: 37, usageCostUsd: 0.01,
+      findings: [{ path: 'src/example.ts', line: 4, claim: 'Handle the missing null case.', suggestion: 'if (value == null) return;' }],
+    });
     expect(output.inputsDigest).toMatch(/^sha256:/);
   });
 
   it('preserves findings but marks partial coverage unknown even when CLI exits zero', async () => {
     const partial = result({ manifest: manifest({ terminal_state: 'partial', coverage: { selected: [{ path: 'src/example.ts' }], completed: [], reused: [], failed: [{ path: 'src/example.ts' }], waived: [] } }) });
-    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : partial) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
+    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : partial) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     expect(output.unknown).toBeTruthy();
     expect(output.document).toMatchObject({ findings: [{ path: 'src/example.ts' }] });
+    expect(output.ocrReviewEvidence?.status).toBe('incomplete');
   });
 
   it('distinguishes a complete clean review and fails closed when the manifest excludes work', async () => {
     const clean = result({ comments: [] });
     const excluded = result({ manifest: manifest({ coverage: { selected: [{ path: 'src/example.ts' }], completed: [{ path: 'src/example.ts' }], reused: [], failed: [], waived: [], excluded: [{ path: 'src/hidden.ts' }] } }) });
-    const run = (doc: unknown) => ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : doc) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
+    const run = (doc: unknown) => ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : doc) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     const cleanOutput = await run(clean);
     expect(cleanOutput.document).toMatchObject({ findings: [] });
     expect(cleanOutput.unknown).toBeUndefined();
@@ -81,7 +87,7 @@ describe('OCR provider adapter', () => {
       { path: 'src/example.ts', start_line: 4, content: 'Credential secret-token was committed.' },
       { path: '../outside.txt', start_line: 1, content: 'Unexpected outside path.' },
     ] });
-    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : leaked) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
+    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : leaked) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     const serialized = JSON.stringify(output);
     expect(serialized).not.toContain('secret-token');
     expect(serialized).not.toContain('outside.txt');
@@ -90,7 +96,7 @@ describe('OCR provider adapter', () => {
 
   it('rejects changed preview selection, over-budget usage and revision mismatch', async () => {
     const changedSelection = result({ manifest: manifest({ coverage: { selected: [{ path: 'src/other.ts' }], completed: [{ path: 'src/other.ts' }], reused: [], failed: [], waived: [] } }) });
-    const makeExec = (review: unknown) => async (argv: string[]) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : review) });
+    const makeExec = (review: unknown) => async (argv: string[]) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: manifest() } : review) });
     const run = (review: unknown, usage: OcrPluginOptions['readUsage'] = async () => ({ tokens: 37, costUsd: 0.01, receiptId: 'r' })) => ocrPlugin(options({ exec: makeExec(review), readUsage: usage })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     expect((await run(changedSelection)).unknown).toBeTruthy();
     expect((await run(result(), async () => ({ tokens: 101, costUsd: 0.01, receiptId: 'r' }))).unknown).toBeTruthy();
@@ -101,13 +107,13 @@ describe('OCR provider adapter', () => {
     const coverage = { selected: [{ path: 'src/example.ts' }, { path: 'src/second.ts' }], completed: [{ path: 'src/example.ts' }, { path: 'src/example.ts' }], reused: [], failed: [], waived: [] };
     const duplicated = result({ manifest: manifest({ coverage }) });
     const preview = manifest({ coverage: { ...coverage, completed: [], failed: [], waived: [] } });
-    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify(argv.includes('--preview') ? { manifest: preview } : duplicated) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
+    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify(argv.includes('--preview') ? { manifest: preview } : duplicated) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     expect(output.unknown).toBeTruthy();
   });
 
   it('returns not-applicable only when preview finds no supported changed files', async () => {
     const none = manifest({ coverage: { selected: [], completed: [], reused: [], failed: [], waived: [] } });
-    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.0' : JSON.stringify({ manifest: none }) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
+    const output = await ocrPlugin(options({ exec: async (argv) => ({ exitCode: 0, stdout: argv[1] === 'version' ? 'ocr v1.14.1' : JSON.stringify({ manifest: none }) }) })).run({ signal: new AbortController().signal, sourceSha: TO, definition: {} as never, scope: 'diff' });
     expect(output.notApplicable).toBe('no supported changed files');
   });
 

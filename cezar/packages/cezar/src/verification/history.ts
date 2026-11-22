@@ -211,7 +211,8 @@ function episodeRows(all: HistoryRecord[], forRun?: string) {
 }
 
 function makeItems(all: HistoryRecord[], query: VerificationQueryInput): QueryItem[] {
-  const records = query.runId ? all.filter((record) => record.result.verificationId === query.runId) : all;
+  const records = all.filter((record) => (!query.runId || record.result.verificationId === query.runId)
+    && (!query.commitSha || record.result.commitSha.toLowerCase() === query.commitSha.toLowerCase()));
   const entries: QueryItem[] = [];
   const add = (record: HistoryRecord, itemId: string, body: Record<string, unknown>) => {
     if (query.status && String(body.status ?? '') !== query.status) return;
@@ -237,7 +238,11 @@ function makeItems(all: HistoryRecord[], query: VerificationQueryInput): QueryIt
           episodes: new Set(result.checks.flatMap((check) => check.findingFingerprint ? [check.findingFingerprint] : [])).size,
           artifacts: refs.length,
         },
-        checks: result.checks.map((check) => ({ checkId: check.checkId, status: check.status, durationMs: check.durationMs, metrics: safeMetrics(check.metrics), ...(check.findingFingerprint ? { findingFingerprint: check.findingFingerprint } : {}) })),
+        checks: result.checks.map((check) => ({
+          checkId: check.checkId, status: check.status, durationMs: check.durationMs, metrics: safeMetrics(check.metrics),
+          ...(check.findingFingerprint ? { findingFingerprint: check.findingFingerprint } : {}),
+          ...(check.ocrReviewEvidence ? { ocrReviewEvidence: check.ocrReviewEvidence } : {}),
+        })),
         codingEvidence: record.codingEvidence,
       });
     } else if (query.kind === 'selected' || query.kind === 'deferred') {
@@ -278,7 +283,7 @@ function makeItems(all: HistoryRecord[], query: VerificationQueryInput): QueryIt
 export async function queryVerificationHistory(context: ProjectContext, query: VerificationQueryInput) {
   const all = await readHistory(context);
   const items = makeItems(all, query);
-  const queryHash = createHash('sha256').update(JSON.stringify({ kind: query.kind, runId: query.runId ?? '', status: query.status ?? '' })).digest('hex');
+  const queryHash = createHash('sha256').update(JSON.stringify({ kind: query.kind, runId: query.runId ?? '', status: query.status ?? '', commitSha: query.commitSha?.toLowerCase() ?? '' })).digest('hex');
   let after: { startedAt: string; runId: string; itemId: string } | undefined;
   if (query.cursor) {
     const decoded = cursorDecode(query.cursor, queryHash);
@@ -291,7 +296,7 @@ export async function queryVerificationHistory(context: ProjectContext, query: V
   let page = remaining.slice(0, query.pageSize);
   const build = (rows: QueryItem[], hasMore: boolean) => ({
     schemaVersion: 1 as const, kind: query.kind,
-    query: { runId: query.runId ?? '', status: query.status ?? '', pageSize: query.pageSize },
+    query: { runId: query.runId ?? '', status: query.status ?? '', commitSha: query.commitSha?.toLowerCase() ?? '', pageSize: query.pageSize },
     items: rows.map((item) => item.body),
     page: { returned: rows.length, hasMore, nextCursor: hasMore && rows.length ? cursorEncode(rows[rows.length - 1]!.key, queryHash) : null },
     limits: { inlineBytes: INLINE_BYTES, excerptChars: EXCERPT_CHARS, maxResponseBytes: MAX_RESPONSE_BYTES },

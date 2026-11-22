@@ -3,6 +3,7 @@ import { evaluateScannerTrust } from '../scanner-trust-policy.js';
 import {
   deriveCheckStatus, type CheckDefinition, type CheckResult, type CheckStatus,
 } from './check-provider.js';
+import type { VerificationOcrReviewEvidence } from '@open-mercato/cezar-contract';
 import {
   mergeByFingerprint, normalizeGenericJson, normalizeSarif, type NormalizedFinding,
 } from './normalized-findings.js';
@@ -36,6 +37,8 @@ export interface PluginRunOutput {
   notApplicable?: string;
   /** Verified identity of the scanner that actually ran. */
   observed?: { digest?: string; signer?: string; binaryPresent?: boolean };
+  /** Revision-bound OCR report and matching LiteLLM usage receipt, persisted as review evidence. */
+  ocrReviewEvidence?: VerificationOcrReviewEvidence;
 }
 
 export interface CheckProviderPlugin {
@@ -78,6 +81,7 @@ export interface RunCheckOutcome {
   findings: NormalizedFinding[];
   provenance: Provenance;
   cacheHit: boolean;
+  ocrReviewEvidence?: VerificationOcrReviewEvidence;
 }
 
 const sha = (v: unknown) => `sha256:${createHash('sha256').update(JSON.stringify(v)).digest('hex')}`;
@@ -184,6 +188,7 @@ export async function runCheck(opts: RunCheckOptions): Promise<RunCheckOutcome> 
   const outcome: RunCheckOutcome = {
     result: { checkId: def.id, provider: def.provider, status, execution: 'completed', feed, findingCount: active.length, blockingFindingCount: blocking, ...(output.unknown ? { reason: output.unknown.slice(0, 500) } : {}) },
     findings, provenance: prov, cacheHit: false,
+    ...(output.ocrReviewEvidence ? { ocrReviewEvidence: output.ocrReviewEvidence } : {}),
   };
   // Only a clean, fresh run is reusable; failures and stale feeds are always re-evaluated.
   if (cacheOn && feed !== 'stale') opts.cache!.set(key, outcome, now.getTime());

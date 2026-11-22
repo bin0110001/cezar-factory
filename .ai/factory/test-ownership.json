@@ -3,6 +3,11 @@
   "unmapped": "full",
   "checks": [
     {
+      "id": "ocr-worker-container",
+      "patterns": ["cezar/compose.yaml", "cezar/ocr-worker/**"],
+      "command": "Push-Location cezar; node --check ocr-worker/server.mjs; if ($LASTEXITCODE -ne 0) { throw 'OCR worker syntax check failed.' }; node ocr-worker/validate.mjs; if ($LASTEXITCODE -ne 0) { throw 'OCR worker compose or rules parsing failed.' }; Pop-Location"
+    },
+    {
       "id": "factory-failure-repair",
       "patterns": ["scripts/repair-latest-failure.py", "tests/test_factory_failure_repair.py", "config/known-failures.json", "config/failure-repair.json.example", "skills/factory-repair-latest-failure/**"],
       "command": "$runner = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } elseif (Get-Command python3.12 -ErrorAction SilentlyContinue) { 'python3.12' } else { 'py' }; $args = if ($runner -eq 'py') { @('-3', '-B', '-m', 'unittest', 'tests.test_factory_failure_repair') } else { @('-B', '-m', 'unittest', 'tests.test_factory_failure_repair') }; & $runner @args; if ($LASTEXITCODE -ne 0) { throw 'Failure repair regression tests failed.' }"

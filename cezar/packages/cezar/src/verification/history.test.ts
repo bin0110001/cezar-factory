@@ -180,6 +180,26 @@ describe('verification history query', () => {
     expect(second).toMatchObject({ kind: 'runs', items: [{ id: 'verify-1' }], page: { hasMore: false } });
   });
 
+  it('filters review evidence by exact commit SHA and returns only the bound OCR receipt', async () => {
+    const { context, owners } = await fixture();
+    const exact = record('verify-ocr-final', '2026-11-10T10:00:00.000Z', 'passed', undefined, { commitSha: 'b'.repeat(40), baseSha: 'a'.repeat(40) });
+    const evidence = {
+      providerVersion: '1.14.1', baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), status: 'complete', sessionId: 'ocr-final',
+      usageReceiptId: 'usage-final', usageTokens: 27, usageCostUsd: 0.01, rulesDigest: `sha256:${'c'.repeat(64)}`,
+      policyDigest: `sha256:${'d'.repeat(64)}`, findings: [{ path: 'src/review.ts', line: 12, claim: 'The bounds check is missing.' }],
+    } as const;
+    exact.result = verificationRunSchema.parse({
+      ...exact.result,
+      checks: exact.result.checks.map((check) => ({ ...check, ocrReviewEvidence: evidence })),
+    });
+    owners.unshift({ id: exact.id, worktree: false, result: exact.result, selection: exact.selection,
+      events: [{ seq: 1, ts: exact.result.finishedAt, type: 'verification-result', result: exact.result, selection: exact.selection, suite: 'review' }] });
+    const page = await queryVerificationHistory(context, { kind: 'runs', commitSha: 'B'.repeat(40), pageSize: 10 });
+    expect(page).toMatchObject({ kind: 'runs', query: { commitSha: 'b'.repeat(40) }, items: [{ id: exact.id, checks: [{ ocrReviewEvidence: { headSha: 'b'.repeat(40), usageReceiptId: 'usage-final' } }] }] });
+    const stale = await queryVerificationHistory(context, { kind: 'runs', commitSha: 'c'.repeat(40), pageSize: 10 });
+    expect(stale).toMatchObject({ kind: 'runs', items: [] });
+  });
+
   it('returns selection reasons and groups repeated findings as known episodes', async () => {
     const { context } = await fixture();
     const selected = await queryVerificationHistory(context, { kind: 'selected', runId: 'verify-2', pageSize: 10 });
