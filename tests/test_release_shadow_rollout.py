@@ -180,6 +180,38 @@ class Rollout(unittest.TestCase):
         empty = ro.release_metrics([], since=0, until=7 * day)
         self.assertEqual((empty["releases"], empty["meanRepairHours"]), (0, None))  # nothing is invented
 
+    def test_workflow_pilot_metrics_are_bounded_aggregate_only_and_missing_is_unavailable(self):
+        now = 100 * 86400.0
+        events = [
+            {"at": now - 86400, "reviewOutcome": "confirmed", "findingState": "confirmed", "liveness": "progress",
+             "costUsd": 0.25, "tokens": 1200, "evidenceAt": now - 3600, "privateId": "ghp_abcdefghijk"},
+            {"at": now - 3600, "reviewOutcome": "false-positive", "findingState": "false-positive", "liveness": "stalled",
+             "repeatedLoop": True, "costUsd": 0.75, "evidenceAt": now - 40 * 86400, "privateId": "secret=not-for-report"},
+            {"at": now - 40 * 86400, "reviewOutcome": "confirmed", "costUsd": 99},  # outside window
+        ]
+        report = ro.workflow_pilot_metrics(events, now=now, window_days=30)
+        self.assertEqual(report["review"], {"observations": 2, "confirmed": 1, "unconfirmed": 0, "falsePositives": 1,
+                                             "confirmationRate": 0.5, "falsePositiveRate": 0.5})
+        self.assertEqual(report["workflow"], {"observations": 2, "stalls": 1, "repeatedLoops": 1, "stallRate": 0.5})
+        self.assertEqual(report["spend"], {"costObservations": 2, "costUsd": 1.0, "tokenObservations": 1, "tokens": 1200})
+        self.assertEqual(report["evidenceFreshness"], {"observations": 2, "current": 1, "stale": 1, "currentRate": 0.5})
+        self.assertNotIn("privateId", json.dumps(report))
+        self.assertNotIn("ghp_", json.dumps(report))
+        future = ro.workflow_pilot_metrics([{"at": now, "evidenceAt": now + 10}], now=now)
+        self.assertEqual(future["evidenceFreshness"]["observations"], 0)
+        empty = ro.workflow_pilot_metrics([], now=now)
+        self.assertIsNone(empty["review"]["confirmationRate"])
+        self.assertIsNone(empty["workflow"]["stallRate"])
+        self.assertIsNone(empty["spend"]["costUsd"])
+        self.assertIsNone(empty["evidenceFreshness"]["currentRate"])
+        self.assertEqual(ro.workflow_pilot_metrics([{"at": now, "costUsd": 5}], now=now, max_events=1)["spend"]["costUsd"], 5)
+        with self.assertRaises(ValueError):
+            ro.workflow_pilot_metrics([], now=now, max_events=0)
+        with self.assertRaises(ValueError):
+            ro.workflow_pilot_metrics([], now=now, max_events=ro.MAX_PILOT_METRIC_EVENTS + 1)
+        with self.assertRaises(ValueError):
+            ro.workflow_pilot_metrics([], now=now, window_days=ro.MAX_PILOT_METRIC_WINDOW_DAYS + 1)
+
 
 def pilot():
     return json.loads((ROOT / "config" / "release-pipeline.pilot.example.json").read_text(encoding="utf8"))
@@ -193,6 +225,7 @@ class Pilots(unittest.TestCase):
         a, b = cfg.effective_config(pilot(), "cezar-factory"), cfg.effective_config(pilot(), "tableflux")
         self.assertEqual((a["triggers"]["schedule"]["frequency"], b["triggers"]["schedule"]["frequency"]), ("daily", "weekly"))
         self.assertEqual(b["triggers"]["schedule"]["dayOfWeek"], "thursday")
+        self.assertEqual((a["tests"]["suites"], b["tests"]["suites"]), (["full-suite"], ["unit", "e2e"]))
         self.assertNotEqual(cfg.config_hash(a), cfg.config_hash(b))
         text = json.dumps(pilot()).lower()
         for word in ("gpu", "hardware", "host", "bazzite"):
