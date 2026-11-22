@@ -55,6 +55,7 @@ import { loadConfig, resolveWorktreeRetention } from '../config.ts';
 import { autosaveCommit, chooseForkBase, createWorktree, removeWorktree, worktreeDiff, worktreeShortstat } from '../git-worktree.ts';
 import { getHeadCommit, getRepoInfo } from '../server/git.ts';
 import { loadVersionedWorkflows, loadWorkflows } from './load.ts';
+import { releaseCandidatePromotionGate } from '../release-candidates/workflow-gates.ts';
 import type { QueuedMessage, RunRecord, RunStore, StepState } from '../runs/store.ts';
 // Task dispatch (spec 2026-09-10-dispatch). Every import below is inert unless the feature is
 // ON *and* the run carries a `dispatch`: `dispatchOf()` is the single gate, and a run without one
@@ -955,6 +956,28 @@ export interface VersionedWorkflowActionAdapter {
   >;
 }
 
+export interface VersionedWorkflowPolicyGateRequest {
+  runId: string;
+  workflowId: string;
+  workflowVersion: string;
+  nodeId: string;
+  policy: string;
+  projectId?: string;
+  task: string;
+  inputs: Record<string, unknown>;
+  priorOutputs: Record<string, Record<string, unknown>>;
+}
+
+export interface VersionedWorkflowPolicyGateResult {
+  outcome: WorkflowOutcome;
+  outputs?: Record<string, unknown>;
+}
+
+/** Policy gates are read-only evaluators. Missing policy handlers fail closed. */
+export interface VersionedWorkflowPolicyGateAdapter {
+  evaluate(request: VersionedWorkflowPolicyGateRequest): Promise<VersionedWorkflowPolicyGateResult> | VersionedWorkflowPolicyGateResult;
+}
+
 // Metadata belongs to the original in-memory block, never the vendor protocol. Queue
 // persistence files the library copy before serializing; deferred delivery retains the block.
 const imageLibraryNames = new WeakMap<ContentBlock, string>();
@@ -1120,6 +1143,7 @@ export class RunManager {
   private readonly versionedBudgetTimers = new Map<string, NodeJS.Timeout>();
   private readonly versionedActionPromises = new Map<string, Promise<void>>();
   private versionedWorkflowActions: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
+  private readonly versionedWorkflowPolicyGates: Readonly<Record<string, VersionedWorkflowPolicyGateAdapter>>;
   private readonly verificationProviders: Readonly<Record<string, VerificationProviderFactory>>;
   private pumping = false;
   /** A pump that arrived while one was in flight — replayed by `pump()`'s own
@@ -1223,6 +1247,8 @@ export class RunManager {
       resolveTrackerEnv?: (root: string, expected: TrackerAssociation | undefined) => Promise<Record<string, string>>;
       /** Code-registered, idempotent action adapters; absent actions fail closed. */
       versionedWorkflowActions?: Readonly<Record<string, VersionedWorkflowActionAdapter>>;
+      /** Code-registered read-only policy gates; absent policies fail closed. */
+      versionedWorkflowPolicyGates?: Readonly<Record<string, VersionedWorkflowPolicyGateAdapter>>;
       /** Code-registered isolated verification providers selected by project-owned YAML suites. */
       verificationProviders?: Readonly<Record<string, VerificationProviderFactory>>;
     } = {},
@@ -1231,6 +1257,10 @@ export class RunManager {
     this.projectId = options.projectId;
     this.resolveTrackerEnv = options.resolveTrackerEnv;
     this.versionedWorkflowActions = options.versionedWorkflowActions ?? {};
+    this.versionedWorkflowPolicyGates = {
+      [releaseCandidatePromotionGate.policy]: { evaluate: releaseCandidatePromotionGate.evaluate },
+      ...options.versionedWorkflowPolicyGates,
+    };
     this.verificationProviders = options.verificationProviders ?? {};
     this.lifecycleStartup = getHeadCommit(repoRoot).then(async (head) => {
       if (!head) return;
@@ -1775,7 +1805,7 @@ export class RunManager {
     const tokenBudgetError = this.versionedTokenBudgetError(runId);
     if (tokenBudgetError) return this.failVersionedRun(runId, tokenBudgetError);
     const nodeId = execution.ready[0] ?? [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
-      && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && ['action', 'agent', 'child_workflow', 'fork', 'return', 'verification'].includes(candidate.kind)))?.node;
+      && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && ['action', 'agent', 'child_workflow', 'fork', 'return', 'verification', 'policy_gate'].includes(candidate.kind)))?.node;
     if (!nodeId) {
       const activeFork = [...execution.attempts].reverse().find((attempt) => attempt.status === 'running'
         && execution.workflow.nodes.some((candidate) => candidate.id === attempt.node && candidate.kind === 'fork'));
@@ -1801,6 +1831,14 @@ export class RunManager {
       this.store.updateRun(runId, { workflowExecution: claimedVerification.execution, status: 'running' });
       this.armVersionedAttemptTimeout(runId, claimedVerification.transitionId);
       void this.executeVersionedVerification(runId, nodeId, claimedVerification.transitionId);
+      return;
+    }
+    if (node?.kind === 'policy_gate') {
+      const claimedGate = beginWorkflowNode(execution, nodeId);
+      if (claimedGate.error || !claimedGate.transitionId) return this.failVersionedRun(runId, claimedGate.error ?? `policy gate node "${nodeId}" could not start`);
+      this.store.updateRun(runId, { workflowExecution: claimedGate.execution, status: 'running' });
+      this.armVersionedAttemptTimeout(runId, claimedGate.transitionId);
+      void this.executeVersionedPolicyGate(runId, nodeId, claimedGate.transitionId);
       return;
     }
     if (node?.kind === 'fork') {
@@ -1874,6 +1912,42 @@ export class RunManager {
     this.attachVersionedChild(runId, claimed.transitionId, dispatched.id);
     const child = this.store.getRun(dispatched.id);
     if (child && isTerminalStatus(child.status)) this.advanceVersionedChild(child);
+  }
+
+  private async executeVersionedPolicyGate(runId: string, nodeId: string, transitionId: string): Promise<void> {
+    const run = this.store.getRun(runId);
+    const execution = run?.workflowExecution;
+    const node = execution?.workflow.nodes.find((candidate) => candidate.id === nodeId);
+    if (!run || !execution || !node || node.kind !== 'policy_gate') return;
+    const adapter = this.versionedWorkflowPolicyGates[node.policy];
+    if (!adapter) return this.failVersionedRun(runId, `policy gate "${node.policy}" has no registered read-only evaluator`);
+    try {
+      const result = await adapter.evaluate({
+        runId,
+        workflowId: execution.workflow.id,
+        workflowVersion: execution.workflow.version,
+        nodeId,
+        policy: node.policy,
+        ...(this.projectId ? { projectId: this.projectId } : {}),
+        task: run.task,
+        inputs: execution.inputs,
+        priorOutputs: execution.outputs,
+      });
+      const outcome = workflowOutcomeSchema.safeParse(result.outcome);
+      if (!outcome.success || !node.outcomes.includes(outcome.data)) {
+        return this.failVersionedRun(runId, `policy gate "${node.policy}" returned an undeclared outcome`);
+      }
+      const outputs = result.outputs ?? {};
+      const outputError = validateWorkflowNodeOutputs(node, outputs);
+      if (outputError) return this.failVersionedRun(runId, outputError);
+      this.finishVersionedNode(runId, nodeId, transitionId, outcome.data, outputs);
+    } catch {
+      if (node.outcomes.includes('unknown')) {
+        this.finishVersionedNode(runId, nodeId, transitionId, 'unknown', { reasonCode: 'policy-evaluator-error' });
+      } else {
+        this.failVersionedRun(runId, `policy gate "${node.policy}" could not produce an authoritative result`);
+      }
+    }
   }
 
   private async executeVersionedVerification(runId: string, nodeId: string, transitionId: string): Promise<void> {

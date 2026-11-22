@@ -16,6 +16,17 @@ the three-stage pipeline adopts.
 - freshness of dev: `allow` (an older tested candidate still promotes while dev has moved on), `warn`, or `block`;
 - the SHA is not quarantined by an earlier failed activation.
 
+## Typed workflow handoff
+
+`workflows/release-candidate-promotion.workflow.json` is a read-only child-workflow handoff. It waits for a human event, then checks the
+current Cezar release snapshot against the supplied candidate ID, SHA, and revision. The gate returns `passed` only when the host release
+engine has advanced that exact candidate to `promoting`, the snapshot is at most ten minutes old, the lease is live, required tests pass,
+and no blocking check or candidate blocker remains. A resume by itself cannot authorize promotion; an `awaiting-approval` candidate returns
+`needs_input`. Missing, stale, mismatched, or incomplete evidence returns a non-passing outcome.
+
+The host release engine and `release_promotion.authorize` remain authoritative for the actual human/operator approval, manifest binding,
+stable ref movement, and activation. The workflow gate records no approval, moves no ref, and performs no deployment.
+
 ## Two phases
 
 1. **Ref.** `begin` records the authorized promotion; a partial unique index allows one in-progress promotion per project
