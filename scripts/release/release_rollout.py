@@ -7,10 +7,13 @@ touches a successful stable release.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
 ENGINES = ("legacy", "shadow", "new")
+MAX_PILOT_METRIC_EVENTS = 10_000
+MAX_PILOT_METRIC_WINDOW_DAYS = 365
 UTC = timezone.utc
 
 
@@ -82,7 +85,7 @@ def rollback_drill(flags: dict[str, Any] | None, project: str, git: Any, *, stab
 # ---- metrics -------------------------------------------------------------------------------------------------------
 def _ts(v: Any) -> float | None:
     if isinstance(v, (int, float)):
-        return float(v)
+        return float(v) if math.isfinite(v) else None
     if isinstance(v, str):
         try:
             return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
@@ -122,3 +125,61 @@ def compare_periods(records: list[dict[str, Any]], *, cutover: float, before_day
     delta = {k: (round(after[k] - before[k], 3) if isinstance(after[k], (int, float)) and isinstance(before[k], (int, float)) else None)
              for k in ("releasesPerWeek", "computeHours", "mergeConflicts", "meanRepairHours")}
     return {"before": before, "after": after, "delta": delta}
+
+
+def workflow_pilot_metrics(events: list[dict[str, Any]], *, now: float, window_days: float = 30,
+                           max_events: int = 10_000) -> dict[str, Any]:
+    """Summarize optional workflow evidence from existing run/telemetry events.
+
+    This is an aggregate-only read model, not an event store. Callers pass the existing events;
+    old, malformed, and excess records are ignored. Missing evidence is ``None`` (unavailable),
+    never a zero rate. Event details and identifiers are deliberately not returned.
+    """
+    if (not math.isfinite(now) or not math.isfinite(window_days) or window_days <= 0 or
+            window_days > MAX_PILOT_METRIC_WINDOW_DAYS or max_events < 1 or max_events > MAX_PILOT_METRIC_EVENTS):
+        raise ValueError(f"window_days must be within 1..{MAX_PILOT_METRIC_WINDOW_DAYS} and max_events within 1..{MAX_PILOT_METRIC_EVENTS}")
+    # Bound work even when the upstream store has a long history. The newest bounded tail is enough
+    # for a pilot window and avoids copying unbounded telemetry into a report.
+    selected = [event for event in events[-max_events:] if isinstance(event, dict)]
+    since = now - window_days * 86400
+    inside = []
+    for event in selected:
+        at = _ts(event.get("at") if event.get("at") is not None else event.get("ts"))
+        if at is not None and since <= at <= now:
+            inside.append(event)
+
+    reviews = [e.get("reviewOutcome") for e in inside if e.get("reviewOutcome") in ("confirmed", "unconfirmed", "false-positive")]
+    finding_states = [e.get("findingState") for e in inside if e.get("findingState") in ("confirmed", "needs-verification", "false-positive")]
+    liveness = [e.get("liveness") for e in inside if e.get("liveness") in ("stalled", "progress", "waiting", "ok", "unknown")]
+    costs = [e["costUsd"] for e in inside if isinstance(e.get("costUsd"), (int, float)) and not isinstance(e.get("costUsd"), bool) and math.isfinite(e["costUsd"]) and e["costUsd"] >= 0]
+    tokens = [e["tokens"] for e in inside if isinstance(e.get("tokens"), int) and not isinstance(e.get("tokens"), bool) and e["tokens"] >= 0]
+    evidence = []
+    for event in inside:
+        stamp = _ts(event.get("evidenceAt"))
+        if stamp is not None and stamp <= now:
+            evidence.append(now - stamp <= window_days * 86400)
+
+    def rate(n: int, denominator: int) -> float | None:
+        return round(n / denominator, 4) if denominator else None
+
+    fp = sum(value == "false-positive" for value in reviews)
+    confirmed = sum(value == "confirmed" for value in reviews)
+    stalls = sum(value == "stalled" for value in liveness)
+    loops = sum(event.get("repeatedLoop") is True for event in inside)
+    return {
+        "windowDays": window_days,
+        "eventsObserved": len(inside),
+        "review": {"observations": len(reviews), "confirmed": confirmed,
+                   "unconfirmed": sum(value == "unconfirmed" for value in reviews), "falsePositives": fp,
+                   "confirmationRate": rate(confirmed, len(reviews)), "falsePositiveRate": rate(fp, len(reviews))},
+        "findings": {"observations": len(finding_states), "confirmed": sum(v == "confirmed" for v in finding_states),
+                     "unconfirmed": sum(v == "needs-verification" for v in finding_states),
+                     "falsePositives": sum(v == "false-positive" for v in finding_states)},
+        "workflow": {"observations": len(liveness), "stalls": stalls, "repeatedLoops": loops,
+                     "stallRate": rate(stalls, len(liveness))},
+        "spend": {"costObservations": len(costs), "costUsd": round(sum(costs), 6) if costs else None,
+                  "tokenObservations": len(tokens), "tokens": sum(tokens) if tokens else None},
+        "evidenceFreshness": {"observations": len(evidence), "current": sum(evidence),
+                              "stale": len(evidence) - sum(evidence),
+                              "currentRate": rate(sum(evidence), len(evidence))},
+    }
