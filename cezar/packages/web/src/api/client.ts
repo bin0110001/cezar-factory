@@ -2,7 +2,7 @@ import { trackerReadScope, fullRegressionRunResponseSchema, verificationQueryRes
 import type { VerificationQueryInput, VerificationQueryResponse, VerificationArtifactContent, ReliabilityAnalyticsResponse, VerificationEvidenceResponse } from '@open-mercato/cezar-api-client'
 import { decisionsResponseSchema, answerDecisionResponseSchema, type AnswerDecisionBody, type AnswerDecisionResponse, type DecisionsResponse } from '@open-mercato/cezar-contract'
 import type { TrackerAutomationOptions } from '@open-mercato/cezar-api-client'
-import type { VersionedWorkflowCatalog, WorkflowExecutionView } from '@open-mercato/cezar-contract'
+import { workflowSimulationResponseSchema, type VersionedWorkflowCatalog, type WorkflowCatalogSimulationRequest, type WorkflowExecutionView, type WorkflowSimulationResponse } from '@open-mercato/cezar-contract'
 import type { FactoryControlCenterResponse, ReleaseCandidatesResponse, CandidateActionRequest, CandidateActionResponse, PipelinePolicyDocumentResponse, PipelinePolicyPreviewRequest, PipelinePolicyPreviewResponse, PipelinePolicySaveRequest, PipelinePolicySaveResponse, ReleaseHistoryResponse, ReleaseMetricsResponse, WaiverRequest, WaiverResponse, QualityDryRunRequest, QualityDryRunResponse } from '@open-mercato/cezar-api-client'
 import { trackerWatchHandleSchema, trackerWatchSnapshotSchema, type TrackerWatchInput } from "@open-mercato/cezar-api-client"
 import type { DependencyGraphEdge, DependencyCyclePlanDispatch, DependencyCyclePlanDispatchResponse, DependencyCycleRepairApply, DependencyCycleRepairReject, DependencyCycleRepairRollback, DependencyCycleRepairResult, DependencyCycleRepairRejectResponse, DependencyDecisionResearchDispatch, DependencyDecisionResearchDispatchResponse, DependencyGraphHistoricalTrends } from '@open-mercato/cezar-contract'
@@ -620,6 +620,13 @@ export async function getVersionedWorkflowCatalog(opts?: ReadOptions): Promise<V
   return unwrap(await cez.api.v1.p[':projectId'].workflows.versioned.$get(
     { param: { projectId: queryScope() } }, init(opts),
   ), '/workflows/versioned')
+}
+
+export async function simulateCatalogWorkflow(input: WorkflowCatalogSimulationRequest): Promise<WorkflowSimulationResponse> {
+  const response = await cez.api.v1.p[':projectId'].workflows['simulate-catalog'].$post(
+    { param: { projectId: queryScope() }, json: input }, init(),
+  )
+  return unwrapValidated(response, '/workflows/simulate-catalog', workflowSimulationResponseSchema)
 }
 
 export async function getRunWorkflowView(id: string, opts?: ReadOptions): Promise<WorkflowExecutionView> {
