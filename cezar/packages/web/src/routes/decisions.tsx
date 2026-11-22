@@ -22,8 +22,8 @@ import { Markdown } from './task-thread/markdown'
  * format, see `schemas/decision.schema.json`). Answering comments on the issue and returns it to
  * `factory:needs-plan`, so planning resumes through the normal workflow without a trip to GitHub.
  *
- * Older free-text escalations are augmented with context and suggested paths from the issue body
- * and escalation comments.
+ * Older free-text escalations show current planning findings and issue context, and require a
+ * written decision because they do not carry trustworthy structured option IDs.
  */
 
 type Choice = { optionId?: string; note: string }
@@ -32,6 +32,7 @@ type Choice = { optionId?: string; note: string }
 export function isAnswerable(decisions: readonly DecisionRequest[], choices: Record<string, Choice | undefined>): boolean {
   return decisions.every((d) => {
     const choice = choices[d.id]
+    if (d.options.length === 0) return choice !== undefined && choice.note.trim().length > 0
     return choice !== undefined && (choice.optionId !== undefined || choice.note.trim().length > 0)
   })
 }
@@ -285,14 +286,18 @@ function DecisionQuestion({
             )
           })}
         </div>
-      ) : null}
+      ) : (
+        <p data-slot="decision-written-answer-guidance" className="rounded-md bg-muted/30 p-3 text-[13px] text-muted-foreground">
+          This older decision has no reliable answer choices. Review the Factory findings above, then state the specific path you choose, why, and any constraints or trade-offs.
+        </p>
+      )}
 
       <Textarea
         data-slot="decision-note"
-        aria-label={hasOptions ? `Your own answer for: ${decision.question}` : `Your answer: ${decision.question}`}
+        aria-label={hasOptions ? `Your own answer for: ${decision.question}` : `Your decision (required): ${decision.question}`}
         value={choice?.note ?? ''}
         onChange={(event) => onNote(event.target.value)}
-        placeholder={hasOptions ? 'Add detail, or answer in your own words instead (optional)' : 'Write your answer…'}
+        placeholder={hasOptions ? 'Add detail, or answer in your own words instead (optional)' : 'Name the path you choose, why, and any constraints or trade-offs…'}
         maxLength={10_000}
         className="min-h-14 text-[13px]"
       />

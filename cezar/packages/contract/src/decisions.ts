@@ -26,9 +26,10 @@ export const decisionRequestSchema = z.object({
   id: z.string().min(1).max(40),
   question: z.string().min(1),
   context: z.string().trim().min(1),
-  options: z.array(decisionOptionSchema).min(2),
-  recommendedOptionId: z.string().min(1),
-}).refine((d) => d.options.some((o) => o.id === d.recommendedOptionId), { message: 'recommendedOptionId must match an option' });
+  /** Legacy asks have no trustworthy structured choices and must be answered in the user's words. */
+  options: z.array(decisionOptionSchema),
+  recommendedOptionId: z.string().min(1).optional(),
+}).refine((d) => d.recommendedOptionId === undefined || d.options.some((o) => o.id === d.recommendedOptionId), { message: 'recommendedOptionId must match an option' });
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
 
 /**
