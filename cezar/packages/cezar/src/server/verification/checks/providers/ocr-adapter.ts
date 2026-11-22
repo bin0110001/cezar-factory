@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { collectSecretValues, redactSecrets } from '../../../../core/secret-redaction.js';
 import type { CheckProviderPlugin, PluginRunOutput } from '../check-runner.js';
+import type { VerificationOcrReviewEvidence } from '@open-mercato/cezar-contract';
 
 /**
  * Alibaba Open Code Review adapter (#781). OCR is called only through the injected isolated-worker executor;
@@ -9,7 +10,7 @@ import type { CheckProviderPlugin, PluginRunOutput } from '../check-runner.js';
  * local-gateway-only egress, and a scrubbed environment containing only the explicit OCR variables below.
  */
 
-export const OCR_PROVIDER_VERSION = '1.14.0';
+export const OCR_PROVIDER_VERSION = '1.14.1';
 export const OCR_MANIFEST_SCHEMA = 'ocr.run-manifest/v1';
 
 export interface OcrExecResult { exitCode: number; stdout: string }
@@ -217,10 +218,32 @@ export function ocrPlugin(opts: OcrPluginOptions): CheckProviderPlugin {
       if (!Number.isSafeInteger(tokens) || Number(tokens) < 0 || Number(tokens) > opts.budget.maxTokens) incomplete = true;
       if (!usage || !Number.isSafeInteger(usage.tokens) || usage.tokens < 0 || !Number.isFinite(usage.costUsd) || usage.costUsd < 0 || !usage.receiptId || usage.tokens !== Number(tokens) || usage.tokens > opts.budget.maxTokens) incomplete = true;
 
+      const evidenceFindings = findings.slice(0, 100).flatMap((finding) => {
+        const path = string(finding.path);
+        const line = finding.line;
+        const claim = string(finding.title)?.slice(0, 2_000);
+        if (!path || !Number.isSafeInteger(line) || Number(line) < 1 || !claim) return [];
+        const suggestion = string(finding.suggestion)?.slice(0, 2_000);
+        return [{ path, line: Number(line), claim, ...(suggestion ? { suggestion } : {}) }];
+      });
+      if (findings.length > evidenceFindings.length || evidenceFindings.length !== findings.length) incomplete = true;
+      const ocrReviewEvidence: VerificationOcrReviewEvidence | undefined = sessionId ? {
+        providerVersion: expectedVersion,
+        baseSha: opts.fromSha,
+        headSha: opts.toSha,
+        status: incomplete ? 'incomplete' : 'complete',
+        sessionId,
+        ...(usage ? { usageReceiptId: usage.receiptId, usageTokens: usage.tokens, usageCostUsd: usage.costUsd } : {}),
+        rulesDigest: opts.ruleDigest,
+        policyDigest: opts.policyDigest,
+        findings: evidenceFindings,
+      } : undefined;
+
       // Keep recovered findings even when coverage/budget is incomplete, but never convert that run into a clean pass.
       return {
         format: 'json', document: { findings },
         ...(incomplete ? { unknown: 'OCR review incomplete, failed, uncovered, over budget, or missing gateway usage receipt' } : {}),
+        ...(ocrReviewEvidence ? { ocrReviewEvidence } : {}),
         ...await common(),
       };
     },

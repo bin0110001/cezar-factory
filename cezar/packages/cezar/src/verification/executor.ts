@@ -8,7 +8,7 @@ import { nodeScriptCommand } from '../core/disclaim-spawn.ts';
 import {
   VERIFICATION_LIMITS, aggregateRoleEvidence, verificationCheckRunSchema, verificationManifestSchema, verificationRunSchema,
   type VerificationArtifactRef, type VerificationCheckRun, type VerificationManifest, type VerificationRendererFingerprint,
-  type VerificationRoleExpectation, type VerificationRun,
+  type VerificationOcrReviewEvidence, type VerificationRoleExpectation, type VerificationRun,
 } from '@open-mercato/cezar-contract';
 import { collectSecretValues, redactSecrets } from '../core/secret-redaction.ts';
 import { fingerprintFinding, type FingerprintedFinding, type VerificationFindingKind } from './fingerprint.ts';
@@ -406,6 +406,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       },
     };
     let status: VerificationCheckRun['status'];
+    let ocrReviewEvidence: VerificationOcrReviewEvidence | undefined;
     let rawExitCode: number | null = null;
     let output = '';
     let truncated = false;
@@ -446,6 +447,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
             workerProfile: `verification-provider:${check.providerId}`, secrets: secretValues,
             now: () => new Date(),
           });
+          ocrReviewEvidence = outcome.ocrReviewEvidence;
           durationMs = Date.now() - started;
           const findings = outcome.findings.filter((finding) => finding.waiver.status === 'none');
           const diagnostics = findings.map((finding) => ({
@@ -505,6 +507,7 @@ export async function executeVerification(input: VerificationExecutionInput): Pr
       semanticExitCode: status === 'passed' ? 0 : status === 'failed' ? 1 : status === 'infrastructure-error' ? 3 : status === 'cancelled' ? 4 : 2,
       durationMs, outputPreview: safeOutput.slice(0, VERIFICATION_LIMITS.outputCharsPerCheck), outputTruncated: truncated,
       diagnostics: (context as VerificationAdapterContext & { providerDiagnostics?: VerificationCheckRun['diagnostics'] }).providerDiagnostics ?? [], metrics: [], coverage: { selected: 1, passed: status === 'passed' ? 1 : 0, skipped: status === 'skipped' ? 1 : 0 }, artifacts: [],
+      ...(ocrReviewEvidence ? { ocrReviewEvidence } : {}),
     };
     const executedCheckRun = structuredClone(checkRun);
     try {

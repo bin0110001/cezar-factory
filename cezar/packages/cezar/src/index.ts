@@ -47,6 +47,7 @@ import { resolveConfiguredFactoryRelease } from './factory-release/resolver.ts';
 
 import { runTrackerConnectionsCommand } from './server/tracker/connections-cli.ts';
 import { runWorkerProfilesCommand } from './server/verification/worker-profiles-cli.ts';
+import { createOcrVerificationProviders } from './server/verification/checks/providers/ocr-verification-provider.ts';
 import { runWorkflowSimulationCommand } from './workflows/simulation-cli.ts';
 
 const HELP = `cezar — local cockpit for AI agent tasks in your repo
@@ -261,7 +262,10 @@ async function serveCommand(
   // keepLive + recover() (#367): runs that were queued/running/waiting when
   // the previous process exited are re-queued or resumed instead of failed.
   const store = openStore(repoRoot, { keepLive: true });
-  const manager = new RunManager(store, repoRoot, { semaphore, projectId: bootProjectId, resolveTrackerEnv: resolveTrackerAgentEnv });
+  const manager = new RunManager(store, repoRoot, {
+    semaphore, projectId: bootProjectId, resolveTrackerEnv: resolveTrackerAgentEnv,
+    verificationProviders: createOcrVerificationProviders(),
+  });
   const providerAuth = new ProviderAuthService({ cwd: repoRoot });
   const workspaceEvents = new WorkspaceEventBus();
   const providerRuntimeAuth = new ProviderRuntimeAuthObserver(providerAuth, (status) => {
@@ -524,7 +528,9 @@ async function runCommand(
   // 2.5) — one refreshed semaphore, even with just one manager in play.
   const semaphore = new WorkspaceSemaphore();
   await semaphore.refresh();
-  const manager = new RunManager(store, repoRoot, { semaphore, projectId: project?.id });
+  const manager = new RunManager(store, repoRoot, {
+    semaphore, projectId: project?.id, verificationProviders: createOcrVerificationProviders(),
+  });
 
   store.on('event', ({ event }) => {
     switch (event.type) {

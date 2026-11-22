@@ -75,10 +75,10 @@ not done here (see the normalized findings note).
 
 ## Alibaba Open Code Review adapter (#781)
 
-`checks/providers/ocr-adapter.ts` adapts Alibaba Open Code Review CLI **v1.14.0** (Apache-2.0) through an injected
-executor. The adapter never launches a process itself. The executor must run the pinned binary in the isolated scanner
-worker with a read-only source checkout, disposable home directory, scrubbed environment, and egress restricted to the
-configured local LiteLLM gateway. The CLI receives full immutable base/head SHAs, a pinned read-only rules file, an
+`checks/providers/ocr-adapter.ts` adapts Alibaba Open Code Review CLI **v1.14.1** (Apache-2.0) through an authenticated
+worker client. The Cezar service never launches a process itself. The opt-in `cezar/ocr-worker` service runs the pinned
+CLI with a read-only checkout, disposable home directory, scrubbed environment, and a private network shared only with
+Cezar and the configured local LiteLLM gateway. The CLI receives full immutable base/head SHAs, a pinned read-only rules file, an
 explicit LiteLLM model alias, concurrency, timeout, and token limits. Endpoint, model alias, rules digest, policy/budget
 digest, tool version, and exact revisions are part of the cache input digest. Credentials are passed only through the explicit OCR token
 environment variable and never included in diagnostics.
@@ -112,7 +112,7 @@ verification:
       definition:
         id: ai-review
         category: ai-audit
-        provider: { name: ocr, version: 1.14.0, digest: sha256:<pinned-provider-digest> }
+        provider: { name: ocr, version: 1.14.1, digest: sha256:<pinned-provider-digest> }
         scopes: [baseline-diff]
         triggers: [manual]
         policy:

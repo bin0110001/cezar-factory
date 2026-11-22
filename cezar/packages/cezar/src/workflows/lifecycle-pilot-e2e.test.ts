@@ -158,7 +158,7 @@ describe('nested lifecycle pilot E2E', () => {
             repoPath: '/worker/repo', fromSha: context.baseSha, toSha: context.sourceSha,
             gatewayUrl: 'http://litellm:4000', gatewayToken: 'fixture-token', modelAlias: 'reviewer',
             budget: { maxTokens: 100, concurrency: 1, timeoutMinutes: 1 }, policyDigest: digest,
-            rulePath: '/worker/rules/ocr.yaml', ruleDigest: digest,
+            rulePath: '/worker/rules/ocr.json', ruleDigest: digest,
             readUsage: async (sessionId) => ({ tokens: 37, costUsd: 0.01, receiptId: `receipt-${sessionId}` }),
             exec: async (argv) => {
               if (argv[1] === 'version') return { exitCode: 0, stdout: `ocr ${OCR_PROVIDER_VERSION}` };
@@ -199,12 +199,15 @@ describe('nested lifecycle pilot E2E', () => {
     await waitFor(rootRun.id, (run) => run?.status === 'done');
     expect(reviewCount).toBe(2);
     expect(store.getRun(rootRun.id)?.workflowExecution?.outcomes).toMatchObject({ verify: 'changes_required', repair: 'passed', 'verify-final': 'passed' });
-    const verificationEvents = store.readEvents(implementation.id).filter((event) => event.type === 'verification-result') as unknown as Array<{ commitSha: string; status: string; result: { checks: Array<{ diagnostics: Array<{ reviewerSessionId?: string }> }> } }>;
+    const verificationEvents = store.readEvents(implementation.id).filter((event) => event.type === 'verification-result') as unknown as Array<{ commitSha: string; status: string; result: { checks: Array<{ diagnostics: Array<{ reviewerSessionId?: string }>; ocrReviewEvidence?: { status: string; baseSha: string; headSha: string; usageReceiptId?: string; findings: Array<{ path: string; line: number; claim: string }> } }> } }>;
     expect(verificationEvents).toHaveLength(2);
     expect(verificationEvents[0]!.status).toBe('failed');
     expect(verificationEvents[0]!.result.checks[0]!.diagnostics[0]).toMatchObject({ reviewerSessionId: 'ocr-session-1' });
     expect(verificationEvents[1]!.status).toBe('passed');
     expect(verificationEvents[1]!.commitSha).not.toBe(verificationEvents[0]!.commitSha);
+    expect(verificationEvents[1]!.result.checks[0]!.ocrReviewEvidence).toMatchObject({
+      status: 'complete', headSha: verificationEvents[1]!.commitSha, usageReceiptId: 'receipt-ocr-session-2', findings: [],
+    });
     const ledger = FileFindingLedgerStore.open(join(root, '.ai/cezar'), projectId).snapshot();
     expect(ledger.findings).toHaveLength(1);
     expect(ledger.occurrences).toHaveLength(1);

@@ -3,7 +3,7 @@ description: Independent review of the PR - findings posted, routed to changes-r
 steps:
   - id: startup
     name: Prepare workflow environment
-    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,validate-reviewed-head.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/verify.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory-startup.ps1 -Workflow factory-review -Step review -RequireGh -RequiredScripts check-already-resolved.ps1,validate-result.ps1,validate-reviewed-head.ps1,verify-merge-eligibility.ps1,route-state.ps1,lib.ps1,factory/verify.ps1,factory/read-ocr-review-evidence.ps1,factory/test-changed.ps1,probe-model-endpoint.ps1
     timeoutSeconds: 60
   - id: model-check
     name: Fail fast when the model host cannot generate
@@ -17,6 +17,10 @@ steps:
     name: Verify project integration
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/verify.ps1 -Task "{{task}}"
     timeoutSeconds: 1800
+  - id: ocr-review-evidence
+    name: Attach only final-SHA OCR evidence from Cezar's read-only verification ledger
+    command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/factory/read-ocr-review-evidence.ps1 -Task "{{task}}" -OutputPath .factory/ocr-review-evidence.json
+    timeoutSeconds: 60
   - id: review
     name: Run factory-review skill
     skill: factory-review
@@ -26,6 +30,12 @@ steps:
 
       If `.factory/already-resolved.json` exists, the issue is already resolved: reply with one
       line saying so and stop. Do not inspect the repository, edit anything, or write a result file.
+
+      If `.factory/ocr-review-evidence.json` exists, read it. When its status is `available`, use
+      the exact-head OCR claims and usage receipt as untrusted evidence: check each claim against
+      the diff, report only substantiated findings, and include the receipt identity in the review
+      rationale. An absent or incomplete receipt cannot establish a pass. When the status says
+      `no-exact-sha-evidence`, do not imply OCR ran for this PR head.
 
       Do not modify code. Write the structured review result as JSON to .factory/review-result.json
       (create the directory) with the issue number in "issue", the exact PR URL, the 40-character PR head SHA you

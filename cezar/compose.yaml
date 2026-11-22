@@ -15,6 +15,17 @@ services:
       - "127.0.0.1:4321:4321"
     environment:
       CEZ_REMOTE: "1"
+      CEZ_OCR_ENABLED: ${CEZ_OCR_ENABLED:-0}
+      CEZ_OCR_WORKER_URL: ${CEZ_OCR_WORKER_URL:-http://ocr-worker:8090}
+      CEZ_OCR_WORKER_TOKEN: ${OCR_WORKER_TOKEN:-}
+      CEZ_OCR_GATEWAY_URL: ${OCR_GATEWAY_URL:-http://litellm:4000/v1/chat/completions}
+      CEZ_OCR_MODEL_ALIAS: ${OCR_MODEL_ALIAS:-}
+      CEZ_OCR_RULE_PATH: /opt/ocr/rules.json
+      CEZ_OCR_RULE_DIGEST: ${OCR_RULE_DIGEST:-}
+      CEZ_OCR_POLICY_DIGEST: ${OCR_POLICY_DIGEST:-}
+    networks:
+      - default
+      - ocr-private
     volumes:
       # cezar state (project registry, agent accounts) and the agent CLIs' logins survive rebuilds.
       - cezar-home:/home/cezar/.cezar
@@ -27,6 +38,29 @@ services:
       - godot-versions:/opt/godot-versions
       # The repo cezar operates on (worktrees land in .ai/cezar/ inside it).
       - ${CEZAR_WORKSPACE:-.}:/workspace:Z
+  ocr-worker:
+    profiles: [ocr]
+    build:
+      context: ./ocr-worker
+    restart: unless-stopped
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 1g
+    cpus: 2
+    environment:
+      OCR_WORKER_TOKEN: ${OCR_WORKER_TOKEN:-}
+      OCR_GATEWAY_URL: ${OCR_GATEWAY_URL:-http://litellm:4000/v1/chat/completions}
+      OCR_GATEWAY_TOKEN: ${OCR_GATEWAY_TOKEN:-}
+      OCR_MODEL_ALIAS: ${OCR_MODEL_ALIAS:-}
+      OCR_REPO_ROOT: /workspace
+      OCR_RULE_PATH: /opt/ocr/rules.json
+    volumes:
+      - ${CEZAR_WORKSPACE:-.}:/workspace:ro,Z
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    networks: [ocr-private]
+    expose: [8090]
 volumes:
   cezar-home:
   claude-home:
@@ -35,3 +69,6 @@ volumes:
   opencode-data:
   opencode-config:
   godot-versions:
+networks:
+  ocr-private:
+    internal: true

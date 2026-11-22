@@ -158,6 +158,31 @@ export const verificationArtifactRefSchema = z.object({
 }).strict();
 export type VerificationArtifactRef = z.infer<typeof verificationArtifactRefSchema>;
 
+/** Final-revision OCR evidence carried with a typed verification result into the Factory review workflow. */
+export const verificationOcrReviewEvidenceSchema = z.object({
+  providerVersion: z.string().min(1).max(32),
+  baseSha: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  headSha: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  status: z.enum(['complete', 'incomplete']),
+  sessionId: z.string().min(1).max(128),
+  usageReceiptId: z.string().min(1).max(128).optional(),
+  usageTokens: z.number().int().nonnegative().optional(),
+  usageCostUsd: z.number().finite().nonnegative().optional(),
+  rulesDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  policyDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  findings: z.array(z.object({
+    path: relativePathSchema,
+    line: z.number().int().positive(),
+    claim: z.string().min(1).max(2_000),
+    suggestion: z.string().max(2_000).optional(),
+  }).strict()).max(100),
+}).strict().superRefine((evidence, ctx) => {
+  if (evidence.status === 'complete' && (!evidence.usageReceiptId || evidence.usageTokens === undefined || evidence.usageCostUsd === undefined)) {
+    ctx.addIssue({ code: 'custom', message: 'complete OCR evidence requires a matching usage receipt, token count and cost' });
+  }
+});
+export type VerificationOcrReviewEvidence = z.infer<typeof verificationOcrReviewEvidenceSchema>;
+
 export const verificationVisualRegionSchema = z.object({
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
@@ -294,6 +319,7 @@ export const verificationCheckRunSchema = z.object({
   findingStrategyId: z.string().min(1).max(128).optional(),
   findingStrategyVersion: z.number().int().positive().optional(),
   artifacts: z.array(verificationArtifactRefSchema).max(VERIFICATION_LIMITS.artifactRefsPerRun),
+  ocrReviewEvidence: verificationOcrReviewEvidenceSchema.optional(),
 }).strict().superRefine((check, ctx) => {
   if (check.findingStrategyId !== undefined || check.findingStrategyVersion !== undefined) {
     if (!check.findingFingerprint || !check.findingStrategyId || !check.findingStrategyVersion) {
@@ -409,6 +435,7 @@ export const verificationQueryInputSchema = z.object({
   kind: z.enum(verificationQueryKinds),
   runId: z.string().max(128).optional(),
   status: z.string().max(64).optional(),
+  commitSha: z.string().regex(/^[a-f0-9]{40,64}$/i).optional(),
   pageSize: z.string().optional().transform((value) => value === undefined ? 50 : Number(value)).pipe(z.number().int().min(1).max(200)),
   cursor: z.string().max(512).optional(),
 }).strict();
@@ -425,7 +452,11 @@ const verificationQueryRunSchema = z.object({
   coverage: z.object({ selected: z.number().int().nonnegative(), passed: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), skipped: z.number().int().nonnegative(), unknown: z.number().int().nonnegative() }).strict().optional(),
   suite: z.string().optional(),
   counts: z.object({ selected: z.number().int().nonnegative(), deferred: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), episodes: z.number().int().nonnegative(), artifacts: z.number().int().nonnegative() }).strict(),
-  checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, durationMs: z.number().int().nonnegative(), metrics: z.array(verificationMetricSchema), findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict()).optional(),
+  checks: z.array(z.object({
+    checkId: z.string(), status: verificationStatusSchema, durationMs: z.number().int().nonnegative(), metrics: z.array(verificationMetricSchema),
+    findingFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    ocrReviewEvidence: verificationOcrReviewEvidenceSchema.optional(),
+  }).strict()).optional(),
   codingEvidence: z.object({
     status: z.enum(['available', 'not-recorded', 'unavailable']),
     attempts: z.array(z.object({
@@ -448,7 +479,7 @@ const verificationQueryBaselineSchema = z.object({ runId: z.string(), baselineRu
 const verificationQueryLimitsSchema = z.object({ inlineBytes: z.number().int().positive(), excerptChars: z.number().int().positive(), maxResponseBytes: z.number().int().positive() }).strict();
 const verificationQueryPageBase = z.object({
   schemaVersion: z.literal(1), kind: z.enum(verificationQueryKinds),
-  query: z.object({ runId: z.string(), status: z.string(), pageSize: z.number().int().min(1).max(200) }).strict(),
+  query: z.object({ runId: z.string(), status: z.string(), commitSha: z.string(), pageSize: z.number().int().min(1).max(200) }).strict(),
   page: z.object({ returned: z.number().int().nonnegative(), hasMore: z.boolean(), nextCursor: z.string().nullable() }).strict(),
   limits: verificationQueryLimitsSchema,
 });
