@@ -186,8 +186,9 @@ The sync step only promotes forward from pre-PR states. It never overwrites `fac
 `factory:needs-help`, `factory:investigate`, or `factory:done`, ignores draft PRs, and leaves an
 issue open if a person reopened it after it was auto-closed. It closes a `factory:tracking` epic
 only when GitHub reports at least one direct sub-issue and every direct sub-issue is closed; an
-empty or incomplete epic stays open. It runs hourly; a PR must reference a regular issue with a
-closing keyword (`Closes #N`) in its title or body.
+empty or incomplete epic stays open. If the epic belongs to a Project with a `Status` field, the
+sync step moves it to `Done` as part of the close-out. It runs hourly; a PR must reference a regular
+issue with a closing keyword (`Closes #N`) in its title or body.
 ## Complexity routing
 
 Planning assigns exactly one `complexity:*` label without changing lifecycle

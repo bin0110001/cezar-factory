@@ -128,6 +128,37 @@ function Get-OpenIssueLabels([int]$Number) {
     , @($issue.labels | ForEach-Object { [string]$_.name })
 }
 
+$script:repositoryName = $Repo
+function Get-RepositoryParts {
+    if (-not $script:repositoryName) {
+        $script:repositoryName = [string](Invoke-Gh @('repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'))
+    }
+    $parts = $script:repositoryName.Trim().Split('/')
+    if ($parts.Count -ne 2 -or -not $parts[0] -or -not $parts[1]) { throw "Could not resolve repository owner/name from '$script:repositoryName'." }
+    return $parts
+}
+
+function Set-CompletedEpicProjectStatus([int]$Number) {
+    $parts = Get-RepositoryParts
+    $query = 'query($owner:String!, $name:String!, $number:Int!) { repository(owner:$owner, name:$name) { issue(number:$number) { projectItems(first:100) { nodes { id project { id title fields(first:100) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } fieldValues(first:100) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } } } } } } } } }'
+    $responseText = Invoke-Gh @('api', 'graphql', '-F', "owner=$($parts[0])", '-F', "name=$($parts[1])", '-F', "number=$Number", '-f', "query=$query")
+    $response = $responseText | ConvertFrom-Json
+    $items = @($response.data.repository.issue.projectItems.nodes)
+    $updated = @()
+    foreach ($item in $items) {
+        $statusField = @($item.project.fields.nodes | Where-Object { $_.name -eq 'Status' } | Select-Object -First 1)
+        if (-not $statusField.Count) { continue }
+        $doneOption = @($statusField[0].options | Where-Object { $_.name -eq 'Done' } | Select-Object -First 1)
+        if (-not $doneOption.Count) { throw "Project '$($item.project.title)' has a Status field without a Done option." }
+        $current = @($item.fieldValues.nodes | Where-Object { $_.field.name -eq 'Status' } | Select-Object -First 1)
+        if ($current.Count -and $current[0].name -eq 'Done') { continue }
+        $mutation = 'mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) { updateProjectV2ItemFieldValue(input:{projectId:$projectId, itemId:$itemId, fieldId:$fieldId, value:{singleSelectOptionId:$optionId}}) { projectV2Item { id } } }'
+        Invoke-Gh @('api', 'graphql', '-F', "projectId=$($item.project.id)", '-F', "itemId=$($item.id)", '-F', "fieldId=$($statusField[0].id)", '-F', "optionId=$($doneOption[0].id)", '-f', "query=$mutation") | Out-Null
+        $updated += [ordered]@{ project = [string]$item.project.title; from = if ($current.Count) { [string]$current[0].name } else { $null }; to = 'Done' }
+    }
+    return ,$updated
+}
+
 $promoted = @(); $closed = @(); $skipped = @(); $errors = @()
 
 foreach ($key in @($openBy.Keys)) {
@@ -218,11 +249,12 @@ foreach ($epic in $openList) {
             $closed += [ordered]@{ issue = $n; source = 'closed-children'; childCount = $children.Count; dryRun = $true }
             continue
         }
+        $projectRollups = @(Set-CompletedEpicProjectStatus $n)
         Set-IssueStateLabel $n $labels 'factory:done'
         $body = "$marker`nAll $($children.Count) registered direct sub-issues are closed. Closed automatically by factory-maintenance because the epic has no remaining open child work. Reopen this epic if work remains."
         Invoke-Gh @('issue', 'close', [string]$n, '--reason', 'completed', '--comment', $body) | Out-Null
         $script:mutated = $true
-        $closed += [ordered]@{ issue = $n; source = 'closed-children'; childCount = $children.Count }
+        $closed += [ordered]@{ issue = $n; source = 'closed-children'; childCount = $children.Count; projectRollups = $projectRollups }
     }
     catch {
         $errors += [ordered]@{ issue = $n; source = 'closed-children'; error = $_.Exception.Message }

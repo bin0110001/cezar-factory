@@ -27,7 +27,7 @@ steps:
   # GitHub only honours "Closes #N" on the default branch, and Factory PRs merge into dev, so this
   # step is what reflects delivered work on the issue tracker.
   - id: sync-issue-delivery
-    name: Show PR progress, close delivered issues, and close tracking epics with completed children
+    name: Show PR progress, close delivered issues, and roll completed tracking epics to Done
     command: pwsh -NoProfile -File $FACTORY_RUNTIME_ROOT/scripts/sync-issue-delivery.ps1 -OutputPath .factory/sync-issue-delivery.json
     timeoutSeconds: 300
   # Event intake handles new issues immediately. This one-item pull catches

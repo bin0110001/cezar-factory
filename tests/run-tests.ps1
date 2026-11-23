@@ -1020,6 +1020,7 @@ try {
             '42' = @{ state = 'OPEN'; labels = @('factory:tracking'); comments = @(); title = 'epic without children' }
             '43' = @{ state = 'OPEN'; labels = @('factory:tracking'); comments = @('<!-- factory-closed-by-children:43 -->'); title = 'human reopened epic' }
             '44' = @{ state = 'OPEN'; labels = @('factory:tracking'); comments = @(); title = 'epic with unavailable child data' }
+            '45' = @{ state = 'OPEN'; labels = @('factory:tracking'); comments = @(); title = 'epic with unavailable Project status' }
         }
         subIssues = @{
             '4' = @()
@@ -1028,8 +1029,14 @@ try {
             '41' = @(@{ number = 410; state = 'closed' }, @{ number = 411; state = 'open' })
             '42' = @()
             '43' = @(@{ number = 430; state = 'closed' })
+            '45' = @(@{ number = 450; state = 'closed' })
         }
         failSubIssues = @(44)
+        failProjectStatus = @(45)
+        projectItems = @{
+            '40' = @{ id = 'project-item-40'; projectId = 'project-tableflux'; projectTitle = 'TableFlux Work'; statusFieldId = 'status-field'; doneOptionId = 'done-option'; currentStatus = 'Backlog' }
+            '45' = @{ id = 'project-item-45'; projectId = 'project-tableflux'; projectTitle = 'TableFlux Work'; statusFieldId = 'status-field'; doneOptionId = 'done-option'; currentStatus = 'Backlog' }
+        }
         openPrs = @(
             @{ number = 20; url = 'https://example/pull/20'; title = 'Open'; isDraft = $false; body = 'Closes #21, closes #22, closes #23, closes #24, closes #25, closes #27' }
             @{ number = 21; url = 'https://example/pull/21'; title = 'Draft'; isDraft = $true; body = 'Closes #26' }
@@ -1043,7 +1050,7 @@ try {
     $closeAfter = Get-Content -Raw $closeState | ConvertFrom-Json -AsHashtable
     $closeResult = Get-Content -Raw $closeOut | ConvertFrom-Json
     Assert 'merged-to-dev PR closes its referenced open issues and sets factory:done' ($closeRun.Code -eq 0 -and $closeAfter.issues['1'].state -eq 'CLOSED' -and $closeAfter.issues['1'].labels -contains 'factory:done' -and $closeAfter.issues['1'].labels -notcontains 'factory:review' -and $closeAfter.issues['8'].state -eq 'CLOSED')
-    Assert 'delivery sync closes tracking epics only when every direct child is closed and leaves incomplete, childless, human-reopened, or unavailable epics open' ($closeAfter.issues['40'].state -eq 'CLOSED' -and $closeAfter.issues['40'].labels -contains 'factory:done' -and $closeAfter.issues['40'].comments[-1] -match '2 registered direct sub-issues are closed' -and $closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['41'].state -eq 'OPEN' -and $closeAfter.issues['42'].state -eq 'OPEN' -and $closeAfter.issues['43'].state -eq 'OPEN' -and $closeAfter.issues['44'].state -eq 'OPEN' -and @($closeResult.closed.issue) -join ',' -eq '1,8,40' -and @($closeResult.skipped | Where-Object { $_.issue -eq 41 -and $_.reason -eq 'children-open-or-unknown' }).Count -eq 1 -and @($closeResult.skipped | Where-Object { $_.issue -eq 42 -and $_.reason -eq 'no-registered-children' }).Count -eq 1 -and @($closeResult.skipped | Where-Object { $_.issue -eq 43 -and $_.reason -eq 'reopened-after-factory-close' }).Count -eq 1 -and @($closeResult.errors | Where-Object issue -eq 44).Count -eq 1)
+    Assert 'delivery sync closes completed tracking epics, rolls Project status to Done, and leaves incomplete, childless, human-reopened, or unavailable epics open' ($closeAfter.issues['40'].state -eq 'CLOSED' -and $closeAfter.issues['40'].labels -contains 'factory:done' -and $closeAfter.issues['40'].comments[-1] -match '2 registered direct sub-issues are closed' -and $closeAfter.projectItems['40'].currentStatus -eq 'Done' -and @($closeResult.closed | Where-Object { $_.issue -eq 40 -and $_.projectRollups[0].to -eq 'Done' }).Count -eq 1 -and $closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['41'].state -eq 'OPEN' -and $closeAfter.issues['42'].state -eq 'OPEN' -and $closeAfter.issues['43'].state -eq 'OPEN' -and $closeAfter.issues['44'].state -eq 'OPEN' -and $closeAfter.issues['45'].state -eq 'OPEN' -and @($closeResult.closed.issue) -join ',' -eq '1,8,40' -and @($closeResult.skipped | Where-Object { $_.issue -eq 41 -and $_.reason -eq 'children-open-or-unknown' }).Count -eq 1 -and @($closeResult.skipped | Where-Object { $_.issue -eq 42 -and $_.reason -eq 'no-registered-children' }).Count -eq 1 -and @($closeResult.skipped | Where-Object { $_.issue -eq 43 -and $_.reason -eq 'reopened-after-factory-close' }).Count -eq 1 -and @($closeResult.errors | Where-Object issue -eq 44).Count -eq 1 -and @($closeResult.errors | Where-Object issue -eq 45).Count -eq 1)
     Assert 'close step still skips human-reopened issues, code/comment/non-closing references, and PRs past the lookback' ($closeAfter.issues['4'].state -eq 'OPEN' -and $closeAfter.issues['5'].state -eq 'OPEN' -and -not (@($closeAfter.calls) -match 'issue view (3|6|7|9) '))
     Assert 'open non-draft PR moves pre-PR issues to factory:pr-open and never overwrites review, tracking, or draft-PR issues' ($closeAfter.issues['21'].labels -contains 'factory:pr-open' -and $closeAfter.issues['21'].labels -notcontains 'factory:working' -and $closeAfter.issues['21'].labels -contains 'factory:interactive' -and $closeAfter.issues['23'].labels -contains 'factory:pr-open' -and $closeAfter.issues['22'].labels -contains 'factory:review' -and $closeAfter.issues['22'].labels -notcontains 'factory:pr-open' -and $closeAfter.issues['24'].labels -contains 'factory:working' -and $closeAfter.issues['26'].labels -contains 'factory:working' -and @($closeResult.promoted.issue) -join ',' -eq '21,23' -and $closeAfter.labelsEnsured -contains 'factory:pr-open')
     Assert 'a PR does not claim an issue that a Factory run owns (working without interactive), so review and the run watchdog still route it' ($closeAfter.issues['27'].labels -contains 'factory:working' -and $closeAfter.issues['27'].labels -notcontains 'factory:pr-open' -and @($closeResult.skipped | Where-Object { $_.issue -eq 27 -and $_.reason -eq 'owned-by-factory-run' }).Count -eq 1)

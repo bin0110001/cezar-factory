@@ -7,6 +7,7 @@ $state = Get-Content -Raw $env:FAKE_CLOSE_STATE | ConvertFrom-Json -AsHashtable
 $a = @($args)
 $state['calls'] = @($state.ContainsKey('calls') ? $state['calls'] : @()) + , ($a -join ' ')
 function Get-Option([string]$Name) { $i = [array]::IndexOf($a, $Name); if ($i -ge 0 -and $i + 1 -lt $a.Count) { $a[$i + 1] } else { $null } }
+function Get-FormValue([string]$Name) { for ($i = 0; $i -lt $a.Count - 1; $i++) { if ($a[$i] -in @('-F', '-f') -and $a[$i + 1] -like "$Name=*") { return $a[$i + 1].Substring($Name.Length + 1) } }; $null }
 if ($a[0] -eq 'pr' -and $a[1] -eq 'list') { $list = if ($a -contains 'open') { @($state.openPrs) } else { @($state.prs) }; ConvertTo-Json -InputObject @($list) -Depth 6 -Compress }
 elseif ($a[0] -eq 'label' -and $a[1] -eq 'list') { ConvertTo-Json -InputObject @(@($state.ContainsKey('existingLabels') ? $state['existingLabels'] : @()) | ForEach-Object { @{ name = $_ } }) -Depth 4 -Compress }
 elseif ($a[0] -eq 'issue' -and $a[1] -eq 'list') {
@@ -44,6 +45,23 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
     $issue = $state.issues[[string]$a[2]]
     if ($state.failClose -contains [int]$a[2]) { Write-Error 'fake gh: close failed'; exit 1 }
     $issue.state = 'CLOSED'; $issue.comments = @($issue.comments) + $a[$a.IndexOf('--comment') + 1]
+}
+elseif ($a[0] -eq 'repo' -and $a[1] -eq 'view') { 'bin0110001/cezar-factory' }
+elseif ($a[0] -eq 'api' -and $a[1] -eq 'graphql') {
+    $query = Get-FormValue 'query'
+    if ($query -match 'updateProjectV2ItemFieldValue') {
+        $itemId = Get-FormValue 'itemId'
+        foreach ($entry in $state.projectItems.Keys) { if ($state.projectItems[$entry].id -eq $itemId) { $state.projectItems[$entry].currentStatus = 'Done' } }
+        @{ data = @{ updateProjectV2ItemFieldValue = @{ projectV2Item = @{ id = $itemId } } } } | ConvertTo-Json -Depth 8 -Compress
+    }
+    else {
+        $number = Get-FormValue 'number'
+        if ($state.failProjectStatus -contains [int]$number) { Write-Error 'fake gh: project status lookup failed'; exit 1 }
+        $item = $state.projectItems[[string]$number]
+        $nodes = @()
+        if ($item) { $nodes = @(@{ id = $item.id; project = @{ id = $item.projectId; title = $item.projectTitle; fields = @{ nodes = @(@{ id = $item.statusFieldId; name = 'Status'; options = @(@{ id = 'backlog-option'; name = 'Backlog' }, @{ id = $item.doneOptionId; name = 'Done' }) }) } }; fieldValues = @{ nodes = @(@{ name = $item.currentStatus; field = @{ name = 'Status' } }) } }) }
+        @{ data = @{ repository = @{ issue = @{ projectItems = @{ nodes = $nodes } } } } } | ConvertTo-Json -Depth 12 -Compress
+    }
 }
 elseif ($a[0] -eq 'api' -and ($a -join ' ') -match 'issues/(\d+)/sub_issues') {
     $number = $Matches[1]
