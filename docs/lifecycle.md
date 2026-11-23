@@ -183,10 +183,11 @@ its turn. `factory:new` issues are taken in whether or not they already carry a 
 
 The sync step only promotes forward from pre-PR states. It never overwrites `factory:review`,
 `factory:changes-requested`, `factory:blocked`, `factory:human-review`,
-`factory:needs-help`, `factory:investigate`, or `factory:done`, never touches
-`factory:tracking` epics, ignores draft PRs, and leaves an issue open if a person reopened it
-after it was auto-closed. It runs hourly; a PR must reference its issue with a closing keyword
-(`Closes #N`) in its title or body.
+`factory:needs-help`, `factory:investigate`, or `factory:done`, ignores draft PRs, and leaves an
+issue open if a person reopened it after it was auto-closed. It closes a `factory:tracking` epic
+only when GitHub reports at least one direct sub-issue and every direct sub-issue is closed; an
+empty or incomplete epic stays open. It runs hourly; a PR must reference a regular issue with a
+closing keyword (`Closes #N`) in its title or body.
 ## Complexity routing
 
 Planning assigns exactly one `complexity:*` label without changing lifecycle

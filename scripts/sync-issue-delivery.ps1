@@ -18,9 +18,10 @@ Merged pass: GitHub only honours "Closes #N" when a PR merges into the repositor
 branch, and Factory PRs merge into `dev`, so the keyword never fires. This step closes each
 still-open referenced issue as completed with `factory:done` and a comment naming the PR.
 
-Guards: epics/tracking issues (`factory:tracking`) are never touched; an issue this step already
-closed and a person reopened is left open; at most -MaxCloses issues close per run; one failure
-is recorded without stopping the others. Idempotent, so the next scheduled run retries failures.
+Guards: tracking epics are closed only when they have at least one registered direct sub-issue and
+every direct sub-issue is closed. Empty or incomplete epics remain open. An issue this step already
+closed and a person reopened is left open; at most -MaxCloses issues close per run; one failure is
+recorded without stopping the others. Idempotent, so the next scheduled run retries failures.
 #>
 [CmdletBinding()]
 param(
@@ -101,22 +102,20 @@ if (-not $DryRun -and ($mergedBy.Count -or $openBy.Count)) {
     }
 }
 
-# Every referenced issue used to cost one `gh issue view`, including the many already closed by an
-# earlier run. One open-issue listing (shared with the other maintenance scripts through
-# gh-cache.ps1) answers "is it still open, and with which labels" for all of them; only an open
-# issue that may have been closed by a merge needs its comments read. This script runs first and
-# mutates, so it always reads fresh. A listing that hit its limit may be missing open issues, so
-# then an absent issue is looked up directly.
+# One open-issue listing (shared with the other maintenance scripts through gh-cache.ps1) answers
+# "is it still open, and with which labels" for PR references and finds tracking epics for child
+# completion. Only an open PR-delivered issue or a tracking epic with all children closed needs its
+# comments read. This script runs first and mutates, so it always reads fresh. A listing that hit
+# its limit may be missing open issues, so an absent referenced issue is looked up directly.
 $openIssues = @{}
 $openListComplete = $false
-if ($mergedBy.Count -or $openBy.Count) {
-    try {
-        $listArguments = @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,createdAt,updatedAt,labels,url')
-        $openList = @((Get-GhCachedText "$GhCommand|$Repo|$($listArguments -join ' ')" { Invoke-Gh $listArguments } -Refresh) | ConvertFrom-Json | Where-Object { $_ })
-        foreach ($listed in $openList) { $openIssues[[string]$listed.number] = $listed }
-        $openListComplete = $openList.Count -lt 1000
-    } catch { Write-Warning "Could not list open issues; reading each referenced issue directly: $($_.Exception.Message)" }
-}
+$openList = @()
+try {
+    $listArguments = @('issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,createdAt,updatedAt,labels,url')
+    $openList = @((Get-GhCachedText "$GhCommand|$Repo|$($listArguments -join ' ')" { Invoke-Gh $listArguments } -Refresh) | ConvertFrom-Json | Where-Object { $_ })
+    foreach ($listed in $openList) { $openIssues[[string]$listed.number] = $listed }
+    $openListComplete = $openList.Count -lt 1000
+} catch { Write-Warning "Could not list open issues; reading referenced issues directly: $($_.Exception.Message)" }
 
 function Get-OpenIssueLabels([int]$Number) {
     # $null: the issue is closed (or unknown). Otherwise its label names.
@@ -181,6 +180,53 @@ foreach ($key in @($mergedBy.Keys)) {
     catch {
         $errors += [ordered]@{ issue = $n; pr = [int]$pr.number; error = $_.Exception.Message }
         Write-Warning "Could not close issue #${n}: $($_.Exception.Message)"
+    }
+}
+
+# Tracking epics are delivered by their children rather than by a PR's closing keyword. Do not
+# close a childless epic (empty sets are not completion evidence), and fail closed when GitHub
+# cannot return the complete direct-child list. `--slurp` keeps paginated results in one JSON value.
+foreach ($epic in $openList) {
+    $n = [int]$epic.number
+    $labels = @($epic.labels | ForEach-Object { [string]$_.name })
+    if ($labels -notcontains 'factory:tracking') { continue }
+    try {
+        if ($closed.Count -ge $MaxCloses) { $skipped += [ordered]@{ issue = $n; reason = 'max-closes-reached' }; continue }
+        $childrenJson = Invoke-Gh @('api', '--paginate', '--slurp', "repos/{owner}/{repo}/issues/$n/sub_issues")
+        if ([string]::IsNullOrWhiteSpace($childrenJson)) { throw 'GitHub returned an empty direct sub-issue response.' }
+        $pages = ConvertFrom-Json -InputObject $childrenJson -AsHashtable -NoEnumerate
+        $children = @()
+        foreach ($page in @($pages)) { foreach ($child in @($page)) { $children += $child } }
+        if ($children.Count -eq 0) { $skipped += [ordered]@{ issue = $n; reason = 'no-registered-children' }; continue }
+        $unfinished = @($children | Where-Object { [string]$_.state -ine 'closed' })
+        if ($unfinished.Count) {
+            $skipped += [ordered]@{ issue = $n; reason = 'children-open-or-unknown'; childCount = $children.Count; openChildCount = $unfinished.Count }
+            continue
+        }
+
+        $issue = Invoke-Gh @('issue', 'view', [string]$n, '--json', 'state,labels,comments,title') | ConvertFrom-Json
+        if ($issue.state -ne 'OPEN') { continue }
+        $labels = @($issue.labels | ForEach-Object { [string]$_.name })
+        if ($labels -notcontains 'factory:tracking') { continue }
+        $marker = "<!-- factory-closed-by-children:$n -->"
+        if (@($issue.comments | Where-Object { ([string]$_.body).Contains($marker) }).Count) {
+            $skipped += [ordered]@{ issue = $n; reason = 'reopened-after-factory-close' }
+            continue
+        }
+
+        if ($DryRun) {
+            $closed += [ordered]@{ issue = $n; source = 'closed-children'; childCount = $children.Count; dryRun = $true }
+            continue
+        }
+        Set-IssueStateLabel $n $labels 'factory:done'
+        $body = "$marker`nAll $($children.Count) registered direct sub-issues are closed. Closed automatically by factory-maintenance because the epic has no remaining open child work. Reopen this epic if work remains."
+        Invoke-Gh @('issue', 'close', [string]$n, '--reason', 'completed', '--comment', $body) | Out-Null
+        $script:mutated = $true
+        $closed += [ordered]@{ issue = $n; source = 'closed-children'; childCount = $children.Count }
+    }
+    catch {
+        $errors += [ordered]@{ issue = $n; source = 'closed-children'; error = $_.Exception.Message }
+        Write-Warning "Could not close completed tracking epic #${n}: $($_.Exception.Message)"
     }
 }
 

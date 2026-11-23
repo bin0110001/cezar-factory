@@ -45,6 +45,13 @@ elseif ($a[0] -eq 'issue' -and $a[1] -eq 'close') {
     if ($state.failClose -contains [int]$a[2]) { Write-Error 'fake gh: close failed'; exit 1 }
     $issue.state = 'CLOSED'; $issue.comments = @($issue.comments) + $a[$a.IndexOf('--comment') + 1]
 }
+elseif ($a[0] -eq 'api' -and ($a -join ' ') -match 'issues/(\d+)/sub_issues') {
+    $number = $Matches[1]
+    if ($state.failSubIssues -contains [int]$number) { Write-Error 'fake gh: direct sub-issue lookup failed'; exit 1 }
+    $children = @($state.ContainsKey('subIssues') -and $state['subIssues'].ContainsKey($number) ? $state['subIssues'][$number] : @())
+    $pages = [object[]]::new(1); $pages[0] = $children
+    ConvertTo-Json -InputObject $pages -Depth 8 -Compress
+}
 else { Write-Error "fake gh: unsupported $($a -join ' ')"; exit 2 }
 $state | ConvertTo-Json -Depth 8 | Set-Content $env:FAKE_CLOSE_STATE
 exit 0
