@@ -33,6 +33,11 @@ export interface StallItem {
   nodeId: string;
   number: number;
   title: string;
+  /** Issue metadata lets the attention queue distinguish blocked holds from ordinary work waits. */
+  labels?: string[];
+  url?: string;
+  bodyText?: string;
+  updatedAt?: string;
   class: StallClass;
   reason?: StallReason;
   /** The root problem a `blocked-by-stuck` item inherits, so one cycle explains everything beneath it. */
@@ -152,7 +157,13 @@ export function diagnoseStalls({ snapshot, consumedLabels, lifecycle }: StallVer
     const node = byId.get(id) as (typeof tasks)[number];
     const blockerIds = (blockersOf.get(id) ?? []).slice().sort();
     const own = ownClass(node, blockerIds);
-    let result: StallItem = { nodeId: id, number: node.number, title: node.title, class: own.class, ...(own.reason ? { reason: own.reason } : {}), rootCauseIds: own.class === 'stuck' ? [id] : [], blockerIds, detail: own.detail };
+    let result: StallItem = {
+      nodeId: id, number: node.number, title: node.title,
+      labels: node.labels,
+      ...(node.kind === 'issue' ? { url: node.url, ...(node.bodyText ? { bodyText: node.bodyText } : {}) } : {}),
+      updatedAt: node.updatedAt, class: own.class, ...(own.reason ? { reason: own.reason } : {}),
+      rootCauseIds: own.class === 'stuck' ? [id] : [], blockerIds, detail: own.detail,
+    };
     const rootCauses = new Set(result.rootCauseIds);
     let waitingReason: StallReason | undefined;
     let blockedByWork = false;

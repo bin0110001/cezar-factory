@@ -1003,7 +1003,7 @@ export async function getGithub(
 export type DependencyGraphData = {
   schemaVersion: number; repository: string; revision: number; createdAt: string;
   source: { status: 'fresh' | 'stale' | 'offline' | 'unknown'; lastSuccessfulSyncAt?: string; watermark?: string; warning?: string };
-  nodes: Array<{ id: string; kind: string; title: string; state: string; number?: number; url?: string }>;
+  nodes: Array<{ id: string; kind: string; title: string; state: string; number?: number; url?: string; labels?: string[]; bodyText?: string }>;
   edges: Array<{ id: string; kind: string; from: string; to: string; provenance: { authority: string; origin: string } }>;
   decisions: Array<{ id: string; question: string; options: string[]; rationale: string; state: string; revision: number; requiredAuthorization: string; createdBy: string; evidence: Array<{ url: string; label: string }>; reversible: boolean; owner?: string; affectedNodeIds: string[] }>;
   page: { limit: number; offset: number; totalNodes: number; hasMore: boolean };
@@ -2829,7 +2829,7 @@ export async function editBacklogIssue(input: { number: number; expectedRevision
   return unwrap(await cez.api.v1.p[':projectId'].backlog[':number'].$post({ param: { projectId: queryScope(), number: String(number) }, json: json as never }), '/backlog/:number');
 }
 export type StallClass = 'running' | 'runnable' | 'blocked' | 'waiting' | 'stuck'
-export type StallItem = { nodeId: string; number: number; title: string; class: StallClass; reason?: string; rootCauseIds: string[]; blockerIds: string[]; detail: string }
+export type StallItem = { nodeId: string; number: number; title: string; labels?: string[]; url?: string; bodyText?: string; updatedAt?: string; class: StallClass; reason?: string; rootCauseIds: string[]; blockerIds: string[]; detail: string }
 export type StallReport = { revision: number; verdict: 'idle' | 'healthy' | 'waiting' | 'stalled' | 'unknown'; summary: string; counts: Record<StallClass, number>; items: StallItem[]; cycles: string[][] }
 export async function getDependencyStalls(opts?: ReadOptions): Promise<StallReport> {
   return unwrap(await cez.api.v1.p[':projectId']['dependency-graph'].stalls.$get({ param: { projectId: queryScope() } }, init(opts)), '/dependency-graph/stalls');
